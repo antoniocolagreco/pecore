@@ -1,0 +1,475 @@
+# PeCore UI
+
+*   **Author:** Antonio Colagreco
+*   **Status:** Approved (EGM stages 5-8 applied; stage 9 not applicable; reports in [reviews/ui/](reviews/ui/)). The `packages/app` table of design.md matches the Screens table below.
+*   **Date:** 2026-11-18
+*   **Related:** [design.md](design.md), [concepts-brief.md](concepts-brief.md)
+
+## Problem Statement
+
+PeCore runs many jobs at once, each through a recipe graph of agents, checks, reviews and deliveries (design.md Overview). The user leaves it working and comes back. When they come back they need two answers at once: what is waiting for them, and what was delivered. Without a UI built for that, the user digs through logs and graphs to find the one review that blocks five jobs, and cannot tell a delivered PR from a rejected spec.
+
+## Goals
+
+*   **Attention first.** From any screen, the user sees how many items wait for them and reaches one in one click. Nothing that needs the user is hidden by a filter.
+*   **Results are clear.** A finished job shows its outcome, what changed, which checks ran and where the delivery is, from recorded data only (UI11).
+*   **Diagnosis in two clicks** (design.md G13): from Factory to the live log of a running node, and from a failed job to the failing node run.
+*   **Everything in the GUI** (design.md G16): every function of design.md has a screen; no step needs a file editor.
+*   **Safe confirmations** (design.md section 8): a confirmation always approves exactly what the user saw.
+
+## Non-Goals
+
+*   Translation: the UI is in English only.
+*   Invented figures: no progress percentages, no remaining subscription quota, no LLM-written summaries (UI6, UI11).
+*   A graph of stacked jobs: stacks are a tree in the lists (UI9).
+*   Project language detection: PeCore does not know a project's language.
+*   Actions on the forge from delete: deleting a job or a project never touches the remote (design.md 4.8).
+
+## Terms
+
+*   **Factory:** the home screen, a summary dashboard.
+*   **Inbox:** the screen, and the set of open `human_queue` rows it lists, except `agent-question` items (answered in the chat). The Inbox counter counts the same set. In design.md, the kinds `engine-node`, `source-node`, `recipe-change`, `import`, `ticket` and `services` are also called the confirmation queue.
+*   **Engine:** the background process that runs jobs (design.md section 1). **Engine node:** a node with `runsAs: engine`. **Engine state:** a job or node run state of design.md 4.1 and 4.3.
+*   **Agent user:** the UI name for design.md's project OS user: the OS user a project's agents and commands run as (design.md 3.5 and section 8). A dedicated agent user isolates the project from the user's own files and logins; one agent user can serve several projects. The orchestrator's OS user is called "orchestrator user".
+*   **Check node:** a recipe node named in some node's `requires` (design.md 4.4).
+*   **Back edge:** an edge to a node that already ran in the job, for example `review` to `code`.
+*   **Home check:** the start-up check of `PECORE_HOME` permissions (design.md section 8).
+*   **Prototype:** [pecore_concept_offline.html](pecore_concept_offline.html).
+*   **Citations:** inventory ids start with `I` (`IA1`, `ID3`). The Source column cites design.md as a section number (4.3), a goal (G17), a CUJ (CUJ 6) or a heading in quotes ("Project creation").
+
+## Method
+
+1.  List every element the user must see or use, taken from design.md.
+2.  The author approves, removes or adds elements.
+3.  Group the elements by how often they are used and which ones are used together.
+4.  Only then decide the layout.
+
+## Inventory
+
+### A. Global
+
+| Id | Element | Source |
+|---|---|---|
+| IA1 | Global pause and play | G17 |
+| IA2 | Inbox counter | 4.3, 8 |
+| IA3 | Notifications: job finished, needs the user, budget reached, login expired, parent failed, job started from a ticket, orchestrator replied (added by this document) | 6, 7, 9 |
+| IA4 | Engine status (running, error, disconnected) and app version | 1, "Fixed implementation choices" |
+| IA5 | Project filter | 3.5 |
+| IA6 | Tray icon | "Engine and main process messages" |
+| IA7 | Command palette | added by this document |
+
+### B. Orchestrator chat
+
+| Id | Element | Source |
+|---|---|---|
+| IB1 | Conversation list | 6 |
+| IB2 | Messages, with attachments (text, links, images) | G1, 6 |
+| IB3 | Input field with attachment upload | G1 |
+| IB4 | Cards for what the orchestrator did (from `chats.db` `actions`) | 6, "Data model" |
+| IB5 | Unread marker | 6, 7 |
+| IB6 | Answers to agent questions (`agent-question` items) | 6 |
+
+### C. Jobs
+
+| Id | Element | Source |
+|---|---|---|
+| IC1 | Job list: title, project, state, waiting reason, current node, parent | 4.1, 4.3, G13 |
+| IC2 | Filters: state label, archived, text | G17 |
+| IC3 | Per-job controls: stop, pause, play, resume, realign, archive, delete | G17, 4.2 |
+| IC4 | Stacked jobs as a tree, `parent_failed` | 4.6 |
+| IC5 | Job graph: nodes with state, round, waiting reason, duration, tokens, cost | 9 |
+| IC6 | Node run detail: attempts, artifacts, harness log (streamed) | 9, G13 |
+| IC7 | Artifact viewer: spec, diff, findings, risk, check log, delivery link | 3.3 |
+| IC8 | "Why is it waiting" text (same as `pecore job why`) | 9 |
+| IC9 | Base change notice | 4.2 |
+| IC10 | New job | "Local API", "Job creation" |
+
+### D. Inbox items
+
+| Id | Element | `human_queue.kind` | Source |
+|---|---|---|---|
+| ID1 | Human review | `human-node` | 3.1 |
+| ID2 | Confirmation of an engine or `source` node | `engine-node`, `source-node` | 8 |
+| ID3 | Confirmation of a recipe change by the orchestrator | `recipe-change` | 6, 8 |
+| ID4 | Confirmation of an imported project | `import` | 8 |
+| ID5 | Confirmation of a new compose file version | `services` | 4.9 |
+| ID6 | Untrusted ticket | `ticket` | 7 |
+| ID7 | Round limit reached | `round-limit` | 4.2 |
+| ID8 | Budget reached | `budget` | 4.7 |
+
+### E. Recipes and nodes
+
+| Id | Element | Source |
+|---|---|---|
+| IE1 | Recipe graph editor: add and connect nodes on a grid, edges with outcomes, recipe fields | G16, 3.2 |
+| IE2 | Validation errors shown on the graph | G5 |
+| IE3 | Node editor: fields by kind, prompt (Markdown), script (shell) | 3.1 |
+| IE4 | Library: templates of nodes and recipes, instantiate into a project | G5 |
+| IE5 | "Ask the AI" from an editor | G5 |
+
+### F. Projects
+
+| Id | Element | Source |
+|---|---|---|
+| IF1 | Project list | 3.5 |
+| IF2 | New project wizard | CUJ 6, "Project creation" |
+| IF3 | Project settings: recipes, default recipe, services, limits, budget, ticket source, polling interval, trusted users | 3.5, 7 |
+| IF4 | Knowledge base editor (Markdown) | 2 |
+| IF5 | Export, and import as a new project | CUJ 7, 8 |
+| IF6 | Harness logins for the project's agent user | 5 |
+| IF7 | Project delete | 4.8 |
+
+### G. Settings and usage
+
+| Id | Element | Source |
+|---|---|---|
+| IG1 | Accounts: model, forge, service | 3.4 |
+| IG2 | Profiles and tiers | 3.4 |
+| IG3 | Global limits, services runtime, disk threshold, merge check interval, prices, project paths | 4.7, 4.9, "Risks & Limits" |
+| IG4 | Usage: tokens and cost per account, project, day (a top-level page) | 4.7 |
+| IG5 | First run | G14 |
+| IG6 | Orchestrator: profile, orchestrator user, harness login | 6 |
+| IG7 | Harness manifests, auto-update | 5, "Fixed implementation choices" |
+| IG8 | Notifications and quiet hours | 9, `src/settings.ts` |
+| IG9 | Appearance: theme, reduced motion | UI4, UI6 |
+
+## Screens
+
+| Screen | Placement | Inventory |
+|---|---|---|
+| Factory | centre | IA2, IC1, IC10 |
+| Jobs | centre | IC1-IC4, IC10 |
+| Job view | detail page | IC3-IC9 |
+| Inbox | centre | ID1-ID8 |
+| Orchestrator | centre, plus mini chat on the right | IB1-IB6 |
+| Projects, project page, wizards | centre, detail page, full page | IF1-IF7 |
+| Recipe editor, node editor | detail page | IE1-IE3, IE5 |
+| Library | centre | IE4 |
+| Usage | centre | IG4 |
+| Settings | centre | IG1-IG3, IG6-IG9 |
+| First run | full screen | IG5 |
+
+## Proposed Design
+
+The prototype is normative only for: the Everforest palette and gradients, the Inbox as a list plus a detail pane, the node inspector as key/value rows, the engine status at the bottom of the navigation, the first run as a step checklist. Nothing else in it is normative.
+
+### Navigation (left)
+
+*   Workspace: Factory, Orchestrator (unread badge), Jobs, Inbox (counter, IA2), Projects, Usage.
+*   Build: Library.
+*   System: Settings.
+*   Bottom: engine status (IA4), with warnings from the home check and identity checks.
+*   Note: a project's recipes, nodes and settings are reached through Projects; the node editor and the job view are detail pages, not menu items.
+
+### Top bar
+
+*   Project filter (IA5), global pause and play (IA1), "New job" (IC10), notifications (IA3), command palette button.
+*   While the global pause is on, a banner says so, with Play.
+*   The notification list shows the notification log (`GET /notifications`), so notifications that arrived while the user was away survive a restart.
+
+### Tray (IA6)
+
+*   Icon with the number of running jobs and Inbox items; menu with "Open PeCore" and "Quit". Closing the window keeps the app and its jobs running here (UI15).
+
+### Command palette (IA7)
+
+*   Cmd+K or Ctrl+K. Search jobs, projects, recipes, nodes and templates by name; run the controls of the selected job; open any screen.
+
+### Factory
+
+*   Counters, each opening a filtered view: Inbox items (opens the Inbox; global), Needs you, Failed, Working, Waiting (open Jobs filtered by that label), cost today (API key accounts) and tokens today (open Usage).
+*   After a restart with jobs paused by the quit: "Play interrupted jobs" (UI15).
+*   Rows of jobs not in a final state, compact, so 15 or more rows fit in a 1080 px tall window: project, title, current node, state, waiting reason with time ("Quota until 15:40"). Stacked jobs indented under their parent. Hover actions follow the controls table.
+*   A Needs you row opens its target (see "Job states shown").
+
+### Jobs
+
+*   Every job. Filters (IC2): state label, archived, text search on title; the project comes from the top bar filter.
+*   Columns: title, project, state, current node or final outcome, waiting reason, duration (from creation to end or to now, waits included), updated.
+*   Stacked jobs as a collapsible tree.
+*   Row actions on hover, following the controls table.
+
+### New job (modal, IC10)
+
+*   Fields: title (required), project, recipe (default recipe preselected), ticket text or reference, base branch (project default preselected), optional parent job.
+*   Opened from the top bar, Factory and Jobs.
+
+### Job view
+
+*   Header: title, project, branch, state label, "why is it waiting" line (IC8), controls (IC3). Notice when the base changed (IC9).
+*   Tabs:
+    *   Graph: the recipe graph at the positions saved in the recipe's `layout`, with node run states. Back edges are curved arrows with the round count on the target node. The running node pulses. Nodes with no run yet are Pending.
+    *   History: node runs in order (`node_runs`, `attempts`): recipe node id, attempt, outcome, duration, failure reason; for example "test · round 1 · failed · 0m 42s".
+*   Detail panel for the selected node run; selecting a graph node shows its latest run and a list of earlier ones. Duration, attempts, tokens, cost, artifacts (IC7), and the log.
+*   Log: the normalised events of the attempt (text, tool calls, results), streamed while it runs; a "Raw" toggle shows the JSONL lines. Only the open log is streamed (design.md "Local API"). A log removed by retention shows "Log removed".
+*   Artifact viewer (IC7): spec and findings as rendered Markdown; diff in the CodeMirror merge view, risky hunks first; check log as plain text with the failing lines highlighted by the node's output rules; risk as a list; delivery link as a link.
+*   Result view, for a job in a final state, above the tabs:
+    *   state label and final outcome;
+    *   files changed (from the `diff` artifact);
+    *   check nodes with their last outcome; no test counts;
+    *   open findings (from the `findings` artifact);
+    *   delivery link; "Merged" only when `merged_at` is set (only for succeeded jobs with children, design.md 4.6);
+    *   no summary text unless an artifact provides it.
+
+### Job controls
+
+| Control | Enabled in | Effect, shown as tooltip |
+|---|---|---|
+| Pause | running, waiting | Finishes the running node, then holds. No work is lost. (Global pause also keeps queued jobs from starting.) |
+| Play | paused | Continues from the next node. |
+| Stop | queued, running, waiting, paused | Kills the running node now; the job ends Stopped. No confirmation: Resume restarts it. |
+| Resume | failed, stopped | Restarts the failed or stopped node from scratch, in the same workdir. |
+| Realign | running, waiting, paused, succeeded, not_delivered, when the recipe has `onBaseChanged` | Moves the job onto the current base and re-runs the recipe's rebase path. A waiting human review is discarded. |
+| Archive | final states | Hides the job from default lists. |
+| Delete | final states, no children outside a final state | Asks for confirmation, listing what is removed: workdir, local branch, artifacts, logs, history. Nothing on the forge is touched. |
+
+### Inbox
+
+*   List: one row per item with a kind label ("Human review", "Engine node", ...), project, the job when the item has one, age. Oldest first. All projects by default (UI13), with an optional project filter of its own.
+*   Every detail renders the item's `subject` snapshot, never a file read at decision time, and shows its sha256. The decision is sent with that hash. Items never change: a definition edited while its item is open cancels the item and creates a new one (design.md `confirm.ts`). If `queue.updated` reports the open item resolved or cancelled (for example a review cancelled by a base change), the detail locks with a banner and a button that opens the new item, if any.
+*   Inline confirmations (UI17: wizard, import, node editor, Library) use the same component on the same queue item, with the same snapshot and hash.
+*   Detail by kind:
+    *   ID1: risky hunks first in the merge view, check logs collapsed, one button per node outcome, a note field when the node's `answer` setting allows one.
+    *   ID2, engine node: `command` or `script`, `probe`, `probeRules`, `mergedCheck`, `credentials`, `params`. Source node: its four commands (`list`, `read`, `comment`, `replies`) with their scripts and `outputRules`, `credentials`, `params`. For a changed node, a diff against the last confirmed version.
+    *   ID3: diff on the recipe graph (UI10).
+    *   ID4: every node, script and prompt of the imported project, engine and source nodes first.
+    *   ID5: compose file diff against the confirmed version.
+    *   ID6: ticket text, author, start or discard.
+    *   ID7: which cap was hit (the edge's `maxRounds` or the job's `maxNodeRuns`) and the runs used; input "allow N more" (default: the cap's value), or fail.
+    *   ID8: cost or tokens used and the limit reached (per job, or per project per day); input for the new limit, saved to `project.json` (one commit; the label says it applies to future jobs too), or stop. One item per limit: every job blocked by the same limit waits on it.
+
+### Orchestrator page and mini chat
+
+*   Page: conversation list, full history, attachments, unread markers.
+*   Mini chat on the right of the job view, recipe editor, node editor, Library and project page; closed by default. It shows the last conversation used, with a "New" button and a link to the page. "Ask the AI" (IE5) opens it.
+*   Context chip: one at a time, a reference with its scope (for example "Job: Fix login timeout", "Recipe feature (project progetto-1)", "Template recipe feature"). It shows the object of the current screen and changes on navigation; pinning keeps it; removing it sends the next message with no context.
+*   Cards for the orchestrator's actions (IB4) link to the job, definition or Inbox item.
+*   Agent questions (IB6) appear in the conversation with an answer field.
+*   A reply that arrives while the user is not looking at that conversation sets the unread badge and sends a notification.
+
+### Projects
+
+*   List: name, repo (or "local only"), base branch, agent user, jobs that need the user, failed jobs, warning when a login expired. A project whose agent user is the app user is marked "runs as you (risky)".
+*   Buttons: "New project", "Import project".
+*   Project page, configuration only, in sections:
+    *   General: name, base branch, default recipe (editable); id, repo, forge account, agent user (read-only after creation).
+    *   Recipes (recipe editor), Nodes (node editor), Knowledge (IF4), Services, Ticket source (`label`, `pollSec`, trusted users), Limits and budget, Logins (IF6), Export.
+    *   Danger zone: Delete project (IF7).
+*   A link "Jobs of this project" sets the top bar filter and opens Jobs.
+
+### New project wizard (full page)
+
+Pages: Inputs, Create, Confirm, Logins. Create runs the tasks of design.md "Project creation" in order; the project exists when Create ends.
+
+1.  **Inputs:** id (`^[a-z][a-z0-9-]{0,23}$`), name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, base branch, agent user (an existing one, a new dedicated one, or the app user marked as risky), starting recipes (the shipped ones, with delivery nodes for the project's forge; each can be unchecked).
+2.  **Create:** the tasks of "Project creation" (validation, agent user, project directory, clone or repo creation, `repo.git` setup and home check, commit), each with its state. The repo creation node's confirmation is shown inside its task (UI17). Creating a dedicated agent user opens the admin prompt; if it cannot (no polkit agent), the page shows the exact script with a Copy button and "I ran it, recheck". A failed task undoes the tasks before it, says why, and returns to Inputs with the values kept. A repo created on the forge is never deleted by the undo: the page lists it as left on the forge.
+3.  **Confirm:** the engine nodes of the starting recipes and the project's `source` node, if any, on one screen, so the first job does not wait with reason `confirmation`. Can be skipped: the items stay in the Inbox.
+4.  **Logins:** harness logins for the agent user, with the login URL or code. Can be skipped: the project shows a warning.
+
+Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done; Cancel on Confirm or Logins leaves the project created.
+
+### Import project (full page)
+
+*   Pages: archive (choose the `.tar.zst`), accounts (map each account reference to a local account), agent user (as in the wizard), Create (the "Project creation" tasks with the archive's definitions), Confirm (ID4: every node, script and prompt), Logins.
+*   No node from the archive runs before it is confirmed: if Create needs the archive's repo creation node (no existing remote), its confirmation is shown inside that task (UI17), as in the wizard.
+
+### Export (dialog)
+
+*   Option: include job history. When history is included, the gitleaks scan runs first; its matches are listed, and the user confirms or cancels the export (design.md section 8).
+
+### Delete project (dialog)
+
+*   Lists what is removed (design.md 4.8): project directory, workdirs, artifacts, logs, database, definitions, service containers. Says that nothing on the forge is touched.
+*   Option "Also delete the agent user `<name>`", off by default, offered only when no other project uses it.
+*   Disabled while a job of the project is running, with a link to stop them.
+
+### Recipe editor
+
+*   Two modes: an instance (from the project page) or a template (from the Library).
+*   React Flow graph on a grid. Nodes are added from a palette (the project's node instances, or node templates in template mode), placed on the grid and connected by dragging from an outcome to a node. Positions are saved in the recipe's `layout`; a recipe with no `layout` (for example written by the orchestrator) is laid out automatically when opened.
+*   Validation errors on the node or edge that causes them (IE2).
+*   Inspector for a node: kind, outcomes, `requires`, `optional`, `skipWhenUnchanged`, `maxRounds` of its outgoing edges, "Edit node", "Ask the AI".
+*   Inspector for the recipe: `start`, `onBaseChanged`, `maxNodeRuns`, `successOutcomes`.
+
+### Node editor
+
+*   Opened from a recipe, the project's Nodes section or the Library; the same editor for templates and instances.
+*   Form with the fields of the node's kind (agent, command, human, source); prompt in Markdown and script in shell with CodeMirror; a JSON tab for the whole file.
+*   Validation errors next to the field. Save is disabled while the draft is invalid. The draft lives in memory until saved or discarded; leaving the page with an unsaved draft asks first.
+*   No autosave: every save is one commit in `PECORE_HOME`, or in the project's own repository for a project outside it.
+*   Saving an engine or source node instance opens its confirmation inside the editor (UI17). Saving a template needs no confirmation; each instance made from it is confirmed when it is created.
+*   When live jobs use the node instance being edited, the editor says so: they will use the new version at their next run of that node.
+
+### Library
+
+*   Node templates (filterable by kind) and recipe templates.
+*   "Instantiate into project": instantiating a recipe template also instantiates the node templates it uses (design.md `src/definitions/instantiate.ts`); a name that already exists in the project is kept and listed. Engine and source nodes created this way show their confirmation in place (UI17).
+*   Clicking a row opens the template in the node or recipe editor.
+
+### Usage
+
+*   Only observed values (UI11): tokens per account, project and day; cost only for API key accounts; budgets set in PeCore and how much is used; accounts cooling down, with the reset time only when the harness reported it.
+*   No remaining-quota percentage for subscriptions: no shipped harness manifest reads one.
+
+### Settings
+
+*   Sections: Accounts (IG1), Profiles and tiers (IG2), Orchestrator (IG6), Limits and disk threshold, Services runtime, Merge check interval, Prices, Project paths (IG3), Harness manifests and Updates (IG7), Notifications and quiet hours (IG8), Appearance (IG9).
+*   Each account shows its login state and a Login button. Forge and service tool logins (`gh`, `glab`, `acli`) run in the GUI like harness logins: the device code or URL is shown, then the account is rechecked (design.md `login.ts`). "Recheck login" re-runs the identity check.
+*   "Recheck prerequisites", with a link to the setting each failed check points to.
+
+### First run (full screen)
+
+*   Before the engine starts, if no `PECORE_HOME` location is stored, a small window asks for it (default `~/.pecore`) and stores it outside it (design.md section 2, `main/index.ts`). Then the engine starts on that home.
+*   Opens while `firstRunDone` in `settings.json` is false.
+*   Steps, each done when its check passes, so the first run reopens at the first step whose check fails:
+    1.  Prerequisites: git, sudo, setfacl (Linux), Compose v2, gitleaks.
+    2.  `PECORE_HOME`: passes the home check.
+    3.  Accounts: at least one model account, its harness found in a supported version; forge CLIs checked when a forge account is added.
+    4.  Profiles and tiers: every tier used by the shipped recipes has a profile.
+    5.  Orchestrator: profile set, orchestrator user exists, harness login passes the identity check.
+    6.  First project: the new project wizard; can be skipped.
+*   When the last step ends, `firstRunDone` is set and Factory opens.
+
+## Cross-cutting behaviour
+
+### Empty, loading and disconnected states
+
+*   Empty lists say what fills them, with the action: "No projects: New project", "Inbox empty: nothing waits for you".
+*   Loading: lists keep their layout with placeholder rows; no spinners over the whole screen.
+*   Engine or WebSocket disconnected: a banner "Disconnected, reconnecting", every control disabled, data marked stale. On reconnect the GUI refetches every open view.
+
+### Missing configuration and warnings
+
+*   A function whose requirements are missing is disabled, with a message that says what is missing and a link to where it is set ("No forge account: add one in Settings > Accounts").
+*   A missing or expired login is a notification and a warning on the project or account, never a blocking dialog.
+*   Home check failure: a warning on the engine status with "Fix permissions".
+*   Identity mismatch (design.md 3.4): a warning on the account; jobs that use it wait with reason `auth` until the user logs in with the right account and presses "Recheck login".
+
+### Concurrent edits
+
+*   Editors load each file with its hash and save with it (design.md "Local API"). When `definition.changed` reports a change to an open file (for example by the orchestrator), the editor shows "Changed elsewhere: reload, compare, keep mine". Keep mine saves over the new version only after the compare view.
+
+### Updates
+
+*   Live updates are batched; long lists and logs are virtualised (UI7b).
+
+## Job states shown
+
+| Label | Engine state | Color |
+|---|---|---|
+| Working | `running` | `status-running`, with pulse |
+| Needs you | `waiting` with reason `human`, `confirmation`, `round_limit`, `budget` or `auth`; `queued` with reason `parent_failed` | `status-warning` |
+| Waiting | `waiting` for any other reason (`concurrency`, `quota`, `rate_limit`, `services`, `network`, `disk`); reason and, when known, time shown ("Quota until 15:40") | `status-warning` |
+| Queued | `queued` with reason `parent_job`, `concurrency` or `disk` | `status-warning` |
+| Paused | `paused`; "Paused (app quit)" or "Paused by you" | `status-inactive` |
+| Success | `succeeded` | `status-success` |
+| Not delivered | `not_delivered`; outcome shown ("Spec rejected") | `status-inactive` |
+| Failed | `failed`; failure reason shown | `status-failed` |
+| Stopped | `stopped` | `status-inactive` |
+
+Clicking a job labelled Needs you opens:
+
+*   `human`, `confirmation`, `round_limit`, `budget`: the Inbox item recorded on the node run (`queue_item_id`); an `agent-question` opens its conversation.
+*   `auth`: the account recorded on the node run; a harness login opens the project's Logins (or Settings > Orchestrator), a tool login opens Settings > Accounts.
+*   `parent_failed`: the parent job.
+
+The Inbox counter counts Inbox items, not jobs: several jobs can wait on one item.
+
+## Node run states shown
+
+Rows are checked from the top; the first match wins.
+
+| Label | Engine state | Color |
+|---|---|---|
+| Pending | `pending`, or no run yet | `status-inactive` |
+| Working | `running` | `status-running`, with pulse |
+| Needs you / Waiting | `waiting`, same split as job states | `status-warning` |
+| Failed | `failed` (reason shown) | `status-failed` |
+| Interrupted | `interrupted` | `status-inactive` |
+| Skipped | `skipped` | `status-inactive` |
+| the outcome | `completed`, outcome in the node's `failOutcomes` or `stale` | `status-failed` (also when an edge routes it back) |
+| the outcome | `completed`, `<node>:<outcome>` in `successOutcomes` | `status-success` |
+| the outcome | `completed`, outcome with no edge (the job ended Not delivered) | `status-inactive` |
+| the outcome | `completed`, any other outcome (`passed`, `changes`, `conflict`) | no status color |
+
+Color is never the only signal: every state also has an icon and its label.
+
+## Color tokens
+
+| Token | Use |
+|---|---|
+| `bg`, `bg-gradient-1`, `bg-gradient-2` | page background (dark green in the default theme) |
+| `surface`, `surface-raised`, `border` | panels, cards |
+| `text`, `text-muted` | text; contrast at least 4.5:1 on `bg`, `surface` and `surface-raised` |
+| `accent` | focus and primary actions |
+| `status-running` | light blue: running |
+| `status-success` | green: success, success outcomes |
+| `status-failed` | red: failed, fail outcomes, validation errors |
+| `status-warning` | yellow: needs you, waiting, queued, Inbox items |
+| `status-inactive` | grey: paused, stopped, not delivered, pending, skipped, disabled controls |
+
+Status tokens need at least 3:1 contrast against `surface` in every theme.
+
+## Decisions
+
+| # | Decision |
+|---|---|
+| UI1 | Withdrawn; ids are not reused. |
+| UI2 | Factory is a summary dashboard; every function has its own page with the full detail. |
+| UI2b | The orchestrator has its own page and a collapsible mini chat on the right of the job view, recipe editor, node editor, Library and project page. |
+| UI3 | Dark green base and translucent panels, as in the prototype. |
+| UI4 | Themes: every color is a CSS variable; a theme is a JSON file of tokens in `PECORE_HOME/themes/`, validated by a JSON Schema; missing tokens fall back to the default theme; values must be colors. Shipped: dark green (default) and light. The user can add themes. |
+| UI5 | No images. The background is a fixed gradient of `bg-gradient-1` and `bg-gradient-2`, with no animation. |
+| UI6 | Animation only on running state (pulse); off with `prefers-reduced-motion` or Settings > Appearance > Reduced motion. No progress percentages: an agent node shows state, duration, round and attempts. |
+| UI7 | Components: Base UI (unstyled, behaviour and accessibility); styles: CSS Modules with the theme's CSS variables. |
+| UI7b | Libraries: React Flow (recipe graphs), CodeMirror 6 (editors and merge view), `@tanstack/react-virtual` (long lists and logs), `cmdk` (command palette). |
+| UI8 | The job list has no model or harness columns; those are details of a node run. |
+| UI9 | Stacked jobs are a tree of indented rows in the job lists. Graphs show recipes only. |
+| UI10 | A recipe change proposed by the orchestrator is shown as a diff on the graph before the user confirms it (ID3). |
+| UI11 | Every value shown comes from engine state, an artifact, a persisted definition, or a deterministic computation on these. A value with no source is shown as missing; the UI never asks an LLM to fill it. |
+| UI12 | Factory shows only what needs the user and the state of unfinished work. Every other function is one navigation click away. |
+| UI13 | The project filter applies to Factory (except the Inbox counter), Jobs, Projects and Usage. It never applies to the Inbox counter, the Inbox or notifications. |
+| UI14 | The mini chat sends references, never content (design.md section 6). |
+| UI15a | Closing the window keeps jobs running in the tray. |
+| UI15b | Quit asks for confirmation and shows how many jobs it interrupts. |
+| UI15c | After a restart, Factory shows "Play interrupted jobs" for jobs paused with reason `quit`. |
+| UI15d | Every job control has a tooltip that says what it does (Job controls table). |
+| UI16 | Status colors keep fixed meanings in every theme: green success, red failure, yellow warning, grey inactive, light blue running. A theme may change their shades. All other colors, the accent included, are free for the theme. |
+| UI17 | A confirmation that blocks a flow the user is in (wizard, editor, Library instantiation) is shown inside that flow, as well as in the Inbox. |
+| UI18 | A decision on an Inbox item approves the snapshot the user saw, identified by its hash; a changed item cannot be approved. |
+| UI19 | Delete of a job or project is local only and asks for confirmation; Stop needs none. |
+
+## Alternatives Considered
+
+| Option | Status | Reason | What is lost |
+|---|---|---|---|
+| Chat as the home screen | Rejected (author) | The home must show what needs the user; the chat is reached from every screen through the mini chat | A chat-first flow |
+| Chat only on its own page (UI2b) | Rejected (author) | Asking about the open job or recipe needs the chat next to it | Simpler layout |
+| shadcn/ui and Tailwind (UI7) | Rejected (author) | shadcn copies styled components into the code base and Tailwind replaces CSS variables with utility classes; the author wants themes as CSS variable tokens and plain CSS Modules | Ready-made styled components |
+| A separate graph of stacked jobs (UI9) | Rejected (author) | A job has at most one parent, so stacks are trees; indented rows show them without a second graph view | A visual map of large stacks |
+| Recipe change as a text diff (UI10) | Rejected | A graph change is hard to read as JSON | Nothing |
+| Automatic layout only for recipes | Rejected (author) | Nodes are placed and connected by hand; positions must stay where the user put them | Nothing in the engine: `layout` is ignored by it |
+| Inbox only for confirmations (UI17) | Rejected | The wizard and editors would stop on an item the user must find elsewhere | Nothing |
+| Tool logins (`gh`, `glab`) run by the user in a terminal | Rejected | design.md G16 allows only one terminal step (manual OS user creation) | Nothing |
+| Delete runs a cleanup on the forge | Rejected (author) | Delete must not act on remote resources | Remote branches and PRs stay until closed on the forge |
+| Progress percentages for agent nodes (UI6) | Rejected | No harness reports progress; a percentage would be invented | A progress bar |
+
+## Risks & Limits
+
+| Risk | Impact | Mitigation | Where |
+|---|---|---|---|
+| A prompt-injected orchestrator changes a node while its confirmation is open | an unseen command runs as the app user | snapshot and hash on every Inbox decision | UI18, Inbox |
+| Untrusted text (tickets, agent output, logs) rendered in the GUI | script injection in the renderer | Markdown rendered without raw HTML; logs as text; no `dangerouslySetInnerHTML` | Job view, Inbox |
+| Engine crash or WebSocket drop | stale states look live | disconnected banner, controls disabled, refetch on reconnect | Cross-cutting behaviour |
+| Many running agents streaming logs | renderer overload | log streaming only for the open attempt; updates once per frame; virtual lists | Job view, Updates |
+| Very large diffs (thousands of lines) | slow merge view | files collapsed by default, risky hunks first, one file rendered at a time | Inbox ID1, artifact viewer |
+| Editor and orchestrator write the same file | one change silently lost | save with the file hash; changed-elsewhere banner | Concurrent edits |
+| User theme file with bad values | unreadable UI | schema validation, fallback tokens, contrast rules | UI4, Color tokens |
+| A project runs as the app user | agents read the user's files and logins | marked as risky in the wizard and the project list | Projects |
+
+### Limits
+
+*   One window, one user, one machine (design.md "Risks & Limits").
+*   English only.
+*   "Merged" is shown only for succeeded jobs with children (design.md 4.6).
+*   Recipe positions are kept only in the recipe file; a recipe written without `layout` is laid out automatically once.
