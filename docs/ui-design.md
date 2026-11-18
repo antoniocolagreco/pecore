@@ -20,7 +20,7 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 ## Non-Goals
 
 *   Translation: the UI is in English only.
-*   Invented figures: no progress percentages, no remaining subscription quota, no LLM-written summaries (UI6, UI11).
+*   Invented figures: no progress percentages, no remaining subscription quota unless the connector reports it, no LLM-written summaries (UI6, UI11).
 *   A graph of stacked jobs: stacks are a tree in the lists (UI9).
 *   Project language detection: PeCore does not know a project's language.
 *   Actions on the forge from delete: deleting a job or a project never touches the remote (design.md 4.8).
@@ -30,7 +30,7 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 *   **Factory:** the home screen, a summary dashboard.
 *   **Inbox:** the screen, and the set of open `human_queue` rows it lists, except `agent-question` items (answered in the chat). The Inbox counter counts the same set. In design.md, the kinds `engine-node`, `source-node`, `recipe-change`, `import`, `ticket` and `services` are also called the confirmation queue.
 *   **Engine:** the background process that runs jobs (design.md section 1). **Engine node:** a node with `runsAs: engine`. **Engine state:** a job or node run state of design.md 4.1 and 4.3.
-*   **Agent user:** the UI name for design.md's project OS user: the OS user a project's agents and commands run as (design.md 3.5 and section 8). A dedicated agent user isolates the project from the user's own files and logins; one agent user can serve several projects. The orchestrator's OS user is called "orchestrator user".
+*   **Normal mode and protected mode:** design.md's project user (section 8). In normal mode, the default, agents and the orchestrator run as the user, with the user's own harness logins, like Claude Code or Codex run by hand. In protected mode they run as `pecore-agent`, which cannot read the user's files and logins; it needs one login per harness account. The mode is global, not per project.
 *   **Check node:** a recipe node named in some node's `requires` (design.md 4.4).
 *   **Back edge:** an edge to a node that already ran in the job, for example `review` to `code`.
 *   **Home check:** the start-up check of `PECORE_HOME` permissions (design.md section 8).
@@ -116,7 +116,7 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 | IF3 | Project settings: recipes, default recipe, services, limits, budget, ticket source, polling interval, trusted users | 3.5, 7 |
 | IF4 | Knowledge base editor (Markdown) | 2 |
 | IF5 | Export, and import as a new project | CUJ 7, 8 |
-| IF6 | Harness logins for the project's agent user | 5 |
+| IF6 | Protected mode: on and off, harness logins of `pecore-agent` | 5, 8 |
 | IF7 | Project delete | 4.8 |
 
 ### G. Settings and usage
@@ -128,8 +128,8 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 | IG3 | Global limits, services runtime, disk threshold, merge check interval, prices, project paths | 4.7, 4.9, "Risks & Limits" |
 | IG4 | Usage: tokens and cost per account, project, day (a top-level page) | 4.7 |
 | IG5 | First run | G14 |
-| IG6 | Orchestrator: profile, orchestrator user, harness login | 6 |
-| IG7 | Harness manifests, auto-update | 5, "Fixed implementation choices" |
+| IG6 | Orchestrator: profile | 6 |
+| IG7 | Connector files, auto-update | 5, "Fixed implementation choices" |
 | IG8 | Notifications and quiet hours | 9, `src/settings.ts` |
 | IG9 | Appearance: theme, reduced motion | UI4, UI6 |
 
@@ -249,11 +249,11 @@ The prototype is normative only for: the Everforest palette and gradients, the I
 
 ### Projects
 
-*   List: name, repo (or "local only"), base branch, agent user, jobs that need the user, failed jobs, warning when a login expired. A project whose agent user is the app user is marked "runs as you (risky)".
+*   List: name, repo (or "local only"), base branch, jobs that need the user, failed jobs, warning when a login expired.
 *   Buttons: "New project", "Import project".
 *   Project page, configuration only, in sections:
-    *   General: name, base branch, default recipe (editable); id, repo, forge account, agent user (read-only after creation).
-    *   Recipes (recipe editor), Nodes (node editor), Knowledge (IF4), Services, Ticket source (`label`, `pollSec`, trusted users), Limits and budget, Logins (IF6), Export.
+    *   General: name, base branch, default recipe (editable); id, repo, forge account (read-only after creation).
+    *   Recipes (recipe editor), Nodes (node editor), Knowledge (IF4), Services, Ticket source (`label`, `pollSec`, trusted users), Limits and budget, Export.
     *   Danger zone: Delete project (IF7).
 *   A link "Jobs of this project" sets the top bar filter and opens Jobs.
 
@@ -261,16 +261,16 @@ The prototype is normative only for: the Everforest palette and gradients, the I
 
 Pages: Inputs, Create, Confirm, Logins. Create runs the tasks of design.md "Project creation" in order; the project exists when Create ends.
 
-1.  **Inputs:** id (`^[a-z][a-z0-9-]{0,23}$`), name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, base branch, agent user (an existing one, a new dedicated one, or the app user marked as risky), starting recipes (the shipped ones, with delivery nodes for the project's forge; each can be unchecked).
-2.  **Create:** the tasks of "Project creation" (validation, agent user, project directory, clone or repo creation, `repo.git` setup and home check, commit), each with its state. The repo creation node's confirmation is shown inside its task (UI17). Creating a dedicated agent user opens the admin prompt; if it cannot (no polkit agent), the page shows the exact script with a Copy button and "I ran it, recheck". A failed task undoes the tasks before it, says why, and returns to Inputs with the values kept. A repo created on the forge is never deleted by the undo: the page lists it as left on the forge.
+1.  **Inputs:** id (`^[a-z][a-z0-9-]{0,23}$`), name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, base branch, starting recipes (the shipped ones, with delivery nodes for the project's forge; each can be unchecked).
+2.  **Create:** the tasks of "Project creation" (validation, project directory, clone or repo creation, `repo.git` setup and home check, access for `pecore-agent` in protected mode, commit), each with its state. The repo creation node's confirmation is shown inside its task (UI17). A failed task undoes the tasks before it, says why, and returns to Inputs with the values kept. A repo created on the forge is never deleted by the undo: the page lists it as left on the forge.
 3.  **Confirm:** the engine nodes of the starting recipes and the project's `source` node, if any, on one screen, so the first job does not wait with reason `confirmation`. Can be skipped: the items stay in the Inbox.
-4.  **Logins:** harness logins for the agent user, with the login URL or code. Can be skipped: the project shows a warning.
+4.  No logins page: logins belong to the user, not to the project (Settings > Accounts).
 
 Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done; Cancel on Confirm or Logins leaves the project created.
 
 ### Import project (full page)
 
-*   Pages: archive (choose the `.tar.zst`), accounts (map each account reference to a local account), agent user (as in the wizard), Create (the "Project creation" tasks with the archive's definitions), Confirm (ID4: every node, script and prompt), Logins.
+*   Pages: archive (choose the `.tar.zst`), accounts (map each account reference to a local account), Create (the "Project creation" tasks with the archive's definitions), Confirm (ID4: every node, script and prompt).
 *   No node from the archive runs before it is confirmed: if Create needs the archive's repo creation node (no existing remote), its confirmation is shown inside that task (UI17), as in the wizard.
 
 ### Export (dialog)
@@ -280,7 +280,6 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 ### Delete project (dialog)
 
 *   Lists what is removed (design.md 4.8): project directory, workdirs, artifacts, logs, database, definitions, service containers. Says that nothing on the forge is touched.
-*   Option "Also delete the agent user `<name>`", off by default, offered only when no other project uses it.
 *   Disabled while a job of the project is running, with a link to stop them.
 
 ### Recipe editor
@@ -309,12 +308,13 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 ### Usage
 
 *   Only observed values (UI11): tokens per account, project and day; cost only for API key accounts; budgets set in PeCore and how much is used; accounts cooling down, with the reset time only when the harness reported it.
-*   No remaining-quota percentage for subscriptions: no shipped harness manifest reads one.
+*   Remaining quota per subscription account, only when its connector reports it (Claude Code: the 5-hour and 7-day windows with their reset times, design.md 5.3): the last value seen, with the time it was seen. Accounts whose connector reports nothing show no quota.
 
 ### Settings
 
-*   Sections: Accounts (IG1), Profiles and tiers (IG2), Orchestrator (IG6), Limits and disk threshold, Services runtime, Merge check interval, Prices, Project paths (IG3), Harness manifests and Updates (IG7), Notifications and quiet hours (IG8), Appearance (IG9).
-*   Each account shows its login state and a Login button. Forge and service tool logins (`gh`, `glab`, `acli`) run in the GUI like harness logins: the device code or URL is shown, then the account is rechecked (design.md `login.ts`). "Recheck login" re-runs the identity check.
+*   Sections: Accounts (IG1), Protected mode (IF6), Profiles and tiers (IG2), Orchestrator (IG6), Limits and disk threshold, Services runtime, Merge check interval, Prices, Project paths (IG3), Connectors and Updates (IG7), Notifications and quiet hours (IG8), Appearance (IG9).
+*   Each account shows its login state and a Login button. Forge and service tool logins (`gh`, `glab`, `acli`) run in the GUI like harness logins: the device code or URL is shown, then the account is rechecked (design.md `accounts/login.ts`). "Recheck login" re-runs the identity check.
+*   Protected mode (IF6): one switch with a short explanation (agents cannot read your files and logins; one login per harness account for `pecore-agent`). Turning it on opens the admin prompt; if it cannot (no polkit agent), the page shows the exact script with a Copy button and "I ran it, recheck". Then the page lists each model account with a Login button for `pecore-agent`, showing the URL or code. Turning it off asks whether to also remove `pecore-agent`.
 *   "Recheck prerequisites", with a link to the setting each failed check points to.
 
 ### First run (full screen)
@@ -324,9 +324,9 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   Steps, each done when its check passes, so the first run reopens at the first step whose check fails:
     1.  Prerequisites: git, sudo, setfacl (Linux), Compose v2, gitleaks.
     2.  `PECORE_HOME`: passes the home check.
-    3.  Accounts: at least one model account, its harness found in a supported version; forge CLIs checked when a forge account is added.
+    3.  Accounts: at least one model account, its harness found in a supported version and already logged in (the user's own login, nothing to do in PeCore); forge CLIs checked when a forge account is added.
     4.  Profiles and tiers: every tier used by the shipped recipes has a profile.
-    5.  Orchestrator: profile set, orchestrator user exists, harness login passes the identity check.
+    5.  Orchestrator: profile set.
     6.  First project: the new project wizard; can be skipped.
 *   When the last step ends, `firstRunDone` is set and Factory opens.
 
@@ -450,7 +450,7 @@ Status tokens need at least 3:1 contrast against `surface` in every theme.
 | Recipe change as a text diff (UI10) | Rejected | A graph change is hard to read as JSON | Nothing |
 | Automatic layout only for recipes | Rejected (author) | Nodes are placed and connected by hand; positions must stay where the user put them | Nothing in the engine: `layout` is ignored by it |
 | Inbox only for confirmations (UI17) | Rejected | The wizard and editors would stop on an item the user must find elsewhere | Nothing |
-| Tool logins (`gh`, `glab`) run by the user in a terminal | Rejected | design.md G16 allows only one terminal step (manual OS user creation) | Nothing |
+| Tool logins (`gh`, `glab`) run by the user in a terminal | Rejected | design.md G16 allows only one terminal step (manual creation of the protected user) | Nothing |
 | Delete runs a cleanup on the forge | Rejected (author) | Delete must not act on remote resources | Remote branches and PRs stay until closed on the forge |
 | Progress percentages for agent nodes (UI6) | Rejected | No harness reports progress; a percentage would be invented | A progress bar |
 
