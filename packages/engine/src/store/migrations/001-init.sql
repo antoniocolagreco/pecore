@@ -33,6 +33,7 @@ CREATE TABLE node_runs (
   job_id TEXT NOT NULL,
   node TEXT NOT NULL,
   round INTEGER NOT NULL,
+  via_edge INTEGER,
   state TEXT NOT NULL,
   outcome TEXT,
   waiting_reason TEXT,

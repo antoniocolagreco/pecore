@@ -49,7 +49,7 @@ export const EventBody = z.discriminatedUnion("type", [
   ev("job.delivery_merged", z.object({ url: z.string() })),
   ev("job.archived", z.object({})),
   ev("job.unarchived", z.object({})),
-  ev("node_run.created", z.object({ nodeRunId: z.string(), node: z.string(), round: z.number().int().nonnegative() })),
+  ev("node_run.created", z.object({ nodeRunId: z.string(), node: z.string(), round: z.number().int().nonnegative(), viaEdge: z.number().int().nonnegative().nullable().default(null) })),
   ev(
     "node_run.state_changed",
     z.object({

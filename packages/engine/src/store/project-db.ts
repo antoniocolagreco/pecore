@@ -1,10 +1,11 @@
 import Database from "better-sqlite3";
 import { monotonicFactory } from "ulid";
+import type { z } from "zod";
 import { EventBody } from "@pecore/schemas";
 import type { StoredEvent } from "@pecore/schemas";
 import { migrate } from "./migrate";
 
-export type NewEvent = EventBody & { jobId: string | null };
+export type NewEvent = z.input<typeof EventBody> & { jobId: string | null };
 
 const ulid = monotonicFactory();
 
@@ -86,11 +87,12 @@ export class ProjectDb {
         run("UPDATE jobs SET archived = @a, updated_at = @at WHERE id = @id", { id: e.jobId, a: e.type === "job.archived" ? 1 : 0, at });
         return;
       case "node_run.created":
-        run("INSERT INTO node_runs (id, job_id, node, round, state) VALUES (@id, @job, @node, @round, 'pending')", {
+        run("INSERT INTO node_runs (id, job_id, node, round, via_edge, state) VALUES (@id, @job, @node, @round, @via, 'pending')", {
           id: e.payload.nodeRunId,
           job: e.jobId,
           node: e.payload.node,
           round: e.payload.round,
+          via: e.payload.viaEdge,
         });
         return;
       case "node_run.state_changed": {
