@@ -1,0 +1,120 @@
+import { z } from "zod";
+import { Artifact } from "./artifacts";
+import { AuthKind, FailureReason, JobState, JobWaitingReason, NodeRunState, PauseReason, WaitingReason } from "./errors";
+
+const Tokens = z.object({
+  input: z.number().int().nonnegative(),
+  output: z.number().int().nonnegative(),
+  cacheRead: z.number().int().nonnegative(),
+  cacheWrite: z.number().int().nonnegative(),
+});
+
+const QueueKind = z.enum([
+  "human-node",
+  "agent-question",
+  "engine-node",
+  "source-node",
+  "connector",
+  "recipe-change",
+  "import",
+  "ticket",
+  "services",
+  "round-limit",
+  "budget",
+]);
+export type QueueKind = z.infer<typeof QueueKind>;
+export { QueueKind };
+
+const ev = <T extends string, P extends z.ZodType>(type: T, payload: P) => z.object({ type: z.literal(type), payload });
+
+export const EventBody = z.discriminatedUnion("type", [
+  ev(
+    "job.created",
+    z.object({
+      title: z.string(),
+      recipe: z.unknown(),
+      ticket: Artifact.nullable(),
+      parentJobId: z.string().nullable(),
+      baseBranch: z.string(),
+      base: z.string().nullable(),
+      target: z.string(),
+      branch: z.string(),
+    }),
+  ),
+  ev("job.state_changed", z.object({ state: JobState, reason: z.union([JobWaitingReason, PauseReason, z.string()]).nullable() })),
+  ev(
+    "job.base_changed",
+    z.object({ cause: z.enum(["parent_commit", "parent_merged", "realign"]), base: z.string(), target: z.string() }),
+  ),
+  ev("job.delivery_merged", z.object({ url: z.string() })),
+  ev("job.archived", z.object({})),
+  ev("job.unarchived", z.object({})),
+  ev("node_run.created", z.object({ nodeRunId: z.string(), node: z.string(), round: z.number().int().nonnegative() })),
+  ev(
+    "node_run.state_changed",
+    z.object({
+      nodeRunId: z.string(),
+      state: NodeRunState,
+      waitingReason: WaitingReason.nullable(),
+      resetAt: z.number().nullable().optional(),
+      queueItemId: z.string().nullable().optional(),
+      auth: z.object({ account: z.string(), osUser: z.string(), kind: AuthKind }).nullable().optional(),
+      pgid: z.number().int().nullable().optional(),
+      osUser: z.string().nullable().optional(),
+    }),
+  ),
+  ev(
+    "node_run.git_recorded",
+    z.object({ nodeRunId: z.string(), branch: z.string().nullable(), head: z.string().nullable(), stash: z.string().nullable() }),
+  ),
+  ev(
+    "node_run.completed",
+    z.object({ nodeRunId: z.string(), outcome: z.string(), contentBefore: z.string().nullable(), contentAfter: z.string().nullable(), artifacts: z.array(Artifact) }),
+  ),
+  ev("node_run.failed", z.object({ nodeRunId: z.string(), reason: FailureReason })),
+  ev(
+    "attempt.started",
+    z.object({
+      attemptId: z.string(),
+      nodeRunId: z.string(),
+      profile: z.string().nullable(),
+      connector: z.string().nullable(),
+      harnessVersion: z.string().nullable(),
+      connectorVersion: z.string().nullable(),
+      account: z.string().nullable(),
+      osUser: z.string(),
+      sessionGroup: z.string().nullable(),
+      logPath: z.string(),
+    }),
+  ),
+  ev("attempt.session_started", z.object({ attemptId: z.string(), sessionId: z.string(), resumed: z.boolean() })),
+  ev(
+    "attempt.ended",
+    z.object({
+      attemptId: z.string(),
+      endReason: z.string(),
+      model: z.string().nullable(),
+      account: z.string().nullable(),
+      tokens: Tokens,
+      cost: z.number().nonnegative().nullable(),
+      day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    }),
+  ),
+  ev("effect.requested", z.object({ nodeRunId: z.string(), node: z.string(), commandHash: z.string() })),
+  ev("effect.completed", z.object({ nodeRunId: z.string(), node: z.string(), commandHash: z.string(), result: z.unknown() })),
+  ev("effect.failed", z.object({ nodeRunId: z.string(), node: z.string(), commandHash: z.string(), result: z.unknown() })),
+  ev(
+    "queue.added",
+    z.object({ itemId: z.string(), kind: QueueKind, subject: z.unknown(), subjectHash: z.string(), choices: z.array(z.string()) }),
+  ),
+  ev(
+    "queue.resolved",
+    z.object({ itemId: z.string(), state: z.enum(["resolved", "cancelled"]), choice: z.string().nullable(), note: z.string().nullable() }),
+  ),
+  ev("confirmation.recorded", z.object({ path: z.string(), sha256: z.string() })),
+  ev("ticket.seen", z.object({ source: z.string(), ticketId: z.string() })),
+]);
+export type EventBody = z.infer<typeof EventBody>;
+export type EventType = EventBody["type"];
+
+export type StoredEvent = EventBody & { id: string; jobId: string | null; at: number };

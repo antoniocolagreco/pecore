@@ -1,0 +1,43 @@
+import { z } from "zod";
+import { SchemaRef } from "./common";
+
+const Price = z
+  .object({
+    input: z.number().nonnegative(),
+    output: z.number().nonnegative(),
+    cacheRead: z.number().nonnegative(),
+    cacheWrite: z.number().nonnegative(),
+  })
+  .strict();
+
+const Time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+
+export const Settings = z
+  .object({
+    $schema: SchemaRef,
+    limits: z
+      .object({
+        jobs: z.number().int().positive().nullable().default(null),
+        agents: z.number().int().positive().default(4),
+        providers: z.record(z.string(), z.number().int().positive()).default({}),
+      })
+      .strict()
+      .default({ jobs: null, agents: 4, providers: {} }),
+    servicesRuntime: z.enum(["docker", "podman", "colima", "orbstack"]).nullable().default(null),
+    projectPaths: z.record(z.string(), z.string().min(1)).default({}),
+    minFreeDiskGb: z.number().nonnegative().default(10),
+    mergeCheckSec: z.number().int().positive().default(300),
+    prices: z.record(z.string(), Price).default({}),
+    programPaths: z.record(z.string(), z.string().regex(/^\//, "absolute path")).default({}),
+    quietHours: z.object({ from: Time, to: Time }).strict().nullable().default(null),
+    orchestrator: z.object({ profile: z.string().min(1) }).strict().nullable().default(null),
+    protectedMode: z.boolean().default(false),
+    firstRunDone: z.boolean().default(false),
+    ui: z.record(z.string(), z.unknown()).default({}),
+  })
+  .strict();
+export type Settings = z.infer<typeof Settings>;
+
+export function defaultJobLimit(cpuCount: number): number {
+  return Math.max(1, Math.floor(cpuCount / 2));
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "../../schemas/node.json",
+  "name": "vitest",
+  "description": "Install dependencies in a clean checkout and run the Vitest tests; the suite param selects a Vitest project, empty runs all",
+  "kind": "command",
+  "params": {
+    "type": "object",
+    "properties": { "suite": { "type": "string", "default": "" } }
+  },
+  "script": "vitest.sh",
+  "cleanCheckout": true,
+  "outcomes": ["passed", "failed"],
+  "failOutcomes": ["failed"],
+  "changesFiles": false,
+  "scratchPaths": ["coverage/**"],
+  "outcomeRules": [
+    { "exitCode": 0, "outcome": "passed" },
+    { "exitCode": "other", "outcome": "failed" }
+  ],
+  "timeoutSec": 1800
+}

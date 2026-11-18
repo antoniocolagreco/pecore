@@ -1,0 +1,15 @@
+{
+  "$schema": "../../schemas/node.json",
+  "name": "cargo-check",
+  "description": "Type-check a Rust project with cargo check, tests included",
+  "kind": "command",
+  "command": ["cargo", "check", "--all-targets"],
+  "outcomes": ["passed", "failed"],
+  "failOutcomes": ["failed"],
+  "changesFiles": false,
+  "outcomeRules": [
+    { "exitCode": 0, "outcome": "passed" },
+    { "exitCode": "other", "outcome": "failed" }
+  ],
+  "timeoutSec": 1800
+}

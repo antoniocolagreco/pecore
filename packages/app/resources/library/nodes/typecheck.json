@@ -1,0 +1,16 @@
+{
+  "$schema": "../../schemas/node.json",
+  "name": "typecheck",
+  "description": "Run the TypeScript type checker on the project (tsc --noEmit)",
+  "kind": "command",
+  "command": ["npx", "--no-install", "tsc", "--noEmit"],
+  "outcomes": ["passed", "failed"],
+  "failOutcomes": ["failed"],
+  "changesFiles": false,
+  "scratchPaths": ["**/*.tsbuildinfo"],
+  "outcomeRules": [
+    { "exitCode": 0, "outcome": "passed" },
+    { "exitCode": "other", "outcome": "failed" }
+  ],
+  "timeoutSec": 600
+}

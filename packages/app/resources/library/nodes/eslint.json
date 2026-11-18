@@ -1,0 +1,16 @@
+{
+  "$schema": "../../schemas/node.json",
+  "name": "eslint",
+  "description": "Run ESLint on the whole project",
+  "kind": "command",
+  "command": ["npx", "--no-install", "eslint", "."],
+  "outcomes": ["passed", "failed"],
+  "failOutcomes": ["failed"],
+  "changesFiles": false,
+  "scratchPaths": [".eslintcache"],
+  "outcomeRules": [
+    { "exitCode": 0, "outcome": "passed" },
+    { "exitCode": "other", "outcome": "failed" }
+  ],
+  "timeoutSec": 600
+}

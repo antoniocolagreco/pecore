@@ -1,0 +1,12 @@
+{
+  "$schema": "../../schemas/node.json",
+  "name": "human-review",
+  "description": "The user reviews the diff, with risky hunks first, and approves, asks for changes or rejects",
+  "kind": "human",
+  "show": ["diff", "risk", "findings", "check-log", "spec"],
+  "answer": true,
+  "outputs": ["user-note"],
+  "outcomes": ["approve", "changes", "reject"],
+  "changesFiles": false,
+  "timeoutSec": 2592000
+}
