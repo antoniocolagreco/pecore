@@ -1,0 +1,206 @@
+{
+  "resumed": false,
+  "turns": [
+    {
+      "result": {
+        "usage": {
+          "input": 1233,
+          "output": 515,
+          "cacheRead": 34064,
+          "cacheWrite": 16171
+        },
+        "text": "The command's exact output was:\n\n```\ncat: /home/ac/.claude.json: Permission denied\n```\n\n`whoami.txt` was still written, since the `id -un` redirect ran before the `cat` failed. `note.txt` now contains `alfa`.",
+        "stopReason": "end_turn",
+        "model": "claude-haiku-5-5",
+        "quota": {
+          "status": "allowed",
+          "resetAt": 1795044600000,
+          "windows": {
+            "five_hour": {
+              "utilization": 0.13,
+              "resetAt": 1795044600000
+            },
+            "seven_day": {
+              "utilization": 0.68,
+              "resetAt": 1795204800000
+            }
+          }
+        },
+        "costUsd": 0.00395564
+      },
+      "events": [
+        {
+          "type": "account",
+          "email": "user@example.com",
+          "plan": "pro"
+        },
+        {
+          "type": "account",
+          "email": "user@example.com",
+          "plan": "Claude Pro"
+        },
+        {
+          "type": "account",
+          "email": "user@example.com",
+          "plan": "pro"
+        },
+        {
+          "type": "quota",
+          "quota": {
+            "status": "allowed",
+            "resetAt": 1795044600000,
+            "windows": {
+              "five_hour": {
+                "utilization": 0.13,
+                "resetAt": 1795044600000
+              },
+              "seven_day": {
+                "utilization": 0.68,
+                "resetAt": 1795204800000
+              }
+            }
+          }
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01Ku7z7LTmKHJFxuHieSoGKs",
+          "title": "Terminal",
+          "kind": "execute",
+          "status": "pending"
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01Ku7z7LTmKHJFxuHieSoGKs",
+          "title": "id -un > whoami.txt; cat /home/user/.claude.json | head -c 20",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01Ku7z7LTmKHJFxuHieSoGKs",
+          "title": "",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01FGHQvaBd7PCoB9oXLoKAeg",
+          "title": "Preparing file…",
+          "kind": "edit",
+          "status": "pending"
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01Ku7z7LTmKHJFxuHieSoGKs",
+          "title": "",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01Ku7z7LTmKHJFxuHieSoGKs",
+          "title": "",
+          "kind": "",
+          "status": "completed"
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01FGHQvaBd7PCoB9oXLoKAeg",
+          "title": "Write note.txt",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01FGHQvaBd7PCoB9oXLoKAeg",
+          "title": "",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01FGHQvaBd7PCoB9oXLoKAeg",
+          "title": "",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01FGHQvaBd7PCoB9oXLoKAeg",
+          "title": "",
+          "kind": "",
+          "status": "completed"
+        },
+        {
+          "type": "text",
+          "text": "The"
+        },
+        {
+          "type": "text",
+          "text": " command's ex"
+        },
+        {
+          "type": "text",
+          "text": "act output was"
+        },
+        {
+          "type": "text",
+          "text": ":\n\n```\ncat: /"
+        },
+        {
+          "type": "text",
+          "text": "home/ac/.claude"
+        },
+        {
+          "type": "text",
+          "text": ".json: Permission denied"
+        },
+        {
+          "type": "text",
+          "text": "\n```\n\n`whoami."
+        },
+        {
+          "type": "text",
+          "text": "txt` was still"
+        },
+        {
+          "type": "text",
+          "text": " written, since"
+        },
+        {
+          "type": "text",
+          "text": " the `id -"
+        },
+        {
+          "type": "text",
+          "text": "un` redirect "
+        },
+        {
+          "type": "text",
+          "text": "ran before the `cat`"
+        },
+        {
+          "type": "text",
+          "text": " failed. `note.txt"
+        },
+        {
+          "type": "text",
+          "text": "` now"
+        },
+        {
+          "type": "text",
+          "text": " contains `alfa`."
+        },
+        {
+          "type": "usage",
+          "usage": {
+            "input": 1233,
+            "output": 515,
+            "cacheRead": 34064,
+            "cacheWrite": 16171
+          }
+        }
+      ]
+    }
+  ]
+}

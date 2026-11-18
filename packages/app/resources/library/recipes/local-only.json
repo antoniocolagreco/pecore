@@ -1,0 +1,41 @@
+{
+  "$schema": "../../schemas/recipe.json",
+  "name": "local-only",
+  "description": "Feature on a local repository with one provider: spec, tests, code, checks, review, human approval, commit to the job branch",
+  "start": "spec",
+  "maxNodeRuns": 60,
+  "successOutcomes": ["commit:done"],
+  "nodes": {
+    "spec": { "use": "spec-writer" },
+    "tests": { "use": "tests-writer" },
+    "tests-check": { "use": "typecheck" },
+    "code": { "use": "builder" },
+    "lint": { "use": "eslint" },
+    "types": { "use": "typecheck" },
+    "test": { "use": "vitest" },
+    "review": { "use": "code-reviewer" },
+    "approve": { "use": "approver" },
+    "human": { "use": "human-review" },
+    "commit": { "use": "git-commit", "requires": ["lint", "types", "test", "human"] }
+  },
+  "edges": [
+    { "from": "spec", "on": "accepted", "to": "tests" },
+    { "from": "tests", "on": "done", "to": "tests-check" },
+    { "from": "tests-check", "on": "failed", "to": "tests", "maxRounds": 3 },
+    { "from": "tests-check", "on": "passed", "to": "code" },
+    { "from": "code", "on": "done", "to": "lint" },
+    { "from": "code", "on": "tests_disputed", "to": "tests", "maxRounds": 2 },
+    { "from": "lint", "on": "passed", "to": "types" },
+    { "from": "types", "on": "passed", "to": "test" },
+    { "from": "lint", "on": "failed", "to": "code", "maxRounds": 3 },
+    { "from": "types", "on": "failed", "to": "code", "maxRounds": 3 },
+    { "from": "test", "on": "failed", "to": "code", "maxRounds": 3 },
+    { "from": "test", "on": "passed", "to": "review" },
+    { "from": "review", "on": "changes", "to": "code", "maxRounds": 3 },
+    { "from": "review", "on": "approve", "to": "approve" },
+    { "from": "approve", "on": "done", "to": "human" },
+    { "from": "human", "on": "approve", "to": "commit" },
+    { "from": "human", "on": "changes", "to": "code" },
+    { "from": "commit", "on": "stale", "to": "lint" }
+  ]
+}

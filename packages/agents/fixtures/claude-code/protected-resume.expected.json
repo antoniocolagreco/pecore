@@ -1,0 +1,79 @@
+{
+  "resumed": true,
+  "turns": [
+    {
+      "result": {
+        "usage": {
+          "input": 2,
+          "output": 7,
+          "cacheRead": 25479,
+          "cacheWrite": 56
+        },
+        "text": "Alfa.",
+        "stopReason": "end_turn",
+        "model": "claude-haiku-5-5",
+        "quota": {
+          "status": "allowed",
+          "resetAt": 1795044600000,
+          "windows": {
+            "five_hour": {
+              "utilization": 0.13,
+              "resetAt": 1795044600000
+            },
+            "seven_day": {
+              "utilization": 0.68,
+              "resetAt": 1795204800000
+            }
+          }
+        }
+      },
+      "events": [
+        {
+          "type": "account",
+          "email": "user@example.com",
+          "plan": "pro"
+        },
+        {
+          "type": "account",
+          "email": "user@example.com",
+          "plan": "Claude Pro"
+        },
+        {
+          "type": "account",
+          "email": "user@example.com",
+          "plan": "pro"
+        },
+        {
+          "type": "text",
+          "text": "Alfa."
+        },
+        {
+          "type": "quota",
+          "quota": {
+            "status": "allowed",
+            "resetAt": 1795044600000,
+            "windows": {
+              "five_hour": {
+                "utilization": 0.13,
+                "resetAt": 1795044600000
+              },
+              "seven_day": {
+                "utilization": 0.68,
+                "resetAt": 1795204800000
+              }
+            }
+          }
+        },
+        {
+          "type": "usage",
+          "usage": {
+            "input": 2,
+            "output": 7,
+            "cacheRead": 25479,
+            "cacheWrite": 56
+          }
+        }
+      ]
+    }
+  ]
+}

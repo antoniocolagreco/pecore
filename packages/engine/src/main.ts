@@ -3,7 +3,9 @@ import { readdir } from "node:fs/promises";
 import { cpus } from "node:os";
 import { join } from "node:path";
 import { defaultJobLimit } from "@pecore/schemas";
-import type { ProjectInput, Settings } from "@pecore/schemas";
+import type { Accounts, Profiles, ProjectInput, Settings, Tiers } from "@pecore/schemas";
+import { AgentServices } from "./accounts/agents";
+import type { AgentPaths } from "./accounts/agents";
 import { loadGlobal, loadProject } from "./definitions/load";
 import type { DefinitionError } from "./definitions/load";
 import { JobExecutor } from "./graph/executor";
@@ -18,7 +20,7 @@ import { Pools } from "./scheduler/pools";
 import { ChatsDb } from "./store/chats-db";
 import { ProjectDb } from "./store/project-db";
 
-export type EngineOptions = { home: string; library: string };
+export type EngineOptions = { home: string; library: string; agents?: AgentPaths; checkLogins?: boolean };
 
 export class EngineStartError extends Error {
   constructor(readonly errors: DefinitionError[]) {
@@ -33,6 +35,10 @@ export class Engine extends EventEmitter {
   readonly projectErrors = new Map<string, DefinitionError[]>();
   private pools!: Pools;
   private settings!: Settings;
+  private accounts!: Accounts;
+  private profiles!: Profiles;
+  private tiers!: Tiers;
+  agents: AgentServices | null = null;
   private chats!: ChatsDb;
   private releaseLock!: () => Promise<void>;
 
@@ -56,6 +62,13 @@ export class Engine extends EventEmitter {
       throw new EngineStartError(global.errors);
     }
     this.settings = global.value.settings;
+    this.accounts = global.value.accounts;
+    this.profiles = global.value.profiles;
+    this.tiers = global.value.tiers;
+    if (this.opts.agents) {
+      this.agents = new AgentServices(this.opts.agents, this.opts.home, () => this.settings, () => this.accounts);
+      for (const e of await this.agents.loadConnectors()) console.error(e);
+    }
     const jobLimit = this.settings.limits.jobs ?? defaultJobLimit(cpus().length);
     this.pools = new Pools((pool) => {
       if (pool === "jobs") return jobLimit;
@@ -68,6 +81,7 @@ export class Engine extends EventEmitter {
     for (const id of (await readdir(p.projects).catch(() => [] as string[])).sort()) await this.openProject(id);
     for (const { executor } of this.projects.values()) await executor.recoverAfterRestart();
     this.kick();
+    if (this.agents && this.opts.checkLogins !== false) void this.agents.checkAll().then(() => this.emit("logins"));
   }
 
   private projectDir(id: string): string {
@@ -97,6 +111,9 @@ export class Engine extends EventEmitter {
       },
       changed: (jobId) => this.emit("job", { projectId: id, jobId }),
       released: () => this.kick(),
+      agents: this.agents,
+      global: () => ({ profiles: this.profiles, tiers: this.tiers }),
+      live: (attemptId, line) => this.emit("log", { projectId: id, attemptId, line }),
     };
     this.projects.set(id, { ctx, executor: new JobExecutor(ctx) });
   }

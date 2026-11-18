@@ -1,0 +1,36 @@
+{
+  "$schema": "../../schemas/node.json",
+  "name": "code-reviewer",
+  "description": "Reviews the job's diff against the spec and the ticket; writes findings with file, line and severity; approves or asks for changes",
+  "kind": "agent",
+  "prompt": "code-reviewer.md",
+  "agent": { "tier": "strong" },
+  "inputs": ["ticket", "spec", "diff"],
+  "optionalInputs": ["check-log"],
+  "outputs": ["findings"],
+  "outcomes": ["approve", "changes"],
+  "changesFiles": false,
+  "timeoutSec": 1800,
+  "outputSchema": {
+    "type": "object",
+    "required": ["outcome", "findings"],
+    "properties": {
+      "outcome": { "enum": ["approve", "changes"] },
+      "findings": {
+        "type": "object",
+        "required": ["verdict", "items"],
+        "properties": {
+          "verdict": { "type": "string" },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["file", "line", "severity", "text"],
+              "properties": { "file": { "type": "string" }, "line": { "type": ["integer", "null"] }, "severity": { "enum": ["blocker", "major", "minor"] }, "text": { "type": "string" } }
+            }
+          }
+        }
+      }
+    }
+  }
+}

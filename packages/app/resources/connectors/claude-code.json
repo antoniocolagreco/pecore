@@ -1,0 +1,31 @@
+{
+  "$schema": "../../schemas/connector.json",
+  "name": "claude-code",
+  "title": "Claude Code",
+  "kind": "adapter",
+  "harness": { "program": "claude", "versionArgs": ["--version"], "versionRange": ">=2.1.327" },
+  "command": ["{nodePath}", "{adapter:@agentclientprotocol/claude-agent-acp}"],
+  "env": { "CLAUDE_CODE_EXECUTABLE": "{harnessPath}", "ENABLE_CLAUDEAI_MCP_SERVERS": "false", "DISABLE_AUTOUPDATER": "1" },
+  "configDirEnv": "CLAUDE_CONFIG_DIR",
+  "configDirFiles": [],
+  "sessionConfig": [["mode", "bypassPermissions"], ["model", "{model}"], ["effort", "{effort}"]],
+  "sessionMeta": { "claudeCode": { "options": { "strictMcpConfig": true } } },
+  "reader": "claude-code",
+  "errors": [],
+  "loginCommand": ["{harnessPath}", "auth", "login", "--claudeai"],
+  "loginUrlPattern": "https://\\S+",
+  "loginReadsCode": true,
+  "beforeLogin": {
+    "darwin": [
+      ["security", "create-keychain", "-p", "", "{home}/Library/Keychains/pecore.keychain-db"],
+      ["security", "default-keychain", "-d", "user", "-s", "{home}/Library/Keychains/pecore.keychain-db"],
+      ["security", "list-keychains", "-d", "user", "-s", "{home}/Library/Keychains/pecore.keychain-db"],
+      ["security", "set-keychain-settings", "{home}/Library/Keychains/pecore.keychain-db"]
+    ]
+  },
+  "beforeStart": {
+    "darwin": [["security", "unlock-keychain", "-p", "", "{home}/Library/Keychains/pecore.keychain-db"]]
+  },
+  "identityCommand": null,
+  "identityField": null
+}

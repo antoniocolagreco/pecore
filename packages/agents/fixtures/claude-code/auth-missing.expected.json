@@ -1,0 +1,36 @@
+{
+  "resumed": false,
+  "turns": [
+    {
+      "result": {
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "text": "",
+        "error": {
+          "kind": "auth",
+          "raw": "{\"code\":-32000,\"message\":\"Authentication required\"}"
+        }
+      },
+      "events": [
+        {
+          "type": "account",
+          "email": null,
+          "plan": null
+        },
+        {
+          "type": "usage",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          }
+        }
+      ]
+    }
+  ]
+}

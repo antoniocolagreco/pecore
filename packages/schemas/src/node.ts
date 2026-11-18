@@ -61,6 +61,7 @@ const Base = {
 
 const Runnable = {
   inputs: z.array(ArtifactType).default([]),
+  optionalInputs: z.array(ArtifactType).default([]),
   outputs: z.array(ArtifactType).default([]),
   outcomes: z.array(Outcome).min(1),
   failOutcomes: z.array(Outcome).default([]),

@@ -1,0 +1,137 @@
+{
+  "resumed": false,
+  "turns": [
+    {
+      "result": {
+        "usage": {
+          "input": 1212,
+          "output": 110,
+          "cacheRead": 41106,
+          "cacheWrite": 23307
+        },
+        "text": "fatto",
+        "stopReason": "end_turn",
+        "model": "claude-sonnet-5-5",
+        "quota": {
+          "status": "allowed",
+          "resetAt": 1795026600000,
+          "windows": {
+            "five_hour": {
+              "utilization": 0.41,
+              "resetAt": 1795026600000
+            },
+            "seven_day": {
+              "utilization": 0.61,
+              "resetAt": 1795204800000
+            }
+          }
+        },
+        "costUsd": 0.0983869
+      },
+      "events": [
+        {
+          "type": "account",
+          "email": "user@example.com",
+          "plan": "pro"
+        },
+        {
+          "type": "account",
+          "email": "user@example.com",
+          "plan": "Claude Pro"
+        },
+        {
+          "type": "account",
+          "email": "user@example.com",
+          "plan": "pro"
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01681edTgGwPLsBixP95wrsu",
+          "title": "Terminal",
+          "kind": "execute",
+          "status": "pending"
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01681edTgGwPLsBixP95wrsu",
+          "title": "echo pecora > nota.txt",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01681edTgGwPLsBixP95wrsu",
+          "title": "",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "permission",
+          "toolCallId": "toolu_01681edTgGwPLsBixP95wrsu",
+          "optionId": "allow-once"
+        },
+        {
+          "type": "quota",
+          "quota": {
+            "status": "allowed",
+            "resetAt": 1795026600000,
+            "windows": {
+              "five_hour": {
+                "utilization": 0.4,
+                "resetAt": 1795026600000
+              },
+              "seven_day": {
+                "utilization": 0.61,
+                "resetAt": 1795204800000
+              }
+            }
+          }
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01681edTgGwPLsBixP95wrsu",
+          "title": "",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01681edTgGwPLsBixP95wrsu",
+          "title": "",
+          "kind": "",
+          "status": "completed"
+        },
+        {
+          "type": "text",
+          "text": "fatto"
+        },
+        {
+          "type": "quota",
+          "quota": {
+            "status": "allowed",
+            "resetAt": 1795026600000,
+            "windows": {
+              "five_hour": {
+                "utilization": 0.41,
+                "resetAt": 1795026600000
+              },
+              "seven_day": {
+                "utilization": 0.61,
+                "resetAt": 1795204800000
+              }
+            }
+          }
+        },
+        {
+          "type": "usage",
+          "usage": {
+            "input": 1212,
+            "output": 110,
+            "cacheRead": 41106,
+            "cacheWrite": 23307
+          }
+        }
+      ]
+    }
+  ]
+}

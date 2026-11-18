@@ -1,0 +1,161 @@
+{
+  "resumed": false,
+  "turns": [
+    {
+      "result": {
+        "usage": {
+          "input": 1208,
+          "output": 132,
+          "cacheRead": 41263,
+          "cacheWrite": 23537
+        },
+        "text": "fatto",
+        "stopReason": "end_turn",
+        "model": "claude-opus-5-5",
+        "quota": {
+          "status": "allowed",
+          "resetAt": 1795026600000,
+          "windows": {
+            "five_hour": {
+              "utilization": 0.4,
+              "resetAt": 1795026600000
+            },
+            "seven_day": {
+              "utilization": 0.61,
+              "resetAt": 1795204800000
+            }
+          }
+        },
+        "costUsd": 0.19897399999999998
+      },
+      "events": [
+        {
+          "type": "account",
+          "email": "user@example.com",
+          "plan": "pro"
+        },
+        {
+          "type": "account",
+          "email": "user@example.com",
+          "plan": "Claude Pro"
+        },
+        {
+          "type": "account",
+          "email": "user@example.com",
+          "plan": "pro"
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01BtTojmrt1eiZFmCMuMk1Xy",
+          "title": "Preparing file…",
+          "kind": "edit",
+          "status": "pending"
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01BtTojmrt1eiZFmCMuMk1Xy",
+          "title": "Write nota.txt",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01BtTojmrt1eiZFmCMuMk1Xy",
+          "title": "",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "quota",
+          "quota": {
+            "status": "allowed",
+            "resetAt": 1795026600000,
+            "windows": {
+              "five_hour": {
+                "utilization": 0.38,
+                "resetAt": 1795026600000
+              },
+              "seven_day": {
+                "utilization": 0.61,
+                "resetAt": 1795204800000
+              }
+            }
+          }
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01BtTojmrt1eiZFmCMuMk1Xy",
+          "title": "",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01BtTojmrt1eiZFmCMuMk1Xy",
+          "title": "",
+          "kind": "",
+          "status": "completed"
+        },
+        {
+          "type": "text",
+          "text": "fatto"
+        },
+        {
+          "type": "quota",
+          "quota": {
+            "status": "allowed",
+            "resetAt": 1795026600000,
+            "windows": {
+              "five_hour": {
+                "utilization": 0.4,
+                "resetAt": 1795026600000
+              },
+              "seven_day": {
+                "utilization": 0.61,
+                "resetAt": 1795204800000
+              }
+            }
+          }
+        },
+        {
+          "type": "usage",
+          "usage": {
+            "input": 1208,
+            "output": 132,
+            "cacheRead": 41263,
+            "cacheWrite": 23537
+          }
+        }
+      ]
+    },
+    {
+      "result": {
+        "usage": {
+          "input": 4,
+          "output": 8,
+          "cacheRead": 32487,
+          "cacheWrite": 36
+        },
+        "text": "ciao pecora",
+        "stopReason": "end_turn",
+        "model": "claude-opus-5-5",
+        "costUsd": 0.2059354
+      },
+      "events": [
+        {
+          "type": "text",
+          "text": "ciao pecora"
+        },
+        {
+          "type": "usage",
+          "usage": {
+            "input": 4,
+            "output": 8,
+            "cacheRead": 32487,
+            "cacheWrite": 36
+          }
+        }
+      ]
+    }
+  ]
+}

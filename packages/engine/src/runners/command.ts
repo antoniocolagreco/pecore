@@ -22,6 +22,7 @@ export type CommandRun = {
   inputs: CommandInput[];
   cleanTree: string | null;
   extraEnv?: Record<string, string>;
+  scripts?: Record<string, string>;
   onStart?: (pgid: number, user: string) => void;
   effect?: { requested(hash: string): void; done(ok: boolean, result: unknown): void };
 };
@@ -58,11 +59,13 @@ async function readOutput(rule: OutputRule, stdout: string, read: (rel: string) 
   return read(rule.file);
 }
 
-async function argvOf(spec: string[] | { script: string } | undefined, inline: string | undefined, nodeDir: string, label: string, values: Record<string, string>): Promise<string[]> {
+async function argvOf(spec: string[] | { script: string } | undefined, inline: string | undefined, nodeDir: string, label: string, values: Record<string, string>, scripts?: Record<string, string>): Promise<string[]> {
   if (Array.isArray(spec)) return substituteArgv(spec, values);
   const file = spec?.script ?? inline;
   if (!file) throw new Error(`${label}: no command`);
-  return ["/bin/sh", "-c", await readFile(join(nodeDir, file), "utf8"), label];
+  const body = scripts ? scripts[file] : await readFile(join(nodeDir, file), "utf8");
+  if (body === undefined) throw new Error(`${label}: script ${file} was not confirmed`);
+  return ["/bin/sh", "-c", body, label];
 }
 
 function inputFile(type: ArtifactType, source: string): string {
@@ -105,8 +108,9 @@ export async function runCommandNode(c: CommandRun): Promise<CommandOutcome> {
     let log = "";
 
     if (c.node.probe) {
-      const argv = await argvOf(c.node.probe, undefined, c.nodeDir, `${c.node.name}-probe`, values);
+      const argv = await argvOf(c.node.probe, undefined, c.nodeDir, `${c.node.name}-probe`, values, c.scripts);
       const p = await runProbe({ argv, user, cwd, env, timeoutMs }, c.node.probeRules);
+      env.PECORE_PROBE_STDOUT = p.stdout;
       log += `$ probe\n${p.stdout}${p.stderr}probe: ${p.result}\n`;
       if (p.result === "unknown") return { kind: "waiting", reason: "network", log };
       if (p.result === "done") {
@@ -121,7 +125,7 @@ export async function runCommandNode(c: CommandRun): Promise<CommandOutcome> {
       }
     }
 
-    const argv = await argvOf(c.node.command, c.node.script, c.nodeDir, c.node.name, values);
+    const argv = await argvOf(c.node.command, c.node.script, c.nodeDir, c.node.name, values, c.scripts);
     const hash = commandHash(argv);
     if (engine) c.effect?.requested(hash);
     let r: RunResult;

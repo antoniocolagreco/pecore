@@ -1,0 +1,10 @@
+export { checkLogin, prepareLogin } from "./login";
+export type { LoginState } from "./login";
+export { listOptions } from "./options";
+export { checkPrerequisites, harnessVersion, satisfies } from "./prerequisites";
+export { startSession } from "./session";
+export type { StartParams } from "./session";
+export { mergeConnectors, parseConnector } from "./connectors";
+export { classify } from "./errors";
+export { readerFor } from "./readers/claude-code";
+export * from "./types";

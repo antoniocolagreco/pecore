@@ -1,13 +1,23 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join, matchesGlob, relative } from "node:path";
 import { monotonicFactory } from "ulid";
-import type { Artifact, ArtifactType, FailureReason, JobState, Node, Project, Recipe, Settings, WaitingReason } from "@pecore/schemas";
+import type { RawLine, Usage } from "@pecore/agents";
+import type { AgentNode, Artifact, ArtifactType, FailureReason, JobState, Node, Profiles, Project, Recipe, Settings, Tiers, WaitingReason } from "@pecore/schemas";
 import { SpecArtifact } from "@pecore/schemas";
+import { spawnFor } from "../accounts/agents";
+import type { AgentServices } from "../accounts/agents";
+import { ensureConfirmed, needsConfirmation, recordConfirmation } from "../definitions/confirm";
+import type { ConfirmSubject } from "../definitions/confirm";
 import type { Definitions } from "../definitions/load";
 import { effectRecorder } from "../jobs/effects";
 import { LogWriter } from "../observability/logs";
+import { runAgentNode } from "../runners/agent";
 import { runCommandNode } from "../runners/command";
+import type { CommandRun } from "../runners/command";
+import { budgetBlock } from "../scheduler/budget";
+import { candidateProfiles, pickProfile } from "../scheduler/tiers";
+import type { ProfileChoice } from "../scheduler/tiers";
 import { humanItem, humanResult } from "../runners/human";
 import { paramsWithDefaults } from "../runners/placeholders";
 import { signalGroup, stopGroup } from "../runners/process";
@@ -69,7 +79,21 @@ export type ProjectContext = {
   notify(n: { kind: string; title: string; body: string; jobId: string }): void;
   changed(jobId: string): void;
   released(): void;
+  agents: AgentServices | null;
+  global(): { profiles: Profiles; tiers: Tiers };
+  live?: (attemptId: string, line: RawLine) => void;
 };
+
+type AttemptExtra = { usage?: Usage; model?: string; cost?: number | null; log: string };
+type Attempt =
+  | (AttemptExtra & { kind: "completed"; outcome: string; outputs: { type: ArtifactType; content: string }[]; quotaRejected?: { resetAt?: number } | null })
+  | (AttemptExtra & { kind: "failed"; reason: FailureReason })
+  | (AttemptExtra & { kind: "waiting"; reason: "network" | "quota" | "rate_limit" | "auth"; resetAt?: number });
+
+function localDay(now = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+}
 
 const backoffMs = [60_000, 120_000, 240_000, 480_000];
 
@@ -298,13 +322,60 @@ export class JobExecutor {
       this.ctx.notify({ kind: "needs-user", title: job.title, body: `${run.node} waits for your review`, jobId: job.id });
       return false;
     }
-    if (node.kind !== "command") {
-      this.ctx.db.append([{ jobId: job.id, type: "node_run.failed", payload: { nodeRunId: run.id, reason: "HARNESS_ERROR" } }]);
-      await this.finish(job, "failed", "HARNESS_ERROR");
-      return false;
+    if (node.kind === "source") throw new Error("source nodes cannot run in a recipe");
+
+    let confirmedScripts: Record<string, string> | undefined;
+    if (needsConfirmation(node)) {
+      const c = await ensureConfirmed(this.ctx.db, job.id, join(this.ctx.dir, "nodes"), node);
+      if (!c.confirmed) {
+        if (run.waiting_reason !== "confirmation") {
+          this.setRun(job.id, run.id, "waiting", "confirmation", { queueItemId: c.itemId });
+          this.ctx.notify({ kind: "needs-user", title: job.title, body: `${recipeNode.use} waits for your confirmation`, jobId: job.id });
+        }
+        this.setState(job.id, "waiting", "confirmation");
+        return false;
+      }
+      confirmedScripts = c.scripts;
     }
 
-    const pools = poolsFor(this.ctx.id);
+    let profile: Extract<ProfileChoice, { kind: "profile" }> | null = null;
+    let pools = poolsFor(this.ctx.id);
+    if (node.kind === "agent") {
+      const agents = this.ctx.agents;
+      if (!agents) throw new Error("agents are not configured");
+      const g = this.ctx.global();
+      const choice = pickProfile({
+        candidates: candidateProfiles(node, recipeNode.agent, g.tiers),
+        profiles: g.profiles,
+        providerOf: (acc) => agents.account(acc)?.provider,
+        excludedProviders: this.providersOf(job.id, recipeNode.agent?.providerNot ?? node.agent.providerNot),
+        cooling: (acc) => agents.cooling(acc),
+      });
+      if (choice.kind === "none") {
+        await this.saveArtifact(job.id, runDir, "check-log", choice.why, before);
+        this.fail(job, run.id, "HARNESS_ERROR");
+        return false;
+      }
+      if (choice.kind === "wait") {
+        this.waitUntil(job.id, run.id, choice.reason, choice.until);
+        return false;
+      }
+      const block = budgetBlock(this.ctx.db.db, this.ctx.project, job.id);
+      if (block) {
+        const open = this.ctx.db.db.prepare("SELECT 1 FROM human_queue WHERE job_id = ? AND kind = 'budget' AND state = 'open'").get(job.id);
+        if (!open) {
+          const subject = { ...block, project: this.ctx.id };
+          this.ctx.db.append([{ jobId: job.id, type: "queue.added", payload: { itemId: ulid(), kind: "budget", subject, subjectHash: sha256(JSON.stringify(subject)), choices: ["raise", "stop"] } }]);
+          this.ctx.notify({ kind: "budget", title: job.title, body: `budget ${block.limit} reached`, jobId: job.id });
+        }
+        this.setRun(job.id, run.id, "waiting", "budget");
+        this.setState(job.id, "waiting", "budget");
+        return false;
+      }
+      profile = choice;
+      pools = poolsFor(this.ctx.id, ["agents", `provider:${choice.provider}`, `account:${choice.account}`]);
+    }
+
     if (!this.ctx.pools.tryTake(pools)) {
       if (run.waiting_reason !== "concurrency") this.setRun(job.id, run.id, "waiting", "concurrency");
       this.setState(job.id, "waiting", "concurrency");
@@ -318,41 +389,61 @@ export class JobExecutor {
         this.setRun(job.id, run.id, "running", null, { osUser: this.ctx.user });
         const attemptId = ulid();
         const logPath = join("logs", `${attemptId}.jsonl.zst`);
-        this.ctx.db.append([{ jobId: job.id, type: "attempt.started", payload: { attemptId, nodeRunId: run.id, profile: null, connector: null, harnessVersion: null, connectorVersion: null, account: null, osUser: this.ctx.user, sessionGroup: null, logPath } }]);
+        const sessionGroup = node.kind === "agent" ? (recipeNode.session ?? null) : null;
+        this.ctx.db.append([
+          {
+            jobId: job.id,
+            type: "attempt.started",
+            payload: { attemptId, nodeRunId: run.id, profile: profile?.profile ?? null, connector: profile ? (this.ctx.agents!.account(profile.account)?.connector ?? null) : null, harnessVersion: null, connectorVersion: null, account: profile?.account ?? null, osUser: this.ctx.user, sessionGroup, logPath },
+          },
+        ]);
         const log = await LogWriter.open(join(this.ctx.dir, logPath));
         const latest = this.latest(job.id);
         const commit = latest.get("commit");
         const commitSha = commit ? (JSON.parse(await readFile(join(this.ctx.dir, commit.path), "utf8")) as { sha: string }).sha : null;
-        this.running.set(job.id, null);
-        const result = await runCommandNode({
-          node,
-          nodeDir: join(this.ctx.dir, "nodes"),
-          params: paramsWithDefaults(node.params, recipeNode.params),
-          user: this.ctx.user,
-          workdir: wd,
-          context: {
-            job: { id: job.id, title: job.title, branch: job.branch, base: job.base, oldBase: job.old_base, target: job.target, commit: commitSha },
-            ticketId: null,
-            project: { repoDir: join(this.ctx.dir, "repo.git"), repoUrl: this.ctx.project.repo?.url ?? null },
-          },
-          inputs: node.inputs.flatMap((t) => {
-            const a = latest.get(t);
-            return a ? [{ type: t, path: join(this.ctx.dir, a.path) }] : [];
-          }),
-          cleanTree: node.cleanCheckout ? before : null,
-          onStart: (pgid, user) => {
-            this.running.set(job.id, { pgid, user });
-            if (this.stopRequested.has(job.id) || this.closing) void stopGroup(user, pgid);
-            this.setRun(job.id, run.id, "running", null, { pgid, osUser: user });
-          },
-          effect: effectRecorder(this.ctx.db, job.id, run.id, run.node),
+        const context = {
+          job: { id: job.id, title: job.title, branch: job.branch, base: job.base, oldBase: job.old_base, target: job.target, commit: commitSha },
+          ticketId: null,
+          project: { repoDir: join(this.ctx.dir, "repo.git"), repoUrl: this.ctx.project.repo?.url ?? null },
+        };
+        const inputs = [...node.inputs, ...node.optionalInputs].flatMap((t) => {
+          const a = latest.get(t);
+          return a ? [{ type: t, path: join(this.ctx.dir, a.path) }] : [];
         });
+        const onStart = (pgid: number, user: string) => {
+          this.running.set(job.id, { pgid, user });
+          if (this.stopRequested.has(job.id) || this.closing) void stopGroup(user, pgid);
+          this.setRun(job.id, run.id, "running", null, { pgid, osUser: user });
+        };
+        this.running.set(job.id, null);
+        const result: Attempt =
+          node.kind === "command"
+            ? await runCommandNode({
+                node,
+                nodeDir: join(this.ctx.dir, "nodes"),
+                params: paramsWithDefaults(node.params, recipeNode.params),
+                user: this.ctx.user,
+                workdir: wd,
+                context,
+                inputs,
+                cleanTree: node.cleanCheckout ? before : null,
+                ...(confirmedScripts ? { scripts: confirmedScripts } : {}),
+                onStart,
+                effect: effectRecorder(this.ctx.db, job.id, run.id, run.node),
+              })
+            : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, sessionGroup, { wd, context, inputs, log, onStart });
         this.running.delete(job.id);
-        log.write({ dir: "cmd", text: result.log, at: Date.now() });
+        if (result.log) log.write({ dir: "cmd", text: result.log, at: Date.now() });
         await log.close();
         if (this.closing) return false;
         const end = (reason: string) =>
-          this.ctx.db.append([{ jobId: job.id, type: "attempt.ended", payload: { attemptId, endReason: reason, model: null, account: null, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, cost: null, day: new Date().toISOString().slice(0, 10) } }]);
+          this.ctx.db.append([
+            {
+              jobId: job.id,
+              type: "attempt.ended",
+              payload: { attemptId, endReason: reason, model: result.model ?? profile?.model ?? null, account: profile?.account ?? null, tokens: result.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, cost: result.cost ?? null, day: localDay() },
+            },
+          ]);
 
         if (this.stopRequested.has(job.id)) {
           end("interrupted");
@@ -360,25 +451,36 @@ export class JobExecutor {
           return false;
         }
         if (result.kind === "waiting") {
-          end("network");
-          const n = this.networkFailures.get(run.id) ?? 0;
-          this.networkFailures.set(run.id, n + 1);
-          const delay = backoffMs[Math.min(n, backoffMs.length - 1)]!;
-          this.setRun(job.id, run.id, "waiting", "network", { resetAt: Date.now() + delay });
-          this.setState(job.id, "waiting", "network");
-          this.timers.set(job.id, setTimeout(() => void this.retryNetwork(job.id, run.id), delay));
+          end(result.reason);
+          await undoInterrupted(this.ctx.user, wd, job.id, git, before);
+          if (result.reason === "network") {
+            const n = this.networkFailures.get(run.id) ?? 0;
+            this.networkFailures.set(run.id, n + 1);
+            const delay = backoffMs[Math.min(n, backoffMs.length - 1)]!;
+            this.setRun(job.id, run.id, "waiting", "network", { resetAt: Date.now() + delay });
+            this.setState(job.id, "waiting", "network");
+            this.timers.set(job.id, setTimeout(() => void this.retryNetwork(job.id, run.id), delay));
+          } else if (result.reason === "auth") {
+            this.ctx.db.append([{ jobId: job.id, type: "node_run.state_changed", payload: { nodeRunId: run.id, state: "waiting", waitingReason: "auth", auth: { account: profile!.account, osUser: this.ctx.user, kind: "harness" } } }]);
+            this.setState(job.id, "waiting", "auth");
+            this.ctx.notify({ kind: "login", title: job.title, body: `the login of ${profile!.account} expired or does not match`, jobId: job.id });
+          } else {
+            const until = this.ctx.agents!.coolDown(profile!.account, result.reason, result.resetAt);
+            this.waitUntil(job.id, run.id, result.reason, until);
+          }
           return false;
         }
         this.networkFailures.delete(run.id);
         if (result.kind === "failed") {
           end(result.reason);
           await undoInterrupted(this.ctx.user, wd, job.id, git, before);
-          if (attempt + 1 < attempts) continue;
+          if (attempt + 1 < attempts && result.reason !== "INVALID_OUTPUT") continue;
           await this.saveArtifact(job.id, runDir, "check-log", result.log, before);
           this.fail(job, run.id, result.reason);
           return false;
         }
         end(result.outcome);
+        if (result.quotaRejected && profile) this.ctx.agents!.coolDown(profile.account, "quota", result.quotaRejected.resetAt);
         await deleteScratch(this.ctx.user, wd, node.scratchPaths, before);
         const after = await contentState(this.ctx.user, wd);
         if (!node.changesFiles && after !== before) {
@@ -386,7 +488,7 @@ export class JobExecutor {
           this.fail(job, run.id, "READ_ONLY_VIOLATION");
           return false;
         }
-        const artifacts: Artifact[] = [await this.saveArtifact(job.id, runDir, "check-log", result.log, after)];
+        const artifacts: Artifact[] = node.kind === "command" ? [await this.saveArtifact(job.id, runDir, "check-log", result.log, after)] : [];
         for (const o of result.outputs) {
           let content = o.content;
           if (o.type === "commit") {
@@ -412,6 +514,115 @@ export class JobExecutor {
       this.ctx.pools.release(pools);
       this.ctx.released();
     }
+  }
+
+  private providersOf(jobId: string, nodeIds: string[]): Set<string> {
+    const out = new Set<string>();
+    if (nodeIds.length === 0 || !this.ctx.agents) return out;
+    const rows = this.ctx.db.db
+      .prepare(`SELECT a.account FROM attempts a JOIN node_runs n ON a.node_run_id = n.id WHERE n.job_id = ? AND n.node IN (${nodeIds.map(() => "?").join(",")}) AND a.account IS NOT NULL`)
+      .all(jobId, ...nodeIds) as { account: string }[];
+    for (const r of rows) {
+      const p = this.ctx.agents.account(r.account)?.provider;
+      if (p) out.add(p);
+    }
+    return out;
+  }
+
+  private resumeSession(jobId: string, node: string, profile: string, resume: boolean, group: string | null): string | null {
+    if (!resume && group === null) return null;
+    const row = this.ctx.db.db
+      .prepare(
+        `SELECT a.session_id FROM attempts a JOIN node_runs n ON a.node_run_id = n.id
+         WHERE n.job_id = ? AND n.state = 'completed' AND a.profile = ? AND a.session_id IS NOT NULL AND ${group !== null ? "a.session_group = ?" : "n.node = ?"}
+         ORDER BY a.started_at DESC LIMIT 1`,
+      )
+      .get(jobId, profile, group ?? node) as { session_id: string } | undefined;
+    return row?.session_id ?? null;
+  }
+
+  private waitUntil(jobId: string, nodeRunId: string, reason: "quota" | "rate_limit", until: number): void {
+    this.setRun(jobId, nodeRunId, "waiting", reason, { resetAt: until });
+    this.setState(jobId, "waiting", reason);
+    const t = this.timers.get(jobId);
+    if (t) clearTimeout(t);
+    this.timers.set(
+      jobId,
+      setTimeout(() => void this.release(jobId, [reason]), Math.max(0, until - Date.now()) + 1000),
+    );
+  }
+
+  async release(jobId: string, reasons: string[]): Promise<void> {
+    this.timers.delete(jobId);
+    await this.exclusive(jobId, async () => {
+      const job = this.job(jobId);
+      if (job.state !== "waiting" || !reasons.includes(job.waiting_reason ?? "")) return;
+      const open = this.runs(jobId).find((r) => r.state === "waiting");
+      if (open) this.setRun(jobId, open.id, "waiting", "concurrency");
+      this.setState(jobId, "running", null);
+    });
+    void this.tick(jobId);
+  }
+
+  private async knowledgeFiles(globs: string[]): Promise<{ rel: string; abs: string }[]> {
+    if (globs.length === 0) return [];
+    const root = join(this.ctx.dir, "knowledge");
+    const files = (await readdir(root, { recursive: true, withFileTypes: true }).catch(() => []))
+      .filter((e) => e.isFile())
+      .map((e) => relative(root, join(e.parentPath, e.name)));
+    return files.filter((f) => globs.some((g) => matchesGlob(f, g))).map((rel) => ({ rel, abs: join(root, rel) }));
+  }
+
+  private async agentAttempt(
+    job: JobRow,
+    run: NodeRunRow,
+    node: AgentNode,
+    recipeNode: Recipe["nodes"][string],
+    profile: Extract<ProfileChoice, { kind: "profile" }>,
+    attemptId: string,
+    sessionGroup: string | null,
+    x: { wd: string; context: CommandRun["context"]; inputs: CommandRun["inputs"]; log: LogWriter; onStart: (pgid: number, user: string) => void },
+  ): Promise<Attempt> {
+    const agents = this.ctx.agents!;
+    const account = agents.account(profile.account);
+    if (!account) return { kind: "failed", reason: "HARNESS_ERROR", log: `account ${profile.account} not found` };
+    let connector;
+    try {
+      connector = await agents.resolve(account.connector);
+    } catch (e) {
+      return { kind: "failed", reason: "COMMAND_NOT_FOUND", log: (e as Error).message };
+    }
+    const login = await agents.login(account.id);
+    const spawn = spawnFor(this.ctx.user);
+    const resumeId = this.resumeSession(job.id, run.node, profile.profile, node.resume, sessionGroup);
+    const r = await runAgentNode({
+      node,
+      nodeDir: join(this.ctx.dir, "nodes"),
+      params: paramsWithDefaults(node.params, recipeNode.params),
+      user: this.ctx.user,
+      workdir: x.wd,
+      context: x.context,
+      inputs: x.inputs,
+      knowledge: await this.knowledgeFiles(node.knowledge),
+      connector,
+      login,
+      spawn,
+      model: profile.model,
+      effort: profile.effort,
+      resumeId,
+      timeoutMs: node.timeoutSec * 1000,
+      onStart: (pgid) => x.onStart(pgid, this.ctx.user),
+      onSession: (sessionId, resumed) => this.ctx.db.append([{ jobId: job.id, type: "attempt.session_started", payload: { attemptId, sessionId, resumed } }]),
+      onRaw: (line) => {
+        x.log.write(line);
+        this.ctx.live?.(attemptId, line);
+      },
+    });
+    const usage = r.usage;
+    const common = { usage, ...(r.model ? { model: r.model } : {}), cost: r.costUsd ?? null, log: `${r.kind === "completed" ? "" : `${"detail" in r ? r.detail : ""}\n`}${r.text}` };
+    if (r.kind === "completed") return { ...common, kind: "completed", outcome: r.outcome, outputs: r.outputs, quotaRejected: r.quotaRejected };
+    if (r.kind === "waiting") return { ...common, kind: "waiting", reason: r.reason, ...(r.resetAt !== undefined ? { resetAt: r.resetAt } : {}) };
+    return { ...common, kind: "failed", reason: r.reason };
   }
 
   private complete(jobId: string, nodeRunId: string, outcome: string, before: string | null, after: string | null, artifacts: Artifact[]): void {
@@ -446,10 +657,28 @@ export class JobExecutor {
     if (!item) throw new Error(`queue item ${itemId} not found`);
     if (item.state !== "open" || item.subject_hash !== hash) throw new Error("the item changed or was resolved");
     if (!(JSON.parse(item.choices) as string[]).includes(choice)) throw new Error(`${choice} is not a choice of this item`);
+    if (item.kind === "engine-node" || item.kind === "source-node") {
+      this.ctx.db.append([{ jobId: null, type: "queue.resolved", payload: { itemId, state: "resolved", choice, note } }]);
+      if (choice === "confirm") recordConfirmation(this.ctx.db, JSON.parse(item.subject) as ConfirmSubject);
+      for (const j of this.jobs()) if (j.state === "waiting" && j.waiting_reason === "confirmation") await this.release(j.id, ["confirmation"]);
+      return;
+    }
     const jobId = item.job_id;
     await this.exclusive(jobId, async () => {
       const job = this.job(jobId);
       this.ctx.db.append([{ jobId, type: "queue.resolved", payload: { itemId, state: "resolved", choice, note } }]);
+      if (item.kind === "budget") {
+        if (job.state !== "waiting") return;
+        const open = this.runs(jobId).find((r) => r.state === "waiting");
+        if (choice === "stop") {
+          if (open) this.setRun(jobId, open.id, "interrupted", null);
+          this.setState(jobId, "stopped", null);
+          return;
+        }
+        if (open) this.setRun(jobId, open.id, "waiting", "concurrency");
+        this.setState(jobId, "running", null);
+        return;
+      }
       if (item.kind === "round-limit") {
         if (job.state === "waiting") this.setState(jobId, "running", null);
         if (choice === "end") this.setState(jobId, "failed", "round_limit");

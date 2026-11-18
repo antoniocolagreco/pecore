@@ -1,0 +1,244 @@
+{
+  "resumed": false,
+  "turns": [
+    {
+      "result": {
+        "usage": {
+          "input": 1192,
+          "output": 770,
+          "cacheRead": 61720,
+          "cacheWrite": 13896
+        },
+        "text": "The harness blocked a standalone `sleep 120`. It suggests running a started command in the background instead, so I'll do that once.The first `sleep 120` was blocked by the harness, so I ran it in the background instead. It will finish in about two minutes, and I'll report when it completes.",
+        "stopReason": "end_turn",
+        "model": "claude-haiku-5-5",
+        "quota": {
+          "status": "allowed",
+          "resetAt": 1795044600000,
+          "windows": {
+            "five_hour": {
+              "utilization": 0.14,
+              "resetAt": 1795044600000
+            },
+            "seven_day": {
+              "utilization": 0.68,
+              "resetAt": 1795204800000
+            }
+          }
+        },
+        "costUsd": 0.0039006
+      },
+      "events": [
+        {
+          "type": "account",
+          "email": "user@example.com",
+          "plan": "pro"
+        },
+        {
+          "type": "account",
+          "email": "user@example.com",
+          "plan": "Claude Pro"
+        },
+        {
+          "type": "account",
+          "email": "user@example.com",
+          "plan": "pro"
+        },
+        {
+          "type": "quota",
+          "quota": {
+            "status": "allowed",
+            "resetAt": 1795044600000,
+            "windows": {
+              "five_hour": {
+                "utilization": 0.14,
+                "resetAt": 1795044600000
+              },
+              "seven_day": {
+                "utilization": 0.68,
+                "resetAt": 1795204800000
+              }
+            }
+          }
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01EDPcgNds34zecYV5HJmGyv",
+          "title": "Terminal",
+          "kind": "execute",
+          "status": "pending"
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01EDPcgNds34zecYV5HJmGyv",
+          "title": "sleep 120",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01EDPcgNds34zecYV5HJmGyv",
+          "title": "",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01EDPcgNds34zecYV5HJmGyv",
+          "title": "",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_01EDPcgNds34zecYV5HJmGyv",
+          "title": "",
+          "kind": "",
+          "status": "failed"
+        },
+        {
+          "type": "text",
+          "text": "The"
+        },
+        {
+          "type": "text",
+          "text": " harness blocked a standal"
+        },
+        {
+          "type": "text",
+          "text": "one `sleep 120`"
+        },
+        {
+          "type": "text",
+          "text": ". It"
+        },
+        {
+          "type": "text",
+          "text": " suggests running"
+        },
+        {
+          "type": "text",
+          "text": " a"
+        },
+        {
+          "type": "text",
+          "text": " started"
+        },
+        {
+          "type": "text",
+          "text": " command in the background instead, so"
+        },
+        {
+          "type": "text",
+          "text": " I'll do"
+        },
+        {
+          "type": "text",
+          "text": " that once."
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_017UB6C4LbouXmK9dKEa5BKM",
+          "title": "Terminal",
+          "kind": "execute",
+          "status": "pending"
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_017UB6C4LbouXmK9dKEa5BKM",
+          "title": "sleep 120",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_017UB6C4LbouXmK9dKEa5BKM",
+          "title": "",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_017UB6C4LbouXmK9dKEa5BKM",
+          "title": "",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_017UB6C4LbouXmK9dKEa5BKM",
+          "title": "",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_017UB6C4LbouXmK9dKEa5BKM",
+          "title": "",
+          "kind": "",
+          "status": ""
+        },
+        {
+          "type": "tool_call",
+          "toolCallId": "toolu_017UB6C4LbouXmK9dKEa5BKM",
+          "title": "",
+          "kind": "",
+          "status": "completed"
+        },
+        {
+          "type": "text",
+          "text": "The first"
+        },
+        {
+          "type": "text",
+          "text": " `sleep 120` was"
+        },
+        {
+          "type": "text",
+          "text": " blocked by the harness,"
+        },
+        {
+          "type": "text",
+          "text": " so I ran it in the background"
+        },
+        {
+          "type": "text",
+          "text": " inst"
+        },
+        {
+          "type": "text",
+          "text": "ead. It will fin"
+        },
+        {
+          "type": "text",
+          "text": "ish in about two"
+        },
+        {
+          "type": "text",
+          "text": " minutes,"
+        },
+        {
+          "type": "text",
+          "text": " and I'll report"
+        },
+        {
+          "type": "text",
+          "text": " when it complet"
+        },
+        {
+          "type": "text",
+          "text": "es."
+        },
+        {
+          "type": "usage",
+          "usage": {
+            "input": 1192,
+            "output": 770,
+            "cacheRead": 61720,
+            "cacheWrite": 13896
+          }
+        }
+      ]
+    }
+  ]
+}
