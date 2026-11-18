@@ -1,7 +1,7 @@
 # PeCore
 
 *   **Author:** Antonio Colagreco
-*   **Status:** Reviewed (EGM stages 5-9); UI specified, reviewed and approved in [ui-design.md](ui-design.md). Agents moved to ACP after the phase 0 spikes (section 5); that change had a targeted review ([report](reviews/design/acp_review_report.md)).
+*   **Status:** Reviewed (EGM stages 5-9); UI specified, reviewed and approved in [ui-design.md](ui-design.md). Agents moved to ACP after the phase 0 spikes (section 5); that change had a targeted review ([report](reviews/design/acp_review_report.md)). A second full EGM run followed the move to normal and protected modes; the findings for phases 0 to 3 are applied ([triage](reviews/design/round2/triage.md)).
 *   **Date:** 2026-11-18
 *   **Replaces:** `docs/initial-brainstorm.md` (PeCore v0.5)
 *   **Inputs:** [concepts-brief.md](concepts-brief.md): review findings B1-B8, M1-M16, N1-N9 and author decisions D1-D27. In this document, "Dn" always means a decision in that file, and "v0.5 Qn" an open question in [initial-brainstorm.md](initial-brainstorm.md).
@@ -72,7 +72,7 @@ What none of them offers together:
 *   **G9. Stacked jobs.** An order larger than one ticket becomes a set of tickets with dependencies. A child ticket starts from its parent's last commit when the parent job completes, without waiting for the parent's merge. When the parent changes, the recipe's rebase node realigns the child, and the recipe decides which nodes run again. Verified by a test with a chain of three jobs in which the parent gets a new commit and then is merged.
 *   **G10. No secrets kept by PeCore.** Each tool keeps its own login: harnesses (`claude`, `codex`, `agy`, ...), forge CLIs (`gh`, `glab`, AWS CLI) and git credential helpers. PeCore stores only references to those accounts. In protected mode, agents cannot read the app user's home, where forge logins live.
 *   **G11. Rules live in recipes.** Checks, reviewers, approvals, what runs again after a rebase, providers, tiers and budget limits are recipe or project configuration. The empty recipe is valid: the job opens and closes.
-*   **G12. Crash safety.** After a crash, or after the app quits during a delivery, no `runsAs: engine` node repeats an action its probe reports as done, and every job that existed before is present afterwards, `paused` or in a final state. Verified by killing the engine during each delivery node in a test.
+*   **G12. Crash safety.** After a crash, or after the app quits during a delivery, no `runsAs: engine` node repeats an action its probe reports as done, and every job that existed before is present afterwards: `queued` jobs stay `queued`, the others are `paused` or in a final state. Verified by killing the engine during each delivery node in a test.
 *   **G13. Diagnosis in under a minute.** For any job, the user can see in the GUI or the CLI which node is running, why the job waits, and open the raw harness log, in under one minute.
 *   **G14. Installable by others.** On a fresh Linux or macOS machine, a guided first run in the GUI checks prerequisites, creates `PECORE_HOME`, adds accounts (the harness logins the user already has count as done) and creates the first project, without editing files by hand and without a new login.
 *   **G15. Pluggable services runtime.** The container runtime for job services (Postgres, Kafka) is a setting: Podman, Docker, or on macOS Podman machine, Colima or OrbStack. Each needs Compose v2.
@@ -104,6 +104,8 @@ What none of them offers together:
 ## Open Questions
 
 Each question must be answered before the build phase named in brackets (see Build order).
+
+*   **Second full review, findings for later phases:** listed as entry gates under Build order.
 
 *   **Connector in protected mode:** the "Claude Code through sudo" check of Tests: adapter, shipped Node and the app user's Claude Code run as `pecore-agent` with a new config directory; `bypassPermissions`; resume in a new process; no claude.ai or repository MCP servers; stopping the process group. The ACP spike ran everything as the app user ([ACP spike](spikes/acp.md)). [Phase 0]
 *   **Quota and rate limit errors:** not provoked in any spike. Claude Code reports its quota windows on every turn (`_claude/rateLimit`), and a `rejected` window is handled by 5.4; what else an exhausted window sends, and what Codex and opencode send, is recorded the first time it happens, or by using up a 5-hour window on purpose (author's choice). Until then an unrecorded error message ends as `HARNESS_ERROR` with the node's `retry` (5.4). [Phase 3 for Claude Code, phase 6 for the others]
@@ -184,8 +186,8 @@ Each question must be answered before the build phase named in brackets (see Bui
 │                        accounts (references to tools' own logins)             │
 │        │                                                                      │
 │        ├── connector processes ACP over stdin/stdout; run as the              │
-│        │                       project's OS user, one process group each      │
-│        ├── command processes   check, commit, rebase nodes: project OS user   │
+│        │                       project user, one process group each           │
+│        ├── command processes   check, commit, rebase nodes: project user      │
 │        │                       push, PR/MR nodes: app user, with the          │
 │        │                       account the node declares                      │
 │        └── service containers  Postgres, Kafka for a job's tests, through     │
@@ -291,7 +293,7 @@ Fields by kind:
     *   The outcomes are the buttons the user sees (for example `approve`, `changes`, `reject`).
     *   `answer`: whether the user can attach text, which becomes an artifact for the next node.
 
-Placeholders in `command`, `probe` and prompts are plain substitution with no logic: `{params.<name>}`, `{job.id}`, `{job.title}`, `{job.branch}`, `{job.base}` (the base commit the job must be on now), `{job.oldBase}` (the base commit the job branch was last on), `{job.target}` (branch the delivery targets, see 4.6), `{job.commit}` (SHA in the latest `commit` artifact), `{ticket.id}` (the id of the job's ticket at its source, if any), `{workdir}`, `{project.repoDir}`, `{project.repo.url}`, `{project.repo.owner}`, `{project.repo.name}`, `{inputs.<type>.path}`. For nodes that run as the project's OS user, the engine copies their input artifacts into `.pecore/inputs/` in the workdir, and `{inputs.<type>.path}` points there; `runsAs: engine` nodes read the originals under `artifacts/`.
+Placeholders in `command`, `probe` and prompts are plain substitution with no logic: `{params.<name>}`, `{job.id}`, `{job.title}`, `{job.branch}`, `{job.base}` (the base commit the job must be on now), `{job.oldBase}` (the base commit the job branch was last on), `{job.target}` (branch the delivery targets, see 4.6), `{job.commit}` (SHA in the latest `commit` artifact), `{ticket.id}` (the id of the job's ticket at its source, if any), `{workdir}`, `{project.repoDir}`, `{project.repo.url}`, `{project.repo.owner}`, `{project.repo.name}`, `{inputs.<type>.path}`. For nodes that run as the project user, the engine copies their input artifacts into `.pecore/inputs/` in the workdir, and `{inputs.<type>.path}` points there; `runsAs: engine` nodes read the originals under `artifacts/`.
 
 Example instance of a delivery node. It runs after a `git-push` node, which pushes the job branch from `repo.git`:
 
@@ -353,7 +355,7 @@ A recipe is a graph. Recipe templates live in the library; a project uses recipe
     "review":  { "use": "code-reviewer", "agent": { "providerNot": ["code"] } },
     "approve": { "use": "approver" },
     "human":   { "use": "human-review" },
-    "commit":  { "use": "git-commit", "requires": ["lint", "types", "test"] },
+    "commit":  { "use": "git-commit", "requires": ["lint", "types", "test", "human"] },
     "rebase":  { "use": "git-rebase" },
     "push":    { "use": "git-push" },
     "pr":      { "use": "github-pr" }
@@ -399,7 +401,7 @@ Recipe fields:
 | `nodes.<id>.requires` | nodes whose latest outcome must be `passed` on the current content state (4.4) |
 | `nodes.<id>.optional` | runs only if the `spec` names it (4.2) |
 | `nodes.<id>.session` | a session group name for agent nodes. Agent nodes of the same job with the same group and the same profile share one harness session: each run resumes the session of the previous run in the group, so the fixed prompt is paid once. A node with no group gets a new session (or its own, with `resume`). A profile change (for example a fallback on quota) starts a new session for the group. Reviewers should have no group, so they judge the code without the builder's history |
-| `nodes.<id>.skipWhenUnchanged` | after a base change, if the rebase was clean and the job's own changes are identical to before (same `git patch-id` of the job's diff), the node ends at once with its previous outcome instead of running. Used to avoid repeating reviews and human approvals |
+| `nodes.<id>.skipWhenUnchanged` | after a base change, if the rebase was clean and the job's own changes are identical to before (same `git patch-id` of the job's diff), the node ends at once with its previous outcome instead of running, and that outcome is bound to the new content state (4.4): an approval of the same patch carries over. Used to avoid repeating reviews and human approvals; checks never use it |
 | `edges` | `from`, `on` (outcome), `to`, optional `maxRounds` |
 
 Notes on the example:
@@ -438,7 +440,7 @@ A node receives the latest artifact of each type in its `inputs`. The recipe val
 *   There are no exceptions. A service is reached only through a tool that keeps its own login (for example Jira through `acli` or the Atlassian MCP server). A service with no such tool is not supported until one exists.
 *   A harness keeps its login in a config directory, chosen through the variable named in the connector file (for example `CLAUDE_CONFIG_DIR`, `CODEX_HOME`).
     *   Normal mode: the first account of each harness uses the harness's own default directory (no variable set, so `~/.claude`, `~/.codex`): the login the user already has, with no login in PeCore. A second account of the same harness gets `~/.pecore-harness/<account-id>/` in the app user's home and needs one login there.
-    *   Protected mode: every account gets `~/.pecore-harness/<account-id>/` in the home of `pecore-agent`, and needs one login there, once, for all projects and the orchestrator.
+    *   Protected mode: every account gets `~/.pecore-harness/<account-id>/` in the home of `pecore-agent`, and needs one login there, once, for all projects and the orchestrator. Every agent can read all these logins, because they share one OS user (section 8).
     *   A harness whose connector names no such variable supports one account per OS user, and the GUI says so.
 *   A login is one model account in one of these directories (5.9). Login state, `auth` waits and rechecks belong to the login; quota cooldowns (4.7) belong to the account.
 *   The user logs in inside the harness, through the harness's own login command and the vendor's own flow. PeCore never reads, copies or moves a harness token: Anthropic's terms forbid apps to collect, store or intermediate Claude credentials ([ACP spike](spikes/acp.md), Terms).
@@ -448,7 +450,7 @@ A node receives the latest artifact of each type in its `inputs`. The recipe val
     *   Antigravity keeps its login in the desktop keyring and hangs without a desktop session ([Linux spike](spikes/linux-harnesses.md)). It works in normal mode, but not in protected mode until it can keep its login in a file.
 *   In normal mode the harnesses store their logins as they always do, in the app user's session.
 *   Each config directory holds its own login: two directories with copies of the same tokens invalidate each other at the first refresh.
-*   ACP reports a missing login as JSON-RPC error `-32000` ("Authentication required"); a run that ends with it waits with reason `auth`. A run that fails with an error no rule matches first gets a login check; if no account is logged in, it waits with reason `auth` too (5.4).
+*   ACP reports a missing login as JSON-RPC error `-32000` with a message starting with "Authentication required"; a run that ends with it waits with reason `auth`. A run that fails with an error no rule matches first gets a login check; if no account is logged in, it waits with reason `auth` too (5.4).
 *   The connector reports the logged-in account (email and plan) when a session starts, before any prompt: Claude Code and Codex send it in an `auth/status_update` (Codex: `_auth/status_update`) notification during `session/new`. Claude Code also reports there that no account is logged in. A connector that does not names an `identityCommand` instead. After each harness login, and in the background after app start, the engine runs `checkLogin` for every login and compares the email, ignoring case, with the account's `email` in `accounts.json`; the plan is only shown. A mismatch shows a warning and blocks that login with waiting reason `auth`.
 *   `profiles.json` defines agent profiles: model account (which names the connector), model, effort. The time limit is the node's `timeoutSec`. The GUI lists the models and efforts that the connector offers for the account (`listOptions`, 5.1).
 *   `tiers.json` maps the four tier names (`frontier`, `strong`, `standard`, `cheap`) to ordered lists of profiles. The first profile that is available and satisfies the node's constraints is used; later profiles are backups used only when earlier ones are unavailable (quota, rate limit, harness error).
@@ -473,20 +475,19 @@ A node receives the latest artifact of each type in its `inputs`. The recipe val
 
 #### 4.1 Job states
 
-```text
-queued ──▶ running ◀──▶ waiting
-              │ ▲
-              ▼ │
-            paused
-              │
-              ▼
-   succeeded | not_delivered | failed | stopped   (final: can be archived or deleted)
-       │            │             │        │
-       │            │             └────────┴──▶ running   resume (G17)
-       └────────────┴──▶ running                only on a base change (4.6)
+| From | To | When |
+|---|---|---|
+| `queued` | `running` | the scheduler starts it |
+| `running` | `waiting` | its next node run waits for a limit or a human |
+| `waiting` | `running` | the wait ends |
+| `running`, `waiting` | `paused` | pause, or app quit |
+| `paused` | `running`, `waiting` | play (back to the state it was in) |
+| `running` | `succeeded`, `not_delivered`, `failed` | the recipe ends (4.2) |
+| `queued`, `running`, `waiting`, `paused` | `stopped` | stop |
+| `failed`, `stopped` | `running` | resume (G17), unless archived |
+| `succeeded`, `not_delivered` | `running` | base change (4.6) |
 
-queued, running, waiting, paused ──▶ stopped   stop
-```
+Final states are `succeeded`, `not_delivered`, `failed` and `stopped`; a job in a final state can be archived or deleted.
 
 | State | Meaning |
 |---|---|
@@ -499,7 +500,7 @@ queued, running, waiting, paused ──▶ stopped   stop
 | `failed` | a node failed beyond its retries, an unrouted failure outcome ended the job (4.2), or the job hit `maxNodeRuns` and the user chose to end it |
 | `stopped` | the user pressed stop |
 
-Pause waits for the running node run to finish, then holds. Play moves a paused job back to `running` or `waiting`. On app start every job that was `running` or `waiting` is `paused` with reason `quit`; a pause by the user has reason `user`. A job is archived only from a final state; a `succeeded` or `not_delivered` job that re-enters `running` is first unarchived.
+Pause waits for the running node run to finish, then holds. Play moves a paused job back to `running` or `waiting`. On app start every job that was `running` or `waiting` is `paused` with reason `quit`; `queued` jobs stay `queued`; a pause by the user has reason `user`. A job is archived only from a final state. Archiving removes the workdir, so an archived `failed` or `stopped` job cannot be resumed; a `succeeded` or `not_delivered` job that re-enters `running` on a base change is first unarchived and its worktree recreated from its branch (4.5).
 
 #### 4.2 Graph rules
 
@@ -530,7 +531,7 @@ A job waiting for a human, a quota, a login or a confirmation releases its pool 
 #### 4.4 Content state and evidence
 
 *   After every node run with `changesFiles: true`, the engine computes the workdir's **content state**: the git tree hash of all tracked and untracked files, built with a temporary index so the worktree's index is never touched. Files ignored by git and the `.pecore/` folder are not part of it.
-*   Every node run records the content state before and after it. Every check result is bound to the content state it saw.
+*   Every node run records the content state before and after it. Every check result is bound to the content state it saw; a check whose before and after states differ binds to neither and counts as not `passed`. A human review is bound the same way to the content state of the diff it showed, and its `approve` counts as `passed` for `requires`.
 *   The engine also recomputes the content state right before it evaluates `requires` and right before a commit node, because another job of the same project runs as the same OS user and could have changed the workdir in between.
 *   `requires` on a recipe node is checked against the current content state. If one of the listed nodes has not `passed` on that exact state, the node does not run and produces the built-in outcome `stale`, which the recipe can route (for example back to the checks).
 *   A commit node must produce a commit whose tree equals the content state checked by `requires`; otherwise it fails with `READ_ONLY_VIOLATION`. The `commit` artifact records the SHA, and delivery pushes that exact SHA (`{job.commit}`), never whatever the branch ref points to.
@@ -541,8 +542,8 @@ A job waiting for a human, a quota, a login or a confirmation releases its pool 
 
 #### 4.5 Workdirs and branches
 
-*   At job start the engine creates branch `factory/<job-id>` from the job's base commit (the head of its base branch, by default the project's `baseBranch`, or the parent job's last commit for stacked jobs) and a worktree under `work/<job-id>/`. The worktree is owned by the project's OS user.
-*   `repo.git` is shared with the project's OS user through a group (`core.sharedRepository=group`), because commits made in a worktree write objects into it. Every git command that runs with a work tree under `work/` runs as the project's OS user, reads included: computing and restoring the content state, creating and removing worktrees, rebase, commit. The app user never runs git with a work tree under `work/` and never uses `safe.directory` for it (section 8).
+*   At job start the engine creates branch `factory/<job-id>` from the job's base commit (the head of its base branch, by default the project's `baseBranch`, or the parent job's last commit for stacked jobs) and a worktree under `work/<job-id>/`. The worktree is owned by the project user.
+*   `repo.git` is shared with the project user through a group (`core.sharedRepository=group`), because commits made in a worktree write objects into it. Every git command that runs with a work tree under `work/` runs as the project user, reads included: computing and restoring the content state, creating and removing worktrees, rebase, commit. The app user never runs git with a work tree under `work/` and never uses `safe.directory` for it (section 8).
 *   One job has exactly one workdir and runs one node at a time. Work that should run in parallel is split into separate jobs (sibling or stacked, 4.6). Several workdirs per job is a possible later evolution, not part of this design.
 *   Node-run ids: `<job-id>/<node>#<round>`.
 *   When a job ends `succeeded` or `not_delivered`, the engine removes its worktree. If the job later re-enters `running` (base change, 4.2), the engine first recreates its worktree from `factory/<job-id>`. When a job fails or is stopped, its worktree stays, so the user can see what the agents left; it is removed when the job is archived or deleted. Branches stay until the job is deleted.
@@ -564,21 +565,21 @@ A job waiting for a human, a quota, a login or a confirmation releases its pool 
 *   Limits are counters held in memory, organised in pools: `jobs` (global), `jobs:<project>`, `agents` (global), `provider:<name>`, `account:<id>` (from `maxParallel`). A node run takes one unit from every pool that applies, all at once, or waits with reason `concurrency`.
 *   After an app restart the counters start at zero, after the leftover-process sweep of section 1.
 *   When a connector reports a quota or rate limit error (section 5), the engine marks the account as cooling down until the reset time the connector reported, or for a backoff of 1, 2, 4, then 8 minutes if no time is known. All node runs on that account wait with reason `quota` or `rate_limit`. A node whose tier has another available profile switches to it as a new attempt.
-*   Budget: each attempt records tokens and cost; budget tokens are input, output and cache writes (5.3). For API key accounts cost comes from the cost the connector reports, or else from the token counts and a price table in settings; for subscriptions only tokens are recorded. When a project or job budget limit is reached, node runs wait with reason `budget` and the user is asked to raise the limit or stop the job.
+*   Budget: each attempt records tokens and cost; budget tokens are input, output and cache writes (5.3). For API key accounts cost comes from the cost the connector reports, or else from the token counts and a price table in settings; for subscriptions only tokens are recorded. When a project or job budget limit is reached, node runs wait with reason `budget` and the user is asked to raise the limit or stop the job. The limit is checked when an attempt starts, against the usage of attempts already ended; attempts already running finish, so the overshoot is at most what they use. Orchestrator turns count toward the project's budget when they act for one project (an intake turn, or a chat message about one project).
 
 #### 4.8 External effects and crash safety
 
 *   Every `runsAs: engine` node acts outside the machine (push, PR/MR, ticket comment, repo creation) and has a probe (3.1). It is recorded in two steps: `effect.requested` before the command runs, `effect.completed` or `effect.failed` after.
 *   Before running a node that has a `probe`, the engine always runs the probe first and reads it with `probeRules`. `done`: the node completes with the probe output and its command does not run. `not_done`: the command runs. `unknown` (for example the forge is unreachable): the node run waits with reason `network` and the probe is retried with the backoff of 4.7 (1, 2, 4, then every 8 minutes) until it gives `done` or `not_done`, or the user stops the job. The command never runs blind. This covers both a crash between `effect.requested` and its outcome, and a node that runs again after a rebase.
 *   Delete is local only: it removes the job's local branch, worktree, artifacts, logs, services and rows in `pecore.db`. It never acts on the forge; remote branches and PRs/MRs the job created stay, and the user closes them on the forge if needed.
-*   Project delete is local only too: it stops and deletes every job of the project as above, removes the project directory (`repo.git`, `work/`, `artifacts/`, `logs/`, `pecore.db`), its definitions in `PECORE_HOME` (one commit) and its `pecore-*` compose projects. The remote repository is never touched. Refused while a job of the project is `running`; the GUI asks to stop them first. The project's OS user is kept by default, because other projects or other uses may share it; an option deletes it too (through the admin prompt), offered only when no other project uses it.
+*   Project delete is local only too: it stops and deletes every job of the project as above, removes the project directory (`repo.git`, `work/`, `artifacts/`, `logs/`, `pecore.db`), its definitions in `PECORE_HOME` (one commit) and its `pecore-*` compose projects. The remote repository is never touched. Refused while a job of the project is `running`; the GUI asks to stop them first. Project delete never removes an OS user; `pecore-agent` is removed only when the user turns protected mode off.
 
 #### 4.9 Job services
 
 *   If `project.json` has `services`, the engine starts them when the job starts. Pause stops the containers and keeps their data (`compose stop`); play starts them again (`compose start`). A final state removes them with their data (`compose down -v`); a job that re-enters `running` starts them from scratch. Until they are healthy, node runs wait with reason `services`.
 *   The container runtime runs as the app user, but the compose file lives in the repo, where agents can edit it. So the engine never reads it from the workdir. It reads it from the job's base commit (`git --git-dir=repo.git show <base>:<path>`), rejects `build:`, bind mounts of host paths, `privileged`, `cap_add`, `devices`, `network_mode: host` and `pid: host`, and puts each new version in the confirmation queue (section 8). It runs the confirmed copy with `-f <copy> --project-directory <empty temp dir>`.
 *   Each job gets its own compose project, `pecore-<job id in lower case>`. The compose file must publish ports as `"127.0.0.1::<container port>"`, so the runtime picks free host ports on the loopback address and parallel jobs never clash.
-*   The engine reads the chosen ports with `compose port` and passes them to every node as environment variables `PECORE_SERVICE_<SERVICE>_<PORT>`, with the service name in upper case and `-` replaced by `_` (for example `PECORE_SERVICE_POSTGRES_5432=127.0.0.1:49153`). The project's OS user can reach the loopback address.
+*   The engine reads the chosen ports with `compose port` and passes them to every node as environment variables `PECORE_SERVICE_<SERVICE>_<PORT>`, with the service name in upper case and `-` replaced by `_` (for example `PECORE_SERVICE_POSTGRES_5432=127.0.0.1:49153`). The project user can reach the loopback address.
 *   When the app quits (Electron `before-quit`), the main process runs `compose down -v` for every `pecore-*` compose project before exiting. As a backup after a crash, at app start the engine removes compose projects named `pecore-*` that belong to no job.
 
 ### 5. Agents and connectors
@@ -590,12 +591,12 @@ Two domains are kept apart. The engine knows jobs, nodes, accounts, logins, OS u
 ```ts
 type Login = { account: string; osUser: string; configDir: string };   // 3.4
 
-type Spawn = (p: { argv: string[]; env: Record<string, string>; cwd: string }) => {
-  stdin: Writable; stdout: Readable; stderr: Readable;
-  pgid: number;
+type Spawn = (p: { argv: string[]; env: Record<string, string>; cwd: string }) => Promise<{
+  stdin: Writable; stdout: Readable; stderr: Readable;   // stderr without the pid line
+  pgid: number;                              // known when the promise resolves (Fixed choices: Process groups)
   exited: Promise<{ code: number | null; signal: string | null }>;
   stop(): Promise<void>;                     // TERM to the group, KILL after 5 s
-};
+}>;
 
 checkPrerequisites({ connector, spawn }): Promise<{ ok: boolean; problems: string[] }>;
 prepareLogin({ connector, login }): {
@@ -612,7 +613,8 @@ startSession({ connector, login, spawn, cwd, model, effort?, resumeId?, mcpServe
 type Session = {
   sessionId: string;
   resumed: boolean;                        // false when resumeId was given but a new session was started
-  events: AsyncIterable<AgentEvent>;       // for the raw log and the live view only
+  events: AsyncIterable<AgentEvent>;       // for the live view only
+  raw: AsyncIterable<RawLine>;             // every JSON-RPC line in both directions and every stderr line, MCP tokens redacted
   prompt(text: string): Promise<TurnResult>;   // never rejects
   cancel(): Promise<void>;                 // session/cancel
   close(): Promise<void>;                  // ends stdin, waits 5 s, then stop()
@@ -629,18 +631,18 @@ type TurnResult = {
 };
 ```
 
-`AgentEvent` is `text {text}`, `tool_call {toolCallId, title, kind, status}`, `permission {toolCallId, optionId}`, `account {email, plan}`, `quota {...}`, `usage {...}`. Times are epoch milliseconds. `startSession` rejects with `{ kind, raw }` when the connector fails before the prompt; the engine classifies it like a turn error (5.4).
+`RawLine` is one item of the raw log format (section 9); the engine writes these lines to the raw log (section 9) unchanged, and redaction happens in `@pecore/agents` before a line is emitted. `AgentEvent` is `text {text}`, `tool_call {toolCallId, title, kind, status}`, `permission {toolCallId, optionId}`, `account {email, plan}`, `quota {...}`, `usage {...}`. Times are epoch milliseconds. `startSession` rejects with `{ kind, raw }` when the connector fails before the prompt; the engine classifies it like a turn error (5.4).
 
 The engine adds to `env` only `HOME`, `PATH` and `LANG` of the target user and the `PECORE_*` variables, and chooses the OS user of `spawn` (Process below).
 
 #### 5.2 ACP session
 
-*   One connector process per attempt, as the project's OS user, with the node's workdir as `cwd`. It talks ACP over its stdin and stdout ([ACP spike](spikes/acp.md)); its stderr goes to the raw log.
+*   One connector process per attempt, as the project user, with the node's workdir as `cwd`. It talks ACP over its stdin and stdout ([ACP spike](spikes/acp.md)); its stderr goes to the raw log.
 *   Every request before `session/prompt` has a limit of 30 seconds; past it the process group is stopped and the result is `other`.
 *   Order: the connector's `beforeStart`; `initialize` (protocol version 1, no file system, no terminal); then, when `resumeId` is given, `session/resume` with `sessionId`, `cwd` and `mcpServers` if the connector offers it, else `session/load` (its replayed `session/update` notifications are dropped until it answers). If neither is offered or the call fails, `session/new` with `cwd` and `mcpServers`, and `resumed` is `false`. Then `sessionConfig`, then `session/prompt`.
 *   `sessionConfig` is an ordered list, applied one `session/set_config_option` at a time, because setting one option can reset another (in the Claude Code traffic, setting `model` changed `effort`). After each call the answer's `currentValue` for that option must equal the value sent; otherwise the result is `other`. An entry whose value is empty (no effort in the profile) is skipped. Every option is set at every session start, because the Claude Code adapter otherwise takes mode and model from the harness's own settings.
 *   Mapping of agent messages: `session/update` `agent_message_chunk` gives `text`; `tool_call` and `tool_call_update` give `tool_call`; an answered `session/request_permission` gives `permission`; every other update goes to the raw log only. The reader receives every incoming notification, including `auth/status_update` and `_auth/status_update`, which are not `session/update`.
-*   Permissions: agents get full permission inside their harness, with network access (author decision). `sessionConfig` selects the connector's most permissive mode. Any `session/request_permission` that still arrives is answered with the `optionId` of its option of kind `allow_once`, or `{ "outcome": "cancelled" }` if there is none. Every tool call is in the raw log. The project's OS user is the security boundary (section 8).
+*   Permissions: agents get full permission inside their harness, with network access (author decision). `sessionConfig` selects the connector's most permissive mode. Any `session/request_permission` that still arrives is answered with the `optionId` of its option of kind `allow_once`, or `{ "outcome": "cancelled" }` if there is none. Every tool call is in the raw log. The project user is the security boundary (section 8).
 
 #### 5.3 Usage, quota and cost
 
@@ -656,7 +658,7 @@ The engine adds to `env` only `HOME`, `PATH` and `LANG` of the target user and t
 The engine decides in this order:
 
 1.  The engine itself cancelled the turn: `TIMEOUT` after a timeout, interrupted after a stop or quit.
-2.  JSON-RPC error `-32000`: `auth`.
+2.  JSON-RPC error `-32000` whose message starts with "Authentication required" (seen with Claude Code and opencode): `auth`. Other `-32000` errors go on to step 4.
 3.  `stopReason: end_turn` and a valid `.pecore/output.json` (Prompt and output below): the node run completes. A `rejected` quota seen during the turn still starts the account's cooldown for later attempts.
 4.  A turn error with `data.errorKind` (5.3), or a `rejected` quota during the turn: the kind and reset time of 5.3.
 5.  The connector's `errors` rules, applied to the JSON-RPC error message or to the turn's `text`: their kind, with the reset time if the rule reads one.
@@ -684,14 +686,14 @@ Each built-in connector ships with recorded ACP traffic of these cases, used by 
 
 #### 5.7 Process
 
-*   The engine runs a connector or command as the project's OS user with `sudo -n -H -u <user> -- env -i <variables> <program> ...` (Fixed choices: Process groups), in the given `cwd`. `sudo` resets the environment, so every variable is passed through `env`: those built by `@pecore/agents` plus those the engine adds (5.1). The sudo rule is limited to that user and needs no `SETENV`. In normal mode processes are spawned directly, without `sudo`, with the same variables.
+*   The engine runs a connector or command as the project user with `sudo -n -H -u <user> -- env -i <variables> <program> ...` (Fixed choices: Process groups), in the given `cwd`. `sudo` resets the environment, so every variable is passed through `env`: those built by `@pecore/agents` plus those the engine adds (5.1). The sudo rule is limited to that user and needs no `SETENV`. In normal mode processes are spawned directly, without `sudo`, with the same variables.
 *   Program paths: the harness program is looked up in this order: a path set in `settings.json` (`programPaths`), then `command -v <program>` run by the app user's login shell with the name passed as an argument, then the engine's `PATH`. A desktop-launched app often lacks the shell's `PATH`, hence the login shell. Node is the runtime shipped in `PECORE_HOME/adapters/node/` (Fixed choices: Adapters).
 *   In protected mode `pecore-agent` runs the app user's installed harness. Its files are readable by others in the usual installations (for example `~/.local/share/claude`); `pecore-agent` gets traverse-only access on each directory on the path that it cannot otherwise traverse, like `work/` (section 8). `checkPrerequisites` verifies, as the project user, that the harness and Node run and that the harness version is in range.
 
 #### 5.8 Prompt and output
 
 *   The engine sends the prompt as the text of `session/prompt` and saves it to `artifacts/.../prompt.md`. Selected knowledge files are copied into `.pecore/context/`, input artifacts into `.pecore/inputs/`, and the node's `outputSchema` into `.pecore/output.schema.json`. `.pecore/` is listed in `repo.git/info/exclude`, so it is never committed.
-*   ACP has no structured output option. The prompt asks the agent to write its result to `.pecore/output.json`, valid against `.pecore/output.schema.json`. When the turn ends, the engine reads the file as the project user (section 8) and validates it (5.4).
+*   ACP has no structured output option. The prompt asks the agent to write its result to `.pecore/output.json`, valid against `.pecore/output.schema.json`. The engine deletes `.pecore/output.json` before every turn, correction messages included, so a result left by an earlier attempt or turn is never read. When the turn ends, the engine reads the file as the project user (section 8) and validates it (5.4).
 
 #### 5.9 Logins
 
@@ -726,13 +728,13 @@ Each built-in connector ships with recorded ACP traffic of these cases, used by 
 
 *   Normal mode (the default) works like running Claude Code or Codex by hand: agents run as the app user, with access to its files and logins and to `pecore.db`. The rest of this section, except the confirmation of `runsAs: engine` and `source` nodes, connector files and orchestrator recipe changes, applies to protected mode. The GUI shows which mode is on and offers protected mode.
 *   Protected mode: agents, checks and the orchestrator run as `pecore-agent`, which cannot read the app user's files unless those files are readable by others (see the check below). All projects share this user, so protected mode separates agents from the user, not projects from each other.
-*   The project directory is owned by the app user. Only `work/` and `repo.git/` are writable by the project's OS user (shared group); `knowledge/`, databases, artifacts and logs are not readable by it.
+*   The project directory is owned by the app user. Only `work/` and `repo.git/` are writable by the project user (shared group); `knowledge/`, databases, artifacts and logs are not readable by it.
 *   Inside `repo.git/`, only `objects/`, `refs/`, `logs/`, `worktrees/` and `packed-refs` are group-writable. `config`, `hooks/` and `info/` belong to the app user and are read-only for the group. Otherwise an agent could add a hook or a config key such as `core.fsmonitor` or `core.sshCommand`, and the next git command run as the app user (for example in `git-push`) would execute it. As a second barrier, every git command the engine or a `runsAs: engine` node runs gets `-c core.hooksPath=/dev/null`. `extensions.worktreeConfig` stays off, so per-worktree config files are ignored.
-*   The agent controls the worktree's `.git` file and `repo.git/worktrees/<id>/`, so it can point git at a config file it wrote. Therefore the app user never runs git with a work tree under `work/`. Git work in a workdir runs as the project's OS user and returns plain values (a tree hash, a commit SHA). The app user runs git only with `--git-dir=<project>/repo.git` and no work tree (for example `git push` in `git-push`). `runsAs: engine` nodes start in an empty temporary directory, never in a workdir.
-*   The same holds for plain files. The engine never opens, creates or deletes a file under `work/` as the app user, because the agent could replace it with a symlink to one of the app user's files (for example a forge login). Every file operation in a workdir (copying `.pecore/` inputs, reading `outputRules.file`, deleting `scratchPaths`, writing the prompt) runs standard POSIX tools as the project's OS user through `runners/process.ts`: `cat` to read or write through stdin and stdout, `find -P ... -type f -delete` to delete. The project user cannot read or write the app user's files, so a symlink gives the agent nothing; refusing symlinks (`test -L`) is a second barrier. The engine writes what it receives into `artifacts/` itself. A test plants symlinks in every such path.
-*   The project's OS user gets traverse-only access (execute, no read) on the directories on the path to `work/`, through ACLs (`setfacl` on Linux, `chmod +a` on macOS). It can reach `work/` but cannot list the app user's home.
+*   The agent controls the worktree's `.git` file and `repo.git/worktrees/<id>/`, so it can point git at a config file it wrote. Therefore the app user never runs git with a work tree under `work/`. Git work in a workdir runs as the project user and returns plain values (a tree hash, a commit SHA). The app user runs git only with `--git-dir=<project>/repo.git` and no work tree (for example `git push` in `git-push`). `runsAs: engine` nodes start in an empty temporary directory, never in a workdir.
+*   The same holds for plain files. The engine never opens, creates or deletes a file under `work/` as the app user, because the agent could replace it with a symlink to one of the app user's files (for example a forge login). Every file operation in a workdir (copying `.pecore/` inputs, reading `outputRules.file`, deleting `scratchPaths`, writing the prompt) runs standard POSIX tools as the project user through `runners/process.ts`: `cat` to read or write through stdin and stdout, `find -P ... -type f -delete` to delete. The project user cannot read or write the app user's files, so a symlink gives the agent nothing; refusing symlinks (`test -L`) is a second barrier. The engine writes what it receives into `artifacts/` itself. A test plants symlinks in every such path.
+*   The project user gets traverse-only access (execute, no read) on the directories on the path to `work/`, through ACLs (`setfacl` on Linux, `chmod +a` on macOS). It can reach `work/` but cannot list the app user's home.
 *   At project creation and at every app start, PeCore checks that the app user's home and the tools' login files are not readable by others, and offers to fix the permissions.
-*   In protected mode, harness logins (subscriptions and API keys) live in `pecore-agent`'s home, stored by each harness. An agent can read the login of the harness it runs in.
+*   In protected mode, harness logins (subscriptions and API keys) live in `pecore-agent`'s home, stored by each harness. All of them belong to the same OS user, so an agent can read every protected login, not only the one of the harness it runs in: a prompt-injected agent in one project can take the logins of every account used in protected mode. Protected mode protects the app user's files and logins, not the protected logins from each other.
 *   `PECORE_HOME/adapters/` holds only code shipped with the app. It is readable by every user, so `pecore-agent` can run the adapters and the shipped Node; it gets traverse-only access on the directories on the path to it, like `work/`, and on the directories on the path to the harness program (5.7). Only the app user can write any of them.
 *   Connector files added by the user run commands as the project user, so they are confirmed like `runsAs: engine` nodes (5.6). The Claude Code connector keeps the MCP connectors of the user's claude.ai account out of agents' sessions (5.6), because those act with the user's account outside the project user's reach.
 *   Forge and service logins live in the app user's home, stored by their tools. Only `command` nodes with `runsAs: engine` run as the app user, and the engine selects only the accounts they declare.
@@ -782,7 +784,7 @@ Each entry: option, status (Rejected or Deferred, with the decision if any), rea
 *   **One JSON manifest per harness, run in non-interactive mode (`claude -p`, `codex exec`).** Rejected after the phase 0 spikes; it was the previous version of this design. It allows one message per process and no permission requests. Each harness also needed code beyond what a manifest could describe: usage reported per session instead of per turn, ten retries before a missing login is reported, a process that never exits after a login error ([Linux spike](spikes/linux-harnesses.md)). Lost: a harness with no ACP mode and no adapter cannot be added.
 *   **Our own adapter per harness, on each vendor's protocol (`claude` stream JSON, `codex app-server`).** Rejected. ACP adapters for Claude Code and Codex already exist, and opencode, Copilot CLI and Gemini CLI speak ACP natively. Lost: control over adapter releases; PeCore pins the versions it ships.
 *   **Adapter binaries from the ACP registry (the archives Zed downloads).** Rejected. The Claude Code archive also holds a copy of Claude Code (about 460 MB in all), and a download at first use adds a network step and checksums to manage. The npm packages and a Node runtime, shipped with the app, add about 40 MB per platform and no download. Lost: nothing.
-*   **A container per agent, with runner images and a token proxy.** Rejected (D9). Each harness would need its own login flow inside a container, plus runner images, file ownership mapping and a network proxy per container. PeCore runs agents on the host as an OS user chosen per project. Lost: network limits per node. Containers remain only for job services such as Postgres, with the runtime set in settings (D22).
+*   **A container per agent, with runner images and a token proxy.** Rejected (D9). Each harness would need its own login flow inside a container, plus runner images, file ownership mapping and a network proxy per container. PeCore runs agents on the host as the project user (the app user, or `pecore-agent` in protected mode). Lost: network limits per node. Containers remain only for job services such as Postgres, with the runtime set in settings (D22).
 *   **A proxy that injects tokens or filters traffic (TLS-intercepting, or a CONNECT allowlist such as Squid).** Rejected. Without containers there is nothing to route through it, and each harness keeps its own login (D27).
 *   **An LLM gateway such as LiteLLM for budgets and rate limits.** Rejected. It needs API keys, and subscriptions do not provide them. PeCore reads token and cost figures from each harness's output and enforces budgets in the scheduler.
 
@@ -821,6 +823,7 @@ Each entry: option, status (Rejected or Deferred, with the decision if any), rea
 | A recipe or orchestrator change removes a human review or retargets an engine node | security | unreviewed code delivered with the user's account | user confirmation of engine and source nodes and of orchestrator recipe changes; no `params` overrides on engine nodes | 3.2, 6, 8 |
 | An agent reads the login of the harness it runs in | security | subscription token theft by a prompt-injected agent | accepted; in protected mode the damage stays within that harness account | 8 |
 | Normal mode: agents run as the app user | security | a prompt-injected agent can read the user's files and forge logins, as when the user runs a harness by hand | author decision: normal mode is the default, for zero setup; the GUI shows the mode and offers protected mode in one step | 8 |
+| Protected mode: all protected harness logins share `pecore-agent` | security | a prompt-injected agent can read the protected logins of every account | accepted: the app user's files and logins stay out of reach; per-account OS users would multiply logins (D9) | 8 |
 | Automatic intake starts jobs from anyone who can set the label | security | untrusted tickets drive agents | trust rule of section 7 | 7 |
 | An agent edits the compose file to mount the app user's home or run a privileged container | security | forge login theft, root on rootful Docker | compose file read from the base commit, forbidden keys rejected, each version confirmed | 4.9 |
 | One job's agent changes another job's workdir or refs in the same project | integrity | unchecked content delivered | content state recomputed before `requires` and commit; push of the exact checked SHA | 4.4 |
@@ -845,8 +848,10 @@ Each entry: option, status (Rejected or Deferred, with the decision if any), rea
 
 | Decision | Brief said | Design says | Reason |
 |---|---|---|---|
+| D9 | each project picks its OS user: the author's own or a dedicated one | one global mode: normal (agents run as the app user, the default) or protected (all projects and the orchestrator run as `pecore-agent`) | one login per account is already friction; a per-project user would multiply logins |
 | D11 | workdir kept on failure or takeover | a failed or stopped job keeps its workdir until it is archived or deleted; a `succeeded` or `not_delivered` job loses it | the user inspects what agents left; ended jobs need no workdir |
 | D18 | `events.db`; global state includes secrets | `pecore.db`; no secrets anywhere | naming; D27 |
+| D26 | delete removes the remote branch and open PR/MR too | delete is local only; remote branches and PRs/MRs stay | remote cleanup depends on the forge and cannot be undone |
 | D25 | delete only when stopped | delete in any final state, if no live children | a finished job need not be stopped first; children need their parent's branch |
 | D23 | work stops when the app is closed | closing the window keeps the app and its jobs running in the tray; only Quit stops them | closing a window by mistake must not stop several running jobs |
 | D27 | exception: credentials no tool stores go to `safeStorage` | no exception, no `safeStorage` | the only use was a Jira token, and Jira has tools that keep their own login |
@@ -867,13 +872,13 @@ The repository holds only `docs/` today. Every file below is new unless marked "
 *   **Sudo rule:** written to a temporary file, checked with `visudo -c -f <tmp>`, installed with `install -m 0440 -o root -g root` (group `wheel` on macOS) as `/etc/sudoers.d/pecore-agent`. Content: `<app user> ALL=(pecore-agent) NOPASSWD: ALL` and `Defaults>pecore-agent !use_pty`. Without `!use_pty`, sudo 1.9.14 and later run the command in a new session on a pty, and the engine cannot signal its process group.
 *   **ACLs:** `setfacl -m u:pecore-agent:--x <dir>` on Linux; `chmod +a "pecore-agent allow search" <dir>` on macOS.
 *   **Claude Code login, macOS, protected mode:** the `darwin` entries of `beforeLogin` and `beforeStart` in `connectors/claude-code.json`, run as the project user through `sudo -n -H -u`. Before the first login: `security create-keychain -p "" ~/Library/Keychains/pecore.keychain-db`, `security default-keychain -d user -s <path>`, `security list-keychains -d user -s <path>`, `security set-keychain-settings <path>` (no automatic lock). The name must not be `login.keychain-db`: unlocking it fails right after creation. Login: `claude auth login --claudeai` with the account's `CLAUDE_CONFIG_DIR`; it prints a URL and reads the code on stdin. Before every connector start: `security unlock-keychain -p "" <path>`. Verified by hand in the spike with a password; to verify with an empty password, and that token refreshes are written back to the Keychain, in the macOS pass.
-*   **Process groups:** the engine spawns `sudo -n -H -u <user> -- /bin/sh -c 'echo "PECORE_PID $$" >&2; exec env -i "$@"' sh <VAR=value>... <program> <args>...` with `detached: true`; variables and arguments are passed as arguments, never spliced into the script. The shell's pid arrives as the first stderr line (sudo closes file descriptors above 2 by default, so a separate descriptor would not survive it), and `exec` keeps that pid for the program. Stop: `sudo -n -u <user> kill -s TERM -<pgid>`, then `-s KILL` after 5 seconds. To settle in the phase 0 sudo spike: whether that pid leads its own process group under `sudo` with `!use_pty` or the group is sudo's (then the shell starts with `setsid`), and that stopping the group also stops the harness the adapter starts.
+*   **Process groups:** the engine spawns `sudo -n -H -u <user> -- /bin/sh -c 'echo "PECORE_PID $$" >&2; exec env -i "$@"' sh <VAR=value>... <program> <args>...` with `detached: true`; variables and arguments are passed as arguments, never spliced into the script. The shell's pid arrives as the first stderr line (sudo closes file descriptors above 2 by default, so a separate descriptor would not survive it), and `exec` keeps that pid for the program. Stop: `sudo -n -u <user> kill -s TERM -<pgid>`, then `-s KILL` after 5 seconds. To settle in the phase 0 sudo spike: whether that pid leads its own process group under `sudo` with `!use_pty` or the group is sudo's (then the shell starts with `setsid`), and that stopping the group also stops the harness the adapter starts. In protected mode `spawn` returns once the pid line has arrived (at most 5 seconds, else the spawn fails and sudo's own process is killed); in normal mode the child's pid is known at once. The engine records the pgid before any ACP request, so a stop or a restart sweep always has it.
 *   **repo.git:** created with `git clone --bare` (or `git init --bare` plus an empty commit made with `git mktree </dev/null`, `git commit-tree`, `git update-ref`). Then `core.sharedRepository group`, `gc.auto 0`, `maintenance.auto false`, the fetch refspec `+refs/heads/*:refs/remotes/origin/*`, in protected mode `chgrp -R pecore-agent` and `chmod -R g+rwX` with `g+s` on `objects/`, `refs/`, `logs/`, `worktrees/`. `factory/*` branches are deleted by the app user with `--git-dir`. The project user runs `git --git-dir=<repo.git> worktree add`.
 *   **Git credentials:** git ignores `GH_TOKEN`, so engine git network commands set a credential helper per forge tool: `-c credential.helper= -c 'credential.helper=!gh auth git-credential'` for GitHub, `!glab auth git-credential` for GitLab, `!aws codecommit credential-helper $@` for CodeCommit, the user's helper for `git`.
 *   **Push:** `git --git-dir=<repo.git> push --force-with-lease=refs/heads/factory/<id>:<expected> origin {job.commit}:refs/heads/factory/<id>`, where `<expected>` is the SHA the probe read with `ls-remote`, or empty when the branch does not exist.
 *   **Accounts per tool:** `gh auth token --user <login> --hostname <host>` (gh 2.40 or later). `glab` keeps one token per host, so PeCore supports one GitLab account per host and sets `GITLAB_TOKEN` from `glab config get token --host <host>`.
 *   **Compose:** Compose v2 is required and its version is checked at first run. Runtime to command: Docker, Colima and OrbStack use `docker compose`; Podman uses `podman compose` with the docker-compose v2 provider. Apple `container` is not supported (no compose). Project name `pecore-<job id in lower case>`. Orphans are found with `compose ls --all --filter name=pecore- --format json`.
-*   **Harness permissions:** agents get full permission inside their harness, with network access (author decision). Each connector file's `sessionConfig` selects the most permissive mode: Claude Code `mode` = `bypassPermissions` (offered by the adapter, not yet run: the phase 0 sudo spike records a session in it), Codex `mode` = `agent-full-access` (offered in the recorded traffic). The engine answers any remaining `session/request_permission` as in 5.2. The security boundary is the project's OS user (section 8).
+*   **Harness permissions:** agents get full permission inside their harness, with network access (author decision). Each connector file's `sessionConfig` selects the most permissive mode: Claude Code `mode` = `bypassPermissions` (offered by the adapter, not yet run: the phase 0 sudo spike records a session in it), Codex `mode` = `agent-full-access` (offered in the recorded traffic). The engine answers any remaining `session/request_permission` as in 5.2. The security boundary is the project user (section 8).
 *   **ACP:** protocol version 1. The client is written in `@pecore/agents` on `node:child_process` and `node:readline`, about 80 lines in the spike (`docs/spikes/acp/client.mjs`); the `@agentclientprotocol/sdk` types are used for message shapes only. Requests used: `initialize`, `session/new`, `session/resume`, `session/load`, `session/set_config_option`, `session/prompt`, `session/cancel`; client methods answered: `session/request_permission`; any other request from the agent is answered with error `-32601`. `initialize` declares no file system and no terminal capability, so the harness reads and writes files and runs commands itself, as the project user.
 *   **Libraries:** `@modelcontextprotocol/sdk` for the MCP server; `@fastify/websocket`; `ulid`; Node's `zlib` zstd if Electron's Node supports it (Node 22.15 or later), otherwise `@mongodb-js/zstd`; `tar` for export archives (`.tar.zst`); gitleaks is a prerequisite checked at first run, not bundled; `electron-updater` with GitHub Releases as the feed.
 *   **Tests and native modules:** Vitest runs under Electron's Node (`ELECTRON_RUN_AS_NODE=1 electron node_modules/vitest/vitest.mjs`), so `better-sqlite3` loads with one build. `.npmrc` sets `node-linker=hoisted`, which electron-builder needs with pnpm.
@@ -942,7 +947,7 @@ Tables (`src/store/migrations/001-init.sql`):
 | `beforeLogin`, `beforeStart` | optional lists of argument arrays per platform, run as the project user before the first login and before every connector start, only for logins in a `~/.pecore-harness/` directory (3.4), never for the harness's own default one; for example the Claude Code Keychain steps on macOS (Fixed choices) |
 | `identityCommand`, `identityField` | used only when the connector reports no account at session start (5.9) |
 
-Recorded ACP traffic for tests lives in `packages/agents/fixtures/<connector>/<case>.jsonl`, in the raw log format (section 9). Each case has a `<case>.expected.json` with the events and the `TurnResult` it must give.
+Recorded ACP traffic for tests lives in `packages/agents/fixtures/<connector>/<case>.jsonl`, in the raw log format (section 9). Each case has a `<case>.expected.json` with the events and the `TurnResult` it must give. The five files recorded in phase 0 (`claude-code/two-turns`, `claude-code/permission`, `claude-code/auth-missing`, `codex/tool-call`, `opencode/auth-missing`) have no `at` field; the test loader accepts lines without it, and their `expected.json` files are written in phase 3.
 
 ### Local API, WebSocket and MCP
 
@@ -987,16 +992,16 @@ Quit (tray, app menu, Cmd+Q): main asks the engine `active?`. If jobs are `runni
 
 `src/projects/create.ts`, in order. A step that fails undoes the steps before it and reports which step failed.
 
-1.  Validate the id, repo URL and account; check the account belongs to the repo's forge and host.
+1.  Validate the id. With a `repo`, also validate its URL and account and check the account belongs to the repo's forge and host; with `repo: null` there is no forge account to check.
 2.  Nothing to create for the OS user: in normal mode the project runs as the app user; in protected mode `pecore-agent` already exists.
 3.  Create the project directory, `project.json`, `pecore.db`; set ownership and permissions (section 8).
-4.  If the remote exists: clone into `repo.git`. Otherwise create the empty repo and run the `createRepo` node once, as a job-less node run recorded under the pseudo-job id `project-setup` with the usual probe, confirmation and `effect.*` events.
+4.  With `repo: null`: create `repo.git` with one empty initial commit on `baseBranch`; no `createRepo`, no clone. If the remote exists: clone into `repo.git`. Otherwise create the empty repo and run the `createRepo` node once, as a job-less node run recorded under the pseudo-job id `project-setup` with the usual probe, confirmation and `effect.*` events.
 5.  Configure `repo.git` (Fixed choices), run the home check, commit the definitions to `PECORE_HOME`.
 6.  In protected mode, give `pecore-agent` access to the new project (group and ACLs, Fixed choices). No login is needed: logins belong to the user, not to the project.
 
 ### Job creation
 
-`src/jobs/create.ts` is used by `POST /jobs`, the orchestrator's `create_jobs` and ticket intake. It validates the recipe, writes the `ticket` artifact, fetches the base branch, and sets base commit, target and branch. A job with an unfinished parent is created `queued` with reason `parent_job`; otherwise it waits for the scheduler and the disk check.
+`src/jobs/create.ts` is used by `POST /jobs`, the orchestrator's `create_jobs` and ticket intake. It validates the recipe, writes the `ticket` artifact, fetches the base branch (not for a `repo: null` project, whose base branch lives only in `repo.git`), and sets base commit, target and branch. A job with an unfinished parent is created `queued` with reason `parent_job`; otherwise it waits for the scheduler and the disk check.
 
 ### Tests
 
@@ -1010,7 +1015,7 @@ Quit (tray, app menu, Cmd+Q): main asks the engine `active?`. If jobs are `runni
 | `agents: src/connectors.test.ts` | for each built-in connector, the incoming messages of each fixture go through the reader and the classifier, and the result must equal `<case>.expected.json`: auth, quota and rate limit errors (synthetic until recorded, 5.4), usage, account (G7) | CI |
 | `agents: src/session.test.ts` | ACP session with the fake agent: options applied in order and checked, a mismatching `currentValue`, permission answered, resume and fallback to a new session, a request past 30 seconds, connector exit without answer | CI |
 | `engine: runners/agent.test.ts` | agent node with the fake agent: the order of 5.4, invalid output corrected twice then `INVALID_OUTPUT`, timeout with cancel then stop, `retry` use, quota and auth waits, resume lookup (5.5) | CI |
-| `phase 0: Claude Code through sudo` | by hand, recorded as fixtures: the adapter, the shipped Node and the user's Claude Code run as `pecore-agent` (protected mode) with a new config directory; a session in `bypassPermissions`; a resume in a new process; no claude.ai MCP servers and no repository `.mcp.json` servers in the session; stopping the process group stops the harness | manual, real login |
+| `phase 0: Claude Code through sudo` | by hand, with the spike client `docs/spikes/acp/client.mjs`, the adapter installed with `npm install` into a directory `pecore-agent` can read, and a Node LTS from nodejs.org in the same kind of directory (the real build of phase 3 is not needed); recorded as fixtures: the adapter, that Node and the user's Claude Code run as `pecore-agent` (protected mode) with a new config directory; a session in `bypassPermissions`; a resume in a new process; no claude.ai MCP servers and no repository `.mcp.json` servers in the session; stopping the process group stops the harness | manual, real login |
 | `jobs/crash.test.ts` | kill during each delivery node, restart, no double delivery (G12) | CI with the fake forge |
 | `jobs/stacked.test.ts` | three-job chain: parent recommit, parent merge, parent failure (G9) | CI with the fake forge |
 | `e2e/languages.test.ts` | same recipe shape on a TypeScript and a Rust fixture project (G2) | CI |
@@ -1068,7 +1073,7 @@ Everything that knows ACP or a harness lives here (section 5). It imports only `
 | `src/session.ts` | `startSession` and `Session` (5.2, 5.5): `beforeStart`, `initialize`, resume or new session, `sessionConfig` in order with the `currentValue` check, `session/prompt`; maps notifications to `AgentEvent`; answers permission requests; builds `TurnResult` |
 | `src/connectors.ts` | loads built-in connector files from the app's resources and user ones from `PECORE_HOME/connectors/`; fills the placeholders of `command` and `env`; resolves `{adapter:<package>}` from `adapters.json` |
 | `src/prerequisites.ts` | `checkPrerequisites`: runs the harness's `versionArgs` and the shipped `node --version` through `spawn` as the project user, checks `versionRange` |
-| `src/errors.ts` | sets `TurnResult.error` for steps 2, 4 and 5 of 5.4: `-32000` is `auth`, a `rejected` quota is `quota`, then the connector's `errors` rules, else `other` when the turn did not end with `end_turn`; the engine applies the order of 5.4 |
+| `src/errors.ts` | sets `TurnResult.error` for steps 2, 4 and 5 of 5.4: `-32000` with "Authentication required" is `auth`, a `rejected` quota is `quota`, then the connector's `errors` rules, else `other` when the turn did not end with `end_turn`; the engine applies the order of 5.4 |
 | `src/readers/claude-code.ts` | usage with side models, resolved model, cost and `_claude/rateLimit` from the prompt answer and `usage_update` (5.3); `auth/status_update` to `account` (5.9) |
 | `src/readers/codex.ts` | usage without double-counted cache (5.3); `_auth/status_update` to `account` |
 | `src/login.ts` | `prepareLogin` and `checkLogin` (5.9) |
@@ -1115,8 +1120,8 @@ Everything that knows ACP or a harness lives here (section 5). It imports only `
 | `src/scheduler/budget.ts` | sums tokens and cost per attempt; at the job or project budget in `project.json` the job waits with reason `budget`; one `budget` queue item per limit reached, shared by every job that limit blocks |
 | **workdir/** | |
 | `src/workdir/repo.ts` | creates and configures `repo.git` (Fixed choices); adds `.pecore/` to `info/exclude`; clones and fetches with the project account and the forge's credential helper; deletes `factory/*` branches with `--git-dir` |
-| `src/workdir/worktrees.ts` | as the project's OS user, with `--git-dir`: creates, recreates (job re-entering `running`) and removes job worktrees |
-| `src/workdir/content-state.ts` | as the project's OS user: tree hash with a temporary index, excluding ignored files and `.pecore/`; deletes `scratchPaths` matches; restores a previous state; records branch SHA, HEAD and stash list per node run and undoes interrupted git operations (4.4); recomputes before `requires` and commit; creates `cleanCheckout` worktrees |
+| `src/workdir/worktrees.ts` | as the project user, with `--git-dir`: creates, recreates (job re-entering `running`) and removes job worktrees |
+| `src/workdir/content-state.ts` | as the project user: tree hash with a temporary index, excluding ignored files and `.pecore/`; deletes `scratchPaths` matches; restores a previous state; records branch SHA, HEAD and stash list per node run and undoes interrupted git operations (4.4); recomputes before `requires` and commit; creates `cleanCheckout` worktrees |
 | `src/workdir/fs-as.ts` | the only way the engine reads, writes or deletes files under `work/` or in another user's home (harness config directories, 5.9): runs `test`, `cat` and `find -P` as the project user through `runners/process.ts`, refusing symlinks (section 8) |
 | `src/workdir/git-as.ts` | the only entry point for git: work-tree commands go through `sudo -n -u <project user>`; app-user commands get `--git-dir` and no work tree; both get `core.hooksPath=/dev/null` |
 | **runners/** | |
@@ -1128,7 +1133,7 @@ Everything that knows ACP or a harness lives here (section 5). It imports only `
 | `src/runners/human.ts` | puts a human node in `human_queue` (kind `human-node`) and waits for the user's outcome |
 | `src/runners/forge-env.ts` | environment and git credential helper for an account (Fixed choices: `GH_TOKEN`, `GITLAB_TOKEN`, `AWS_PROFILE`) |
 | **accounts/** | |
-| `src/accounts/logins.ts` | the harness logins (account, OS user, config directory) of 3.4, derived from the accounts and the OS users of projects and the orchestrator; their state |
+| `src/accounts/logins.ts` | the harness logins (account, OS user, config directory) of 3.4, derived from the accounts and the current mode (app user, or `pecore-agent` in protected mode); their state |
 | `src/accounts/identity.ts` | runs `checkLogin` for a login and compares the email with the account's `email` (3.4); a mismatch blocks that login with reason `auth` |
 | `src/accounts/login.ts` | harness logins (5.9): `prepareLogin`, config directory and files through `fs-as.ts`, `before` and the command through `Spawn`, the URL and the code; forge and service tool logins (`gh auth login --web`, `glab auth login`, `acli` login) as the app user (phase 4). Streams the URL or device code to the GUI, then rechecks |
 | **jobs/** | |
@@ -1152,7 +1157,7 @@ Everything that knows ACP or a harness lives here (section 5). It imports only `
 | `src/api/routes/jobs.ts` | job routes and global controls |
 | `src/api/routes/queue.ts` | queue routes: human nodes and confirmations |
 | `src/api/routes/definitions.ts` | definition routes |
-| `src/api/routes/settings.ts` | settings, accounts, profiles, tiers, OS users, logins |
+| `src/api/routes/settings.ts` | settings, accounts, profiles, tiers, protected mode, logins |
 | `src/api/routes/chats.ts` | chat routes; a new message starts an orchestrator turn |
 | `src/api/routes/files.ts` | artifacts and raw logs |
 | `src/api/ws.ts` | the WebSocket union |
@@ -1165,7 +1170,7 @@ Everything that knows ACP or a harness lives here (section 5). It imports only `
 | `src/sources/poll.ts` | calls `list` on each project's source node every `pollSec`, stores seen ids in `pecore.db`, and hands new tickets to the orchestrator (section 7) |
 | **share/** | |
 | `src/share/export.ts` | `.tar.zst` archive of a project without clone, workdirs or raw logs; history is optional; when included, artifacts are scanned with `gitleaks` default rules before export (section 8) |
-| `src/share/import.ts` | account mapping, OS user choice; puts every imported node, script and prompt in the confirmation queue (section 8) |
+| `src/share/import.ts` | account mapping; puts every imported node, script and prompt in the confirmation queue (section 8) |
 | **observability/** | |
 | `src/observability/logs.ts` | writes raw logs (ACP traffic of agent attempts, output of command nodes) as `.jsonl.zst` (library in Fixed choices) |
 | `src/observability/why.ts` | blocking reasons of a job, used by GUI and `pecore job why` |
@@ -1198,7 +1203,7 @@ The screens below come from G16. Their layout is designed in [ui-design.md](ui-d
 | `src/renderer/components/MiniChat.tsx` | the mini chat with the context chip (UI2b, UI14) |
 | `src/renderer/screens/Projects.tsx` | project list, New project and Import project entry points |
 | `src/renderer/screens/ProjectPage.tsx` | project configuration sections, export, delete |
-| `src/renderer/screens/NewProjectWizard.tsx`, `ImportProject.tsx` | wizard pages Inputs, Create, Confirm, Logins; import pages |
+| `src/renderer/screens/NewProjectWizard.tsx`, `ImportProject.tsx` | wizard pages Inputs, Create, Confirm; import pages |
 | `src/renderer/screens/RecipeEditor.tsx` | recipe graph editor on a grid, `layout` saving, instance and template modes |
 | `src/renderer/screens/NodeEditor.tsx` | node template and instance editor, JSON tab, save with `If-Match` |
 | `src/renderer/screens/Library.tsx` | templates, instantiate into a project |
@@ -1242,7 +1247,7 @@ Stored in the repository under `packages/app/resources/` and bundled with the ap
 | `library/recipes/empty.json` | only `start` and end, no nodes (D7) |
 | `library/recipes/feature.json` | the recipe of 3.2 |
 | `library/recipes/bugfix.json` | the `feature` recipe of 3.2 plus a `github-issue-comment` node after `pr` (outcome `opened`), with `successOutcomes` on the comment node's `done`; its spec writer prompt asks for a failing test that reproduces the bug (CUJ 1) |
-| `library/recipes/local-only.json` | ends at `git-commit`, with `successOutcomes` `commit:done` (CUJ 4) |
+| `library/recipes/local-only.json` | the nodes of `feature` up to `git-commit`, with `successOutcomes` `commit:done` (CUJ 4); its reviewer has no `providerNot`, so it runs with a single provider |
 | `connectors/claude-code.json` | Claude Code connector (Connector file above), the reference example; built in phase 3 |
 | `connectors/codex.json`, `opencode.json` | Codex and opencode connectors; built in phase 6, for G6 |
 
@@ -1266,9 +1271,18 @@ Phases 1-6 target Linux first. The macOS parts (`osuser/` with `dscl` and `sysad
 | Phase | Files | Gate |
 |---|---|---|
 | 0. Spikes | none (results go into connector files, fixtures and Open Questions) | done: ACP sessions with Claude Code (two turns, permission, missing login), one Codex tool call, opencode's missing login ([ACP spike](spikes/acp.md)); macOS Keychain behaviour. Open: the "Claude Code through sudo" check of Tests, with its fixtures, which also settles Fixed choices: Process groups |
-| 1. Definitions and storage | `schemas`; engine `home/` (except `prerequisites.ts`), `definitions/`, `store/`; root files | every shipped template validates; migrations apply; `PECORE_HOME` initialises |
-| 2. Engine core | `graph/`, `scheduler/`, `runners/process.ts`, `placeholders.ts`, `command.ts`, `probe.ts`, `human.ts`, `workdir/`, `jobs/create.ts`, `controls.ts`, `delete.ts`, `effects.ts`, `main.ts` (without API), `observability/logs.ts`; test fake forge | `rules.test`, `content-state.test`, `fs-as.test`, `git-as.test` pass; command-only recipes run end to end on a local-only project, with the app user as project user |
-| 3. Agents | `packages/agents` with the Claude Code connector only, `adapters.json`, `build-adapters.mjs`; engine `accounts/` (harness logins only), `runners/agent.ts`, `scheduler/tiers.ts`, `cooldown.ts`, `budget.ts`, the `checkLogin` step of `main.ts`; test fake agent | `connectors.test`, `session.test` and `agent.test` pass; a `feature` job on a local-only project runs end to end with Claude Code, with the app user as project user, in normal mode, with the user's existing Claude Code login |
-| 4. Isolation and delivery | `osuser/`, `projects/`, `home/prerequisites.ts`, `services/`, `runners/forge-env.ts`, `definitions/confirm.ts`, `jobs/stacked.ts`, `merge-watch.ts`, delivery and source templates | `crash.test`, `stacked.test`, `confirm.test` pass; `e2e/forges` done by hand |
+| 1. Definitions and storage | `schemas`; engine `home/` (except `prerequisites.ts`), `definitions/`, `store/`; root files; the library templates that use no forge or agent | every template present validates (each later phase adds its templates, and its gate re-runs the validation); migrations apply; `PECORE_HOME` initialises |
+| 2. Engine core | `graph/`, `scheduler/`, `runners/process.ts`, `placeholders.ts`, `command.ts`, `probe.ts`, `human.ts`, `workdir/`, `jobs/create.ts`, `controls.ts`, `delete.ts`, `effects.ts`, `main.ts` (without API), `observability/logs.ts`, `projects/create.ts` for `repo: null` only; test fake forge | `rules.test`, `content-state.test`, `fs-as.test`, `git-as.test` pass; command-only recipes run end to end on a local-only project, with the app user as project user |
+| 3. Agents | `packages/agents` with the Claude Code connector only, `adapters.json`, `build-adapters.mjs`; engine `accounts/` (harness logins only), `runners/agent.ts`, `scheduler/tiers.ts`, `cooldown.ts`, `budget.ts`, the `checkLogin` step of `main.ts`; test fake agent | `connectors.test`, `session.test` and `agent.test` pass; a `local-only` job on a `repo: null` project runs end to end to its commit with Claude Code as the only provider, with the app user as project user, in normal mode, with the user's existing Claude Code login |
+| 4. Isolation and delivery | `osuser/`, the rest of `projects/`, `home/prerequisites.ts`, `services/`, `runners/forge-env.ts`, `definitions/confirm.ts`, `jobs/stacked.ts`, `merge-watch.ts`, delivery and source templates | `crash.test`, `stacked.test`, `confirm.test` pass; `e2e/forges` done by hand |
 | 5. API, GUI, CLI | `api/`, `observability/why.ts`, `packages/app`, `packages/cli` (requires approved `ui-design.md`) | `why.test` passes; every action of G16 works from the GUI |
 | 6. Orchestrator, sharing and more connectors | `orchestrator/`, `sources/`, `share/`, `api/routes/chats.ts`; Codex and opencode connectors with their readers and fixtures | CUJ 1-7 run by hand; `e2e/providers` and `e2e/languages` pass |
+
+Entry gates: a phase does not start until these open findings of the second full review are resolved in this document ([triage](reviews/design/round2/triage.md), table "Later", with sources). Each one is closed by a design change or by a recorded decision to accept it.
+
+| Phase | Must be resolved before it starts |
+|---|---|
+| 4 | rebase checkpoints owned by the job, not the shared `refs/stash`; push probe with four results (lookup failed, absent, same SHA, other SHA) and the observed head passed to the lease; repo creation probe that also checks the initial push; auth versus network failures for forge probes and commands; Compose: an allowlist of service keys, checks on the resolved configuration, one owner for service shutdown and how Play recreates services after Quit; protected `repo.git` permissions (`config`, `hooks/`, `info/` stay the app user's) and what a mode switch does to running jobs; confirmation store for global connectors, its hash inputs, and running the exact bytes checked; clone, fetch and starter nodes not chosen by forge in the engine; slots released while a job waits for the forge; stacked jobs: real merge target, when a queued child gets its base, merge watch driven by the recorded PR or MR (also after a failed job); `bugfix` proves its test fails before the fix; prerequisites checked only for the feature that needs them; project creation wait, cancel and retry across a restart |
+| 5 | renderer transport and authentication for `/live` (a browser WebSocket cannot send a Bearer header), `Host` and `Origin` rules, typed GUI operations; the owner of `run/api.json` |
+| 6 | ticket intake persisted through job creation, with a stable intake id and no-source projects; how an agent creates an `agent-question` and how the answer reaches its next turn; images in orders; protected orchestrator after restart with the new MCP token |
+| macOS pass | Keychain with an empty password: path, creation and unlock after logout; pass criteria of the macOS gate |

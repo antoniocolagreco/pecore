@@ -259,14 +259,14 @@ The prototype is normative only for: the Everforest palette and gradients, the I
 
 ### New project wizard (full page)
 
-Pages: Inputs, Create, Confirm, Logins. Create runs the tasks of design.md "Project creation" in order; the project exists when Create ends.
+Pages: Inputs, Create, Confirm. Create runs the tasks of design.md "Project creation" in order; the project exists when Create ends.
 
 1.  **Inputs:** id (`^[a-z][a-z0-9-]{0,23}$`), name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, base branch, starting recipes (the shipped ones, with delivery nodes for the project's forge; each can be unchecked).
 2.  **Create:** the tasks of "Project creation" (validation, project directory, clone or repo creation, `repo.git` setup and home check, access for `pecore-agent` in protected mode, commit), each with its state. The repo creation node's confirmation is shown inside its task (UI17). A failed task undoes the tasks before it, says why, and returns to Inputs with the values kept. A repo created on the forge is never deleted by the undo: the page lists it as left on the forge.
 3.  **Confirm:** the engine nodes of the starting recipes and the project's `source` node, if any, on one screen, so the first job does not wait with reason `confirmation`. Can be skipped: the items stay in the Inbox.
 4.  No logins page: logins belong to the user, not to the project (Settings > Accounts).
 
-Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done; Cancel on Confirm or Logins leaves the project created.
+Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done; Cancel on Confirm leaves the project created.
 
 ### Import project (full page)
 
@@ -314,7 +314,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 *   Sections: Accounts (IG1), Protected mode (IF6), Profiles and tiers (IG2), Orchestrator (IG6), Limits and disk threshold, Services runtime, Merge check interval, Prices, Project paths (IG3), Connectors and Updates (IG7), Notifications and quiet hours (IG8), Appearance (IG9).
 *   Each account shows its login state and a Login button. Forge and service tool logins (`gh`, `glab`, `acli`) run in the GUI like harness logins: the device code or URL is shown, then the account is rechecked (design.md `accounts/login.ts`). "Recheck login" re-runs the identity check.
-*   Protected mode (IF6): one switch with a short explanation (agents cannot read your files and logins; one login per harness account for `pecore-agent`). Turning it on opens the admin prompt; if it cannot (no polkit agent), the page shows the exact script with a Copy button and "I ran it, recheck". Then the page lists each model account with a Login button for `pecore-agent`, showing the URL or code. Turning it off asks whether to also remove `pecore-agent`.
+*   Protected mode (IF6): one switch with a short explanation (agents cannot read your files and logins; one login per harness account for `pecore-agent`; agents can read all `pecore-agent` logins). Turning it on opens the admin prompt; if it cannot (no polkit agent), the page shows the exact script with a Copy button and "I ran it, recheck". Then the page lists each model account with a Login button for `pecore-agent`, showing the URL or code. Turning it off asks whether to also remove `pecore-agent`.
 *   "Recheck prerequisites", with a link to the setting each failed check points to.
 
 ### First run (full screen)
@@ -370,7 +370,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 Clicking a job labelled Needs you opens:
 
 *   `human`, `confirmation`, `round_limit`, `budget`: the Inbox item recorded on the node run (`queue_item_id`); an `agent-question` opens its conversation.
-*   `auth`: the account recorded on the node run; a harness login opens the project's Logins (or Settings > Orchestrator), a tool login opens Settings > Accounts.
+*   `auth`: the account recorded on the node run; a harness login opens Settings > Accounts (in protected mode, Settings > Protected mode), a tool login opens Settings > Accounts.
 *   `parent_failed`: the parent job.
 
 The Inbox counter counts Inbox items, not jobs: several jobs can wait on one item.
@@ -465,7 +465,7 @@ Status tokens need at least 3:1 contrast against `surface` in every theme.
 | Very large diffs (thousands of lines) | slow merge view | files collapsed by default, risky hunks first, one file rendered at a time | Inbox ID1, artifact viewer |
 | Editor and orchestrator write the same file | one change silently lost | save with the file hash; changed-elsewhere banner | Concurrent edits |
 | User theme file with bad values | unreadable UI | schema validation, fallback tokens, contrast rules | UI4, Color tokens |
-| A project runs as the app user | agents read the user's files and logins | marked as risky in the wizard and the project list | Projects |
+| Normal mode: agents run as the app user | agents read the user's files and logins | Settings shows the mode and offers protected mode in one step | Settings |
 
 ### Limits
 
