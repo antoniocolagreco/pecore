@@ -1,0 +1,9 @@
+{
+  "forge": "github",
+  "tool": "gh",
+  "credentialHelper": "!gh auth git-credential",
+  "delivery": "github-pr",
+  "comment": "github-issue-comment",
+  "createRepo": "github-create-repo",
+  "source": "github-issues"
+}

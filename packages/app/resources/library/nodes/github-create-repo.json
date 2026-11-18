@@ -1,0 +1,24 @@
+{
+  "$schema": "../../schemas/node.json",
+  "name": "github-create-repo",
+  "description": "Create a private GitHub repository if needed and push its base branch.",
+  "kind": "command",
+  "params": {
+    "type": "object",
+    "properties": { "branch": { "type": "string", "default": "main" } }
+  },
+  "runsAs": "engine",
+  "credentials": ["project.account"],
+  "outputs": ["delivery"],
+  "outcomes": ["created", "failed"],
+  "failOutcomes": ["failed"],
+  "changesFiles": false,
+  "script": "github-create-repo.sh",
+  "probe": { "script": "github-create-repo-probe.sh" },
+  "outcomeRules": [
+    { "exitCode": 0, "outcome": "created" },
+    { "exitCode": "other", "outcome": "failed" }
+  ],
+  "outputRules": { "delivery": { "stdoutLastLine": "url" } },
+  "timeoutSec": 120
+}

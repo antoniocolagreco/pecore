@@ -1,0 +1,22 @@
+{
+  "$schema": "../../schemas/node.json",
+  "name": "git-push",
+  "description": "Push the job commit with a lease on the remote branch head.",
+  "kind": "command",
+  "runsAs": "engine",
+  "credentials": ["project.account"],
+  "inputs": ["commit"],
+  "outputs": ["delivery"],
+  "outcomes": ["pushed", "failed"],
+  "failOutcomes": ["failed"],
+  "changesFiles": false,
+  "script": "git-push.sh",
+  "probe": { "script": "git-push-probe.sh" },
+  "probeRules": { "stdoutJson": "state", "done": ["same"], "notDone": ["absent", "other"] },
+  "outcomeRules": [
+    { "exitCode": 0, "outcome": "pushed" },
+    { "exitCode": "other", "outcome": "failed" }
+  ],
+  "outputRules": { "delivery": { "stdoutLastLine": "ref" } },
+  "timeoutSec": 120
+}

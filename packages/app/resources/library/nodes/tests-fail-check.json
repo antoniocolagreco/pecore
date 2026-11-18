@@ -1,0 +1,20 @@
+{
+  "$schema": "../../schemas/node.json",
+  "name": "tests-fail-check",
+  "description": "Run Vitest in a clean checkout to check that the tests fail before the fix.",
+  "kind": "command",
+  "params": {
+    "type": "object",
+    "properties": { "suite": { "type": "string", "default": "" } }
+  },
+  "script": "tests-fail-check.sh",
+  "cleanCheckout": true,
+  "outcomes": ["failed_as_expected", "unexpected_pass"],
+  "changesFiles": false,
+  "scratchPaths": ["coverage/**"],
+  "outcomeRules": [
+    { "exitCode": 0, "outcome": "failed_as_expected" },
+    { "exitCode": "other", "outcome": "unexpected_pass" }
+  ],
+  "timeoutSec": 1800
+}

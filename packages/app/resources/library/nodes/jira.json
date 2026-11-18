@@ -1,0 +1,20 @@
+{
+  "$schema": "../../schemas/node.json",
+  "name": "jira",
+  "description": "Read and comment on labeled Jira work items.",
+  "kind": "source",
+  "credentials": ["project.account"],
+  "params": {
+    "type": "object",
+    "properties": {
+      "label": { "type": "string", "default": "factory" },
+      "pollSec": { "type": "integer", "default": 300 },
+      "trusted": { "type": "array", "items": { "type": "string" }, "default": [] }
+    }
+  },
+  "list": { "script": "jira-list.sh", "outputRules": {} },
+  "read": { "script": "jira-read.sh", "outputRules": {} },
+  "comment": { "script": "jira-comment.sh", "outputRules": {} },
+  "replies": { "script": "jira-replies.sh", "outputRules": {} },
+  "timeoutSec": 120
+}

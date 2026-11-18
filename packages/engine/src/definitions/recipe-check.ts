@@ -25,14 +25,18 @@ export function availableInputs(recipe: Recipe, byId: Map<string, Node>): Map<st
   const all = new Set<ArtifactType>(["ticket", "spec", "findings", "risk", "check-log", "diff", "user-note", "commit", "delivery"]);
   const preds = new Map<string, string[]>(ids.map((id) => [id, []]));
   for (const e of recipe.edges) preds.get(e.to)?.push(e.from);
-  const roots = new Set([recipe.start, recipe.onBaseChanged].filter((x): x is string => x !== undefined));
-  const avail = new Map<string, Set<ArtifactType>>(ids.map((id) => [id, roots.has(id) && preds.get(id)!.length === 0 ? new Set<ArtifactType>(["ticket"]) : new Set(all)]));
+  const startNode = recipe.start !== undefined ? byId.get(recipe.start) : undefined;
+  const entry = new Map<string, Set<ArtifactType>>();
+  if (recipe.start !== undefined) entry.set(recipe.start, new Set(["ticket"]));
+  if (recipe.onBaseChanged !== undefined) entry.set(recipe.onBaseChanged, new Set<ArtifactType>(["ticket", ...(startNode ? produced(startNode) : [])]));
+  const roots = new Set(entry.keys());
+  const avail = new Map<string, Set<ArtifactType>>(ids.map((id) => [id, roots.has(id) && preds.get(id)!.length === 0 ? new Set(entry.get(id)) : new Set(all)]));
   let changed = true;
   while (changed) {
     changed = false;
     for (const id of ids) {
       const sources: Set<ArtifactType>[] = [];
-      if (roots.has(id)) sources.push(new Set(["ticket"]));
+      if (roots.has(id)) sources.push(new Set(entry.get(id)));
       for (const p of preds.get(id)!) {
         const pn = byId.get(p);
         sources.push(new Set([...avail.get(p)!, ...(pn ? produced(pn) : [])]));

@@ -1,0 +1,19 @@
+{
+  "$schema": "../../schemas/node.json",
+  "name": "gitlab-issue-comment",
+  "description": "Post the merge request URL on the GitLab issue if it is missing.",
+  "kind": "command",
+  "runsAs": "engine",
+  "credentials": ["project.account"],
+  "inputs": ["delivery"],
+  "outcomes": ["done", "failed"],
+  "failOutcomes": ["failed"],
+  "changesFiles": false,
+  "script": "gitlab-issue-comment.sh",
+  "probe": { "script": "gitlab-issue-comment.sh" },
+  "outcomeRules": [
+    { "exitCode": 0, "outcome": "done" },
+    { "exitCode": "other", "outcome": "failed" }
+  ],
+  "timeoutSec": 120
+}

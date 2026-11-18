@@ -1,0 +1,15 @@
+{
+  "$schema": "../../schemas/node.json",
+  "name": "git-rebase",
+  "description": "Rebase the job branch onto its new base and restore uncommitted changes.",
+  "kind": "command",
+  "runsAs": "project-user",
+  "script": "git-rebase.sh",
+  "outcomes": ["clean", "conflict"],
+  "changesFiles": true,
+  "outcomeRules": [
+    { "exitCode": 0, "outcome": "clean" },
+    { "exitCode": "other", "outcome": "conflict" }
+  ],
+  "timeoutSec": 600
+}

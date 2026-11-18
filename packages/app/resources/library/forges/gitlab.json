@@ -1,0 +1,9 @@
+{
+  "forge": "gitlab",
+  "tool": "glab",
+  "credentialHelper": "!glab auth git-credential",
+  "delivery": "gitlab-mr",
+  "comment": "gitlab-issue-comment",
+  "createRepo": "gitlab-create-repo",
+  "source": "gitlab-issues"
+}

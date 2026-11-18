@@ -1,0 +1,23 @@
+{
+  "$schema": "../../schemas/node.json",
+  "name": "gitlab-mr",
+  "description": "Open a GitLab merge request for the job branch or move it to the job's target branch.",
+  "kind": "command",
+  "runsAs": "engine",
+  "credentials": ["project.account"],
+  "inputs": ["commit", "spec"],
+  "outputs": ["delivery"],
+  "outcomes": ["opened", "failed"],
+  "failOutcomes": ["failed"],
+  "changesFiles": false,
+  "script": "gitlab-mr.sh",
+  "probe": { "script": "gitlab-mr.sh" },
+  "mergedCheck": { "script": "gitlab-mr.sh" },
+  "mergedCheckRules": { "stdoutJson": "state", "done": ["merged"], "notDone": [] },
+  "outcomeRules": [
+    { "exitCode": 0, "outcome": "opened" },
+    { "exitCode": "other", "outcome": "failed" }
+  ],
+  "outputRules": { "delivery": { "stdoutLastLine": "url" } },
+  "timeoutSec": 120
+}
