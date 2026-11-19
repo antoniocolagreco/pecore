@@ -104,7 +104,12 @@ describe("pecore CLI over the local API", () => {
     expect(dup.err[0]).toBe("conflict: project demo already exists");
     const i = capture();
     expect(await run(["project", "import", out, "--id", "copy"], i.io, env)).toBe(0);
-    expect(i.out).toEqual(["copy"]);
+    const itemId = (await call("listQueue", { query: { project: "copy" } })).find((q) => q.kind === "import")?.id;
+    expect(i.out).toEqual([
+      "This project was written by someone else. Its scripts and prompts run on this computer with your accounts: a script can read your logins and send them anywhere, and a prompt can tell an agent to do the same. Confirm only after you have read every script and prompt.",
+      `The import waits for confirmation in the Inbox (item ${itemId}).`,
+      "copy",
+    ]);
     expect((await call("getProject", { params: { id: "copy" } })).project?.id).toBe("copy");
     await close();
   }, 60000);

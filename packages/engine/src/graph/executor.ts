@@ -98,6 +98,7 @@ export type ProjectContext = {
   global(): { profiles: Profiles; tiers: Tiers };
   live?: (attemptId: string, line: RawLine) => void;
   orderAttachments?: (orderId: string, attachmentIds: string[]) => Promise<JobAttachment[]>;
+  rejectImport?: (resolve: () => void) => Promise<void>;
 };
 
 type AttemptExtra = { usage?: Usage; model?: string; cost?: number | null; log: string };
@@ -145,6 +146,7 @@ export class JobExecutor {
   private readonly timers = new Map<string, NodeJS.Timeout>();
   private readonly networkFailures = new Map<string, number>();
   private closing = false;
+  private rejectingImport = false;
 
   readonly services: JobServices;
 
@@ -265,13 +267,13 @@ export class JobExecutor {
   }
 
   private async advance(jobId: string): Promise<void> {
-    for (;;) {
+    while (!this.closing) {
       const job = this.job(jobId);
       if (job.state === "queued") {
         if (!(await this.startJob(job))) return;
         continue;
       }
-      if (job.state !== "running" || this.stopRequested.has(jobId) || this.closing) return;
+      if (job.state !== "running" || this.stopRequested.has(jobId)) return;
       if (this.pauseRequested.delete(jobId)) {
         this.setState(jobId, "paused", "user");
         return;
@@ -1054,10 +1056,23 @@ export class JobExecutor {
     if (item.state !== "open" || item.subject_hash !== hash) throw new Error("the item changed or was resolved");
     if (!(JSON.parse(item.choices) as string[]).includes(choice)) throw new Error(`${choice} is not a choice of this item`);
     if (item.kind === "import") {
-      const { path, definition, files }: ImportSubject = JSON.parse(item.subject) as ImportSubject;
+      if (this.rejectingImport) throw new Error("the import is being rejected");
       const events: NewEvent[] = [{ jobId: null, type: "queue.resolved", payload: { itemId, state: "resolved", choice, note } }];
-      if (choice === "confirm" && definition.kind === "command" && (needsConfirmation(definition) || definition.mergedCheck)) {
-        events.push({ jobId: null, type: "confirmation.recorded", payload: { path, sha256: subjectSha({ definition, scripts: files }) } });
+      if (choice === "reject") {
+        if (!this.ctx.rejectImport) throw new Error("the project cannot be removed");
+        this.rejectingImport = true;
+        try {
+          await this.ctx.rejectImport(() => { this.ctx.db.append(events); });
+        } finally {
+          this.rejectingImport = false;
+        }
+        return;
+      }
+      const { nodes }: ImportSubject = JSON.parse(item.subject) as ImportSubject;
+      for (const { path, definition, files } of nodes) {
+        if (definition.kind === "command" && (needsConfirmation(definition) || definition.mergedCheck)) {
+          events.push({ jobId: null, type: "confirmation.recorded", payload: { path, sha256: subjectSha({ definition, scripts: files }) } });
+        }
       }
       this.ctx.db.append(events);
       if (blockingImportItem(this.ctx.db) === null) {
@@ -1189,7 +1204,7 @@ export class JobExecutor {
       const job = this.job(jobId);
       if (job.state !== "failed" && job.state !== "stopped") throw new Error(`job ${jobId} is ${job.state}`);
       if (job.archived) throw new Error(`job ${jobId} is archived`);
-      if (blockingImportItem(this.ctx.db) !== null) throw new Error("The project waits for confirmation of its imported nodes");
+      if (blockingImportItem(this.ctx.db) !== null) throw new Error("The project waits for import confirmation in the Inbox");
       if (this.recipeConfirmation(jobId) !== "allowed") throw new Error("the job's recipe change was not confirmed");
       const wd = workdirOf(this.ctx.dir, jobId);
       const exists = await gitWork(this.ctx.user, this.ctx.dir, [`--git-dir=${join(this.ctx.dir, "repo.git")}`, "worktree", "list", "--porcelain"]);
@@ -1256,7 +1271,9 @@ export class JobExecutor {
   }
 
   async kick(): Promise<void> {
+    if (this.closing) return;
     for (const job of this.jobs()) {
+      if (this.closing) return;
       if (job.state === "queued" || (job.state === "waiting" && job.waiting_reason === "concurrency")) {
         await this.exclusive(job.id, async () => {
           const j = this.job(job.id);

@@ -1,5 +1,6 @@
 import { OrderPlan } from "@pecore/schemas";
 import type { Recipe, StoredEvent } from "@pecore/schemas";
+import { blockingImportItem } from "../definitions/confirm";
 import { hasCommitNode } from "../definitions/recipe-check";
 import type { ProjectContext } from "../graph/executor";
 import { createJob, JobCreateError, recipeForJob } from "./create";
@@ -106,6 +107,7 @@ export async function planOrder(ctx: ProjectContext, orderId: string, plan: Orde
 }
 
 export async function resumeOrders(ctx: ProjectContext): Promise<TicketOrder[]> {
+  if (blockingImportItem(ctx.db) !== null) return [];
   const orders = ctx.db.db.prepare("SELECT order_id, source, ticket_id, state FROM tickets_seen WHERE state IN ('received', 'handed', 'planned') AND order_id IS NOT NULL ORDER BY order_id").all() as TicketOrder[];
   for (const order of orders) {
     if (order.state !== "planned") continue;

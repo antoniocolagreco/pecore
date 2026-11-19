@@ -1,5 +1,9 @@
+import { readdirSync, renameSync } from "node:fs";
+import { join } from "node:path";
 import Database from "better-sqlite3";
+import { monotonicFactory } from "ulid";
 import { EventBody, JobState, Recipe } from "@pecore/schemas";
+import { subjectHash } from "../runners/human";
 import { migrate } from "../store/migrate";
 import { ProjectDb } from "../store/project-db";
 import type { NewEvent } from "../store/project-db";
@@ -35,7 +39,38 @@ function checkPath(path: string, root: string): void {
   if (archivePath(path) !== path || !path.startsWith(`${root}/`)) throw new InvalidArchive(`pecore.db contains an invalid ${root} path`);
 }
 
-export function resetHistory(project: ProjectDb, events: NewEvent[]): void {
+function remapHistory(db: ProjectDb["db"], dir: string): void {
+  const ulidText = /(?<![0-9a-z])[0-7][0-9a-hjkmnp-tv-z]{25}(?![0-9a-z])/gi;
+  const oldIds: Set<string> = new Set();
+  const sources: string = `
+    SELECT id FROM events UNION SELECT id FROM jobs UNION SELECT id FROM attempts UNION SELECT id FROM human_queue
+    UNION SELECT order_id FROM jobs WHERE order_id IS NOT NULL UNION SELECT order_id FROM tickets_seen WHERE order_id IS NOT NULL`;
+  for (const id of db.prepare<[], string>(sources).pluck().iterate()) if (id.match(ulidText)?.[0] === id) oldIds.add(id);
+  const ulid = monotonicFactory();
+  const ids: Map<string, string> = new Map([...oldIds].map((id) => [id, ulid()]));
+  const rewrite = (text: string): string => text.replace(ulidText, (id) => ids.get(id) ?? id);
+
+  db.function("import_text", (value: unknown) => (typeof value === "string" ? rewrite(value) : value));
+  const tables = db.prepare<[], string>("SELECT name FROM sqlite_schema WHERE type = 'table'").pluck().all();
+  for (const table of tables) {
+    const columns = db.prepare<[string], string>("SELECT name FROM pragma_table_info(?) WHERE type = 'TEXT'").pluck().all(table);
+    if (columns.length > 0) db.exec(`UPDATE "${table}" SET ${columns.map((name) => `"${name}" = import_text("${name}")`).join(", ")}`);
+  }
+  db.function("import_subject_hash", (json: string) => subjectHash(JSON.parse(json) as unknown));
+  db.exec(`
+    UPDATE human_queue SET subject_hash = import_subject_hash(subject);
+    UPDATE events SET payload = json_set(payload, '$.subjectHash', import_subject_hash(payload -> '$.subject')) WHERE type = 'queue.added';
+  `);
+
+  for (const root of ["artifacts", "logs"]) {
+    for (const name of readdirSync(join(dir, root))) {
+      const target: string = rewrite(name);
+      if (target !== name) renameSync(join(dir, root, name), join(dir, root, target));
+    }
+  }
+}
+
+export function resetHistory(project: ProjectDb, dir: string, events: NewEvent[]): void {
   const db: ProjectDb["db"] = project.db;
   const count: number = activeJobCount(db);
   if (count > 0) throw new InvalidArchive(`pecore.db contains ${count} active ${count === 1 ? "job" : "jobs"}`);
@@ -57,8 +92,9 @@ export function resetHistory(project: ProjectDb, events: NewEvent[]): void {
     if (event.type === "attempt.started") checkPath(event.payload.logPath, "logs");
     if (event.type === "job.base_change_requested" && !validBase(event.payload.base)) throw new InvalidArchive("pecore.db contains an invalid requested job base");
   }
-  const obsolete = db.prepare("SELECT id, job_id FROM human_queue WHERE state = 'open' OR (kind = 'import' AND state = 'resolved' AND choice = 'reject')").all() as { id: string; job_id: string | null }[];
   db.transaction(() => {
+    remapHistory(db, dir);
+    const obsolete = db.prepare("SELECT id, job_id FROM human_queue WHERE state = 'open' OR (kind = 'import' AND state = 'resolved' AND choice = 'reject')").all() as { id: string; job_id: string | null }[];
     db.prepare("DELETE FROM events WHERE type = 'confirmation.recorded'").run();
     db.prepare("DELETE FROM confirmed_hashes").run();
     db.prepare("UPDATE node_runs SET state = 'interrupted', pgid = NULL, os_user = NULL WHERE state = 'running'").run();

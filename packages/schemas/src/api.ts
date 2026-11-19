@@ -41,7 +41,7 @@ export type ImportProjectBody = z.infer<typeof ImportProjectBody>;
 
 export const ImportProjectResult = z.discriminatedUnion("state", [
   z.object({ state: z.literal("needs-accounts"), accounts: z.array(z.object({ id: z.string(), kind: z.enum(["model", "forge", "service"]) })) }),
-  z.object({ state: z.literal("imported"), id: ProjectId }),
+  z.object({ state: z.literal("imported"), id: ProjectId, itemId: z.ulid(), warning: z.string() }),
 ]);
 export type ImportProjectResult = z.infer<typeof ImportProjectResult>;
 

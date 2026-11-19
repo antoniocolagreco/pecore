@@ -23,7 +23,7 @@ const reason = (r: Partial<WhyReason> & Pick<WhyReason, "reason" | "text">): Why
 
 function queuedReason(ctx: ProjectContext, job: JobRow, globalPause: boolean): WhyReason {
   const importItem: string | null = blockingImportItem(ctx.db);
-  if (importItem !== null) return reason({ reason: "confirmation", text: "The project waits for confirmation of its imported nodes", queueItemId: importItem });
+  if (importItem !== null) return reason({ reason: "confirmation", text: "The project waits for import confirmation in the Inbox", queueItemId: importItem });
   const parent = job.parent_job_id ? (ctx.db.db.prepare("SELECT id, title, state FROM jobs WHERE id = ?").get(job.parent_job_id) as Pick<JobRow, "id" | "title" | "state"> | undefined) : undefined;
   const account = ctx.project.repo?.account ?? null;
   switch (job.waiting_reason) {

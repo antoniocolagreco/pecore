@@ -77,6 +77,8 @@ async function command(call: ApiClient, home: string, args: string[], out: Out):
       out.error(table([["ACCOUNT", "KIND"], ...result.accounts.map((a) => [a.id, a.kind])]));
       return 1;
     }
+    out.log(result.warning);
+    out.log(`The import waits for confirmation in the Inbox (item ${result.itemId}).`);
     out.log(result.id);
     return 0;
   }

@@ -1,15 +1,16 @@
 import { createReadStream, lstatSync, renameSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join, relative } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { createZstdDecompress } from "node:zlib";
 import { Unpack } from "tar";
 import { monotonicFactory } from "ulid";
 import { ImportProjectBody } from "@pecore/schemas";
-import type { Accounts, ImportProjectResult, Node, Project } from "@pecore/schemas";
+import type { Accounts, ImportProjectResult, Project } from "@pecore/schemas";
 import { runFiles } from "../definitions/confirm";
 import type { ImportSubject } from "../definitions/confirm";
 import { loadProject } from "../definitions/load";
+import type { Definitions } from "../definitions/load";
 import { homePaths } from "../home/layout";
 import { forgeAccountOf, writeCreation } from "../projects/create";
 import { subjectHash } from "../runners/human";
@@ -20,6 +21,8 @@ import { migrateHistory, resetHistory } from "./history";
 
 const ulid = monotonicFactory();
 type AccountMapping = NonNullable<ImportProjectBody["accounts"]>;
+
+export const importWarning: string = "This project was written by someone else. Its scripts and prompts run on this computer with your accounts: a script can read your logins and send them anywhere, and a prompt can tell an agent to do the same. Confirm only after you have read every script and prompt.";
 
 async function unpack(path: string, dir: string): Promise<Set<string>> {
   const entries: Set<string> = new Set();
@@ -65,20 +68,25 @@ function checkId(dir: string, id: string, knownProject: (id: string) => boolean)
   if (knownProject(id) || lstatSync(dir, { throwIfNoEntry: false })) throw new ShareConflict(`project ${id} already exists`);
 }
 
-async function importItems(dir: string, nodes: Iterable<Node>, accounts: AccountMapping): Promise<NewEvent[]> {
-  const events: NewEvent[] = [];
-  for (const node of nodes) {
-    if (node.kind === "command" || node.kind === "source") {
-      node.credentials = node.credentials.map((id) => id === "project.account" ? id : accounts[id]!);
-    }
+async function importEvent(dir: string, project: Project, definitions: Definitions): Promise<Extract<NewEvent, { type: "queue.added" }>> {
+  const snapshots: ImportSubject["nodes"] = [];
+  for (const node of definitions.nodes.values()) {
     const path: string = `nodes/${node.name}.json`;
-    await writeFile(join(dir, path), JSON.stringify(node, null, 2) + "\n");
     const names: string[] = node.kind === "agent" ? [node.prompt] : runFiles(node);
     const files: Record<string, string> = Object.fromEntries(await Promise.all(names.map(async (name) => [name, await readFile(join(dir, "nodes", name), "utf8")] as const)));
-    const subject: ImportSubject = { path, definition: node, files };
-    events.push({ jobId: null, type: "queue.added", payload: { itemId: ulid(), kind: "import", subject, subjectHash: subjectHash(subject), choices: ["confirm", "reject"] } });
+    snapshots.push({ path, definition: node, files });
   }
-  return events;
+  const knowledgeDir: string = join(dir, "knowledge");
+  const subject: ImportSubject = {
+    projectId: project.id,
+    warning: importWarning,
+    project,
+    nodes: snapshots,
+    recipes: [...definitions.recipes.values()].map((definition) => ({ path: `recipes/${definition.name}.json`, definition })),
+    knowledge: (await readdir(knowledgeDir, { recursive: true, withFileTypes: true }))
+      .filter((entry) => entry.isFile()).map((entry) => relative(knowledgeDir, join(entry.parentPath, entry.name))).sort(),
+  };
+  return { jobId: null, type: "queue.added", payload: { itemId: ulid(), kind: "import", subject, subjectHash: subjectHash(subject), choices: ["confirm", "reject"] } };
 }
 
 export async function beginImport(home: string, input: ImportProjectBody, options: { accounts: Accounts; knownProject(id: string): boolean }): Promise<ImportProjectResult> {
@@ -121,22 +129,28 @@ export async function beginImport(home: string, input: ImportProjectBody, option
     project.id = id;
     project.createRepo = null;
     await writeFile(join(original, "project.json"), JSON.stringify(project, null, 2) + "\n");
+    for (const node of loaded.nodes.values()) {
+      if (node.kind === "command" || node.kind === "source") {
+        node.credentials = node.credentials.map((id) => id === "project.account" ? id : accounts[id]!);
+      }
+      await writeFile(join(original, "nodes", `${node.name}.json`), JSON.stringify(node, null, 2) + "\n");
+    }
     await rm(join(original, "manifest.json"));
     for (const name of [...definitionDirs, "artifacts", "logs", "work"]) await mkdir(join(original, name), { recursive: true, mode: 0o700 });
-    const events: NewEvent[] = await importItems(original, loaded.nodes.values(), accounts);
+    const event = await importEvent(original, project, loaded);
     const dbPath: string = join(original, "pecore.db");
     if (manifest.history) migrateHistory(dbPath);
     const db: ProjectDb = new ProjectDb(dbPath);
     try {
-      if (manifest.history) resetHistory(db, events);
-      else db.append(events);
+      if (manifest.history) resetHistory(db, original, [event]);
+      else db.append([event]);
     } finally {
       db.close();
     }
     await writeCreation(original, 3, []);
     checkId(dest, id, options.knownProject);
     renameSync(original, dest);
-    return { state: "imported", id };
+    return { state: "imported", id, itemId: event.payload.itemId, warning: importWarning };
   } catch (error) {
     if (error instanceof InvalidArchive || error instanceof ShareConflict) throw error;
     throw new InvalidArchive((error as Error).message, { cause: error });

@@ -15,7 +15,6 @@ import { LoginRunner } from "./accounts/login";
 import { identityOk } from "./runners/forge-env";
 import { loadGlobal, loadProject } from "./definitions/load";
 import type { DefinitionError, Global } from "./definitions/load";
-import { blockingImportItem } from "./definitions/confirm";
 import { JobExecutor } from "./graph/executor";
 import type { JobRow, ProjectContext } from "./graph/executor";
 import { logEvents } from "./observability/log-events";
@@ -55,7 +54,7 @@ export class EngineStartError extends Error {
 
 export class NotFoundError extends Error {}
 
-type LoadedProject = { ctx: ProjectContext; executor: JobExecutor; sourcePolling?: ReturnType<typeof startSourcePolling> };
+type LoadedProject = { ctx: ProjectContext; executor: JobExecutor; sourcePolling?: ReturnType<typeof startSourcePolling>; deleting?: boolean };
 
 export class Engine extends EventEmitter {
   readonly projects = new Map<string, LoadedProject>();
@@ -121,7 +120,7 @@ export class Engine extends EventEmitter {
     for (const { executor } of this.projects.values()) await executor.recoverAfterRestart();
     const resumedOrders: Map<LoadedProject, TicketOrder[]> = new Map();
     for (const project of this.projects.values()) {
-      const resumed: TicketOrder[] = blockingImportItem(project.ctx.db) === null ? await resumeOrders(project.ctx) : [];
+      const resumed: TicketOrder[] = await resumeOrders(project.ctx);
       if (this.opts.orders && !this.creating.has(project.ctx.id)) resumedOrders.set(project, resumed);
     }
     if (this.settings.servicesRuntime !== null && [...this.projects.values()].some(({ ctx }) => ctx.project.services !== null)) {
@@ -311,11 +310,12 @@ export class Engine extends EventEmitter {
       return;
     }
     if (loaded.errors.length) this.projectErrors.set(id, loaded.errors);
+    const db: ProjectDb = new ProjectDb(join(dir, "pecore.db"));
     const ctx: ProjectContext = {
       id,
       dir,
       library: homePaths(this.opts.home).library,
-      db: new ProjectDb(join(dir, "pecore.db")),
+      db,
       project: loaded.project,
       defs: loaded,
       user: this.settings.protectedMode ? protectedUser : appUser,
@@ -333,6 +333,7 @@ export class Engine extends EventEmitter {
       held: () => this.globalPause,
       agents: this.agents,
       orderAttachments: (orderId, attachmentIds) => this.orchestrator.jobAttachments(orderId, attachmentIds),
+      rejectImport: (resolve) => this.deleteProject(id, resolve),
       setupEnded: (state) => this.setupEnded(id, state),
       forgeAccount: (accountId) => this.accounts.accounts.find((a): a is ForgeAccount => a.kind === "forge" && a.id === accountId),
       global: () => ({ profiles: this.profiles, tiers: this.tiers }),
@@ -346,7 +347,13 @@ export class Engine extends EventEmitter {
         if (e.type.startsWith("node_run.") && e.jobId !== null && "nodeRunId" in e.payload) this.live({ type: "node_run.updated", projectId: id, jobId: e.jobId, nodeRunId: e.payload.nodeRunId });
         if (e.type.startsWith("job.") && e.jobId !== null) this.live({ type: "job.updated", projectId: id, jobId: e.jobId });
         if (e.type === "queue.added" || e.type === "queue.resolved") this.live({ type: "queue.updated", projectId: id, itemId: e.payload.itemId });
-        if (e.type === "queue.resolved" && e.jobId === null && e.payload.choice === "confirm") this.projects.get(id)?.sourcePolling?.wake();
+        if (e.type === "queue.resolved" && e.jobId === null && e.payload.choice === "confirm") {
+          const project: LoadedProject | undefined = this.projects.get(id);
+          const imported: unknown = ctx.db.db.prepare("SELECT 1 FROM human_queue WHERE id = ? AND kind = 'import'").get(e.payload.itemId);
+          if (imported) {
+            void resumeOrders(ctx).then((orders) => project?.sourcePolling?.wake(orders)).catch((error: unknown) => console.error(`orders of project ${id}:`, error));
+          } else project?.sourcePolling?.wake();
+        }
       }
     };
     this.projects.set(id, { ctx, executor: new JobExecutor(ctx) });
@@ -501,22 +508,30 @@ export class Engine extends EventEmitter {
     this.setCreating(id, null);
   }
 
-  async deleteProject(id: string): Promise<void> {
-    const p = this.project(id);
+  async deleteProject(id: string, resolveImport?: () => void): Promise<void> {
+    const p: LoadedProject = this.project(id);
+    if (p.deleting) throw new Error(`project ${id} is being deleted`);
     const running = p.executor.jobs().filter((j) => j.state === "running");
     if (running.length > 0) throw new Error(`stop the running jobs first: ${running.map((j) => j.title).join(", ")}`);
-    await p.sourcePolling?.close();
-    const jobs = p.executor.jobs();
-    for (const j of jobs) if (!isFinal(j.state)) await p.executor.stop(j.id);
-    for (const j of jobs) await p.executor.services.down(j.id).catch((e: unknown) => console.error("services:", e));
-    await p.executor.close();
-    p.ctx.db.close();
-    this.projects.delete(id);
-    this.projectErrors.delete(id);
-    if (p.ctx.user !== appUser) await removeAs(p.ctx.user, p.ctx.dir, "work").catch(() => undefined);
-    await rm(p.ctx.dir, { recursive: true, force: true });
-    if (!relative(this.opts.home, p.ctx.dir).startsWith("..")) await commitDefinition(this.opts.home, [p.ctx.dir], commitMessage("project", id, "deleted"));
-    this.live({ type: "project.updated", projectId: id });
+    p.deleting = true;
+    try {
+      await p.sourcePolling?.close();
+      const jobs = p.executor.jobs();
+      for (const j of jobs) if (!isFinal(j.state)) await p.executor.stop(j.id);
+      for (const j of jobs) await p.executor.services.down(j.id).catch((e: unknown) => console.error("services:", e));
+      await p.executor.close();
+      resolveImport?.();
+      p.ctx.db.close();
+      this.projects.delete(id);
+      this.projectErrors.delete(id);
+      this.creating.delete(id);
+      if (p.ctx.user !== appUser) await removeAs(p.ctx.user, p.ctx.dir, "work").catch(() => undefined);
+      await rm(p.ctx.dir, { recursive: true, force: true });
+      if (!relative(this.opts.home, p.ctx.dir).startsWith("..")) await commitDefinition(this.opts.home, [p.ctx.dir], commitMessage("project", id, "deleted"));
+      this.live({ type: "project.updated", projectId: id });
+    } finally {
+      delete p.deleting;
+    }
   }
 
   async setProtectedMode(on: boolean, removeUser = false): Promise<void> {

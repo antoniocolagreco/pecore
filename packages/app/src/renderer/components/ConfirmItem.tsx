@@ -95,6 +95,37 @@ function Subject({ item, connected }: { item: QueueItemView; connected: boolean 
           <Snapshot value={subject.compose} />
         </>
       );
+    case "import": {
+      const { warning, project, nodes, recipes, knowledge } = subject;
+      if (typeof warning !== "string" || !Array.isArray(nodes)) return <Snapshot value={item.subject} />;
+      return (
+        <>
+          <p className={ui.banner}>{warning}</p>
+          <div>
+            <strong>project.json</strong>
+            <Snapshot value={project} />
+          </div>
+          {nodes.map((value: unknown) => {
+            const { path, definition, files } = record(value);
+            if (typeof path !== "string") return null;
+            return (
+              <div key={path}>
+                <strong>{path}</strong>
+                <Snapshot value={definition} />
+                {Object.entries(record(files)).map(([name, content]) => (
+                  <div key={name}>
+                    <strong>{name}</strong>
+                    <Snapshot value={content} />
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+          <div><strong>Recipes</strong><Snapshot value={recipes} /></div>
+          <div><strong>Knowledge files</strong><Snapshot value={knowledge} /></div>
+        </>
+      );
+    }
     case "round-limit":
       return (
         <dl className={ui.kv}>

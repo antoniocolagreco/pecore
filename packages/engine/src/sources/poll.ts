@@ -123,7 +123,7 @@ async function pollOrder(ctx: ProjectContext, sink: OrderSink, order: TicketOrde
   rehand.delete(orderId);
 }
 
-export function startSourcePolling(ctx: ProjectContext, sink: OrderSink, resumed: TicketOrder[]): { wake(): void; close(): Promise<void> } {
+export function startSourcePolling(ctx: ProjectContext, sink: OrderSink, resumed: TicketOrder[]): { wake(orders?: TicketOrder[]): void; close(): Promise<void> } {
   const rehand: Set<string> = new Set(resumed.filter((order) => order.state === "handed").map((order) => order.order_id));
   let timer: NodeJS.Timeout | undefined;
   let inFlight: Promise<void> | undefined;
@@ -144,7 +144,8 @@ export function startSourcePolling(ctx: ProjectContext, sink: OrderSink, resumed
   };
   schedule(0);
   return {
-    wake() {
+    wake(orders) {
+      for (const order of orders ?? []) if (order.state === "handed") rehand.add(order.order_id);
       if (inFlight) woken = true;
       else schedule(0);
     },

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { monotonicFactory } from "ulid";
 import { Node } from "@pecore/schemas";
-import type { Project } from "@pecore/schemas";
+import type { Project, Recipe } from "@pecore/schemas";
 import type { ProjectDb } from "../store/project-db";
 
 const ulid = monotonicFactory();
@@ -35,11 +35,17 @@ export function runFiles(node: Node): string[] {
 export type SourceScope = Pick<Project, "repo" | "baseBranch"> & { source: NonNullable<Project["source"]> };
 export type ConfirmSubject = { path: string; kind: "engine-node" | "source-node"; definition: unknown; scripts: Record<string, string> };
 export type RecipeChangeSubject = { path: string; content: string; baseSha256: string | null };
-export type ImportSubject = { path: string; definition: Node; files: Record<string, string> };
+export type ImportSubject = {
+  projectId: string;
+  warning: string;
+  project: Project;
+  nodes: { path: string; definition: Node; files: Record<string, string> }[];
+  recipes: { path: string; definition: Recipe }[];
+  knowledge: string[];
+};
 
 export function blockingImportItem(db: ProjectDb): string | null {
-  const item = db.db.prepare(`SELECT id FROM human_queue WHERE kind = 'import' AND
-    (state = 'open' OR (state = 'resolved' AND choice = 'reject')) ORDER BY state, id LIMIT 1`).get() as { id: string } | undefined;
+  const item = db.db.prepare("SELECT id FROM human_queue WHERE kind = 'import' AND state = 'open' ORDER BY id LIMIT 1").get() as { id: string } | undefined;
   return item?.id ?? null;
 }
 
