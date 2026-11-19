@@ -62,4 +62,16 @@ describe("PECORE_HOME layout", () => {
     expect((await stat(join(home, "adapters", "node", "bin", "node"))).mode & 0o777).toBe(0o755);
     expect(await syncAdapters(home, { source, appVersion: "1.0.0", pinned: ["a@1"] })).toBe(false);
   });
+
+  it("keeps scoped adapters that are pinned and removes their old versions", async () => {
+    const root = await tempDir();
+    const home = join(root, "home");
+    const source = join(root, "adapters");
+    await mkdir(join(source, "@scope", "b@2"), { recursive: true });
+    await mkdir(join(home, "adapters", "@scope", "b@1"), { recursive: true });
+    await mkdir(join(home, "adapters", "@old", "c@1"), { recursive: true });
+    await syncAdapters(home, { source, appVersion: "2.0.0", pinned: ["@scope/b@2"] });
+    expect((await readdir(join(home, "adapters"))).sort()).toEqual(["@scope", "version"]);
+    expect(await readdir(join(home, "adapters", "@scope"))).toEqual(["b@2"]);
+  });
 });

@@ -96,7 +96,10 @@ export async function syncAdapters(home: string, opts: { source: string; appVers
   await cp(opts.source, dir, { recursive: true, force: true, preserveTimestamps: true });
   const keep = new Set(["version", "node", ...opts.pinned]);
   for (const entry of await readdir(dir)) {
-    if (!keep.has(entry)) await rm(join(dir, entry), { recursive: true, force: true });
+    if (entry.startsWith("@")) {
+      for (const inner of await readdir(join(dir, entry))) if (!keep.has(`${entry}/${inner}`)) await rm(join(dir, entry, inner), { recursive: true, force: true });
+      if ((await readdir(join(dir, entry))).length === 0) await rm(join(dir, entry), { recursive: true, force: true });
+    } else if (!keep.has(entry)) await rm(join(dir, entry), { recursive: true, force: true });
   }
   await writeFile(versionFile, opts.appVersion + "\n");
   return true;
