@@ -1,0 +1,153 @@
+.split {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(0, 3fr);
+  align-items: start;
+  gap: var(--gap);
+}
+
+.conversation,
+.conversations {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.conversation {
+  display: grid;
+  gap: var(--gap);
+}
+
+.heading {
+  font-size: 16px;
+  margin: 0;
+}
+
+.list {
+  list-style: none;
+  max-height: 68vh;
+  margin: 8px 0 0;
+  padding: 0;
+  overflow: auto;
+}
+
+.list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 6px;
+}
+
+.list a {
+  flex: 1;
+}
+
+.selected {
+  background: var(--surface-raised);
+}
+
+.unread {
+  color: var(--status-warning);
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.history {
+  max-height: 53vh;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.message {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.messageText {
+  width: 100%;
+  min-width: 0;
+}
+
+.messageText > :first-child {
+  margin-top: 0;
+}
+
+.messageText > :last-child {
+  margin-bottom: 0;
+}
+
+.messageText p,
+.messageText pre,
+.definition {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.definition {
+  max-height: 58vh;
+  overflow: auto;
+}
+
+.action {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--surface-raised);
+}
+
+.tool::first-letter {
+  text-transform: uppercase;
+}
+
+.links {
+  margin: 4px 0 0;
+  padding-inline-start: 20px;
+}
+
+.composer {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.composer textarea {
+  resize: vertical;
+}
+
+.composer input[type="file"] {
+  min-width: 0;
+}
+
+.chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  background: var(--surface-raised);
+  font-size: 12px;
+}
+
+@media (max-width: 880px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .list {
+    max-height: 28vh;
+  }
+}

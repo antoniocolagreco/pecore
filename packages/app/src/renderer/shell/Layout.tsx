@@ -10,13 +10,14 @@ import { useProjectFilter } from "./filter";
 import { Notifications } from "./Notifications";
 import s from "./Layout.module.css";
 
-const nav: { group: string; items: { to: string; label: string; badge?: "inbox" }[] }[] = [
+const nav: { group: string; items: { to: string; label: string; badge?: "inbox" | "orchestrator" }[] }[] = [
   {
     group: "Workspace",
     items: [
       { to: "/", label: "Factory" },
       { to: "/jobs", label: "Jobs" },
       { to: "/inbox", label: "Inbox", badge: "inbox" },
+      { to: "/orchestrator", label: "Orchestrator", badge: "orchestrator" },
       { to: "/projects", label: "Projects" },
       { to: "/usage", label: "Usage" },
     ],
@@ -30,6 +31,8 @@ export function Layout() {
   const navigate = useNavigate();
   const { project, setProject } = useProjectFilter();
   const status = useData(() => call("getStatus"), [], (m) => m.type === "queue.updated" || m.type === "job.updated");
+  const chats = useData(() => call("listChats"), [], (m) => m.type === "chat.message" || m.type === "chat.updated");
+  const unread: number = chats.data?.reduce((total, chat) => total + chat.unread, 0) ?? 0;
   const projects = useData(() => call("listProjects"), [], (m) => m.type === "project.updated");
   const [newJob, setNewJob] = useState(false);
   const pause = useAction(() => (status.data?.globalPause ? call("playAll") : call("pauseAll")).then(status.reload));
@@ -46,6 +49,7 @@ export function Layout() {
               <NavLink key={i.to} to={i.to} end={i.to === "/"} className={({ isActive }) => [s.link, isActive ? s.active : ""].join(" ")}>
                 {i.label}
                 {i.badge === "inbox" && st && st.inbox > 0 ? <span className={s.badge}>{st.inbox}</span> : null}
+                {i.badge === "orchestrator" && unread > 0 ? <span className={s.badge} aria-label={`${unread} unread`}>{unread}</span> : null}
               </NavLink>
             ))}
           </div>

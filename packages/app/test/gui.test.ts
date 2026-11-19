@@ -1,4 +1,5 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import { createInterface } from "node:readline";
 import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -68,7 +69,7 @@ const deliverPr = {
 const visible = (l: Locator, timeout = 10_000) => l.waitFor({ state: "visible", timeout });
 const gui = !built || process.env.PECORE_GUI !== "1";
 
-async function launch(root: string, nodes: Record<string, unknown>, recipes: Record<string, unknown>, accounts: unknown[] = []): Promise<{ app: ElectronApplication; page: Page }> {
+async function launch(root: string, nodes: Record<string, unknown>, recipes: Record<string, unknown>, accounts: unknown[] = [], prepare?: (home: string) => Promise<void>): Promise<{ app: ElectronApplication; page: Page }> {
   const home = join(root, "home");
   const library = join(root, "library");
   await cp(shippedLibrary, library, { recursive: true });
@@ -77,8 +78,13 @@ async function launch(root: string, nodes: Record<string, unknown>, recipes: Rec
   await initHome(home, { library });
   await writeFile(join(home, "settings.json"), JSON.stringify({ firstRunDone: true }));
   if (accounts.length) await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts }));
+  await prepare?.(home);
   await mkdir(join(root, "ud"), { recursive: true });
   await writeFile(join(root, "ud", "home.json"), JSON.stringify({ home }));
+  return open(root);
+}
+
+async function open(root: string): Promise<{ app: ElectronApplication; page: Page }> {
   const executable = (await import("electron")).default as unknown as string;
   const env = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[0] !== "ELECTRON_RUN_AS_NODE" && e[1] !== undefined));
   const app = await electron.launch({ executablePath: executable, args: [appDir, `--user-data-dir=${join(root, "ud")}`, "--ozone-platform=headless"], env });
@@ -466,4 +472,153 @@ describe.skipIf(gui)("phase 5 gate: forge actions from the GUI (fake gh)", () =>
     await visible(page.getByText("Merged", { exact: true }), 15_000);
     await shot("merged");
   }, 180_000);
+});
+
+const fakeAgent = fileURLToPath(new URL("../../agents/test/fake-agent/agent.mjs", import.meta.url));
+const shim = fileURLToPath(new URL("../../agents/scripts/orchestrator-mcp.mjs", import.meta.url));
+const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+const init = (image: boolean) => [
+  { expect: "initialize" },
+  { send: { jsonrpc: "2.0", id: "$id", result: { protocolVersion: 1, agentCapabilities: { loadSession: false, sessionCapabilities: { resume: {} }, promptCapabilities: { image } } } } },
+];
+const reply = (text: string) => [
+  { send: { jsonrpc: "2.0", method: "session/update", params: { sessionId: "S1", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } } } },
+  { send: { jsonrpc: "2.0", id: "$id", result: { stopReason: "end_turn" } } },
+];
+const resume = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
+
+function mcp(tokenFile: string) {
+  const child = spawn(process.execPath, [shim, tokenFile], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, stdio: ["pipe", "pipe", "inherit"] });
+  const lines = createInterface({ input: child.stdout! })[Symbol.asyncIterator]();
+  let next = 1;
+  const rpc = async (method: string, params: unknown) => {
+    child.stdin!.write(JSON.stringify({ jsonrpc: "2.0", id: next++, method, params }) + "\n");
+    return JSON.parse((await lines.next()).value as string) as { result?: unknown; error?: unknown };
+  };
+  return { rpc, close: () => child.stdin!.end() };
+}
+
+describe.skipIf(gui)("phase 6: orchestrator chat from the GUI (fake agent)", () => {
+  let root: string;
+  let app: ElectronApplication;
+  let page: Page;
+  const realHome = process.env.HOME;
+  const go = (hash: string) => page.evaluate((h) => ((globalThis as unknown as { location: { hash: string } }).location.hash = h), hash);
+  const shot = async (name: string) => {
+    if (process.env.PECORE_GUI_SHOTS) await page.screenshot({ path: join(process.env.PECORE_GUI_SHOTS, `chat-${name}.png`) });
+  };
+  const until = async (fn: () => Promise<boolean>, ms = 15_000) => {
+    const end = Date.now() + ms;
+    while (!(await fn())) {
+      if (Date.now() > end) throw new Error("timed out");
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  };
+  const exists = (path: string) => stat(path).then(() => true, () => false);
+  const spawns = async () => Number(await readFile(join(root, "script-0.jsonl.count"), "utf8").catch(() => "0"));
+
+  beforeAll(async () => {
+    root = await mkdtemp(join(tmpdir(), "pecore-gui-chat-"));
+    process.env.HOME = join(root, "user");
+    await mkdir(process.env.HOME);
+    const scripts = [
+      init(true),
+      init(true),
+      [...init(true), { expect: "session/new" }, { send: { jsonrpc: "2.0", id: "$id", result: { sessionId: "S1" } } }, { expect: "session/prompt" }, { dump: join(root, "turn1.json") }, { waitFile: join(root, "done1") }, ...reply("Two jobs created.")],
+      [...init(true), ...resume, { expect: "session/prompt" }, { dump: join(root, "turn2.json") }, { sleep: 600_000 }],
+      init(false),
+      init(false),
+      [...init(false), ...resume, { expect: "session/prompt" }, ...reply("Retried.")],
+    ];
+    const files: string[] = [];
+    for (const [i, s] of scripts.entries()) {
+      files.push(join(root, `script-${i}.jsonl`));
+      await writeFile(files[i]!, s.map((x) => JSON.stringify(x)).join("\n") + "\n");
+    }
+    ({ app, page } = await launch(root, { "write-hello": writeHello }, { reviewed }, [{ id: "fake", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" }], async (home) => {
+      await mkdir(join(home, "connectors"), { recursive: true });
+      await writeFile(join(home, "connectors", "fake.json"), JSON.stringify({ name: "fake", title: "Fake", kind: "native", harness: { program: "node", versionArgs: ["--version"], versionRange: ">=18.0.0" }, command: ["{harnessPath}", fakeAgent], env: { FAKE_AGENT_SCRIPT: files.join(",") }, reader: "claude-code" }));
+      await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p1", account: "fake", model: "m1" }] }));
+      await writeFile(join(home, "settings.json"), JSON.stringify({ firstRunDone: true, orchestrator: { profile: "p1" } }));
+    }));
+  }, 60_000);
+
+  afterAll(async () => {
+    await app?.evaluate(({ app: a }) => a.exit(0)).catch(() => undefined);
+    process.env.HOME = realHome;
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("creates a conversation, sends a message with an image, shows the actions and the reply, and counts it unread while away", async () => {
+    await go("#/projects/new");
+    await page.getByLabel("Project ID").fill("demo");
+    await page.getByLabel("Name").fill("Demo");
+    await page.getByLabel("Local only").check();
+    for (const r of ["feature", "bugfix"]) await page.getByRole("checkbox", { name: new RegExp(`^${r}`) }).uncheck();
+    await page.getByRole("button", { name: "Create project" }).click();
+    await visible(page.getByRole("button", { name: /Finish|Skip/ }).first(), 30_000);
+
+    await page.getByRole("link", { name: "Orchestrator" }).click();
+    await page.getByRole("button", { name: "New conversation" }).click();
+    await page.getByLabel("Title").fill("Orders");
+    await page.getByRole("button", { name: "Create conversation" }).click();
+    await visible(page.getByRole("heading", { name: "Orders" }));
+    const chatId = decodeURIComponent((await page.evaluate(() => (globalThis as unknown as { location: { hash: string } }).location.hash)).split("/").at(-1)!);
+    const attach = page.getByLabel("Attach images");
+    await until(() => attach.isEnabled());
+    await attach.setInputFiles({ name: "shot.png", mimeType: "image/png", buffer: png });
+    await visible(page.getByLabel("Selected images").getByText(/shot\.png/));
+    await page.getByRole("textbox", { name: "Message" }).fill("Add an API and a UI job to demo");
+    await until(async () => (await spawns()) === 2);
+    await page.getByRole("button", { name: "Send" }).click();
+    await until(() => exists(join(root, "turn1.json")));
+    const prompt = JSON.parse(await readFile(join(root, "turn1.json"), "utf8")) as { params: { prompt: { type: string; mimeType?: string }[] } };
+    if (!prompt.params.prompt.some((b) => b.type === "image" && b.mimeType === "image/png")) throw new Error("no image block in the prompt");
+    const log = page.getByRole("log", { name: "Conversation messages" });
+    await visible(log.getByText("Running"));
+    await visible(log.getByLabel("Message attachments").getByText(/image\/png/));
+    await shot("running");
+
+    const m = mcp(join(process.env.HOME!, ".pecore-chats", chatId, "mcp-token"));
+    await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+    const created = await m.rpc("tools/call", { name: "create_jobs", arguments: { project: "demo", plan: [{ key: "api", title: "API", ticketText: "add the endpoint", dependsOn: [] }, { key: "ui", title: "UI", ticketText: "add the screen", dependsOn: ["api"] }] } });
+    m.close();
+    if (created.error) throw new Error(JSON.stringify(created.error));
+
+    await go("#/jobs");
+    await writeFile(join(root, "done1"), "");
+    await visible(page.getByRole("link", { name: /Orchestrator/ }).getByLabel("1 unread"), 15_000);
+    await page.getByRole("link", { name: /Orchestrator/ }).click();
+    await page.getByText("Orders").first().click();
+    await visible(log.getByText("Two jobs created."));
+    await until(async () => (await page.getByRole("link", { name: /Orchestrator/ }).getByLabel(/unread/).count()) === 0);
+    const jobLinks = log.getByRole("link", { name: /^Job / });
+    await shot("replied");
+    await until(async () => (await jobLinks.count()) === 2);
+    await jobLinks.first().click();
+    await until(async () => (await page.evaluate(() => (globalThis as unknown as { location: { hash: string } }).location.hash)).startsWith("#/jobs/"));
+  }, 120_000);
+
+  it("shows a turn cut by an app restart as interrupted, reruns it with Retry, and disables images the orchestrator cannot read", async () => {
+    await page.getByRole("link", { name: /Orchestrator/ }).click();
+    await page.getByText("Orders").first().click();
+    await page.getByRole("textbox", { name: "Message" }).fill("One more job");
+    await page.getByRole("button", { name: "Send" }).click();
+    await until(() => exists(join(root, "turn2.json")));
+    const closed = new Promise<void>((r) => app.once("close", () => r()));
+    await app.evaluate(({ app: a }) => a.exit(0)).catch(() => undefined);
+    await closed;
+
+    ({ app, page } = await open(root));
+    await page.getByRole("link", { name: /Orchestrator/ }).click();
+    await page.getByText("Orders").first().click();
+    const log = page.getByRole("log", { name: "Conversation messages" });
+    await visible(log.getByText("Interrupted"), 15_000);
+    await until(() => page.getByLabel("Attach images").isDisabled());
+    await until(async () => (await spawns()) === 6);
+    await shot("interrupted");
+    await log.getByRole("button", { name: "Retry" }).click();
+    await visible(log.getByText("Retried."), 15_000);
+    await shot("retried");
+  }, 120_000);
 });
