@@ -1,0 +1,143 @@
+.diff {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.file {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.fileHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-raised);
+  text-align: left;
+  cursor: pointer;
+}
+
+.fileName {
+  font-family: var(--mono);
+  font-weight: 600;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.adds {
+  color: var(--status-success);
+  font-family: var(--mono);
+}
+
+.dels {
+  color: var(--status-failed);
+  font-family: var(--mono);
+}
+
+.risk {
+  margin-left: 10px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid var(--status-warning);
+  color: var(--status-warning);
+  font-family: var(--font);
+  font-size: 12px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  table-layout: fixed;
+}
+
+.numCol {
+  width: 52px;
+}
+
+.signCol {
+  width: 20px;
+}
+
+.num {
+  padding: 0 8px;
+  text-align: right;
+  color: var(--text-muted);
+  user-select: none;
+  vertical-align: top;
+}
+
+.sign {
+  text-align: center;
+  user-select: none;
+  vertical-align: top;
+}
+
+.code {
+  padding: 0 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.hunkRow td {
+  background: color-mix(in srgb, var(--status-running) 16%, var(--surface));
+  color: var(--text-muted);
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
+.ctx td {
+  background: var(--surface);
+}
+
+.del td {
+  background: color-mix(in srgb, var(--status-failed) 14%, var(--surface));
+}
+
+.del .num,
+.del .sign {
+  background: color-mix(in srgb, var(--status-failed) 26%, var(--surface));
+  color: var(--text);
+}
+
+.add td {
+  background: color-mix(in srgb, var(--status-success) 14%, var(--surface));
+}
+
+.add .num,
+.add .sign {
+  background: color-mix(in srgb, var(--status-success) 26%, var(--surface));
+  color: var(--text);
+}
+
+.markDel {
+  background: color-mix(in srgb, var(--status-failed) 48%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
+
+.markAdd {
+  background: color-mix(in srgb, var(--status-success) 48%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
+
+.meta td {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.meta {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--text-muted);
+}

@@ -202,7 +202,7 @@ The prototype is normative only for: the Everforest palette and gradients, the I
     *   History: node runs in order (`node_runs`, `attempts`): recipe node id, attempt, outcome, duration, failure reason; for example "test · round 1 · failed · 0m 42s".
 *   Detail panel for the selected node run; selecting a graph node shows its latest run and a list of earlier ones. Duration, attempts, tokens, cost, artifacts (IC7), and the log.
 *   Log: the normalised events of the attempt (text, tool calls, results), streamed while it runs; a "Raw" toggle shows the JSONL lines. Only the open log is streamed (design.md "Local API"). A log removed by retention shows "Log removed".
-*   Artifact viewer (IC7): spec and findings as rendered Markdown; diff in the CodeMirror merge view, risky hunks first; check log as plain text with the failing lines highlighted by the node's output rules; risk as a list; delivery link as a link.
+*   Artifact viewer (IC7): spec and findings as rendered Markdown; diff as a unified view like a code review on GitHub (one block per file with added and removed line counts, hunk bands, old and new line numbers, red and green bands for removed and added lines, the changed part of a line marked), risky hunks first with their reason; check log as plain text with the failing lines highlighted by the node's output rules; risk as a list; delivery link as a link.
 *   Result view, for a job in a final state, above the tabs:
     *   state label and final outcome;
     *   files changed (from the `diff` artifact);
@@ -230,7 +230,7 @@ The prototype is normative only for: the Everforest palette and gradients, the I
 *   Every detail renders the item's `subject` snapshot, never a file read at decision time, and shows its sha256. The decision is sent with that hash. Items never change: a definition edited while its item is open cancels the item and creates a new one (design.md `confirm.ts`). If `queue.updated` reports the open item resolved or cancelled (for example a review cancelled by a base change), the detail locks with a banner and a button that opens the new item, if any.
 *   Inline confirmations (UI17: wizard, import, node editor, Library) use the same component on the same queue item, with the same snapshot and hash.
 *   Detail by kind:
-    *   ID1: risky hunks first in the merge view, check logs collapsed, one button per node outcome, a note field when the node's `answer` setting allows one.
+    *   ID1: the diff in the unified view of the artifact viewer, risky hunks first, then findings and spec, check logs collapsed, one button per node outcome, a note field when the node's `answer` setting allows one.
     *   ID2, engine node: `command` or `script`, `probe`, `probeRules`, `mergedCheck`, `credentials`, `params`. Source node: its four commands (`list`, `read`, `comment`, `replies`) with their scripts and `outputRules`, `credentials`, `params`. For a changed node, a diff against the last confirmed version.
     *   ID3: diff on the recipe graph (UI10).
     *   ID4: every node, script and prompt of the imported project, engine and source nodes first.
@@ -423,7 +423,7 @@ Status tokens need at least 3:1 contrast against `surface` in every theme.
 | UI5 | No images. The background is a fixed gradient of `bg-gradient-1` and `bg-gradient-2`, with no animation. |
 | UI6 | Animation only on running state (pulse); off with `prefers-reduced-motion` or Settings > Appearance > Reduced motion. No progress percentages: an agent node shows state, duration, round and attempts. |
 | UI7 | Components: Base UI (unstyled, behaviour and accessibility); styles: CSS Modules with the theme's CSS variables. |
-| UI7b | Libraries: React Flow (recipe graphs), CodeMirror 6 (editors and merge view), `@tanstack/react-virtual` (long lists and logs), `cmdk` (command palette). |
+| UI7b | Libraries: React Flow (recipe graphs), CodeMirror 6 (editors), `@tanstack/react-virtual` (long lists and logs), `cmdk` (command palette). |
 | UI8 | The job list has no model or harness columns; those are details of a node run. |
 | UI9 | Stacked jobs are a tree of indented rows in the job lists. Graphs show recipes only. |
 | UI10 | A recipe change proposed by the orchestrator is shown as a diff on the graph before the user confirms it (ID3). |
@@ -463,7 +463,7 @@ Status tokens need at least 3:1 contrast against `surface` in every theme.
 | Untrusted text (tickets, agent output, logs) rendered in the GUI | script injection in the renderer | Markdown rendered without raw HTML; logs as text; no `dangerouslySetInnerHTML` | Job view, Inbox |
 | Engine crash or WebSocket drop | stale states look live | disconnected banner, controls disabled, refetch on reconnect | Cross-cutting behaviour |
 | Many running agents streaming logs | renderer overload | log streaming only for the open attempt; updates once per frame; virtual lists | Job view, Updates |
-| Very large diffs (thousands of lines) | slow merge view | files collapsed by default, risky hunks first, one file rendered at a time | Inbox ID1, artifact viewer |
+| Very large diffs (thousands of lines) | slow diff view | files rendered 30 at a time, each collapsible, risky hunks first | Inbox ID1, artifact viewer |
 | Editor and orchestrator write the same file | one change silently lost | save with the file hash; changed-elsewhere banner | Concurrent edits |
 | User theme file with bad values | unreadable UI | schema validation, fallback tokens, contrast rules | UI4, Color tokens |
 | Normal mode: agents run as the app user | agents read the user's files and logins | Settings shows the mode and offers protected mode in one step | Settings |

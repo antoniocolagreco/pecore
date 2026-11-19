@@ -5,6 +5,7 @@ import type { QueueItemView } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
+import { ArtifactView } from "./ArtifactView";
 import { Button, Empty, ErrorText, Field, ui } from "./ui";
 import s from "./ConfirmItem.module.css";
 
@@ -30,6 +31,30 @@ function Snapshot({ value }: { value: unknown }) {
   return <pre className={s.snapshot}>{typeof value === "string" ? value : JSON.stringify(value, null, 2)}</pre>;
 }
 
+const reviewOrder: Artifact["type"][] = ["diff", "findings", "spec", "check-log"];
+
+function ReviewArtifacts({ artifacts }: { artifacts: Artifact[] }) {
+  const risk = artifacts.find((a) => a.type === "risk");
+  const shown = artifacts.filter((a) => a.type !== "risk").sort((a, b) => (reviewOrder.indexOf(a.type) + 99) % 99 - (reviewOrder.indexOf(b.type) + 99) % 99);
+  return (
+    <div className={ui.stack}>
+      {shown.map((a) =>
+        a.type === "check-log" ? (
+          <details key={a.path}>
+            <summary>Check log · {a.path.split("/").at(-2)}</summary>
+            <ArtifactView artifact={a} />
+          </details>
+        ) : (
+          <div key={a.path}>
+            <strong>{a.type === "diff" ? "Changes" : a.type === "findings" ? "Findings" : a.type === "spec" ? "Spec" : a.type}</strong>
+            <ArtifactView artifact={a} risk={a.type === "diff" ? risk : undefined} />
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
+
 function Subject({ item, connected }: { item: QueueItemView; connected: boolean }) {
   const subject: Record<string, unknown> = record(item.subject);
   switch (item.kind) {
@@ -40,16 +65,8 @@ function Subject({ item, connected }: { item: QueueItemView; connected: boolean 
           {typeof subject.node === "string" && <div>Node: {subject.node}</div>}
           {typeof subject.description === "string" && <div>{subject.description}</div>}
           {typeof subject.contentState === "string" && <div>Content state: <code>{subject.contentState}</code></div>}
-          {artifacts.success && artifacts.data.length > 0 && (
-            <ul>
-              {artifacts.data.map((artifact) => (
-                <li key={artifact.path}>
-                  {connected && item.jobId ? <Link to={`/jobs/${item.jobId}`}>{artifact.path}</Link> : artifact.path}
-                  {" · "}{artifact.type}
-                </li>
-              ))}
-            </ul>
-          )}
+          {connected && item.jobId ? <Link to={`/jobs/${item.jobId}`}>Open the job</Link> : null}
+          {artifacts.success && <ReviewArtifacts artifacts={artifacts.data} />}
           {!artifacts.success && <Snapshot value={JSON.stringify(item.subject, null, 2)} />}
         </>
       );

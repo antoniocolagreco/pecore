@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,7 +19,7 @@ const writeHello = {
   name: "write-hello",
   description: "writes hello.txt",
   kind: "command",
-  command: ["/bin/sh", "-c", "echo hello > hello.txt && echo wrote hello"],
+  command: ["/bin/sh", "-c", "if [ -f config.txt ]; then sed -i 's/\"version\": 1/\"version\": 2/' config.txt; fi; echo hello > hello.txt && echo wrote hello"],
   outcomes: ["done"],
   changesFiles: true,
   outcomeRules: [{ exitCode: 0, outcome: "done" }],
@@ -97,6 +98,14 @@ describe.skipIf(!built || process.env.PECORE_GUI !== "1")("phase 5 gate: G16 act
   }, 30_000);
 
   it("creates a job, approves its review in the Inbox and sees it succeed", async () => {
+    const seed = join(root, "seed");
+    const repo = join(root, "home", "projects", "demo", "repo.git");
+    const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", ...args], { cwd: seed });
+    execFileSync("git", ["clone", "-q", repo, seed]);
+    await writeFile(join(seed, "config.txt"), ['{', '  "name": "demo",', '  "version": 1,', '  "debug": false', '}', ''].join("\n"));
+    git("add", "config.txt");
+    git("commit", "-q", "-m", "config");
+    git("push", "-q", "origin", "HEAD:main");
     await go("#/jobs");
     await page.getByRole("banner").getByRole("button", { name: "New job" }).click();
     const dialog = page.getByRole("dialog");
