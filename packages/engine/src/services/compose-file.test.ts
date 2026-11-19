@@ -70,9 +70,20 @@ describe.skipIf(!hasCompose())("compose file allowlist (design 4.9)", () => {
     expect(Object.keys(JSON.parse(file.bytes.toString()))).toEqual(["services", "volumes"]);
   });
 
-  it("rejects keys that load files from the host", async () => {
+  it("rejects keys that load files from the host, however they are written", async () => {
     await rejects("include:\n  - other.yaml\nservices:\n  a:\n    image: busybox:1\n", /include/);
-    await rejects("services:\n  a:\n    image: busybox:1\n    env_file: .env\n", /env_file/);
+    await rejects("services:\n  a:\n    image: busybox:1\n    env_file: .env\n", /services\.a\.env_file/);
+    await rejects('services:\n  a:\n    image: busybox:1\n    "env\\x5ffile": .env\n', /env_file/);
+    await rejects("x: &bad\n  env_file: .env\nservices:\n  a:\n    <<: *bad\n    image: busybox:1\n", /env_file/);
+    await rejects("services:\n  a:\n    image: busybox:1\n    extends:\n      file: /etc/other.yaml\n      service: b\n", /extends\.file/);
+    await rejects("services:\n  a:\n    image: busybox:1\n    image: alpine:3\n", /plain YAML/);
+    await rejects("services: {}\n---\nservices: {}\n", /one YAML document/);
+  });
+
+  it("accepts the names of those keys in comments and values", async () => {
+    const source = valid.replace("POSTGRES_PASSWORD: test", "POSTGRES_PASSWORD: test\n      NOTE: \"env_file: include\"") + "# do not use env_file: here\n";
+    const { repo, commit } = await repoWith(source);
+    expect((await readComposeFile(repo, commit, "compose.yaml", "docker")).services.sort()).toEqual(["db", "migrate"]);
   });
 
   it("rejects bind mounts, ports not on loopback and keys outside the allowlist", async () => {

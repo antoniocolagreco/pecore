@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import type { Settings } from "@pecore/schemas";
+import { parseAllDocuments } from "yaml";
 import { gitApp } from "../workdir/git-as";
 import { withComposeDirectory } from "./runtime";
 
@@ -34,20 +35,26 @@ function allowKeys(value: Record<string, unknown>, allowed: readonly string[], a
 }
 
 function rejectFileReferences(source: string): void {
-  const decoded = source
-    .replace(/\\\r?\n[ \t]*/g, "")
-    .replace(/\\(?:x([\da-f]{2})|u([\da-f]{4})|U([\da-f]{8}))/gi, (_match, byte?: string, short?: string, long?: string) => {
-      const code = Number.parseInt(byte ?? short ?? long ?? "", 16);
-      return code <= 0x10ffff ? String.fromCodePoint(code) : "\ufffd";
-    });
-  const indirectKeys = /(?:^|[\s{,])\?(?=\s)|\*[^\s,{}[\]]+\s*:/.test(decoded);
-  const keySuffix: string = indirectKeys ? "" : '["\']?\\s*:';
-  const hasKey = (name: string) => new RegExp(`\\b${name}\\b${keySuffix}`).test(decoded);
-  for (const name of ["include", "env_file", "label_file"]) {
-    if (hasKey(name)) throw new Error(`Compose key ${name} is not allowed because it can load files`);
-  }
-  if (hasKey("extends") && hasKey("file")) {
-    throw new Error("Compose key extends.file is not allowed because it can load files");
+  const docs = parseAllDocuments(source, { merge: true, uniqueKeys: true });
+  if (!Array.isArray(docs) || docs.length !== 1) throw new Error("Compose file must hold exactly one YAML document");
+  const doc = docs[0]!;
+  const problems = [...doc.errors, ...doc.warnings];
+  if (problems.length > 0) throw new Error(`Compose file is not plain YAML: ${problems[0]!.message}`);
+  const model = doc.toJS({ maxAliasCount: 100 }) as unknown;
+  if (typeof model !== "object" || model === null || Array.isArray(model)) throw new Error("Compose file must be a YAML mapping");
+  const top = model as Record<string, unknown>;
+  if (Object.hasOwn(top, "include")) throw new Error("Compose key include is not allowed because it can load files");
+  const services = top.services;
+  if (typeof services !== "object" || services === null) return;
+  for (const [name, service] of Object.entries(services)) {
+    if (typeof service !== "object" || service === null) continue;
+    for (const key of ["env_file", "label_file"]) {
+      if (Object.hasOwn(service, key)) throw new Error(`Compose key services.${name}.${key} is not allowed because it can load files`);
+    }
+    const extended = (service as Record<string, unknown>).extends;
+    if (typeof extended === "object" && extended !== null && Object.hasOwn(extended, "file")) {
+      throw new Error(`Compose key services.${name}.extends.file is not allowed because it can load files`);
+    }
   }
 }
 
