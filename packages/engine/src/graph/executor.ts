@@ -294,7 +294,7 @@ export class JobExecutor {
     if (state !== "failed") await removeWorktree(this.ctx.user, this.ctx.dir, workdirOf(this.ctx.dir, job.id));
     this.setState(job.id, state, reason);
     this.ctx.notify({ kind: "job-finished", title: job.title, body: `${state}${reason ? `: ${reason}` : ""}`, jobId: job.id });
-    this.parentEnded(job.id);
+    this.ended(job.id);
   }
 
   private children(parentId: string): JobRow[] {
@@ -320,9 +320,10 @@ export class JobExecutor {
     void this.tick(setupJobId);
   }
 
-  private parentEnded(parentId: string): void {
+  private ended(parentId: string): void {
     const parent = this.job(parentId);
     if (parentId === setupJobId) this.ctx.setupEnded?.(parent.state);
+    void this.applyBaseChange(parentId).catch((e: unknown) => console.error(`base change of job ${parentId}:`, e));
     for (const child of this.children(parentId)) {
       if (child.state !== "queued") continue;
       if (parent.state === "succeeded") void this.startChild(parentId, child.id);
@@ -351,33 +352,53 @@ export class JobExecutor {
 
   private parentCommitted(parentId: string, sha: string): void {
     for (const child of this.children(parentId)) {
-      if (child.state !== "queued") void this.changeBase(child.id, "parent_commit", sha, child.target).catch((e: unknown) => this.crash(child.id, e));
+      if (child.state !== "queued") void this.requestBaseChange(child.id, "parent_commit", child.target, sha).catch((e: unknown) => this.crash(child.id, e));
     }
   }
 
-  async changeBase(jobId: string, cause: "parent_commit" | "parent_merged" | "realign", base: string, target: string): Promise<void> {
+  private idle(job: JobRow): boolean {
+    return job.state === "queued" || isFinal(job.state);
+  }
+
+  async requestBaseChange(jobId: string, cause: "parent_commit" | "parent_merged" | "realign", target: string, base: string | null = null): Promise<void> {
     const job = this.job(jobId);
-    const recipe = this.recipe(job);
-    const pending = reentryPending(this.ctx.db.events(jobId), recipe.onBaseChanged);
-    this.ctx.db.append([{ jobId, type: "job.base_changed", payload: { cause, base, oldBase: pending ? job.old_base : job.base, target } }]);
+    if (cause === "realign" && !this.idle(job)) throw new Error(`job ${jobId} is ${job.state}; its base can change only when it is stopped or finished`);
+    this.ctx.db.append([{ jobId, type: "job.base_change_requested", payload: { cause, base, target } }]);
     this.ctx.changed(jobId);
-    if (recipe.onBaseChanged === undefined || job.state === "queued") return;
+    await this.applyBaseChange(jobId);
+  }
+
+  private pendingBaseChange(jobId: string) {
+    let pending = null;
+    for (const e of this.ctx.db.events(jobId)) {
+      if (e.type === "job.base_change_requested") pending = e.payload;
+      if (e.type === "job.base_changed") pending = null;
+    }
+    return pending;
+  }
+
+  private async applyBaseChange(jobId: string): Promise<void> {
+    let reentered = false;
     await this.exclusive(jobId, async () => {
-      const j = this.job(jobId);
-      if (j.state === "succeeded" || j.state === "not_delivered") {
-        if (j.archived) this.ctx.db.append([{ jobId, type: "job.unarchived", payload: {} }]);
-        await recreateWorktree(this.ctx.user, this.ctx.dir, jobId);
-        this.setState(jobId, "running", null, "base_change");
+      const job = this.job(jobId);
+      const request = this.pendingBaseChange(jobId);
+      if (!request || !this.idle(job)) return;
+      const repo = join(this.ctx.dir, "repo.git");
+      const base = request.base ?? (request.target.startsWith(jobBranch("")) ? await branchHead(repo, request.target) : await fetchBase(this.ctx, request.target));
+      if (!base) throw new Error(`branch ${request.target} not found`);
+      const changed = { jobId, type: "job.base_changed" as const, payload: { cause: request.cause, base, oldBase: job.base, target: request.target } };
+      if (job.state === "queued" || this.recipe(job).onBaseChanged === undefined) {
+        this.ctx.db.append([changed]);
+        this.ctx.changed(jobId);
         return;
       }
-      const human = j.state === "waiting" ? this.runs(jobId).find((r) => r.state === "waiting" && r.waiting_reason === "human") : undefined;
-      if (human) {
-        if (human.queue_item_id) this.ctx.db.append([{ jobId, type: "queue.resolved", payload: { itemId: human.queue_item_id, state: "cancelled", choice: null, note: null } }]);
-        this.setRun(jobId, human.id, "interrupted", null);
-        this.setState(jobId, "running", null);
-      }
+      const worktrees = await gitWork(this.ctx.user, this.ctx.dir, [`--git-dir=${repo}`, "worktree", "list", "--porcelain"]);
+      if (!worktrees.includes(`worktree ${workdirOf(this.ctx.dir, jobId)}\n`)) await recreateWorktree(this.ctx.user, this.ctx.dir, jobId);
+      this.ctx.db.append([changed, ...(job.archived ? [{ jobId, type: "job.unarchived" as const, payload: {} }] : [])]);
+      this.setState(jobId, "running", null, "base_change");
+      reentered = true;
     });
-    void this.tick(jobId);
+    if (reentered) void this.tick(jobId);
   }
 
   async checkMerges(): Promise<void> {
@@ -425,12 +446,9 @@ export class JobExecutor {
   private async deliveryMerged(parent: JobRow, url: string): Promise<void> {
     this.ctx.db.append([{ jobId: parent.id, type: "job.delivery_merged", payload: { url } }]);
     this.ctx.changed(parent.id);
-    const target = parent.target;
-    const base = target.startsWith(jobBranch("")) ? await branchHead(join(this.ctx.dir, "repo.git"), target) : await fetchBase(this.ctx, target);
-    if (!base) throw new Error(`branch ${target} not found`);
     for (const child of this.children(parent.id)) {
-      this.ctx.notify({ kind: "job-finished", title: child.title, body: `its parent's delivery was merged into ${target}`, jobId: child.id });
-      await this.changeBase(child.id, "parent_merged", base, target);
+      this.ctx.notify({ kind: "job-finished", title: child.title, body: `its parent's delivery was merged into ${parent.target}`, jobId: child.id });
+      await this.requestBaseChange(child.id, "parent_merged", parent.target);
     }
   }
 
@@ -851,7 +869,7 @@ export class JobExecutor {
     this.ctx.db.append([{ jobId: job.id, type: "node_run.failed", payload: { nodeRunId, reason } }]);
     this.setState(job.id, "failed", reason);
     this.ctx.notify({ kind: "job-finished", title: job.title, body: `failed: ${reason}`, jobId: job.id });
-    this.parentEnded(job.id);
+    this.ended(job.id);
   }
 
   private async interrupt(jobId: string, nodeRunId: string, git: GitRecord | null, before: string | null): Promise<void> {
@@ -907,7 +925,7 @@ export class JobExecutor {
         if (job.state === "waiting") this.setState(jobId, "running", null);
         if (choice === "end") {
           this.setState(jobId, "failed", "round_limit");
-          this.parentEnded(jobId);
+          this.ended(jobId);
         }
         return;
       }
@@ -967,7 +985,7 @@ export class JobExecutor {
       const open = this.ctx.db.db.prepare("SELECT id FROM human_queue WHERE job_id = ? AND state = 'open'").all(jobId) as { id: string }[];
       for (const { id } of open) this.ctx.db.append([{ jobId, type: "queue.resolved", payload: { itemId: id, state: "cancelled", choice: null, note: null } }]);
       this.setState(jobId, "stopped", null);
-      this.parentEnded(jobId);
+      this.ended(jobId);
     });
   }
 

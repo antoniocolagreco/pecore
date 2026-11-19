@@ -20,7 +20,7 @@ export class TransitionError extends Error {
 export function canTransition(from: JobState, to: JobState, ctx: { archived: boolean; cause?: "resume" | "base_change" }): boolean {
   if (!table[from].includes(to)) return false;
   if (to !== "running") return true;
-  if (from === "failed" || from === "stopped") return ctx.cause === "resume" && !ctx.archived;
+  if (from === "failed" || from === "stopped") return (ctx.cause === "resume" && !ctx.archived) || ctx.cause === "base_change";
   if (from === "succeeded" || from === "not_delivered") return ctx.cause === "base_change";
   return true;
 }

@@ -46,6 +46,10 @@ export const EventBody = z.discriminatedUnion("type", [
     "job.base_changed",
     z.object({ cause: z.enum(["parent_commit", "parent_merged", "realign"]), base: z.string(), oldBase: z.string(), target: z.string() }),
   ),
+  ev(
+    "job.base_change_requested",
+    z.object({ cause: z.enum(["parent_commit", "parent_merged", "realign"]), base: z.string().nullable(), target: z.string() }),
+  ),
   ev("job.delivery_merged", z.object({ url: z.string() })),
   ev("job.archived", z.object({})),
   ev("job.unarchived", z.object({})),

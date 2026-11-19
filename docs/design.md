@@ -484,8 +484,8 @@ A node receives the latest artifact of each type in its `inputs`. The recipe val
 | `paused` | `running`, `waiting` | play (back to the state it was in) |
 | `running` | `succeeded`, `not_delivered`, `failed` | the recipe ends (4.2) |
 | `queued`, `running`, `waiting`, `paused` | `stopped` | stop |
-| `failed`, `stopped` | `running` | resume (G17), unless archived |
-| `succeeded`, `not_delivered` | `running` | base change (4.6) |
+| `failed`, `stopped` | `running` | resume (G17), unless archived; base change (4.2) |
+| `succeeded`, `not_delivered` | `running` | base change (4.2) |
 
 Final states are `succeeded`, `not_delivered`, `failed` and `stopped`; a job in a final state can be archived or deleted.
 
@@ -510,7 +510,7 @@ Pause waits for the running node run to finish, then holds. Play moves a paused 
 *   **No edge**: an outcome with no edge ends the job, with that node and outcome recorded. The job is `failed` if the outcome is in the node's `failOutcomes` or is the built-in `stale`; `succeeded` if `<node>:<outcome>` is in the recipe's `successOutcomes` (for example `pr:opened`); otherwise `not_delivered` (for example `human:reject`, `spec:rejected`). The empty recipe ends `succeeded`. The job's failure reason is `<node>:<outcome>`.
 *   **Rounds**: an edge with `maxRounds: n` can send the job back to its target at most `n` times. A job-wide `maxNodeRuns` caps the total number of node runs. When a cap blocks an edge, the job enters `waiting` with reason `round_limit` and asks the user: allow more rounds, or end the job as `failed`.
 *   **Optional nodes**: a recipe node with `optional: true` runs only if the `spec` artifact names it; otherwise it ends at once with the built-in outcome `skipped`, which the recipe must route.
-*   **Base change**: the engine records `job.base_changed` for a job in exactly three cases: its parent job's branch gets a new commit (from a node of the parent job); its parent's delivery is detected as merged (4.6); the user or the orchestrator asks to realign it. Base changes that arrive while a node runs are merged into one. The job re-enters at `onBaseChanged` after its running node ends; a human node that was waiting is cancelled and its pending approval is discarded. If the recipe has no `onBaseChanged`, the job only shows that its base moved. Commits pushed to a branch by hand on the forge, or new commits on `baseBranch`, are not detected; the user realigns by hand.
+*   **Base change**: a job's base and target change only through a request, recorded as `job.base_change_requested`, in exactly three cases: its parent job's branch gets a new commit (from a node of the parent job); its parent's delivery is detected as merged (4.6); the user or the orchestrator asks to realign it to a branch. A job inherits its base branch from the project when it is created (or from the branch chosen at creation), and its base never moves while it works. A request is applied at once when the job is `queued`, `succeeded`, `not_delivered`, `stopped` or `failed`; otherwise it waits and is applied when the job reaches one of those states. Requests that wait are merged into one, the latest. A realign asked by the user is refused while the job is `running`, `waiting` or `paused`. Applying a request records `job.base_changed`; a job that has started then re-enters `running` at `onBaseChanged` (its worktree recreated if needed), where the rebase node moves its commits and the delivery node moves its PR or MR. If the recipe has no `onBaseChanged`, the job only shows that its base moved. Commits pushed to a branch by hand on the forge, or new commits on `baseBranch`, are not detected; the user realigns by hand.
 
 #### 4.3 Node run states
 
@@ -552,9 +552,9 @@ A job waiting for a human, a quota, a login or a confirmation releases its pool 
 
 *   A job can have a `parentJobId`. It stays `queued` with waiting reason `parent_job` until the parent job ends as `succeeded`.
 *   Its base is the last commit on the parent's branch. The recipe validator rejects a parent recipe that has no commit node.
-*   When the parent's branch changes later, the engine records `job.base_changed` for every child and applies the base change rule (4.2).
+*   When the parent's branch changes later, the engine requests a base change for every child that has started (4.2).
 *   `{job.target}` is the parent job's branch while the parent is not merged, so the child's PR or MR shows only the child's changes. For a job with no parent it is the job's base branch.
-*   Merge detection: for every job with a delivery not yet merged, the engine runs the `mergedCheck` of its delivery node at the interval set in settings (default 5 minutes). When it reports `done`, the engine records `job.delivery_merged` on the parent and notifies each child: it fetches the job's base branch into `repo.git` (section 2), sets the child's `{job.target}` to that branch and its base to the fetched commit, and records `job.base_changed`. The child's rebase node runs, and its delivery node moves the existing PR or MR to the new target (`gh pr edit --base` in `github-pr`). A delivery node with no `mergedCheck` gives no notification; the user realigns by hand.
+*   Merge detection: for every job with a delivery not yet merged, the engine runs the `mergedCheck` of its delivery node at the interval set in settings (default 5 minutes). When it reports `done`, the engine records `job.delivery_merged` on the parent and notifies each child: it requests a base change with the parent's target as the child's new `{job.target}` (4.2). When the request is applied, the engine fetches that branch into `repo.git` (section 2) and sets the child's base to the fetched commit. The child's rebase node runs, and its delivery node moves the existing PR or MR to the new target (`gh pr edit --base` in `github-pr`). A delivery node with no `mergedCheck` gives no notification; the user realigns by hand.
 *   The orchestrator creates a set of stacked jobs from one order through the tool `create_jobs`, which takes tickets with `dependsOn`.
 *   Parent ends `not_delivered`, `failed` or `stopped`: its queued children move to waiting reason `parent_failed` and the user is notified. They start when the parent later ends `succeeded` (after a resume or a base change), or the user stops them.
 *   Parent re-enters `running` after a base change and then does not succeed: its children keep their current base and show `parent_failed` until the parent succeeds again.
@@ -833,7 +833,7 @@ Each entry: option, status (Rejected or Deferred, with the decision if any), rea
 | Anthropic treats automated use of a Claude subscription as a breach of its consumer terms | policy | the user's Claude account is restricted | the unmodified Claude Code binary, logged in by the user through Anthropic's flow; PeCore never handles tokens; API key accounts are supported. Anthropic's legal page allows an end user to sign in to the unmodified binary, says that developers of products, including those built on the Agent SDK, "should use API key authentication", and does not name automation; the consumer terms forbid automated access except where Anthropic permits it ([ACP spike](spikes/acp.md), Terms). Before the public release, ask Anthropic, or make API keys the default for Claude | 3.4, 5 |
 | A crash during a git operation | failure mode | inconsistent repo state | recorded branch, HEAD and stash; abort and reset on interruption | 4.4 |
 | A crash during a delivery | failure mode | double PR or push | probe before every engine node | 4.8 |
-| Parent changes re-run every descendant | cost | tokens, quota and repeated human reviews | base changes merged while a node runs; `skipWhenUnchanged` | 4.2, 3.2 |
+| Parent changes re-run every descendant | cost | tokens, quota and repeated human reviews | base change requests merged while a job works; `skipWhenUnchanged` | 4.2, 3.2 |
 | Forge outages or expired logins during long jobs | failure mode | lost work | waits with reasons `network` and `auth` instead of failures; resume control | 4.3, G17 |
 
 ### Limits
@@ -895,7 +895,8 @@ Events (`src/events.ts`). Each row of `events` has `id` (ULID), `job_id`, `type`
 |---|---|---|
 | `job.created` | recipe, ticket artifact, parent, base branch, base commit, target | `jobs` insert |
 | `job.state_changed` | state, reason | `jobs.state`, `jobs.waiting_reason` |
-| `job.base_changed` | cause (`parent_commit`, `parent_merged`, `realign`), new base commit, new target | `jobs.base`, `jobs.old_base`, `jobs.target` |
+| `job.base_change_requested` | cause, base commit (null: the head of the target when applied), target | none; the latest request after the last `job.base_changed` is pending |
+| `job.base_changed` | cause (`parent_commit`, `parent_merged`, `realign`), new base commit, old base commit, new target | `jobs.base`, `jobs.old_base`, `jobs.target` |
 | `job.delivery_merged` | delivery URL | `jobs.merged_at` |
 | `job.archived`, `job.unarchived` | | `jobs.archived` |
 | `node_run.created` | node, round, the index of the edge that started it (null for `start` and `onBaseChanged`) | `node_runs` insert |
@@ -1306,5 +1307,5 @@ Each line closes one entry gate of phase 4 and overrides the earlier text it con
 12. **Prerequisites by feature.** First run checks git, and on Linux sudo and setfacl only when protected mode is turned on. `gh`, `glab` and `aws` are checked when an account uses them, Compose when a project has `services`, gitleaks at the first export.
 13. **Project creation across a restart.** `projects/<id>/creating.json` records the last finished step. At start, an unfinished creation is shown in the Inbox with Retry (continue from the next step) and Cancel (undo the finished steps). The `createRepo` node run waits like any node run (`network`, `auth`, `confirmation`).
 14. **Group before relogin.** The admin prompt that turns protected mode on also runs the group and ACL steps for every existing project as root. A project created later, while the app user's session does not have the group yet (`id -Gn`), gets its group step through an admin prompt too; the GUI suggests logging out and in to avoid it.
-15. **Re-entry after a base change.** The job re-enters at `onBaseChanged` only after its `start` node has completed; a base change that arrives earlier waits for it. The recipe validator therefore counts the ticket and the outputs of `start` as available at `onBaseChanged`.
+15. **Base changes only on a job that does not work.** A base change is a request (4.2): applied at once on a `queued`, `succeeded`, `not_delivered`, `stopped` or `failed` job, otherwise applied when the job reaches one of those states. The user cannot realign a `running`, `waiting` or `paused` job. A job therefore re-enters at `onBaseChanged` only after its `start` node has completed, and the recipe validator counts the ticket and the outputs of `start` as available at `onBaseChanged`.
 16. **Detached processes on job stop.** After stopping the group, the engine kills, as the project user, every process of that user whose working directory is inside the job's workdir (`/proc/<pid>/cwd` on Linux, `lsof -d cwd` on macOS). The `kill -KILL -1` sweep stays only for app start and quit in protected mode.

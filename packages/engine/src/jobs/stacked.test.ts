@@ -81,10 +81,10 @@ const recipes: Record<string, object> = {
   },
 };
 
-async function until<T>(fn: () => T | undefined | false, ms = 20000): Promise<T> {
+async function until<T>(fn: () => T | undefined | false | Promise<T | undefined | false>, ms = 20000): Promise<T> {
   const end = Date.now() + ms;
   for (;;) {
-    const v = fn();
+    const v = await fn();
     if (v) return v;
     if (Date.now() > end) throw new Error("timed out");
     await new Promise((r) => setTimeout(r, 25));
@@ -146,24 +146,45 @@ describe("stacked jobs (4.6, decision 10)", () => {
     await engine.shutdown();
   });
 
-  it("a new parent commit re-enters the child at onBaseChanged, cancels its human review and rebases it (4.2)", async () => {
+  async function moveMain(repo: string): Promise<string> {
+    const main = (await branchHead(repo, "main"))!;
+    const blob = (await gitApp(repo, ["hash-object", "-w", "--stdin"], { input: "m\n" })).trim();
+    const tree = (await gitApp(repo, ["mktree"], { input: `100644 blob ${blob}\tmain.txt\n` })).trim();
+    const moved = (await gitApp(repo, ["commit-tree", tree, "-p", main, "-m", "main moved"])).trim();
+    await gitApp(repo, ["update-ref", "refs/heads/main", moved]);
+    return moved;
+  }
+
+  it("a new parent commit waits while the child works, then rebases the child when it ends (decision 15)", async () => {
     const { engine, p, repo, job, files, sha, openItem } = await setup();
     const parent = await engine.createJob("demo", { title: "parent", ticket: { text: "x" } });
     const child = await engine.createJob("demo", { title: "child", ticket: { text: "y" }, recipe: "reviewed", parentJobId: parent });
-    await until(() => openItem(child));
+    const review = await until(() => openItem(child));
     const first = await sha(parent);
-    const main = (await branchHead(repo, "main"))!;
-    const tree = (await gitApp(repo, ["mktree"], { input: `100644 blob ${(await gitApp(repo, ["hash-object", "-w", "--stdin"], { input: "m\n" })).trim()}\tmain.txt\n` })).trim();
-    const moved = (await gitApp(repo, ["commit-tree", tree, "-p", main, "-m", "main moved"])).trim();
-    await gitApp(repo, ["update-ref", "refs/heads/main", moved]);
-    await p.executor.changeBase(parent, "realign", moved, "main");
-    await until(() => job(child).state === "succeeded");
+    await moveMain(repo);
+    await p.executor.requestBaseChange(parent, "realign", "main");
+    await until(async () => job(parent).state === "succeeded" && (await sha(parent)) !== first);
     const second = await sha(parent);
-    expect(second).not.toBe(first);
-    expect(job(child).base).toBe(second);
+    expect(job(child)).toMatchObject({ state: "waiting", waiting_reason: "human", base: first });
+    expect(openItem(child)).toEqual(review);
+    await p.executor.answer(review.id, "approve", null, review.subject_hash);
+    await until(() => job(child).state === "succeeded" && job(child).base === second);
     expect(job(child).old_base).toBe(first);
-    expect(p.ctx.db.db.prepare("SELECT state FROM human_queue WHERE job_id = ? AND kind = 'human-node'").get(child)).toEqual({ state: "cancelled" });
     expect(await files(child)).toEqual(["child.txt", "main.txt", "parent.txt"]);
+    await engine.shutdown();
+  });
+
+  it("the user can realign only a job that is not working; a stopped job re-enters at onBaseChanged", async () => {
+    const { engine, p, repo, job, files, openItem } = await setup();
+    const id = await engine.createJob("demo", { title: "solo", ticket: { text: "x" }, recipe: "reviewed" });
+    await until(() => openItem(id));
+    await moveMain(repo);
+    await expect(p.executor.requestBaseChange(id, "realign", "main")).rejects.toThrow("only when it is stopped or finished");
+    await p.executor.stop(id);
+    await p.executor.requestBaseChange(id, "realign", "main");
+    await until(() => job(id).state === "succeeded");
+    expect(job(id).base).toBe(await branchHead(repo, "main"));
+    expect(await files(id)).toEqual(["main.txt", "solo.txt"]);
     await engine.shutdown();
   });
 
@@ -180,8 +201,11 @@ describe("stacked jobs (4.6, decision 10)", () => {
     await writeFile(marker, "");
     await p.executor.checkMerges();
     expect(job(parent).merged_at).not.toBeNull();
-    await until(() => job(child).state === "succeeded");
-    expect(job(child)).toMatchObject({ target: "main", base: await branchHead(repo, "main") });
+    expect(job(child)).toMatchObject({ state: "waiting", target: `factory/${parent}` });
+    const review = openItem(child)!;
+    await p.executor.answer(review.id, "approve", null, review.subject_hash);
+    await until(() => job(child).state === "succeeded" && job(child).target === "main");
+    expect(job(child).base).toBe(await branchHead(repo, "main"));
     await engine.shutdown();
   });
 });
