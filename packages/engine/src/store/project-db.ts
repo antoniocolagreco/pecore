@@ -77,7 +77,7 @@ export class ProjectDb {
         return;
       }
       case "job.base_changed":
-        run("UPDATE jobs SET old_base = base, base = @base, target = @target, updated_at = @at WHERE id = @id", { id: e.jobId, base: e.payload.base, target: e.payload.target, at });
+        run("UPDATE jobs SET old_base = @oldBase, base = @base, target = @target, updated_at = @at WHERE id = @id", { id: e.jobId, base: e.payload.base, oldBase: e.payload.oldBase, target: e.payload.target, at });
         return;
       case "job.delivery_merged":
         run("UPDATE jobs SET merged_at = @at, updated_at = @at WHERE id = @id", { id: e.jobId, at });

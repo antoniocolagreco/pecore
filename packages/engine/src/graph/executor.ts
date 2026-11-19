@@ -13,7 +13,8 @@ import type { Definitions } from "../definitions/load";
 import { effectRecorder } from "../jobs/effects";
 import { LogWriter } from "../observability/logs";
 import { runAgentNode } from "../runners/agent";
-import { runCommandNode } from "../runners/command";
+import { commitSha, fetchBase, latestArtifact, reentryPending } from "../jobs/stacked";
+import { runCommandNode, runMergedCheck } from "../runners/command";
 import type { CommandRun } from "../runners/command";
 import { forgeEnv, identityOk, ToolAuthError } from "../runners/forge-env";
 import { budgetBlock } from "../scheduler/budget";
@@ -29,10 +30,10 @@ import type { ProjectDb } from "../store/project-db";
 import { contentState, deleteScratch, recordGit, restoreState, undoInterrupted } from "../workdir/content-state";
 import type { GitRecord } from "../workdir/content-state";
 import { gitWork } from "../workdir/git-as";
-import { jobBranch } from "../workdir/repo";
+import { branchHead, jobBranch } from "../workdir/repo";
 import { addWorktree, recreateWorktree, removeWorktree, workdirOf } from "../workdir/worktrees";
 import { assertTransition, isFinal } from "./job-machine";
-import { nextStep } from "./rules";
+import { nextStep, reenterOnBaseChange } from "./rules";
 import type { Allowances, RunRecord } from "./rules";
 
 const ulid = monotonicFactory();
@@ -51,6 +52,7 @@ export type JobRow = {
   target: string;
   branch: string;
   archived: number;
+  merged_at: number | null;
 };
 
 type NodeRunRow = {
@@ -72,6 +74,7 @@ type NodeRunRow = {
 export type ProjectContext = {
   id: string;
   dir: string;
+  library: string;
   db: ProjectDb;
   project: Project;
   defs: Definitions;
@@ -245,7 +248,9 @@ export class JobExecutor {
         if (!done) return;
         continue;
       }
-      const d = nextStep(recipe, this.byId(recipe), this.history(jobId), this.allowances(jobId));
+      const d = reentryPending(this.ctx.db.events(jobId), recipe.onBaseChanged)
+        ? reenterOnBaseChange(recipe, this.history(jobId), this.allowances(jobId))!
+        : nextStep(recipe, this.byId(recipe), this.history(jobId), this.allowances(jobId));
       if (d.kind === "end") {
         await this.finish(job, d.state, d.reason);
         return;
@@ -264,7 +269,7 @@ export class JobExecutor {
   }
 
   private async startJob(job: JobRow): Promise<boolean> {
-    if (job.parent_job_id !== null) return false;
+    if (job.waiting_reason === "parent_job" || job.waiting_reason === "parent_failed") return false;
     if (!(await enoughDisk(this.ctx.dir, this.ctx.settings.minFreeDiskGb))) {
       if (job.waiting_reason !== "disk") this.ctx.db.append([{ jobId: job.id, type: "job.state_changed", payload: { state: "queued", reason: "disk" } }]);
       return false;
@@ -278,6 +283,120 @@ export class JobExecutor {
     if (state !== "failed") await removeWorktree(this.ctx.user, this.ctx.dir, workdirOf(this.ctx.dir, job.id));
     this.setState(job.id, state, reason);
     this.ctx.notify({ kind: "job-finished", title: job.title, body: `${state}${reason ? `: ${reason}` : ""}`, jobId: job.id });
+    this.parentEnded(job.id);
+  }
+
+  private children(parentId: string): JobRow[] {
+    return this.ctx.db.db.prepare("SELECT * FROM jobs WHERE parent_job_id = ? ORDER BY id").all(parentId) as JobRow[];
+  }
+
+  private parentEnded(parentId: string): void {
+    const parent = this.job(parentId);
+    for (const child of this.children(parentId)) {
+      if (child.state !== "queued") continue;
+      if (parent.state === "succeeded") void this.startChild(parentId, child.id);
+      else if (child.waiting_reason !== "parent_failed") {
+        this.ctx.db.append([{ jobId: child.id, type: "job.state_changed", payload: { state: "queued", reason: "parent_failed" } }]);
+        this.ctx.changed(child.id);
+        this.ctx.notify({ kind: "needs-user", title: child.title, body: `its parent job ended ${parent.state}`, jobId: child.id });
+      }
+    }
+  }
+
+  private async startChild(parentId: string, childId: string): Promise<void> {
+    const sha = await commitSha(this.ctx.dir, latestArtifact(this.ctx.db.events(parentId), "commit"));
+    if (!sha) return;
+    await this.exclusive(childId, async () => {
+      const child = this.job(childId);
+      if (child.state !== "queued") return;
+      this.ctx.db.append([
+        { jobId: childId, type: "job.base_changed", payload: { cause: "parent_commit", base: sha, oldBase: sha, target: child.target } },
+        { jobId: childId, type: "job.state_changed", payload: { state: "queued", reason: null } },
+      ]);
+      this.ctx.changed(childId);
+    });
+    void this.tick(childId);
+  }
+
+  private parentCommitted(parentId: string, sha: string): void {
+    for (const child of this.children(parentId)) {
+      if (child.state !== "queued") void this.changeBase(child.id, "parent_commit", sha, child.target).catch((e: unknown) => this.crash(child.id, e));
+    }
+  }
+
+  async changeBase(jobId: string, cause: "parent_commit" | "parent_merged" | "realign", base: string, target: string): Promise<void> {
+    const job = this.job(jobId);
+    const recipe = this.recipe(job);
+    const pending = reentryPending(this.ctx.db.events(jobId), recipe.onBaseChanged);
+    this.ctx.db.append([{ jobId, type: "job.base_changed", payload: { cause, base, oldBase: pending ? job.old_base : job.base, target } }]);
+    this.ctx.changed(jobId);
+    if (recipe.onBaseChanged === undefined || job.state === "queued") return;
+    await this.exclusive(jobId, async () => {
+      const j = this.job(jobId);
+      if (j.state === "succeeded" || j.state === "not_delivered") {
+        if (j.archived) this.ctx.db.append([{ jobId, type: "job.unarchived", payload: {} }]);
+        await recreateWorktree(this.ctx.user, this.ctx.dir, jobId);
+        this.setState(jobId, "running", null, "base_change");
+        return;
+      }
+      const human = j.state === "waiting" ? this.runs(jobId).find((r) => r.state === "waiting" && r.waiting_reason === "human") : undefined;
+      if (human) {
+        if (human.queue_item_id) this.ctx.db.append([{ jobId, type: "queue.resolved", payload: { itemId: human.queue_item_id, state: "cancelled", choice: null, note: null } }]);
+        this.setRun(jobId, human.id, "interrupted", null);
+        this.setState(jobId, "running", null);
+      }
+    });
+    void this.tick(jobId);
+  }
+
+  async checkMerges(): Promise<void> {
+    for (const parent of this.jobs()) {
+      if (parent.merged_at !== null || !this.children(parent.id).some((c) => !isFinal(c.state))) continue;
+      try {
+        const url = await this.mergedUrl(parent);
+        if (url !== null) await this.deliveryMerged(parent, url);
+      } catch (e) {
+        console.error(`merge check of job ${parent.id}:`, e);
+      }
+    }
+  }
+
+  private async mergedUrl(parent: JobRow): Promise<string | null> {
+    const events = this.ctx.db.events(parent.id);
+    const delivery = latestArtifact(events, "delivery");
+    if (!delivery) return null;
+    const producer = events.find((e) => e.type === "node_run.completed" && e.payload.artifacts.some((a) => a.path === delivery.path));
+    if (producer?.type !== "node_run.completed") return null;
+    const nodeId = producer.payload.nodeRunId.split("/")[1]!.split("#")[0]!;
+    const node = this.nodeFor(this.recipe(parent), nodeId);
+    if (node.kind !== "command" || !node.mergedCheck) return null;
+    const confirmed = await ensureConfirmed(this.ctx.db, parent.id, join(this.ctx.dir, "nodes"), node);
+    if (!confirmed.confirmed) return null;
+    const env: Record<string, string> = {};
+    for (const a of this.toolAccounts(node.credentials)) Object.assign(env, await forgeEnv(a));
+    const result = await runMergedCheck({
+      node,
+      nodeDir: join(this.ctx.dir, "nodes"),
+      params: paramsWithDefaults(node.params, this.recipe(parent).nodes[nodeId]?.params),
+      context: await this.placeholderContext(parent),
+      inputs: [{ type: "delivery", path: join(this.ctx.dir, delivery.path) }],
+      extraEnv: env,
+      scripts: confirmed.scripts,
+    });
+    if (result !== "done") return null;
+    return (JSON.parse(await readFile(join(this.ctx.dir, delivery.path), "utf8")) as { url: string }).url;
+  }
+
+  private async deliveryMerged(parent: JobRow, url: string): Promise<void> {
+    this.ctx.db.append([{ jobId: parent.id, type: "job.delivery_merged", payload: { url } }]);
+    this.ctx.changed(parent.id);
+    const target = parent.target;
+    const base = target.startsWith(jobBranch("")) ? await branchHead(join(this.ctx.dir, "repo.git"), target) : await fetchBase(this.ctx, target);
+    if (!base) throw new Error(`branch ${target} not found`);
+    for (const child of this.children(parent.id)) {
+      this.ctx.notify({ kind: "job-finished", title: child.title, body: `its parent's delivery was merged into ${target}`, jobId: child.id });
+      await this.changeBase(child.id, "parent_merged", base, target);
+    }
   }
 
   private requiresMet(jobId: string, recipe: Recipe, nodeId: string, current: string): boolean {
@@ -412,15 +531,7 @@ export class JobExecutor {
         ]);
         const log = await LogWriter.open(join(this.ctx.dir, logPath));
         const latest = this.latest(job.id);
-        const commit = latest.get("commit");
-        const commitSha = commit ? (JSON.parse(await readFile(join(this.ctx.dir, commit.path), "utf8")) as { sha: string }).sha : null;
-        const ticket = latest.get("ticket");
-        const ticketId = ticket ? (JSON.parse(await readFile(join(this.ctx.dir, ticket.path), "utf8")) as { id: string | null }).id : null;
-        const context = {
-          job: { id: job.id, title: job.title, branch: job.branch, base: job.base, oldBase: job.old_base, target: job.target, commit: commitSha },
-          ticketId,
-          project: { repoDir: join(this.ctx.dir, "repo.git"), repoUrl: this.ctx.project.repo?.url ?? null },
-        };
+        const context = await this.placeholderContext(this.job(job.id));
         const inputs = [...node.inputs, ...node.optionalInputs].flatMap((t) => {
           const a = latest.get(t);
           return a ? [{ type: t, path: join(this.ctx.dir, a.path) }] : [];
@@ -525,6 +636,8 @@ export class JobExecutor {
           artifacts.push(await this.saveArtifact(job.id, runDir, "diff", diff, after));
         }
         this.complete(job.id, run.id, result.outcome, before, after, artifacts);
+        const committed = await commitSha(this.ctx.dir, artifacts.find((a) => a.type === "commit"));
+        if (committed) this.parentCommitted(job.id, committed);
         return true;
       }
       return false;
@@ -532,6 +645,16 @@ export class JobExecutor {
       this.ctx.pools.release(pools);
       this.ctx.released();
     }
+  }
+
+  private async placeholderContext(job: JobRow): Promise<CommandRun["context"]> {
+    const latest = this.latest(job.id);
+    const read = async <T>(a: Artifact | undefined) => (a ? (JSON.parse(await readFile(join(this.ctx.dir, a.path), "utf8")) as T) : null);
+    return {
+      job: { id: job.id, title: job.title, branch: job.branch, base: job.base, oldBase: job.old_base, target: job.target, commit: (await read<{ sha: string }>(latest.get("commit")))?.sha ?? null },
+      ticketId: (await read<{ id: string | null }>(latest.get("ticket")))?.id ?? null,
+      project: { repoDir: join(this.ctx.dir, "repo.git"), repoUrl: this.ctx.project.repo?.url ?? null },
+    };
   }
 
   private toolAccounts(credentials: string[]): ForgeAccount[] {
@@ -675,6 +798,7 @@ export class JobExecutor {
     this.ctx.db.append([{ jobId: job.id, type: "node_run.failed", payload: { nodeRunId, reason } }]);
     this.setState(job.id, "failed", reason);
     this.ctx.notify({ kind: "job-finished", title: job.title, body: `failed: ${reason}`, jobId: job.id });
+    this.parentEnded(job.id);
   }
 
   private async interrupt(jobId: string, nodeRunId: string, git: GitRecord | null, before: string | null): Promise<void> {
@@ -722,7 +846,10 @@ export class JobExecutor {
       }
       if (item.kind === "round-limit") {
         if (job.state === "waiting") this.setState(jobId, "running", null);
-        if (choice === "end") this.setState(jobId, "failed", "round_limit");
+        if (choice === "end") {
+          this.setState(jobId, "failed", "round_limit");
+          this.parentEnded(jobId);
+        }
         return;
       }
       if (item.kind !== "human-node") return;
@@ -781,6 +908,7 @@ export class JobExecutor {
       const open = this.ctx.db.db.prepare("SELECT id FROM human_queue WHERE job_id = ? AND state = 'open'").all(jobId) as { id: string }[];
       for (const { id } of open) this.ctx.db.append([{ jobId, type: "queue.resolved", payload: { itemId: id, state: "cancelled", choice: null, note: null } }]);
       this.setState(jobId, "stopped", null);
+      this.parentEnded(jobId);
     });
   }
 
@@ -824,6 +952,8 @@ export class JobExecutor {
     await this.exclusive(jobId, async () => {
       const job = this.job(jobId);
       if (!isFinal(job.state)) throw new Error(`job ${jobId} is ${job.state}; stop it first`);
+      const live = this.children(jobId).filter((c) => !isFinal(c.state));
+      if (live.length > 0) throw new Error(`job ${jobId} has children that are not finished: ${live.map((c) => c.id).join(", ")}`);
       await removeWorktree(this.ctx.user, this.ctx.dir, workdirOf(this.ctx.dir, jobId));
       await gitWork(this.ctx.user, this.ctx.dir, [`--git-dir=${join(this.ctx.dir, "repo.git")}`, "update-ref", "-d", `refs/heads/${jobBranch(jobId)}`]).catch(() => "");
       await rm(join(this.ctx.dir, "artifacts", jobId), { recursive: true, force: true });

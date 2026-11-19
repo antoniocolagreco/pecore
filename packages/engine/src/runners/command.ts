@@ -9,6 +9,7 @@ import type { PlaceholderContext } from "./placeholders";
 import { appUser, baseEnv, run, SpawnError } from "./process";
 import type { RunResult } from "./process";
 import { readJsonField, runProbe } from "./probe";
+import type { ProbeResult } from "./probe";
 
 export type CommandInput = { type: ArtifactType; path: string };
 
@@ -74,6 +75,19 @@ function inputFile(type: ArtifactType, source: string): string {
 
 export function commandHash(argv: string[]): string {
   return JSON.stringify(argv);
+}
+
+export async function runMergedCheck(c: Pick<CommandRun, "node" | "nodeDir" | "params" | "context" | "inputs" | "extraEnv" | "scripts">): Promise<ProbeResult> {
+  const cwd = await mkdtemp(join(tmpdir(), "pecore-engine-"));
+  try {
+    const inputs = Object.fromEntries(c.inputs.map((i) => [i.type, i.path]));
+    const values = placeholderValues({ ...c.context, params: c.params, workdir: cwd, inputs });
+    const env = { ...(await baseEnv(appUser)), ...placeholderEnv(values), ...c.extraEnv };
+    const argv = await argvOf(c.node.mergedCheck, undefined, c.nodeDir, `${c.node.name}-merged`, values, c.scripts);
+    return (await runProbe({ argv, user: appUser, cwd, env, timeoutMs: c.node.timeoutSec * 1000 }, c.node.mergedCheckRules)).result;
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
 }
 
 export async function runCommandNode(c: CommandRun): Promise<CommandOutcome> {

@@ -11,6 +11,7 @@ import type { DefinitionError } from "./definitions/load";
 import { JobExecutor } from "./graph/executor";
 import type { ProjectContext } from "./graph/executor";
 import { createJob } from "./jobs/create";
+import { startMergeWatch } from "./jobs/merge-watch";
 import type { CreateJob } from "./jobs/create";
 import { homePaths, initHome } from "./home/layout";
 import { takeLock } from "./home/lock";
@@ -41,6 +42,7 @@ export class Engine extends EventEmitter {
   agents: AgentServices | null = null;
   private chats!: ChatsDb;
   private releaseLock!: () => Promise<void>;
+  private stopMergeWatch: () => void = () => undefined;
 
   private constructor(readonly opts: EngineOptions) {
     super();
@@ -81,6 +83,12 @@ export class Engine extends EventEmitter {
     for (const id of (await readdir(p.projects).catch(() => [] as string[])).sort()) await this.openProject(id);
     for (const { executor } of this.projects.values()) await executor.recoverAfterRestart();
     this.kick();
+    this.stopMergeWatch = startMergeWatch(
+      () => this.settings.mergeCheckSec,
+      async () => {
+        for (const { executor } of this.projects.values()) await executor.checkMerges();
+      },
+    );
     if (this.agents && this.opts.checkLogins !== false) void this.agents.checkAll().then(() => this.emit("logins"));
   }
 
@@ -99,6 +107,7 @@ export class Engine extends EventEmitter {
     const ctx: ProjectContext = {
       id,
       dir,
+      library: homePaths(this.opts.home).library,
       db: new ProjectDb(join(dir, "pecore.db")),
       project: loaded.project,
       defs: loaded,
@@ -142,6 +151,7 @@ export class Engine extends EventEmitter {
   }
 
   async shutdown(): Promise<void> {
+    this.stopMergeWatch();
     await Promise.all([...this.projects.values()].map(({ executor }) => executor.close()));
     for (const { ctx } of this.projects.values()) ctx.db.close();
     this.chats.close();
