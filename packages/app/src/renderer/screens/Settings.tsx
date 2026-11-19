@@ -164,7 +164,9 @@ function LoginControls({ accounts, protectedOnly = false }: { accounts: Account[
             return <div key={login.id}>
               <div className={ui.row}>
                 <span>{login.osUser} · {login.state.replaceAll("_", " ")}{login.email && " · " + login.email}{login.plan && " · " + login.plan}</span>
-                <Button disabled={locked || running} onClick={() => void start.run(account, login.osUser, login.id)}>Login</Button>
+                {login.defaultDir
+                  ? <span className={ui.muted} title="The first account of each harness uses the login you already have; log in with the harness itself if needed.">your existing login</span>
+                  : <Button disabled={locked || running} onClick={() => void start.run(account, login.osUser, login.id)}>Login</Button>}
                 <Button disabled={locked || running} onClick={() => void recheck.run(login.id, true)}>Recheck login</Button>
               </div>
               <LoginOutput id={login.id} progress={current} running={running} />
