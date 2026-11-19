@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { Background, Controls, ReactFlow } from "@xyflow/react";
-import type { Connection, Edge, Node, NodeChange, NodePositionChange, XYPosition } from "@xyflow/react";
+import type { Connection, Edge, Node, NodeChange, NodePositionChange, ReactFlowInstance, XYPosition } from "@xyflow/react";
 import { Outcome } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useData } from "../api/hooks";
@@ -27,6 +27,7 @@ function RecipeFile({ path }: { path: string }) {
   const [template, setTemplate] = useState("");
   const [connection, setConnection] = useState<LinkDraft>();
   const [drag, setDrag] = useState<Record<string, XYPosition>>({});
+  const [flow, setFlow] = useState<ReactFlowInstance>();
   const scope: string = path.slice(0, path.lastIndexOf("/recipes/"));
   const directory: string = scope + "/nodes";
   const definitions = useData(() => call("listDefinitions", { query: { dir: directory } }), [directory], (event) => event.type === "definition.changed" && event.path.startsWith(directory + "/"));
@@ -35,6 +36,7 @@ function RecipeFile({ path }: { path: string }) {
   const layout = object(draft?.layout);
   const entries = Object.entries(nodes);
   const edges: unknown[] = Array.isArray(draft?.edges) ? draft.edges : [];
+  useEffect(() => { void flow?.fitView(); }, [entries.length]);
   const selectedNode = object(nodes[selected]);
   const palette = (definitions.data ?? []).filter((item) => item.path.endsWith(".json") && !item.errors.length && string(object(item.value).name));
   const definition = palette.find((item) => object(item.value).name === selectedNode.use);
@@ -108,7 +110,7 @@ function RecipeFile({ path }: { path: string }) {
             </div>
             {!definitions.loading && !palette.length && <Empty>No valid node definitions in this scope.</Empty>}
             <div className={s.graph} inert={!file.editable}>
-              <ReactFlow nodes={graphNodes} edges={graphEdges} snapToGrid snapGrid={grid} fitView deleteKeyCode={null}
+              <ReactFlow nodes={graphNodes} edges={graphEdges} snapToGrid snapGrid={grid} fitView onInit={setFlow} deleteKeyCode={null}
                 onNodesChange={move} onConnect={connect} nodesDraggable={file.editable} nodesConnectable={file.editable}
                 onNodeClick={(_, node) => setSelected(node.id)} onPaneClick={() => setSelected("")}>
                 <Background gap={grid[0]} /><Controls showInteractive={false} />

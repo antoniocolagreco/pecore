@@ -7,6 +7,7 @@ import { _electron as electron } from "playwright-core";
 import type { ElectronApplication, Locator, Page } from "playwright-core";
 import { afterAll, beforeAll, describe, it } from "vitest";
 import { initHome } from "../../engine/src/home/layout";
+import { FakeForge, forgeAccount } from "../../engine/test/fake-forge";
 
 const appDir = fileURLToPath(new URL("..", import.meta.url));
 const built = await stat(join(appDir, "out/main/index.js")).then(
@@ -38,9 +39,55 @@ const reviewed = {
   ],
 };
 
-const visible = (l: Locator, timeout = 10_000) => l.waitFor({ state: "visible", timeout });
+const writeSpec = {
+  name: "write-spec",
+  description: "writes hello.txt and a spec",
+  kind: "command",
+  command: ["/bin/sh", "-c", 'echo hello > hello.txt && mkdir -p .pecore && printf \'{"title":"Add hello"}\' > .pecore/spec.json'],
+  outputs: ["spec"],
+  outcomes: ["done"],
+  changesFiles: true,
+  outcomeRules: [{ exitCode: 0, outcome: "done" }],
+  outputRules: { spec: { file: ".pecore/spec.json" } },
+  timeoutSec: 30,
+};
 
-describe.skipIf(!built || process.env.PECORE_GUI !== "1")("phase 5 gate: G16 actions from the GUI (built app, headless)", () => {
+const deliverPr = {
+  name: "deliver-pr",
+  description: "write, commit, push, pull request",
+  start: "write",
+  successOutcomes: ["pr:opened"],
+  nodes: { write: { use: "write-spec" }, commit: { use: "git-commit" }, push: { use: "git-push" }, pr: { use: "github-pr" } },
+  edges: [
+    { from: "write", on: "done", to: "commit" },
+    { from: "commit", on: "done", to: "push" },
+    { from: "push", on: "pushed", to: "pr" },
+  ],
+};
+
+const visible = (l: Locator, timeout = 10_000) => l.waitFor({ state: "visible", timeout });
+const gui = !built || process.env.PECORE_GUI !== "1";
+
+async function launch(root: string, nodes: Record<string, unknown>, recipes: Record<string, unknown>, accounts: unknown[] = []): Promise<{ app: ElectronApplication; page: Page }> {
+  const home = join(root, "home");
+  const library = join(root, "library");
+  await cp(shippedLibrary, library, { recursive: true });
+  for (const [name, node] of Object.entries(nodes)) await writeFile(join(library, "nodes", `${name}.json`), JSON.stringify(node));
+  for (const [name, recipe] of Object.entries(recipes)) await writeFile(join(library, "recipes", `${name}.json`), JSON.stringify(recipe));
+  await initHome(home, { library });
+  await writeFile(join(home, "settings.json"), JSON.stringify({ firstRunDone: true }));
+  if (accounts.length) await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts }));
+  await mkdir(join(root, "ud"), { recursive: true });
+  await writeFile(join(root, "ud", "home.json"), JSON.stringify({ home }));
+  const executable = (await import("electron")).default as unknown as string;
+  const env = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[0] !== "ELECTRON_RUN_AS_NODE" && e[1] !== undefined));
+  const app = await electron.launch({ executablePath: executable, args: [appDir, `--user-data-dir=${join(root, "ud")}`, "--ozone-platform=headless"], env });
+  const page = await app.firstWindow();
+  await page.setViewportSize({ width: 1400, height: 900 });
+  return { app, page };
+}
+
+describe.skipIf(gui)("phase 5 gate: G16 actions from the GUI (built app, headless)", () => {
   let root: string;
   let app: ElectronApplication;
   let page: Page;
@@ -51,20 +98,7 @@ describe.skipIf(!built || process.env.PECORE_GUI !== "1")("phase 5 gate: G16 act
 
   beforeAll(async () => {
     root = await mkdtemp(join(tmpdir(), "pecore-gui-"));
-    const home = join(root, "home");
-    const library = join(root, "library");
-    await cp(shippedLibrary, library, { recursive: true });
-    await writeFile(join(library, "nodes", "write-hello.json"), JSON.stringify(writeHello));
-    await writeFile(join(library, "recipes", "reviewed.json"), JSON.stringify(reviewed));
-    await initHome(home, { library });
-    await writeFile(join(home, "settings.json"), JSON.stringify({ firstRunDone: true }));
-    await mkdir(join(root, "ud"), { recursive: true });
-    await writeFile(join(root, "ud", "home.json"), JSON.stringify({ home }));
-    const executable = (await import("electron")).default as unknown as string;
-    const env = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[0] !== "ELECTRON_RUN_AS_NODE" && e[1] !== undefined));
-    app = await electron.launch({ executablePath: executable, args: [appDir, `--user-data-dir=${join(root, "ud")}`, "--ozone-platform=headless"], env });
-    page = await app.firstWindow();
-    await page.setViewportSize({ width: 1400, height: 900 });
+    ({ app, page } = await launch(root, { "write-hello": writeHello }, { reviewed }));
   }, 60_000);
 
   afterAll(async () => {
@@ -177,6 +211,30 @@ describe.skipIf(!built || process.env.PECORE_GUI !== "1")("phase 5 gate: G16 act
     await page.getByText(/Global pause is on/).waitFor({ state: "detached", timeout: 10_000 });
   }, 30_000);
 
+  it("realigns a queued job onto another branch", async () => {
+    execFileSync("git", ["push", "-q", "origin", "HEAD:release"], { cwd: join(root, "seed") });
+    await go("#/");
+    await page.getByRole("button", { name: /Pause all/ }).click();
+    await visible(page.getByText(/Global pause is on/));
+    await newJob("Queued");
+    await go("#/jobs");
+    await page.getByRole("row", { name: /Queued/ }).getByText("Queued").first().click();
+    const control = (name: string) => page.getByRole("main").getByRole("button", { name, exact: true }).first();
+    await control("Realign").click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel(/Target branch/).fill("release");
+    await dialog.getByRole("button", { name: "Realign" }).click();
+    await dialog.waitFor({ state: "hidden" });
+    await visible(page.getByText(/Base changed to/));
+    await visible(page.getByRole("main").locator("code", { hasText: /^release$/ }).first());
+    await shot("realigned");
+    await control("Stop").click();
+    await visible(page.getByText("Stopped").first(), 15_000);
+    await go("#/");
+    await page.getByRole("button", { name: /Play all/ }).click();
+    await page.getByText(/Global pause is on/).waitFor({ state: "detached", timeout: 10_000 });
+  }, 60_000);
+
   it("saves a setting", async () => {
     await go("#/settings");
     const section = page.locator("#mergeCheckSec");
@@ -202,6 +260,69 @@ describe.skipIf(!built || process.env.PECORE_GUI !== "1")("phase 5 gate: G16 act
     await shot("recipe-editor");
   }, 60_000);
 
+  it("confirms an engine node inline after instantiating it and after editing it", async () => {
+    await go("#/library");
+    await page.getByRole("row", { name: /^git-push / }).getByRole("button", { name: "Instantiate into project" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Project").selectOption("demo");
+    await dialog.getByRole("button", { name: "Instantiate", exact: true }).click();
+    await visible(page.getByText("Engine node").first(), 15_000);
+    await shot("library-confirm");
+    await page.getByRole("button", { name: "confirm", exact: true }).click();
+    await page.getByText("Engine node").first().waitFor({ state: "detached", timeout: 10_000 });
+    if (await dialog.count()) await page.keyboard.press("Escape");
+    await go("#/edit/node/projects/demo/nodes/git-push.json");
+    await page.getByLabel("Description").fill("pushes the job branch, edited");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await visible(page.getByText("Engine node").first(), 15_000);
+    await shot("node-editor-confirm");
+    await page.getByRole("button", { name: "confirm", exact: true }).click();
+    await page.getByText("Engine node").first().waitFor({ state: "detached", timeout: 10_000 });
+    const open = await page.evaluate(() => (globalThis as unknown as { pecore: { api(): Promise<{ port: number; token: string }> } }).pecore.api());
+    const queue = (await (await fetch(`http://127.0.0.1:${open.port}/queue?state=open`, { headers: { authorization: `Bearer ${open.token}` } })).json()) as { kind: string }[];
+    if (queue.some((item) => item.kind === "engine-node")) throw new Error("an engine-node confirmation is still open");
+  }, 60_000);
+
+  it("adds, moves and connects a node in the recipe editor", async () => {
+    const file = join(root, "home", "projects", "demo", "recipes", "reviewed.json");
+    await go("#/edit/recipe/projects/demo/recipes/reviewed.json");
+    await visible(page.locator('.react-flow__node[data-id="human"]'), 15_000);
+    await page.getByLabel("Node definition").selectOption("write-hello");
+    await page.getByRole("button", { name: "Add node" }).click();
+    const added = page.locator('.react-flow__node[data-id="write-hello"]');
+    await visible(added);
+    await page.getByRole("button", { name: "Recipe settings" }).click();
+    let box = (await added.boundingBox())!;
+    for (let still = 0; still < 3; ) {
+      await page.waitForTimeout(150);
+      const next = (await added.boundingBox())!;
+      still = next.x === box.x && next.y === box.y ? still + 1 : 0;
+      box = next;
+    }
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 + 140, { steps: 12 });
+    await page.mouse.up();
+    const from = (await page.locator('.react-flow__node[data-id="human"] .react-flow__handle.source').boundingBox())!;
+    const to = (await added.locator(".react-flow__handle.target").boundingBox())!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 });
+    await page.mouse.up();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Outcome").fill("changes");
+    await dialog.getByRole("button", { name: "Connect" }).click();
+    await dialog.waitFor({ state: "hidden" });
+    await shot("recipe-editor-dnd");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).and(page.locator(":disabled")).waitFor({ timeout: 10_000 });
+    const recipe = JSON.parse(await readFile(file, "utf8")) as { nodes: Record<string, { use: string }>; edges: { from: string; on: string; to: string }[]; layout: Record<string, { x: number; y: number }> };
+    if (recipe.nodes["write-hello"]?.use !== "write-hello") throw new Error(`nodes: ${JSON.stringify(recipe.nodes)}`);
+    if (!recipe.edges.some((e) => e.from === "human" && e.on === "changes" && e.to === "write-hello")) throw new Error(`edges: ${JSON.stringify(recipe.edges)}`);
+    const moved = recipe.layout["write-hello"];
+    if (!moved || (moved.x === 600 && moved.y === 0)) throw new Error(`layout: ${JSON.stringify(recipe.layout)}`);
+  }, 60_000);
+
   it("shows usage and the factory", async () => {
     await go("#/usage");
     await page.waitForTimeout(800);
@@ -209,6 +330,37 @@ describe.skipIf(!built || process.env.PECORE_GUI !== "1")("phase 5 gate: G16 act
     await go("#/");
     await page.waitForTimeout(800);
     await shot("factory");
+  }, 30_000);
+
+  it("shows the first-run checklist with links to fix each step", async () => {
+    await go("#/first-run");
+    await visible(page.getByRole("heading", { name: "Set up PeCore" }));
+    const list = page.getByRole("listitem");
+    await visible(list.filter({ hasText: "First project" }).getByText(/Ready/));
+    await shot("first-run");
+    const accounts = list.filter({ hasText: /^Accounts/ });
+    if (await accounts.getByRole("link").count()) {
+      await accounts.getByRole("link").click();
+      await page.waitForFunction(() => (globalThis as unknown as { location: { hash: string } }).location.hash.startsWith("#/settings"));
+    }
+  }, 30_000);
+
+  it("opens a screen and a job from the command palette", async () => {
+    const input = page.getByPlaceholder("Search jobs, projects, definitions and screens");
+    const pick = async (search: string, option: RegExp) => {
+      await page.keyboard.press("Control+k");
+      await visible(input);
+      await input.fill(search, { timeout: 10_000 });
+      await visible(page.getByRole("option", { name: option }).and(page.locator('[data-selected="true"]')));
+      await page.keyboard.press("Enter");
+    };
+    await go("#/");
+    await visible(page.getByRole("heading", { name: "Factory" }));
+    await pick("Usage", /^Usage/);
+    await page.waitForFunction(() => (globalThis as unknown as { location: { hash: string } }).location.hash === "#/usage", undefined, { timeout: 10_000 });
+    await pick("Add hello", /^Add hello/);
+    await shot("palette");
+    await page.waitForFunction(() => (globalThis as unknown as { location: { hash: string } }).location.hash.startsWith("#/jobs/"), undefined, { timeout: 10_000 });
   }, 30_000);
 
   it("deletes the project from its page", async () => {
@@ -223,4 +375,95 @@ describe.skipIf(!built || process.env.PECORE_GUI !== "1")("phase 5 gate: G16 act
     );
     if (!gone) throw new Error("the project directory still exists");
   }, 30_000);
+});
+
+describe.skipIf(gui)("phase 5 gate: forge actions from the GUI (fake gh)", () => {
+  let root: string;
+  let forge: FakeForge;
+  let app: ElectronApplication;
+  let page: Page;
+  const go = (hash: string) => page.evaluate((h) => ((globalThis as unknown as { location: { hash: string } }).location.hash = h), hash);
+  const shot = async (name: string) => {
+    if (process.env.PECORE_GUI_SHOTS) await page.screenshot({ path: join(process.env.PECORE_GUI_SHOTS, `forge-${name}.png`) });
+  };
+  const confirmAll = async () => {
+    const item = page.getByText("Engine node").first();
+    await visible(item, 15_000);
+    while (await item.count()) {
+      await page.getByRole("button", { name: "confirm", exact: true }).first().click();
+      await page.waitForTimeout(500);
+    }
+  };
+
+  beforeAll(async () => {
+    root = await mkdtemp(join(tmpdir(), "pecore-gui-forge-"));
+    forge = await FakeForge.start();
+    await forge.set({ tokenValid: false });
+    ({ app, page } = await launch(root, { "write-spec": writeSpec }, { "deliver-pr": deliverPr }, [forgeAccount]));
+  }, 60_000);
+
+  afterAll(async () => {
+    await app?.evaluate(({ app: a }) => a.exit(0)).catch(() => undefined);
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("logs in the forge account, creates a project on a new GitHub repository, confirms nodes inline, delivers a PR and detects its merge", async () => {
+    await go("#/settings");
+    const accounts = page.locator("#accounts");
+    await accounts.getByRole("button", { name: "Recheck", exact: true }).click();
+    await visible(accounts.getByText(/^logged out|^not logged in|^error/));
+    await accounts.getByRole("button", { name: "Login", exact: true }).click();
+    await visible(accounts.getByRole("link", { name: "Open login URL" }), 15_000);
+    await visible(accounts.getByLabel("Login progress").getByText(/ABCD-1234/));
+    await visible(accounts.getByLabel("Login progress").getByText(/state: logged_in/), 15_000);
+    await visible(accounts.getByText(/^logged in$/));
+    await shot("forge-login");
+    if (!(await forge.state()).tokenValid) throw new Error("gh auth login did not run");
+
+    await go("#/projects/new");
+    await page.getByLabel("Project ID").fill("shop");
+    await page.getByLabel("Name").fill("Shop");
+    await page.getByLabel("New repository").check();
+    await page.getByLabel("New repository URL").fill("https://github.com/acme/shop.git");
+    await page.getByLabel("Forge account").selectOption("gh-test");
+    for (const r of ["feature", "bugfix"]) await page.getByRole("checkbox", { name: new RegExp(`^${r}`) }).uncheck();
+    await shot("wizard");
+    await page.getByRole("button", { name: "Create project" }).click();
+    await visible(page.getByText("Engine node").first(), 30_000);
+    await shot("wizard-confirm");
+    await page.getByRole("button", { name: "confirm", exact: true }).click();
+    await page.getByRole("button", { name: "Finish" }).click({ timeout: 30_000 });
+    await page.waitForFunction(() => (globalThis as unknown as { location: { hash: string } }).location.hash === "#/projects/shop");
+    if (!(await forge.state()).repos.includes("acme/shop")) throw new Error("the repository was not created");
+
+    await go("#/library");
+    await page.getByRole("row", { name: /^deliver-pr / }).getByRole("button", { name: "Instantiate into project" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Project").selectOption("shop");
+    await dialog.getByRole("button", { name: "Instantiate", exact: true }).click();
+    await confirmAll();
+    if (await dialog.count()) await page.keyboard.press("Escape");
+
+    await go("#/jobs");
+    await page.getByRole("banner").getByRole("button", { name: "New job" }).click();
+    const create = page.getByRole("dialog");
+    await create.getByLabel("Project").selectOption("shop");
+    await create.getByLabel("Title").fill("Deliver hello");
+    await create.getByLabel("Recipe").selectOption("deliver-pr");
+    await create.getByLabel("Ticket text").fill("Please add hello.txt");
+    await create.getByRole("button", { name: "Create" }).click();
+    await create.waitFor({ state: "hidden" });
+    await go("#/jobs");
+    await visible(page.getByRole("row", { name: /Deliver hello/ }).getByText("Success"), 60_000);
+    await page.getByRole("row", { name: /Deliver hello/ }).getByText("Deliver hello").click();
+
+    const check = page.getByRole("button", { name: "Check merge" });
+    await check.click();
+    await visible(page.getByRole("status").filter({ hasText: "Merge not detected." }));
+    const state = await forge.state();
+    await forge.set({ prs: state.prs.map((pr) => ({ ...pr, state: "MERGED" as const })) });
+    await check.click();
+    await visible(page.getByText("Merged", { exact: true }), 15_000);
+    await shot("merged");
+  }, 180_000);
 });

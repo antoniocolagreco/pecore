@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 import { ApiError, Accounts as AccountsSchema, Profiles as ProfilesSchema, Settings as SettingsSchema, Tiers as TiersSchema } from "@pecore/schemas";
@@ -113,6 +113,14 @@ function LoginControls({ accounts, protectedOnly = false }: { accounts: Account[
   const [progress, setProgress] = useState<Record<string, Progress>>({});
   const [toolRuns, setToolRuns] = useState<Record<string, string>>({});
   const [toolStates, setToolStates] = useState<Record<string, string>>({});
+  const checkedRuns = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const [account, loginId] of Object.entries(toolRuns)) {
+      if (!progress[loginId]?.done || checkedRuns.current.has(loginId)) continue;
+      checkedRuns.current.add(loginId);
+      void call("recheckAccount", { params: { id: account } }).then(({ state }) => setToolStates((old) => ({ ...old, [account]: state })), () => undefined);
+    }
+  }, [progress, toolRuns]);
   useLive((message): void => {
     if (message.type !== "login.progress") return;
     const event: LoginProgress = message;

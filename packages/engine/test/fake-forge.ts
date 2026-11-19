@@ -38,6 +38,12 @@ const done = (out) => {
 };
 if (cmd === "auth token") { if (!s.tokenValid) fail("no oauth token found for github.com"); done("gho_fake"); }
 if (cmd === "auth git-credential") done();
+if (cmd === "auth login") {
+  process.stderr.write("! First copy your one-time code: ABCD-1234\nOpen this URL to continue in your web browser: https://github.com/login/device\n");
+  s.tokenValid = true;
+  write(s);
+  done("Logged in as tester");
+}
 if (s.offline) fail("error connecting to api.github.com");
 const repo = flag("--repo") ?? flag("-R");
 if (cmd === "pr list") {
