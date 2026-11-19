@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { AttemptView, JobView, NodeRunView } from "@pecore/schemas";
 import { JobCreateError } from "../../jobs/create";
 import type { JobRow } from "../../graph/executor";
@@ -128,6 +130,17 @@ export function jobHandlers(engine: Engine) {
       };
     },
     whyJob: async ({ params }) => engine.why(params.id),
+    getArtifact: async ({ params }) => {
+      const { ctx, executor } = job(params.job);
+      const path = `artifacts/${params.job}/${params.run}/${params.name}`;
+      const artifact = executor.artifacts(params.job).find((a) => a.path === path);
+      if (!artifact) throw new NotFoundError(`artifact ${path} not found`);
+      const content = await readFile(join(ctx.dir, artifact.path), "utf8").catch((e: NodeJS.ErrnoException) => {
+        if (e.code === "ENOENT") throw new HttpError("gone", `artifact ${path} was removed`);
+        throw e;
+      });
+      return { artifact, content };
+    },
     createJob: async ({ body }) => {
       if (!engine.projects.has(body.project)) throw new NotFoundError(`project ${body.project} not found`);
       try {

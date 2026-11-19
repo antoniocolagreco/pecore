@@ -958,7 +958,7 @@ Recorded ACP traffic for tests lives in `packages/agents/fixtures/<connector>/<c
 
 | Method and path | Purpose |
 |---|---|
-| `GET/POST /projects`, `GET/PATCH /projects/:id` | list, create (Project creation below; the body lists the starting recipes to instantiate), read, edit |
+| `GET/POST /projects`, `GET /projects/:id` | list, create (Project creation below; the body lists the starting recipes to instantiate), read; a project is edited by saving its `project.json` through `PUT /definitions/projects/<id>/project.json` |
 | `POST /projects/:id/export`, `POST /projects/import` | share |
 | `GET /jobs`, `GET /jobs/:id`, `GET /jobs/:id/why` | list and read |
 | `POST /jobs` | create (Job creation below) |

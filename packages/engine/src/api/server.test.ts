@@ -100,6 +100,24 @@ describe("local API (phase 5 decisions 2-5)", () => {
     await close();
   });
 
+  it("reads an artifact of a job; deletes the project locally, stopping its waiting job", async () => {
+    const { home, engine, call, close } = await apiProject();
+    const { id } = await call("createJob", { body: { project: "demo", title: "Add hello", ticket: { text: "x" } } });
+    await until(async () => (await call("getJob", { params: { id } })).job.state === "waiting");
+    const diff = (await call("getJob", { params: { id } })).artifacts.find((a) => a.type === "diff")!;
+    const [, , run, name] = diff.path.split("/");
+    const a = await call("getArtifact", { params: { job: id, run: run!, name: name! } });
+    expect(a.content).toContain("+hello");
+    await expect(call("getArtifact", { params: { job: id, run: run!, name: "../../pecore.db" } })).rejects.toMatchObject({ status: 404 });
+    const dir = engine.project("demo").ctx.dir;
+    await call("deleteProject", { params: { id: "demo" } });
+    await expect(stat(dir)).rejects.toThrow();
+    expect(await call("listProjects")).toEqual([]);
+    expect(await call("listJobs", { query: {} })).toEqual([]);
+    expect((await import("../home/git-commit").then((m) => m.git(home, ["log", "-1", "--format=%s"]))).trim()).toBe("project demo: deleted");
+    await close();
+  });
+
   it("sends log lines only for subscribed attempts", async () => {
     const { api, engine, close } = await apiProject();
     const l = live(api.port, JSON.stringify({ auth: api.token }));

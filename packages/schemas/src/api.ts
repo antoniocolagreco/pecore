@@ -343,6 +343,13 @@ export const routes = {
   listProjects: { method: "GET", path: "/projects", response: z.array(ProjectView) },
   createProject: { method: "POST", path: "/projects", body: CreateProjectBody, response: z.object({ id: ProjectId }) },
   getProject: { method: "GET", path: "/projects/:id", params: IdParams, response: ProjectView },
+  deleteProject: { method: "DELETE", path: "/projects/:id", params: IdParams, response: Ok },
+  getArtifact: {
+    method: "GET",
+    path: "/artifacts/:job/:run/:name",
+    params: z.object({ job: z.string().min(1), run: z.string().min(1), name: z.string().min(1) }),
+    response: z.object({ artifact: Artifact, content: z.string() }),
+  },
   getCreation: { method: "GET", path: "/projects/:id/creation", params: IdParams, response: CreationView },
   retryCreation: { method: "POST", path: "/projects/:id/creation/retry", params: IdParams, response: Ok },
   cancelCreation: { method: "POST", path: "/projects/:id/creation/cancel", params: IdParams, response: Ok },

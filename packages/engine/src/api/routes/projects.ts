@@ -39,6 +39,15 @@ export function projectHandlers(engine: Engine) {
       }
       return { id: body.project.id };
     },
+    deleteProject: async ({ params }) => {
+      if (!engine.projects.has(params.id)) throw new NotFoundError(`project ${params.id} not found`);
+      try {
+        await engine.deleteProject(params.id);
+      } catch (e) {
+        throw new HttpError("conflict", (e as Error).message);
+      }
+      return { ok: true };
+    },
     getCreation: async ({ params }) => {
       known(engine, params.id);
       return creationView(engine, params.id) ?? { step: 6, error: null, setupJob: null, setupItemId: null };

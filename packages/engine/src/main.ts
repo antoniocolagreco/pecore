@@ -1,7 +1,8 @@
 import { EventEmitter } from "node:events";
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { cpus } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
+import { removeAs } from "./workdir/fs-as";
 import { defaultJobLimit } from "@pecore/schemas";
 import { listOptions } from "@pecore/agents";
 import type { LoginState } from "@pecore/agents";
@@ -418,6 +419,23 @@ export class Engine extends EventEmitter {
     }
     await cancelCreation(this.opts.home, dir, id);
     this.setCreating(id, null);
+  }
+
+  async deleteProject(id: string): Promise<void> {
+    const p = this.project(id);
+    const jobs = p.executor.jobs();
+    const running = jobs.filter((j) => j.state === "running");
+    if (running.length > 0) throw new Error(`stop the running jobs first: ${running.map((j) => j.title).join(", ")}`);
+    for (const j of jobs) if (!isFinal(j.state)) await p.executor.stop(j.id);
+    for (const j of jobs) await p.executor.services.down(j.id).catch((e: unknown) => console.error("services:", e));
+    await p.executor.close();
+    p.ctx.db.close();
+    this.projects.delete(id);
+    this.projectErrors.delete(id);
+    if (p.ctx.user !== appUser) await removeAs(p.ctx.user, p.ctx.dir, "work").catch(() => undefined);
+    await rm(p.ctx.dir, { recursive: true, force: true });
+    if (!relative(this.opts.home, p.ctx.dir).startsWith("..")) await commitDefinition(this.opts.home, [p.ctx.dir], commitMessage("project", id, "deleted"));
+    this.live({ type: "project.updated", projectId: id });
   }
 
   async setProtectedMode(on: boolean, removeUser = false): Promise<void> {
