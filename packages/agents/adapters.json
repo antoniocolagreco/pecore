@@ -1,6 +1,7 @@
 {
   "node": { "version": "v26.13.1" },
   "adapters": {
-    "@agentclientprotocol/claude-agent-acp": { "version": "0.108.0", "entry": "dist/index.js" }
+    "@agentclientprotocol/claude-agent-acp": { "version": "0.108.0", "entry": "dist/index.js" },
+    "@agentclientprotocol/codex-acp": { "version": "2.7.0", "entry": "dist/index.js" }
   }
 }

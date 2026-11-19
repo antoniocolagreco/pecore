@@ -5,10 +5,11 @@ export type Account = { state: "logged_in"; email: string; plan?: string } | { s
 export type Reader = {
   notification(method: string, params: unknown): { account?: Account; quota?: Quota; model?: string; cost?: { amount: number; currency: string } };
   usage(result: unknown): Usage;
+  model?(result: unknown): string | undefined;
 };
 
 type Obj = Record<string, unknown>;
-const obj = (v: unknown): Obj | undefined => (v !== null && typeof v === "object" ? (v as Obj) : undefined);
+export const obj = (v: unknown): Obj | undefined => (v !== null && typeof v === "object" ? (v as Obj) : undefined);
 const num = (v: unknown): number => (typeof v === "number" ? v : 0);
 
 function readQuota(rl: Obj): Quota {
@@ -79,7 +80,3 @@ export const genericReader: Reader = {
     return { input: num(usage?.inputTokens), output: num(usage?.outputTokens), cacheRead: num(usage?.cachedReadTokens), cacheWrite: num(usage?.cachedWriteTokens) };
   },
 };
-
-export function readerFor(name: string | null): Reader {
-  return name === "claude-code" ? claudeCodeReader : genericReader;
-}

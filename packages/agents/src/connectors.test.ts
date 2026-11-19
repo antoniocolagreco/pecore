@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { parseConnector } from "./connectors";
 import { fixturesDir, login, readFixture, replaySpawn, resolved } from "../test/helpers";
 import { classify } from "./errors";
 import { claudeCodeReader } from "./readers/claude-code";
@@ -9,7 +11,7 @@ import type { AgentEvent, TurnResult } from "./types";
 
 type Expected = { resumed: boolean; startError?: { kind: string }; turns: { result: TurnResult; events: AgentEvent[] }[] };
 
-async function replay(file: string): Promise<Expected> {
+async function replay(file: string, reader: "claude-code" | "codex" | "opencode" = "claude-code"): Promise<Expected> {
   const lines = readFixture(file);
   const outs = lines.filter((l) => l.dir === "out").map((l) => l.msg!);
   const sessionConfig = outs.filter((m) => m.method === "session/set_config_option").map((m) => {
@@ -18,7 +20,7 @@ async function replay(file: string): Promise<Expected> {
   });
   const resume = outs.find((m) => m.method === "session/resume" || m.method === "session/load");
   const prompts = outs.filter((m) => m.method === "session/prompt").map((m) => ((m.params as { prompt: { text: string }[] }).prompt[0]!.text));
-  const connector = resolved({ sessionConfig });
+  const connector = resolved({ sessionConfig, reader });
   try {
     const s = await startSession({ connector, login, spawn: replaySpawn(lines), cwd: "/tmp", model: "", ...(resume ? { resumeId: (resume.params as { sessionId: string }).sessionId } : {}) });
     const events: AgentEvent[] = [];
@@ -81,6 +83,32 @@ describe("claude-code connector: recorded traffic through the reader and the cla
     expect(r.resumed).toBe(true);
     expect(r.turns[0]!.result.text).toBe("Alfa.");
     expect(r.turns[0]!.result.costUsd).toBeUndefined();
+  });
+});
+
+describe("shipped connector files", () => {
+  const dir = fileURLToPath(new URL("../../app/resources/connectors/", import.meta.url));
+  it("are claude-code, codex and opencode, and each one is valid", () => {
+    const files = readdirSync(dir).filter((f) => f.endsWith(".json")).sort();
+    expect(files).toEqual(["claude-code.json", "codex.json", "opencode.json"]);
+    for (const f of files) expect({ file: f, errors: parseConnector(JSON.parse(readFileSync(join(dir, f), "utf8"))).errors }).toEqual({ file: f, errors: [] });
+  });
+});
+
+describe("codex and opencode connectors: recorded traffic through their readers", () => {
+  it("codex tool-call: end_turn, usage without the cached input, the account from the notification", async () => {
+    const r = await replay(join(fixturesDir, "codex", "tool-call.jsonl"), "codex");
+    expect(r.startError).toBeUndefined();
+    const turn = r.turns.at(-1)!;
+    expect(turn.result).toMatchObject({ stopReason: "end_turn", usage: { input: 226, output: 47, cacheRead: 26752, cacheWrite: 0 } });
+    expect(turn.result.error).toBeUndefined();
+    expect(r.turns.flatMap((t) => t.events)).toContainEqual(expect.objectContaining({ type: "account", email: "user@example.com" }));
+  });
+
+  it("opencode auth-missing: -32000 Authentication required is auth", async () => {
+    const r = await replay(join(fixturesDir, "opencode", "auth-missing.jsonl"), "opencode");
+    const kind = r.startError?.kind ?? r.turns[0]?.result.error?.kind;
+    expect(kind).toBe("auth");
   });
 });
 

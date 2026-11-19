@@ -41,7 +41,7 @@ export const Connector = z
     configDirFiles: z.array(z.object({ path: z.string().min(1), content: z.string() }).strict()).default([]),
     sessionConfig: z.array(SessionConfigEntry).default([]),
     sessionMeta: z.record(z.string(), z.unknown()).nullable().default(null),
-    reader: z.enum(["claude-code", "codex"]).nullable().default(null),
+    reader: z.enum(["claude-code", "codex", "opencode"]).nullable().default(null),
     errors: z.array(ErrorRule).default([]),
     loginCommand: platformValue(Argv).nullable().default(null),
     loginUrlPattern: z.string().nullable().default(null),
@@ -50,6 +50,7 @@ export const Connector = z
     beforeStart: platformValue(z.array(Argv)).optional(),
     identityCommand: Argv.nullable().default(null),
     identityField: z.string().nullable().default(null),
+    identityLoggedOutText: z.string().min(1).optional(),
   })
   .strict();
 export type Connector = z.infer<typeof Connector>;

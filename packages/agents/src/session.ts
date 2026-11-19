@@ -3,7 +3,7 @@ import type { JsonRpcError } from "./acp/client";
 import { connectorProcess, fill, fillSessionValue, forPlatform } from "./connectors";
 import { classify } from "./errors";
 import { AsyncQueue } from "./queue";
-import { readerFor } from "./readers/claude-code";
+import { readerFor } from "./readers";
 import type { Account } from "./readers/claude-code";
 import { StartError } from "./types";
 import type { AgentEvent, Login, McpServer, PromptContent, Quota, ResolvedConnector, Session, Spawn, TurnResult } from "./types";
@@ -150,12 +150,16 @@ export async function startSession(p: StartParams): Promise<Session> {
       sessionId = session.sessionId;
     }
     if (!sessionId) throw new StartError("other", "no session id");
+    turn.model = reader.model?.(session) ?? turn.model;
+    const suppliedModel: RegExpExecArray | null = c.reader === "codex" ? /^(.+)\[([a-z][a-z0-9_-]*)\]$/.exec(p.model) : null;
+    const vars: { model: string; effort: string | null } = { model: suppliedModel?.[1] ?? p.model, effort: p.effort || suppliedModel?.[2] || null };
     for (const [id, value] of c.sessionConfig) {
-      const v = fillSessionValue(value, { model: p.model, effort: p.effort ?? null });
+      const v = fillSessionValue(value, vars);
       if (v === "") continue;
       const r = await client.request<SessionResult>("session/set_config_option", { sessionId, configId: id, value: v });
       const current = r?.configOptions?.find((o) => o.id === id)?.currentValue;
       if (current !== v) throw new StartError("other", `config option ${id}: sent ${v}, current ${JSON.stringify(current)}`);
+      turn.model = reader.model?.(r) ?? turn.model;
     }
   } catch (e) {
     return fail(e);
@@ -189,7 +193,8 @@ export async function startSession(p: StartParams): Promise<Session> {
       const out: TurnResult = { usage, text: turn.text };
       if (result?.stopReason) out.stopReason = result.stopReason;
       if (err) out.error = err;
-      if (turn.model) out.model = turn.model;
+      const model: string | undefined = reader.model?.(result) ?? turn.model;
+      if (model) out.model = model;
       if (turn.quota) out.quota = turn.quota;
       if (!resumed && turn.cost && turn.cost.currency === "USD") out.costUsd = turn.cost.amount;
       return out;

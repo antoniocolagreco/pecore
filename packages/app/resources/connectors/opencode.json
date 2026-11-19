@@ -1,0 +1,13 @@
+{
+  "$schema": "../../schemas/connector.json",
+  "name": "opencode",
+  "title": "OpenCode",
+  "kind": "native",
+  "harness": { "program": "opencode", "versionArgs": ["--version"], "versionRange": ">=2.3.0" },
+  "command": ["{harnessPath}", "acp"],
+  "sessionConfig": [["mode", "build"], ["model", "{model}"], ["effort", "{effort}"]],
+  "reader": "opencode",
+  "loginCommand": ["{harnessPath}", "auth", "login"],
+  "loginUrlPattern": "https://\\S+",
+  "loginReadsCode": false
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "../../schemas/connector.json",
+  "name": "codex",
+  "title": "Codex",
+  "kind": "adapter",
+  "harness": { "program": "codex", "versionArgs": ["--version"], "versionRange": ">=0.169.0" },
+  "command": ["{nodePath}", "{adapter:@agentclientprotocol/codex-acp}"],
+  "configDirEnv": "CODEX_HOME",
+  "configDirFiles": [{ "path": "config.toml", "content": "cli_auth_credentials_store = \"file\"\n" }],
+  "sessionConfig": [["mode", "agent-full-access"], ["model", "{model}"], ["reasoning_effort", "{effort}"]],
+  "reader": "codex",
+  "loginCommand": ["{harnessPath}", "login", "--device-auth"],
+  "loginUrlPattern": "https://\\S+",
+  "loginReadsCode": false,
+  "identityCommand": ["{harnessPath}", "login", "status"],
+  "identityLoggedOutText": "Not logged in"
+}
