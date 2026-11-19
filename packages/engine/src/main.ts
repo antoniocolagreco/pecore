@@ -3,13 +3,16 @@ import { readdir, readFile, writeFile } from "node:fs/promises";
 import { cpus } from "node:os";
 import { join } from "node:path";
 import { defaultJobLimit } from "@pecore/schemas";
-import type { Accounts, ForgeAccount, JobState, Profiles, ProjectInput, Settings, Tiers } from "@pecore/schemas";
+import type { Accounts, ForgeAccount, JobState, LiveMessage, Profiles, ProjectInput, Settings, Tiers, WhyView } from "@pecore/schemas";
 import { AgentServices, protectedUser } from "./accounts/agents";
 import type { AgentPaths } from "./accounts/agents";
 import { loadGlobal, loadProject } from "./definitions/load";
 import type { DefinitionError } from "./definitions/load";
 import { JobExecutor } from "./graph/executor";
-import type { ProjectContext } from "./graph/executor";
+import type { JobRow, ProjectContext } from "./graph/executor";
+import { logEvents } from "./observability/log-events";
+import { whyJob } from "./observability/why";
+import type { Notification } from "./store/chats-db";
 import { createJob } from "./jobs/create";
 import { startMergeWatch } from "./jobs/merge-watch";
 import type { CreateJob } from "./jobs/create";
@@ -34,6 +37,8 @@ export class EngineStartError extends Error {
   }
 }
 
+export class NotFoundError extends Error {}
+
 type LoadedProject = { ctx: ProjectContext; executor: JobExecutor };
 
 export class Engine extends EventEmitter {
@@ -49,6 +54,8 @@ export class Engine extends EventEmitter {
   private chats!: ChatsDb;
   private releaseLock!: () => Promise<void>;
   private stopMergeWatch: () => void = () => undefined;
+  globalPause = false;
+  private readonly pausedByGlobal = new Set<string>();
 
   private constructor(readonly opts: EngineOptions) {
     super();
@@ -132,15 +139,96 @@ export class Engine extends EventEmitter {
         this.chats.addNotification({ kind: n.kind, title: n.title, body: n.body, target: { project: id, job: n.jobId } });
         this.emit("notify", { ...n, projectId: id });
       },
-      changed: (jobId) => this.emit("job", { projectId: id, jobId }),
+      changed: (jobId) => {
+        this.emit("job", { projectId: id, jobId });
+        this.live({ type: "job.updated", projectId: id, jobId });
+      },
       released: () => this.kick(),
+      held: () => this.globalPause,
       agents: this.agents,
       setupEnded: (state) => this.setupEnded(id, state),
       forgeAccount: (accountId) => this.accounts.accounts.find((a): a is ForgeAccount => a.kind === "forge" && a.id === accountId),
       global: () => ({ profiles: this.profiles, tiers: this.tiers }),
-      live: (attemptId, line) => this.emit("log", { projectId: id, attemptId, line }),
+      live: (attemptId, line) => {
+        this.emit("log", { projectId: id, attemptId, line });
+        for (const event of logEvents(line)) this.live({ type: "log.line", attemptId, event });
+      },
+    };
+    ctx.db.onAppend = (events) => {
+      for (const e of events) {
+        if (e.type.startsWith("node_run.") && e.jobId !== null && "nodeRunId" in e.payload) this.live({ type: "node_run.updated", projectId: id, jobId: e.jobId, nodeRunId: e.payload.nodeRunId });
+        if (e.type.startsWith("job.") && e.jobId !== null) this.live({ type: "job.updated", projectId: id, jobId: e.jobId });
+        if (e.type === "queue.added" || e.type === "queue.resolved") this.live({ type: "queue.updated", projectId: id, itemId: e.payload.itemId });
+      }
     };
     this.projects.set(id, { ctx, executor: new JobExecutor(ctx) });
+  }
+
+  private live(msg: LiveMessage): void {
+    this.emit("live", msg);
+  }
+
+  private setCreating(id: string, value: { step: number; error: string | null } | null): void {
+    if (value === null) this.creating.delete(id);
+    else this.creating.set(id, value);
+    this.live({ type: "project.updated", projectId: id });
+  }
+
+  findJob(jobId: string): LoadedProject & { job: JobRow } {
+    if (jobId !== setupJobId)
+      for (const p of this.projects.values()) {
+        const job = p.ctx.db.db.prepare("SELECT * FROM jobs WHERE id = ?").get(jobId) as JobRow | undefined;
+        if (job) return { ...p, job };
+      }
+    throw new NotFoundError(`job ${jobId} not found`);
+  }
+
+  findQueueItem(itemId: string): LoadedProject {
+    for (const p of this.projects.values()) if (p.ctx.db.db.prepare("SELECT 1 FROM human_queue WHERE id = ?").get(itemId)) return p;
+    throw new NotFoundError(`queue item ${itemId} not found`);
+  }
+
+  why(jobId: string): WhyView {
+    const { ctx, job } = this.findJob(jobId);
+    return whyJob(ctx, job, this.globalPause);
+  }
+
+  async pauseAll(): Promise<void> {
+    this.globalPause = true;
+    for (const { ctx, executor } of this.projects.values())
+      for (const job of executor.jobs())
+        if (job.state === "running" || job.state === "waiting") {
+          this.pausedByGlobal.add(`${ctx.id}/${job.id}`);
+          await executor.pause(job.id);
+        }
+  }
+
+  async playAll(): Promise<void> {
+    this.globalPause = false;
+    for (const key of this.pausedByGlobal) {
+      const [projectId, jobId] = key.split("/") as [string, string];
+      const p = this.projects.get(projectId);
+      const job = p?.executor.jobs().find((j) => j.id === jobId);
+      if (p && job?.state === "paused" && job.waiting_reason === "user") await p.executor.play(jobId);
+    }
+    this.pausedByGlobal.clear();
+    this.kick();
+  }
+
+  async playInterrupted(): Promise<void> {
+    for (const { executor } of this.projects.values()) for (const job of executor.jobs()) if (job.state === "paused" && job.waiting_reason === "quit") await executor.play(job.id);
+  }
+
+  interrupted(): number {
+    return [...this.projects.values()].reduce((n, { executor }) => n + executor.jobs().filter((j) => j.state === "paused" && j.waiting_reason === "quit").length, 0);
+  }
+
+  inboxCount(): number {
+    return [...this.projects.values()].reduce((n, { ctx }) => n + (ctx.db.db.prepare("SELECT COUNT(*) AS n FROM human_queue WHERE state = 'open' AND kind != 'agent-question'").get() as { n: number }).n, 0);
+  }
+
+  notifications(): Notification[] {
+    return this.chats.notifications();
   }
 
   private kick(): void {
@@ -177,17 +265,17 @@ export class Engine extends EventEmitter {
           return await this.continueCreation(id);
         } else if (setup.state === "failed" || setup.state === "stopped") await executor.resume(setupJobId);
         else if (setup.state === "paused") await executor.play(setupJobId);
-        this.creating.set(id, { step: creation.step, error: null });
+        this.setCreating(id, { step: creation.step, error: null });
         return;
       }
       const findings = await finishProject(this.opts.home, dir, ctx.project, this.createOptions());
-      this.creating.delete(id);
+      this.setCreating(id, null);
       for (const f of findings) {
         const body = `${f.path} can be read by other users; run: ${f.fix.join(" ")}`;
         this.chats.addNotification({ kind: "home-check", title: "Login files are readable", body, target: { project: id, job: null } });
       }
     } catch (e) {
-      this.creating.set(id, { step: creation.step, error: (e as Error).message });
+      this.setCreating(id, { step: creation.step, error: (e as Error).message });
       throw e;
     }
   }
@@ -202,7 +290,7 @@ export class Engine extends EventEmitter {
       this.projects.delete(id);
     }
     await cancelCreation(this.opts.home, dir, id);
-    this.creating.delete(id);
+    this.setCreating(id, null);
   }
 
   async setProtectedMode(on: boolean, removeUser = false): Promise<void> {
@@ -229,7 +317,7 @@ export class Engine extends EventEmitter {
 
   private setupEnded(id: string, state: JobState): void {
     if (state !== "succeeded") {
-      this.creating.set(id, { step: 3, error: `the repository creation job ended ${state}` });
+      this.setCreating(id, { step: 3, error: `the repository creation job ended ${state}` });
       return;
     }
     void this.continueCreation(id).catch((e: unknown) => console.error(`project ${id}:`, e));

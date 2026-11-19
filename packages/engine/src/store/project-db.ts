@@ -11,6 +11,7 @@ const ulid = monotonicFactory();
 
 export class ProjectDb {
   readonly db: Database.Database;
+  onAppend: (events: StoredEvent[]) => void = () => undefined;
 
   constructor(path: string) {
     this.db = new Database(path);
@@ -30,7 +31,7 @@ export class ProjectDb {
 
   append(events: NewEvent[], now = Date.now()): StoredEvent[] {
     const insert = this.db.prepare("INSERT INTO events (id, job_id, type, payload, at) VALUES (?, ?, ?, ?, ?)");
-    return this.db.transaction(() => {
+    const stored = this.db.transaction(() => {
       const stored: StoredEvent[] = [];
       for (const e of events) {
         const body = EventBody.parse({ type: e.type, payload: e.payload });
@@ -41,6 +42,8 @@ export class ProjectDb {
       }
       return stored;
     })();
+    this.onAppend(stored);
+    return stored;
   }
 
   events(jobId?: string): StoredEvent[] {

@@ -90,6 +90,7 @@ export type ProjectContext = {
   agents: AgentServices | null;
   forgeAccount(id: string): ForgeAccount | undefined;
   setupEnded?: (state: JobState) => void;
+  held?: () => boolean;
   global(): { profiles: Profiles; tiers: Tiers };
   live?: (attemptId: string, line: RawLine) => void;
 };
@@ -281,6 +282,7 @@ export class JobExecutor {
 
   private async startJob(job: JobRow): Promise<boolean> {
     if (job.waiting_reason === "parent_job" || job.waiting_reason === "parent_failed") return false;
+    if (job.id !== setupJobId && this.ctx.held?.()) return false;
     if (!(await enoughDisk(this.ctx.dir, this.ctx.settings.minFreeDiskGb))) {
       if (job.waiting_reason !== "disk") this.ctx.db.append([{ jobId: job.id, type: "job.state_changed", payload: { state: "queued", reason: "disk" } }]);
       return false;

@@ -1,6 +1,7 @@
 export * from "./accounts";
 export * from "./api";
 export * from "./artifacts";
+export * from "./client";
 export * from "./common";
 export * from "./connector";
 export * from "./errors";
