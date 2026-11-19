@@ -22,7 +22,7 @@ import { candidateProfiles, pickProfile } from "../scheduler/tiers";
 import type { ProfileChoice } from "../scheduler/tiers";
 import { humanItem, humanResult } from "../runners/human";
 import { paramsWithDefaults } from "../runners/placeholders";
-import { appUser, killInDir, signalGroup, stopGroup } from "../runners/process";
+import { appUser, killJobProcesses, signalGroup, stopGroup } from "../runners/process";
 import { enoughDisk } from "../scheduler/disk";
 import type { Pools } from "../scheduler/pools";
 import { poolsFor } from "../scheduler/pools";
@@ -828,7 +828,7 @@ export class JobExecutor {
       return { kind: "failed", reason: "COMMAND_NOT_FOUND", log: (e as Error).message };
     }
     const login = await agents.login(account.id);
-    const spawn = spawnFor(this.ctx.user, x.env);
+    const spawn = spawnFor(this.ctx.user, { ...x.env, PECORE_JOB_ID: job.id });
     const resumeId = this.resumeSession(job.id, run.node, profile.profile, node.resume, sessionGroup);
     const r = await runAgentNode({
       node,
@@ -973,7 +973,7 @@ export class JobExecutor {
     this.stopRequested.add(jobId);
     const proc = this.running.get(jobId);
     if (proc) await stopGroup(proc.user, proc.pgid);
-    await killInDir(this.ctx.user, workdirOf(this.ctx.dir, jobId));
+    await killJobProcesses(this.ctx.user, jobId);
     await this.exclusive(jobId, async () => {
       this.stopRequested.delete(jobId);
       const t = this.timers.get(jobId);

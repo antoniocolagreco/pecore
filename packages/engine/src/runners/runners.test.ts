@@ -11,7 +11,7 @@ import { pickOutcome, runCommandNode } from "./command";
 import type { CommandRun } from "./command";
 import { placeholderValues, repoOwnerAndName, substituteArgv } from "./placeholders";
 import { readProbe } from "./probe";
-import { appUser, killInDir, run, spawnAs } from "./process";
+import { appUser, killJobProcesses, run, spawnAs } from "./process";
 
 const u = appUser;
 
@@ -73,19 +73,24 @@ describe("process", () => {
     expect(r.timedOut).toBe(true);
   });
 
-  it("kills detached processes whose working directory is inside the job workdir, and only those (decision 16)", async () => {
-    const root = await tempDir();
-    const wd = join(root, "work", "J1");
-    const other = join(root, "work", "J10");
-    await mkdir(join(wd, "sub"), { recursive: true });
-    await mkdir(other, { recursive: true });
-    const inside = await spawnAs({ user: u, argv: ["sleep", "30"], env: { PATH: "/usr/bin:/bin" }, cwd: join(wd, "sub") });
-    const outside = await spawnAs({ user: u, argv: ["sleep", "30"], env: { PATH: "/usr/bin:/bin" }, cwd: other });
-    await killInDir(u, wd);
-    expect((await inside.exited).signal).toBe("SIGKILL");
-    const alive = await Promise.race([outside.exited.then(() => false), new Promise((r) => setTimeout(() => r(true), 200))]);
-    expect(alive).toBe(true);
-    await outside.stop();
+  it("kills the processes that carry the job id, detached ones included, and leaves the user's own processes in the workdir (decision 16)", async () => {
+    const wd = join(await tempDir(), "work", "J1");
+    await mkdir(wd, { recursive: true });
+    const marker = join(wd, "detached.pid");
+    const job = await spawnAs({ user: u, argv: ["/bin/sh", "-c", `setsid sleep 30 & echo $! > ${marker}; wait`], env: { PATH: "/usr/bin:/bin", PECORE_JOB_ID: "J1" }, cwd: wd });
+    const otherJob = await spawnAs({ user: u, argv: ["sleep", "30"], env: { PATH: "/usr/bin:/bin", PECORE_JOB_ID: "J10" }, cwd: wd });
+    const userShell = await spawnAs({ user: u, argv: ["sleep", "30"], env: { PATH: "/usr/bin:/bin" }, cwd: wd });
+    await new Promise((r) => setTimeout(r, 200));
+    const detached = Number((await readFile(marker, "utf8")).trim());
+    await killJobProcesses(u, "J1");
+    expect((await job.exited).signal).toBe("SIGKILL");
+    await new Promise((r) => setTimeout(r, 100));
+    expect(() => process.kill(detached, 0)).toThrow();
+    const alive = (p: typeof job) => Promise.race([p.exited.then(() => false), new Promise((r) => setTimeout(() => r(true), 200))]);
+    expect(await alive(otherJob)).toBe(true);
+    expect(await alive(userShell)).toBe(true);
+    await otherJob.stop();
+    await userShell.stop();
   });
 });
 
