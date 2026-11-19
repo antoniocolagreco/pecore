@@ -1,0 +1,50 @@
+.tableWrap {
+  overflow-x: auto;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.titleLink,
+.disclosure {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.titleLink {
+  color: var(--accent);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.titleLink:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.disclosure {
+  margin-inline-end: 6px;
+}
+
+.placeholder {
+  display: block;
+  width: 60%;
+  min-width: 2rem;
+  height: 1em;
+  margin: 3px 0;
+  border-radius: 3px;
+  background: var(--surface-raised);
+}
+
+.visuallyHidden {
+  position: absolute;
+  clip-path: inset(50%);
+}
+
+.pagination {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}

@@ -1,0 +1,10 @@
+.editor {
+  width: 100%;
+  resize: vertical;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.pre {
+  overflow: auto;
+}

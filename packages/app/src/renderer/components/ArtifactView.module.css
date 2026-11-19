@@ -1,0 +1,46 @@
+.artifact {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.plain {
+  max-height: 32rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  padding: 10px;
+  background: var(--surface-raised);
+}
+
+.file {
+  display: grid;
+  gap: 8px;
+}
+
+.hunk {
+  min-width: 0;
+}
+
+.hunk button {
+  text-align: left;
+  flex-wrap: wrap;
+}
+
+.risk {
+  color: var(--status-warning);
+}
+
+.merge :global(.cm-mergeView) {
+  max-height: 24rem;
+  overflow: auto;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.merge :global(.cm-merge-a .cm-changedLine) {
+  background: color-mix(in srgb, var(--status-failed) 22%, var(--surface));
+}
+
+.merge :global(.cm-merge-b .cm-changedLine) {
+  background: color-mix(in srgb, var(--status-success) 22%, var(--surface));
+}

@@ -73,7 +73,7 @@ export async function initHome(home: string, opts: { library: string }): Promise
   if (!created) return { created };
   await git(home, ["init", "-q", "-b", "main"]);
   await writeFile(join(home, ".gitignore"), homeGitignore);
-  await cp(opts.library, p.library, { recursive: true, force: false, errorOnExist: false });
+  await cp(`${opts.library}/`, p.library, { recursive: true, force: false, errorOnExist: false, dereference: true });
   await git(home, ["add", "-A"]);
   await git(home, ["commit", "-q", "-m", "home: created"]);
   return { created };
@@ -93,7 +93,7 @@ export async function syncAdapters(home: string, opts: { source: string; appVers
   const current = await readFile(versionFile, "utf8").catch(() => null);
   if (current?.trim() === opts.appVersion) return false;
   await mkdir(dir, { recursive: true });
-  await cp(opts.source, dir, { recursive: true, force: true, preserveTimestamps: true });
+  await cp(`${opts.source}/`, dir, { recursive: true, force: true, preserveTimestamps: true, dereference: true });
   const keep = new Set(["version", "node", ...opts.pinned]);
   for (const entry of await readdir(dir)) {
     if (entry.startsWith("@")) {

@@ -1,0 +1,29 @@
+.command {
+  display: grid;
+  gap: var(--gap);
+}
+
+.results {
+  max-height: min(55vh, 26rem);
+  overflow: auto;
+}
+
+.results :global([cmdk-item]) {
+  padding: 8px 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--gap);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.results :global([cmdk-item][data-selected="true"]) {
+  background: var(--surface-raised);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.results :global([cmdk-item][aria-disabled="true"]),
+.results small {
+  color: var(--text-muted);
+}

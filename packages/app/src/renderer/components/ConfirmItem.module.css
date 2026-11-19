@@ -1,0 +1,14 @@
+.snapshot {
+  overflow: auto;
+  max-height: 30rem;
+  margin: 4px 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-raised);
+}
+
+.hash {
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+}

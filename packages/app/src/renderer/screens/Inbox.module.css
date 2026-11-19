@@ -1,0 +1,31 @@
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: var(--gap);
+  align-items: start;
+}
+
+.table {
+  overflow-x: auto;
+}
+
+.detail {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.selected {
+  background: var(--surface-raised);
+}
+
+.pagination {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+@media (max-width: 920px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

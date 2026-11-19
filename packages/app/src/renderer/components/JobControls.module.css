@@ -1,0 +1,14 @@
+.compact {
+  opacity: 0;
+}
+
+tr:hover .compact,
+tr:focus-within .compact,
+.compact[data-error="true"] {
+  opacity: 1;
+}
+
+.compact button {
+  padding: 2px 7px;
+  font-size: 12px;
+}

@@ -1,0 +1,83 @@
+.fields {
+  border: 0;
+  margin: 0;
+  padding: 12px 0 0;
+  display: grid;
+  gap: var(--gap);
+  min-width: 0;
+}
+
+.json {
+  width: 100%;
+  min-height: 18rem;
+  resize: vertical;
+  font-family: var(--mono);
+}
+
+.smallJson {
+  min-height: 7rem;
+  resize: vertical;
+  font-family: var(--mono);
+}
+
+.section {
+  scroll-margin-top: 16px;
+}
+
+.loginLog {
+  max-height: 14rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fullPage {
+  height: 100%;
+  overflow: auto;
+  padding: var(--gap);
+}
+
+.compare, .workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--gap);
+  margin-top: var(--gap);
+}
+
+.compare pre {
+  overflow: auto;
+  max-height: 28rem;
+  background: var(--surface-raised);
+  padding: 10px;
+}
+
+.workspace {
+  grid-template-columns: minmax(0, 3fr) minmax(14rem, 1fr);
+}
+
+.graph {
+  height: 32rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.graph :global(.react-flow__node) {
+  background: var(--surface-raised);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.graph :global(.react-flow__edge-textbg) {
+  fill: var(--surface);
+}
+
+.graph :global(.react-flow__edge-text) {
+  fill: var(--text);
+}
+
+@media (max-width: 850px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+}

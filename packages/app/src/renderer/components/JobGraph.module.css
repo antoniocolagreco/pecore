@@ -1,0 +1,22 @@
+.graph {
+  height: min(68vh, 720px);
+  min-height: 380px;
+  --xy-edge-label-color-default: var(--text);
+  --xy-edge-label-background-color-default: var(--surface);
+  --xy-attribution-background-color-default: var(--surface);
+}
+
+.graph .node {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  width: 200px;
+  padding: 8px;
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.node:global(.selected) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
