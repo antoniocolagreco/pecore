@@ -48,7 +48,7 @@ describe("fs-as: symlinks at every engine file path", () => {
         params: {},
         user: u,
         workdir: wd,
-        context: { job: { id: "J1", title: "t", branch: "factory/J1", base, oldBase: base, target: "main", commit: null }, ticketId: null, project: { repoDir: join(project, "repo.git"), repoUrl: null } },
+        context: { job: { id: "J1", title: "t", branch: "factory/J1", base, oldBase: base, target: "main", commit: null }, ticketId: null, project: { repoDir: join(project, "repo.git"), repoUrl: null, baseBranch: "main" } },
         inputs: [{ type: "spec", path: spec }],
         cleanTree: null,
       }),
@@ -66,7 +66,7 @@ describe("fs-as: symlinks at every engine file path", () => {
       params: {},
       user: u,
       workdir: wd,
-      context: { job: { id: "J1", title: "t", branch: "factory/J1", base, oldBase: base, target: "main", commit: null }, ticketId: null, project: { repoDir: join(project, "repo.git"), repoUrl: null } },
+      context: { job: { id: "J1", title: "t", branch: "factory/J1", base, oldBase: base, target: "main", commit: null }, ticketId: null, project: { repoDir: join(project, "repo.git"), repoUrl: null, baseBranch: "main" } },
       inputs: [],
       cleanTree: null,
     });

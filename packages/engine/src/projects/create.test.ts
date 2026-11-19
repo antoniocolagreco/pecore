@@ -43,6 +43,19 @@ describe("project creation with a remote (section Project creation, decision 13)
     await engine.shutdown();
   });
 
+  it("a new remote gets the project's base branch, not main", async () => {
+    const { forge, home, library } = await forgeHome();
+    const engine = await Engine.start({ home, library });
+    await engine.createProject({ id: "dev", name: "Dev", repo: { url: "https://github.com/acme/dev.git", account: "gh-test" }, baseBranch: "develop", createRepo: "github-create-repo", defaultRecipe: "deliver" }, ["deliver"]);
+    const p = engine.project("dev");
+    const stop = autoConfirm(engine, "dev");
+    await until(async () => !(await exists(join(p.ctx.dir, "creating.json"))));
+    expect(forge.remoteHead("acme/dev", "develop")).toBe(await branchHead(join(p.ctx.dir, "repo.git"), "develop"));
+    expect(forge.remoteHead("acme/dev", "main")).toBeNull();
+    stop();
+    await engine.shutdown();
+  });
+
   it("cancel removes a project whose creation waits for the forge", async () => {
     const { forge, home, library } = await forgeHome();
     await forge.set({ offline: true });

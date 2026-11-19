@@ -10,5 +10,5 @@ fi
 url=$(printf '%s\n' "$project" | jq -er '.web_url | strings | select(length > 0)')
 git --git-dir="$PECORE_PROJECT_REPODIR" -c core.hooksPath=/dev/null \
   -c credential.helper= -c 'credential.helper=!glab auth git-credential' \
-  push "$PECORE_PROJECT_REPO_URL" "refs/heads/$PECORE_PARAMS_BRANCH"
+  push "$PECORE_PROJECT_REPO_URL" "refs/heads/$PECORE_PROJECT_BASEBRANCH"
 printf '%s\n' "$url"

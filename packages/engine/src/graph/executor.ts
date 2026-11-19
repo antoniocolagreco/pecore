@@ -706,7 +706,7 @@ export class JobExecutor {
     return {
       job: { id: job.id, title: job.title, branch: job.branch, base: job.base, oldBase: job.old_base, target: job.target, commit: (await read<{ sha: string }>(latest.get("commit")))?.sha ?? null },
       ticketId: (await read<{ id: string | null }>(latest.get("ticket")))?.id ?? null,
-      project: { repoDir: join(this.ctx.dir, "repo.git"), repoUrl: this.ctx.project.repo?.url ?? null },
+      project: { repoDir: join(this.ctx.dir, "repo.git"), repoUrl: this.ctx.project.repo?.url ?? null, baseBranch: this.ctx.project.baseBranch },
     };
   }
 

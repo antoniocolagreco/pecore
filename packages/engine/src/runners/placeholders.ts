@@ -32,7 +32,7 @@ export type PlaceholderContext = {
   job: { id: string; title: string; branch: string; base: string; oldBase: string; target: string; commit: string | null };
   ticketId: string | null;
   workdir: string;
-  project: { repoDir: string; repoUrl: string | null };
+  project: { repoDir: string; repoUrl: string | null; baseBranch: string };
   params: Record<string, unknown>;
   inputs: Record<string, string>;
 };
@@ -54,6 +54,7 @@ export function placeholderValues(c: PlaceholderContext): PlaceholderValues {
     "job.target": c.job.target,
     workdir: c.workdir,
     "project.repoDir": c.project.repoDir,
+    "project.baseBranch": c.project.baseBranch,
   };
   if (c.job.commit !== null) v["job.commit"] = c.job.commit;
   if (c.ticketId !== null) v["ticket.id"] = c.ticketId;

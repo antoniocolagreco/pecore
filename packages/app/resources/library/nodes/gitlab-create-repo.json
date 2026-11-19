@@ -3,10 +3,6 @@
   "name": "gitlab-create-repo",
   "description": "Create a private GitLab repository if needed and push its base branch.",
   "kind": "command",
-  "params": {
-    "type": "object",
-    "properties": { "branch": { "type": "string", "default": "main" } }
-  },
   "runsAs": "engine",
   "credentials": ["project.account"],
   "outputs": ["delivery"],

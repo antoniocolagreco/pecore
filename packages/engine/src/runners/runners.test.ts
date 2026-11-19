@@ -43,7 +43,7 @@ async function setup() {
     params: {},
     user: u,
     workdir: wd,
-    context: { job: { id: "J1", title: "Fix it", branch: "factory/J1", base, oldBase: base, target: "main", commit: null }, ticketId: null, project: { repoDir: join(project, "repo.git"), repoUrl: null } },
+    context: { job: { id: "J1", title: "Fix it", branch: "factory/J1", base, oldBase: base, target: "main", commit: null }, ticketId: null, project: { repoDir: join(project, "repo.git"), repoUrl: null, baseBranch: "main" } },
     inputs: [],
     cleanTree: null,
     ...extra,
@@ -96,7 +96,7 @@ describe("placeholders", () => {
   });
 
   it("substitutes into single arguments and refuses missing values", () => {
-    const v = placeholderValues({ job: { id: "J", title: "t; rm -rf /", branch: "b", base: "1", oldBase: "0", target: "main", commit: null }, ticketId: null, workdir: "/w", project: { repoDir: "/r", repoUrl: null }, params: { suite: "unit" }, inputs: {} });
+    const v = placeholderValues({ job: { id: "J", title: "t; rm -rf /", branch: "b", base: "1", oldBase: "0", target: "main", commit: null }, ticketId: null, workdir: "/w", project: { repoDir: "/r", repoUrl: null, baseBranch: "develop" }, params: { suite: "unit" }, inputs: {} });
     expect(substituteArgv(["echo", "{job.title}", "--suite={params.suite}"], v)).toEqual(["echo", "t; rm -rf /", "--suite=unit"]);
     expect(() => substituteArgv(["{job.commit}"], v)).toThrow("no value for placeholder {job.commit}");
   });

@@ -6,7 +6,7 @@ if ! url=$(gh repo view "$repo" --json url --jq .url 2>&1); then
     *) printf '%s\n' "$url" >&2; exit 1 ;;
   esac
 fi
-branch=$(jq -nr --arg branch "$PECORE_PARAMS_BRANCH" '$branch | @uri')
+branch=$(jq -nr --arg branch "$PECORE_PROJECT_BASEBRANCH" '$branch | @uri')
 if result=$(gh api "repos/$repo/branches/$branch" --silent 2>&1); then
   printf '%s\n' "$url"
 else

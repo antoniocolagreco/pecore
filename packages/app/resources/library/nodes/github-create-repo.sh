@@ -8,5 +8,5 @@ if ! url=$(gh repo view "$repo" --json url --jq .url 2>&1); then
 fi
 git --git-dir="$PECORE_PROJECT_REPODIR" -c core.hooksPath=/dev/null \
   -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
-  push "$PECORE_PROJECT_REPO_URL" "refs/heads/$PECORE_PARAMS_BRANCH"
+  push "$PECORE_PROJECT_REPO_URL" "refs/heads/$PECORE_PROJECT_BASEBRANCH"
 printf '%s\n' "$url"
