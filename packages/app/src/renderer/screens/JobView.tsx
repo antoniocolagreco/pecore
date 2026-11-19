@@ -11,9 +11,12 @@ import { JobGraph, latestRuns, useRecipe } from "../components/JobGraph";
 import { NodeRunDetail } from "../components/NodeRunDetail";
 import { jobState, StateLabel } from "../components/states";
 import { Button, duration, Empty, ErrorText, Page, Panel, time, ui } from "../components/ui";
+import { Tabs } from "../ds/data";
+import { Alert, Badge, Card, Spinner } from "../ds/feedback";
+import { ArrowRightIcon, FolderIcon } from "../ds/icons";
 import s from "./JobView.module.css";
 
-type Tab = "graph" | "history";
+type Tab = "graph" | "history" | "ticket";
 type HistoryEntry = { run: NodeRunView; attempt: AttemptView | null; index: number };
 const historyPageSize: number = 40;
 
@@ -59,8 +62,8 @@ function Result({ detail, definitions }: { detail: JobDetail; definitions: Retur
   return (
     <Panel>
       <section className={ui.stack} aria-label="Result">
-        <h2 className={ui.title}>Result</h2>
-        <div className={ui.row}><StateLabel info={{ ...jobState(job), detail: null }} />{outcome && <code>{outcome}</code>}{job.mergedAt !== null && <strong>Merged</strong>}</div>
+        <h2 className={s.sectionTitle}>Result</h2>
+        <div className={ui.row}><StateLabel info={{ ...jobState(job), detail: null }} />{outcome && <code>{outcome}</code>}</div>
         {diff && (
           <section>
             <h3>Files changed</h3>
@@ -102,7 +105,7 @@ function History({ detail, selected, onSelect }: { detail: JobDetail; selected: 
   if (!entries.length) return <Empty>No runs yet.</Empty>;
   const now: number = Date.now();
   return (
-    <Panel>
+    <div>
       <table className={ui.table}>
         <thead><tr><th>Node</th><th>Attempt</th><th>Outcome</th><th>Duration</th><th>Failure reason</th></tr></thead>
         <tbody>{entries.slice(page * historyPageSize, (page + 1) * historyPageSize).map(({ run, attempt, index }) => {
@@ -125,7 +128,7 @@ function History({ detail, selected, onSelect }: { detail: JobDetail; selected: 
           <Button disabled={!connected || (page + 1) * historyPageSize >= entries.length} onClick={() => setPage(page + 1)}>Show more</Button>
         </div>
       )}
-    </Panel>
+    </div>
   );
 }
 
@@ -134,7 +137,6 @@ function Loaded({ detail, error, reasons, whyError, reload }: { detail: JobDetai
   const { job, nodeRuns, artifacts } = detail;
   const [tab, setTab] = useState<Tab>("graph");
   const [selection, setSelection] = useState<string | null>(null);
-  const [ticketOpen, setTicketOpen] = useState<boolean>(false);
   const firstBase = useRef<string | null>(job.base);
   const firstTarget = useRef<string>(job.target);
   const checked = useRef<boolean>(false);
@@ -160,35 +162,51 @@ function Loaded({ detail, error, reasons, whyError, reload }: { detail: JobDetai
   }, [connected, canCheck]);
   const selected: NodeRunView | undefined = selection ? nodeRuns.find((run) => run.id === selection) : undefined;
   const info = jobState(job);
+  const graph = (
+    <div className={s.graph}>
+      {recipe.data
+        ? <JobGraph recipe={recipe.data.recipe} definitions={recipe.data.definitions} runs={nodeRuns} selected={selection} onSelect={setSelection} />
+        : !recipe.error && <Spinner />}
+      <ErrorText error={recipe.error} />
+    </div>
+  );
   return (
-    <Page title={job.title}>
-      <ErrorText error={error} />
-      <Panel>
-        <div className={ui.stack}>
-          <div className={ui.row}>
-            <span>{job.projectId}</span><span>Branch <code>{job.branch}</code></span><span>Target <code>{job.target}</code></span>
-            <StateLabel info={info} />
-          </div>
-          {baseChanged && <div className={ui.banner}>Base changed to <code>{job.base ?? job.target}</code> on <code>{job.target}</code>.</div>}
-          <ErrorText error={whyError} />
-          {reasons.map((reason) => <WhyLine key={`${reason.reason}:${reason.nodeRunId ?? ""}`} reason={reason} detail={detail} />)}
-          <JobControls job={job} />
-          {canCheck && <div className={ui.row}><Button disabled={!connected || merge.busy} onClick={() => void merge.run(true)}>Check merge</Button>{mergeStatus && <span role="status">{mergeStatus}</span>}</div>}
-          <ErrorText error={merge.error} />
-          {ticket && <div><Button disabled={!connected} aria-expanded={ticketOpen} onClick={() => setTicketOpen(!ticketOpen)}>Ticket</Button>{ticketOpen && <ArtifactView artifact={ticket} />}</div>}
-        </div>
-      </Panel>
-      {isFinal(job) && <Result detail={detail} definitions={recipe.data} />}
-      <div className={ui.row} aria-label="Job view">
-        <Button disabled={!connected} kind={tab === "graph" ? "primary" : undefined} aria-pressed={tab === "graph"} onClick={() => setTab("graph")}>Graph</Button>
-        <Button disabled={!connected} kind={tab === "history" ? "primary" : undefined} aria-pressed={tab === "history"} onClick={() => setTab("history")}>History</Button>
+    <Page
+      title={job.title}
+      actions={<>
+        {canCheck && <Button disabled={!connected || merge.busy} onClick={() => void merge.run(true)}>Check merge</Button>}
+        <JobControls job={job} />
+      </>}
+    >
+      <div className={s.meta}>
+        <StateLabel info={info} />
+        <span className={s.metaItem}><FolderIcon size={13} />{job.projectId}</span>
+        <span className={s.metaItem}><code>{job.branch}</code><ArrowRightIcon size={12} /><code>{job.target}</code></span>
+        {job.mergedAt !== null && <Badge tone="success">Merged</Badge>}
+        {mergeStatus && <span role="status" className={ui.muted}>{mergeStatus}</span>}
       </div>
+      <ErrorText error={error} />
+      <ErrorText error={merge.error} />
+      <ErrorText error={whyError} />
+      {reasons.length > 0 && (
+        <Alert tone="warning" title="Why it is waiting">
+          {reasons.map((reason) => <WhyLine key={`${reason.reason}:${reason.nodeRunId ?? ""}`} reason={reason} detail={detail} />)}
+        </Alert>
+      )}
+      {baseChanged && <Alert tone="accent">Base changed to <code>{job.base ?? job.target}</code> on <code>{job.target}</code>.</Alert>}
+      {isFinal(job) && <Result detail={detail} definitions={recipe.data} />}
       <div className={selected ? s.split : undefined}>
-        {tab === "graph" ? (
-          <Panel>{recipe.data
-            ? <JobGraph recipe={recipe.data.recipe} definitions={recipe.data.definitions} runs={nodeRuns} selected={selection} onSelect={setSelection} />
-            : !recipe.error && <Empty>Loading graph…</Empty>}<ErrorText error={recipe.error} /></Panel>
-        ) : <History detail={detail} selected={selection} onSelect={setSelection} />}
+        <Card padded>
+          <Tabs
+            value={tab}
+            onValueChange={(value) => setTab(value as Tab)}
+            tabs={[
+              { value: "graph", label: "Graph", content: graph },
+              { value: "history", label: "History", content: <History detail={detail} selected={selection} onSelect={setSelection} /> },
+              ...(ticket ? [{ value: "ticket", label: "Ticket", content: <ArtifactView artifact={ticket} /> }] : []),
+            ]}
+          />
+        </Card>
         {selected && <NodeRunDetail key={selected.id} detail={detail} run={selected} onSelect={setSelection} />}
       </div>
     </Page>

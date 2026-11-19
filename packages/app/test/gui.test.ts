@@ -199,9 +199,11 @@ describe.skipIf(gui)("phase 5 gate: G16 actions from the GUI (built app, headles
     await visible(page.getByText("Needs you").first(), 30_000);
     await control("Stop").click();
     await visible(page.getByText("Stopped").first(), 15_000);
-    await control("Archive").click();
+    await control("More actions").click();
+    await page.getByRole("menuitem", { name: "Archive" }).click();
     await page.waitForTimeout(500);
-    await control("Delete").click();
+    await control("More actions").click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
     await go("#/jobs");
     await page.getByRole("row", { name: /Add hello/ }).waitFor();
@@ -226,7 +228,8 @@ describe.skipIf(gui)("phase 5 gate: G16 actions from the GUI (built app, headles
     await go("#/jobs");
     await page.getByRole("row", { name: /Queued/ }).getByText("Queued").first().click();
     const control = (name: string) => page.getByRole("main").getByRole("button", { name, exact: true }).first();
-    await control("Realign").click();
+    await control("More actions").click();
+    await page.getByRole("menuitem", { name: "Realign" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel(/Target branch/).fill("release");
     await dialog.getByRole("button", { name: "Realign" }).click();
@@ -589,6 +592,7 @@ describe.skipIf(gui)("phase 6: orchestrator chat from the GUI (fake agent)", () 
   it("shows a turn cut by an app restart as interrupted, reruns it with Retry, and disables images the orchestrator cannot read", async () => {
     await page.getByRole("link", { name: /Orchestrator/ }).click();
     await page.getByText("Orders").first().click();
+    await visible(page.getByRole("heading", { name: "Orders" }));
     await page.getByRole("textbox", { name: "Message" }).fill("One more job");
     await page.getByRole("button", { name: "Send" }).click();
     await until(() => exists(join(root, "turn2.json")));

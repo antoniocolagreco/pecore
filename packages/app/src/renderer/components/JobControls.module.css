@@ -1,14 +1,21 @@
+.full {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
 .compact {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
   opacity: 0;
+  transition: opacity var(--fast) ease;
 }
 
 tr:hover .compact,
 tr:focus-within .compact,
+.compact:has([data-popup-open]),
 .compact[data-error="true"] {
   opacity: 1;
-}
-
-.compact button {
-  padding: 2px 7px;
-  font-size: 12px;
 }

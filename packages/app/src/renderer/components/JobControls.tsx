@@ -1,28 +1,37 @@
 import type { JobView } from "@pecore/schemas";
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
+import { Button, IconButton } from "../ds/button";
+import { TextField } from "../ds/field";
+import { ArrowRightIcon, BoxIcon, MoreIcon, PauseIcon, PlayIcon, RefreshIcon, StopIcon, TrashIcon } from "../ds/icons";
+import { Dialog, Menu } from "../ds/overlay";
 import { readRecipe } from "./JobGraph";
-import { Button, ErrorText, Field, Modal, ui } from "./ui";
+import { ErrorText } from "./ui";
 import s from "./JobControls.module.css";
 
 export function isFinal(job: JobView): boolean {
   return job.state === "succeeded" || job.state === "failed" || job.state === "not_delivered" || job.state === "stopped";
 }
 
-const controls = [
-  ["Pause", "pauseJob", "Finishes the running node, then holds. No work is lost."],
-  ["Play", "playJob", "Continues from the next node."],
-  ["Stop", "stopJob", "Kills the running node now and ends the job as Stopped. Resume restarts it."],
-  ["Resume", "resumeJob", "Restarts the failed or stopped node from scratch in the same workdir."],
-  ["Realign", "realignJob", "Moves the job onto the current head of the chosen target branch and retargets the PR. A started job re-runs the recipe’s rebase path."],
-  ["Archive", "archiveJob", "Hides the job from default lists."],
-  ["Delete", "deleteJob", "Removes the workdir, local branch, artifacts, logs and history. The forge is untouched."],
-] as const;
-type Action = (typeof controls)[number][1];
-type Dialog = "deleteJob" | "realignJob";
+type Action = "pauseJob" | "playJob" | "stopJob" | "resumeJob" | "realignJob" | "archiveJob" | "deleteJob";
+type Confirm = "deleteJob" | "realignJob";
+
+const controls: Record<Action, { label: string; effect: string; icon: ReactNode }> = {
+  pauseJob: { label: "Pause", effect: "Finishes the running step, then holds. No work is lost.", icon: <PauseIcon /> },
+  playJob: { label: "Play", effect: "Continues from the next step.", icon: <PlayIcon /> },
+  stopJob: { label: "Stop", effect: "Kills the running step now and ends the job as Stopped. Resume restarts it.", icon: <StopIcon /> },
+  resumeJob: { label: "Resume", effect: "Restarts the failed or stopped step from scratch in the same folder.", icon: <RefreshIcon /> },
+  realignJob: { label: "Realign", effect: "Moves the job onto the current head of a target branch and retargets the PR.", icon: <ArrowRightIcon /> },
+  archiveJob: { label: "Archive", effect: "Hides the job from default lists.", icon: <BoxIcon /> },
+  deleteJob: { label: "Delete", effect: "Removes the folder, local branch, artifacts, logs and history. The forge is untouched.", icon: <TrashIcon /> },
+};
+
+const primary: Action[] = ["pauseJob", "playJob", "resumeJob", "stopJob"];
+const secondary: Action[] = ["realignJob", "archiveJob", "deleteJob"];
 
 export function JobControls({ job, compact }: { job: JobView; compact?: boolean }) {
   const connected: boolean = useConnected();
@@ -30,7 +39,7 @@ export function JobControls({ job, compact }: { job: JobView; compact?: boolean 
   const { pathname } = useLocation();
   const [hovered, setHovered] = useState<boolean>(false);
   const [focused, setFocused] = useState<boolean>(false);
-  const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [dialog, setDialog] = useState<Confirm | null>(null);
   const [target, setTarget] = useState<string>("");
   const path: string = `projects/${job.projectId}/recipes/${job.recipe}.json`;
   const final: boolean = isFinal(job);
@@ -52,18 +61,24 @@ export function JobControls({ job, compact }: { job: JobView; compact?: boolean 
   };
   const action = useAction(async (route: Action) => {
     const params = { id: job.id };
-    if (route === "realignJob") {
-      await call(route, { params, body: { target: target.trim() || undefined } });
-    } else {
-      await call(route, { params });
-    }
+    if (route === "realignJob") await call(route, { params, body: { target: target.trim() || undefined } });
+    else await call(route, { params });
     setDialog(null);
     if (route === "deleteJob" && pathname === `/jobs/${encodeURIComponent(job.id)}`) void navigate("/jobs", { replace: true });
   });
+  const run = (route: Action): void => {
+    if (route === "deleteJob" || route === "realignJob") {
+      action.clear();
+      setTarget("");
+      setDialog(route);
+    } else void action.run(route);
+  };
+  const busy: boolean = !connected || action.busy;
+  const shown: Action[] = primary.filter((route) => enabled[route]);
 
   return (
     <div
-      className={compact ? s.compact : undefined}
+      className={compact ? s.compact : s.full}
       data-job-controls
       data-error={Boolean(action.error || (inspect && (recipe.error || children.error)))}
       onPointerEnter={() => setHovered(true)}
@@ -72,46 +87,38 @@ export function JobControls({ job, compact }: { job: JobView; compact?: boolean 
       onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}
       onClick={(event) => event.stopPropagation()}
     >
-      <div className={ui.row}>
-        {controls.map(([label, route, effect]) => (
-          <span title={route === "realignJob" && final && recipe.data && !recipe.data.onBaseChanged ? effect + " This recipe has no rebase path." : effect} key={route}>
-            <Button
-              disabled={!connected || action.busy || !enabled[route]}
-              onClick={() => {
-                if (route === "deleteJob" || route === "realignJob") {
-                  action.clear();
-                  setTarget("");
-                  setDialog(route);
-                } else void action.run(route);
-              }}
-            >
-              {label}
-            </Button>
-          </span>
-        ))}
-      </div>
-      <ErrorText error={dialog ? null : action.error} />
+      {shown.map((route) => compact
+        ? <IconButton key={route} size="sm" label={controls[route].label} icon={controls[route].icon} disabled={busy} onClick={() => run(route)} />
+        : <Button key={route} variant={route === "stopJob" ? "danger" : "secondary"} icon={controls[route].icon} disabled={busy} title={controls[route].effect} onClick={() => run(route)}>{controls[route].label}</Button>)}
+      <Menu
+        align="end"
+        trigger={<Button variant="ghost" size={compact ? "sm" : "md"} icon={<MoreIcon />} aria-label="More actions" disabled={!connected} />}
+        items={secondary.map((route) => ({
+          label: controls[route].label,
+          icon: controls[route].icon,
+          danger: route === "deleteJob",
+          disabled: busy || !enabled[route],
+          onSelect: () => run(route),
+        }))}
+      />
+      {!compact && <ErrorText error={dialog ? null : action.error} />}
       {inspect && <><ErrorText error={recipe.error} /><ErrorText error={children.error} /></>}
-      {dialog && (
-        <Modal open onClose={() => { if (!action.busy) setDialog(null); }} title={dialog === "deleteJob" ? "Delete job" : "Realign job"}>
-          <div className={ui.stack}>
-            {dialog === "deleteJob" ? (
-              <p>Delete “{job.title}” and its workdir, local branch, artifacts, logs and history. The forge is untouched.</p>
-            ) : (
-              <Field label={`Target branch (leave blank to keep ${job.target})`}>
-                <input value={target} onChange={(event) => setTarget(event.target.value)} disabled={!connected || action.busy} />
-              </Field>
-            )}
-            <ErrorText error={action.error} />
-            <div className={ui.row}>
-              <Button onClick={() => setDialog(null)} disabled={action.busy}>Cancel</Button>
-              <Button kind={dialog === "deleteJob" ? "danger" : "primary"} disabled={!connected || action.busy || !enabled[dialog]} onClick={() => void action.run(dialog)}>
-                {dialog === "deleteJob" ? "Delete" : "Realign"}
-              </Button>
-            </div>
-          </div>
-        </Modal>
-      )}
+      <Dialog
+        open={dialog !== null}
+        onOpenChange={(open) => { if (!open && !action.busy) setDialog(null); }}
+        title={dialog === "deleteJob" ? `Delete “${job.title}”?` : "Realign job"}
+        description={dialog === "deleteJob" ? controls.deleteJob.effect : controls.realignJob.effect}
+        width={440}
+        footer={dialog && <>
+          <Button onClick={() => setDialog(null)} disabled={action.busy}>Cancel</Button>
+          <Button variant={dialog === "deleteJob" ? "dangerSolid" : "primary"} loading={action.busy} disabled={!connected || !enabled[dialog]} onClick={() => void action.run(dialog)}>
+            {dialog === "deleteJob" ? "Delete" : "Realign"}
+          </Button>
+        </>}
+      >
+        {dialog === "realignJob" && <TextField label={`Target branch (leave blank to keep ${job.target})`} value={target} onValueChange={setTarget} disabled={busy} mono autoFocus />}
+        {dialog && <ErrorText error={action.error} />}
+      </Dialog>
     </div>
   );
 }

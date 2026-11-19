@@ -6,9 +6,11 @@ import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { isFinal } from "../components/JobControls";
 import { jobState } from "../components/states";
-import { Button, ErrorText, Page, ui } from "../components/ui";
+import { Button, ErrorText, Page } from "../components/ui";
+import { Stat, Stats } from "../ds/data";
+import { Alert } from "../ds/feedback";
 import { useProjectFilter } from "../shell/filter";
-import { JobTable, NewJobButton, useJobs } from "./Jobs";
+import { JobTable, useJobs } from "./Jobs";
 
 const labels: string[] = ["Needs you", "Failed", "Working", "Waiting"];
 const usd = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 6 });
@@ -50,17 +52,26 @@ export function Factory() {
     { label: "Cost today", value: totals ? usd.format(totals.cost) : undefined, to: "/usage" },
   ];
   return (
-    <Page title="Factory" actions={<NewJobButton />}>
-      <div className={ui.row}>
+    <Page title="Factory">
+      <Stats>
         {counters.map(({ label, value, to }) => (
-          <Button key={label} disabled={!connected} onClick={() => void navigate(to)}><strong>{value ?? "—"}</strong> {label}</Button>
+          <Stat
+            key={label}
+            value={value ?? "—"}
+            label={label}
+            tone={label === "Failed" && Number(value) > 0 ? "danger" : (label === "Needs you" || label === "Inbox items") && Number(value) > 0 ? "attention" : undefined}
+            onClick={connected ? () => void navigate(to) : undefined}
+          />
         ))}
-      </div>
+      </Stats>
       <ErrorText error={status.error} />
       <ErrorText error={usage.error} />
       <ErrorText error={jobs.error} />
       {(status.data?.interrupted ?? 0) > 0 && (
-        <div className={ui.banner}><Button disabled={!connected || play.busy} onClick={() => void play.run()}>Play interrupted jobs</Button><ErrorText error={play.error} /></div>
+        <Alert tone="warning" title="Jobs were interrupted when PeCore closed" actions={<Button disabled={!connected || play.busy} onClick={() => void play.run()}>Play interrupted jobs</Button>}>
+          {status.data?.interrupted} {status.data?.interrupted === 1 ? "job is" : "jobs are"} waiting to continue.
+          <ErrorText error={play.error} />
+        </Alert>
       )}
       <JobTable key={project ?? ""} jobs={visible.filter((job) => !isFinal(job))} factory loading={jobs.loading} />
     </Page>

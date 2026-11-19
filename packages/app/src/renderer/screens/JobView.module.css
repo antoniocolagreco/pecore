@@ -5,13 +5,45 @@
   gap: var(--gap);
 }
 
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-top: -8px;
+  color: var(--text-2);
+}
+
+.metaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.metaItem code {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--fill);
+  color: var(--text);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.graph {
+  min-height: 320px;
+}
+
 .link {
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--accent);
   text-align: left;
-  cursor: pointer;
+  cursor: default;
 }
 
 .link:hover:not(:disabled) {
@@ -19,8 +51,7 @@
 }
 
 .link:disabled {
-  color: var(--text-muted);
-  cursor: default;
+  color: var(--text-2);
 }
 
 @media (max-width: 1050px) {

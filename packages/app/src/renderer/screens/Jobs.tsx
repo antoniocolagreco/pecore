@@ -5,9 +5,13 @@ import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { isFinal, JobControls } from "../components/JobControls";
-import { NewJobModal } from "../components/NewJobModal";
 import { jobState, needsYou, reasonLabel, StateLabel } from "../components/states";
-import { Button, dateTime, duration, Empty, ErrorText, Page, Panel, ui } from "../components/ui";
+import { Button, dateTime, duration, Empty, ErrorText, Page, ui } from "../components/ui";
+import { Card } from "../ds/feedback";
+import { SearchField } from "../ds/field";
+import { ChevronDownIcon } from "../ds/icons";
+import { Select } from "../ds/select";
+import { Segmented } from "../ds/values";
 import { useProjectFilter } from "../shell/filter";
 import s from "./Jobs.module.css";
 
@@ -22,21 +26,6 @@ export function useJobs(archived: ArchiveFilter) {
     () => call("listJobs", { query: { project: project ?? undefined, archived: archived === "all" ? undefined : archived } }),
     [archived, project],
     (m) => m.type === "project.updated" || (m.type === "job.updated" && (!project || m.projectId === project)),
-  );
-}
-
-export function NewJobButton() {
-  const connected: boolean = useConnected();
-  const navigate: ReturnType<typeof useNavigate> = useNavigate();
-  const [open, setOpen] = useState<boolean>(false);
-  useEffect(() => {
-    if (!connected) setOpen(false);
-  }, [connected]);
-  return (
-    <>
-      <Button kind="primary" disabled={!connected} onClick={() => setOpen(true)}>New job</Button>
-      {connected && open && <NewJobModal open onClose={() => setOpen(false)} onCreated={(id) => void navigate(`/jobs/${encodeURIComponent(id)}`)} />}
-    </>
   );
 }
 
@@ -98,7 +87,7 @@ function Row({ row, factory, collapsed, toggle, now }: { row: JobRow; factory: b
       <td style={{ paddingInlineStart: 8 + depth * 16 }}>
         {!factory && hasChildren && (
           <button type="button" className={s.disclosure} aria-label={collapsed ? "Expand stacked jobs" : "Collapse stacked jobs"} aria-expanded={!collapsed} disabled={!connected} onClick={(event) => { event.stopPropagation(); toggle(); }}>
-            {collapsed ? "▸" : "▾"}
+            {collapsed ? <ChevronDownIcon size={13} style={{ rotate: "-90deg" }} /> : <ChevronDownIcon size={13} />}
           </button>
         )}
         <button type="button" className={s.titleLink} disabled={!connected || open.busy} onClick={(event) => { event.stopPropagation(); openRow(); }}>{job.title}</button>
@@ -128,7 +117,7 @@ export function JobTable({ jobs, factory = false, loading }: { jobs: JobView[]; 
   const currentPage: number = Math.min(page, Math.max(0, Math.ceil(rows.length / pageSize) - 1));
   const headings: string[] = ["Title", "Project", "State", factory ? "Node" : "Node or outcome", "Waiting reason", ...(factory ? [] : ["Duration", "Updated"]), "Actions"];
   return (
-    <Panel>
+    <Card padded={false} className={s.card}>
       <div className={s.tableWrap}>
         <table className={ui.table}>
           <thead><tr>{headings.map((heading) => <th key={heading} scope="col">{heading}</th>)}</tr></thead>
@@ -154,7 +143,7 @@ export function JobTable({ jobs, factory = false, loading }: { jobs: JobView[]; 
           <Button disabled={!connected || (currentPage + 1) * pageSize >= rows.length} onClick={() => setPage(currentPage + 1)}>Show more</Button>
         </div>
       )}
-    </Panel>
+    </Card>
   );
 }
 
@@ -170,23 +159,28 @@ export function Jobs() {
     (archived === "all" || job.archived === (archived === "true")) &&
     (!label || jobState(job).label === label) && job.title.toLowerCase().includes(search.trim().toLowerCase()));
   return (
-    <Page title="Jobs" actions={<NewJobButton />}>
-      <div className={ui.row}>
-        <select aria-label="State" disabled={!connected} value={label} onChange={(event) => {
-          const next = new URLSearchParams(query);
-          if (event.target.value) next.set("label", event.target.value);
-          else next.delete("label");
-          void setQuery(next, { replace: true });
-        }}>
-          <option value="">All states</option>
-          {labels.map((item) => <option key={item}>{item}</option>)}
-        </select>
-        <select aria-label="Archived" disabled={!connected} value={archived} onChange={(event) => setArchived(event.target.value as ArchiveFilter)}>
-          <option value="false">Unarchived</option>
-          <option value="true">Archived</option>
-          <option value="all">All jobs</option>
-        </select>
-        <input type="search" aria-label="Search job titles" placeholder="Search job titles" value={search} disabled={!connected} onChange={(event) => setSearch(event.target.value)} />
+    <Page title="Jobs">
+      <div className={s.filters}>
+        <SearchField className={s.search} placeholder="Search job titles" value={search} disabled={!connected} onValueChange={setSearch} />
+        <Select
+          className={s.stateFilter}
+          ariaLabel="State"
+          disabled={!connected}
+          value={label || "all"}
+          onValueChange={(value) => {
+            const next = new URLSearchParams(query);
+            if (value && value !== "all") next.set("label", value);
+            else next.delete("label");
+            void setQuery(next, { replace: true });
+          }}
+          options={[{ value: "all", label: "All states" }, ...labels.map((item) => ({ value: item, label: item }))]}
+        />
+        <Segmented
+          label="Archived"
+          value={archived}
+          onValueChange={(value) => setArchived(value as ArchiveFilter)}
+          options={[{ value: "false", label: "Active" }, { value: "true", label: "Archived" }, { value: "all", label: "All" }]}
+        />
       </div>
       <ErrorText error={jobs.error} />
       <JobTable key={JSON.stringify([project, label, archived, search])} jobs={visible} loading={jobs.loading} />

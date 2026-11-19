@@ -179,7 +179,7 @@ function Composer({ id, supportsImages, connected, ready = true, reload, autoFoc
   const canSend: boolean = !disabled && ready && (!!message.trim() || images.length > 0) && (images.length === 0 || supportsImages === true);
   const imageReason: string = supportsImages === true ? "Add images: PNG, JPEG, GIF or WebP, up to 10 MB each"
     : supportsImages === false ? "The current orchestrator cannot read images"
-      : id === null ? "Send the first message, then attach images" : "Checking whether the orchestrator can read images…";
+      : id === null ? "Images can be added after the first message" : "Checking whether the orchestrator can read images…";
 
   function addImages(files: File[]): void {
     const selected: SelectedImage[] = [];

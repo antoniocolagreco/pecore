@@ -26,9 +26,7 @@ a:hover {
   text-decoration: underline;
 }
 
-input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"]),
-select,
-textarea {
+:where(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"]), select, textarea) {
   min-height: var(--control-h);
   padding: 5px 10px;
   border: 1px solid var(--control-border);
@@ -42,22 +40,16 @@ textarea {
     box-shadow var(--medium) var(--ease-out);
 }
 
-input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"]):hover,
-select:hover,
-textarea:hover {
+:where(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"]), select, textarea):hover {
   border-color: var(--control-border-hover);
 }
 
-input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"]):focus-visible,
-select:focus-visible,
-textarea:focus-visible {
+:where(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"]), select, textarea):focus-visible {
   border-color: var(--accent);
   box-shadow: var(--control-shadow), 0 0 0 3.5px var(--ring);
 }
 
-input:disabled,
-select:disabled,
-textarea:disabled {
+:where(input, select, textarea):disabled {
   opacity: 0.55;
 }
 
