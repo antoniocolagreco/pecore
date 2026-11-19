@@ -2,18 +2,20 @@ import { EventEmitter } from "node:events";
 import { readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { applyTraverseAcls } from "./osuser/acl";
 import { cpus } from "node:os";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { removeAs } from "./workdir/fs-as";
 import { defaultJobLimit } from "@pecore/schemas";
 import { listOptions } from "@pecore/agents";
 import type { LoginState } from "@pecore/agents";
 import type { Account, Accounts, ForgeAccount, JobState, LiveMessage, LoginView, Profiles, ProjectInput, Settings, Tiers, WhyView } from "@pecore/schemas";
+import type { ExportProjectBody, ExportProjectResult, ImportProjectBody, ImportProjectResult } from "@pecore/schemas";
 import { AgentServices, protectedUser, spawnFor } from "./accounts/agents";
 import type { AgentPaths, LoginInfo } from "./accounts/agents";
 import { LoginRunner } from "./accounts/login";
 import { identityOk } from "./runners/forge-env";
 import { loadGlobal, loadProject } from "./definitions/load";
 import type { DefinitionError, Global } from "./definitions/load";
+import { blockingImportItem } from "./definitions/confirm";
 import { JobExecutor } from "./graph/executor";
 import type { JobRow, ProjectContext } from "./graph/executor";
 import { logEvents } from "./observability/log-events";
@@ -40,6 +42,8 @@ import { startSourcePolling } from "./sources/poll";
 import type { OrderSink } from "./sources/poll";
 import { OrchestratorChats } from "./orchestrator/chat";
 import { intakeSink } from "./orchestrator/intake";
+import { exportProject } from "./share/export";
+import { beginImport } from "./share/import";
 
 export type EngineOptions = { home: string; library: string; agents?: AgentPaths; checkLogins?: boolean; admin?: (script: string) => Promise<void>; orders?: OrderSink };
 
@@ -117,7 +121,7 @@ export class Engine extends EventEmitter {
     for (const { executor } of this.projects.values()) await executor.recoverAfterRestart();
     const resumedOrders: Map<LoadedProject, TicketOrder[]> = new Map();
     for (const project of this.projects.values()) {
-      const resumed = await resumeOrders(project.ctx);
+      const resumed: TicketOrder[] = blockingImportItem(project.ctx.db) === null ? await resumeOrders(project.ctx) : [];
       if (this.opts.orders && !this.creating.has(project.ctx.id)) resumedOrders.set(project, resumed);
     }
     if (this.settings.servicesRuntime !== null && [...this.projects.values()].some(({ ctx }) => ctx.project.services !== null)) {
@@ -138,7 +142,8 @@ export class Engine extends EventEmitter {
   }
 
   projectDir(id: string): string {
-    return this.settings.projectPaths[id] ?? join(homePaths(this.opts.home).projects, id);
+    if (Object.hasOwn(this.settings.projectPaths, id)) return this.settings.projectPaths[id]!;
+    return join(homePaths(this.opts.home).projects, id);
   }
 
   global(): Global {
@@ -431,6 +436,22 @@ export class Engine extends EventEmitter {
   async createProject(input: ProjectInput, recipes: string[]): Promise<void> {
     const project = await beginProject(this.opts.home, input, recipes, this.createOptions());
     await this.continueCreation(project.id);
+  }
+
+  async exportProject(id: string, input: ExportProjectBody): Promise<ExportProjectResult> {
+    const project: LoadedProject | undefined = this.projects.get(id);
+    if (!project) throw new NotFoundError(`project ${id} not found`);
+    return exportProject(project.ctx, input);
+  }
+
+  async importProject(input: ImportProjectBody): Promise<ImportProjectResult> {
+    const result: ImportProjectResult = await beginImport(this.opts.home, input, {
+      accounts: this.accounts,
+      knownProject: (id) => this.projects.has(id) || this.creating.has(id) || this.projectErrors.has(id) ||
+        resolve(this.projectDir(id)) !== resolve(homePaths(this.opts.home).projects, id),
+    });
+    if (result.state === "imported") await this.continueCreation(result.id);
+    return result;
   }
 
   async continueCreation(id: string): Promise<void> {

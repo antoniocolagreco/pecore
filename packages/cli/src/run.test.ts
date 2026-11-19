@@ -1,6 +1,8 @@
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { apiProject } from "../../engine/test/api-project";
+import { fakeGitleaks } from "../../engine/test/fake-gitleaks";
 import { until } from "../../engine/test/forge-project";
 import { tempDir } from "../../engine/test/tmp";
 import { run } from "./run";
@@ -62,4 +64,48 @@ describe("pecore CLI over the local API", () => {
     expect(u.err[0]).toContain("Usage:");
     await close();
   });
+
+  it("exports a project, lists gitleaks findings until accepted, and imports an archive under a new id", async () => {
+    const savedPath = process.env.PATH;
+    const { home, engine, call, close } = await apiProject();
+    const env = { PECORE_HOME: home };
+    const out = join(await tempDir(), "demo.tar.zst");
+
+    const e = capture();
+    expect(await run(["project", "export", "demo", "--out", out], e.io, env)).toBe(0);
+    expect(e.out).toEqual([out]);
+
+    const { id } = await call("createJob", { body: { project: "demo", title: "Add hello", ticket: { text: "x" } } });
+    await until(async () => (await call("getJob", { params: { id } })).job.state === "waiting");
+    const busy = capture();
+    expect(await run(["project", "export", "demo", "--out", `${out}.h`, "--history"], busy.io, env)).toBe(1);
+    expect(busy.err[0]).toBe("conflict: 1 job is active: stop or archive them first");
+    await call("stopJob", { params: { id } });
+
+    const gl = await fakeGitleaks();
+    process.env.PATH = `${gl.bin}:${savedPath}`;
+    const leak = join(engine.projectDir("demo"), "artifacts", id, "leak");
+    await mkdir(leak, { recursive: true });
+    await writeFile(join(leak, "out.txt"), `ghp_${"x".repeat(36)}\n`);
+    const f = capture();
+    expect(await run(["project", "export", "demo", "--out", `${out}.h`, "--history"], f.io, env)).toBe(1);
+    expect(f.err[0]).toMatch(new RegExp(`^FILE\\s+LINE\\s+RULE\\s+FINGERPRINT\\n${id}/leak/out.txt\\s+1\\s+github-pat\\s+`));
+    expect(f.err[0]).not.toContain("x".repeat(36));
+    const a = capture();
+    expect(await run(["project", "export", "demo", "--out", `${out}.h`, "--history", "--accept-findings"], a.io, env)).toBe(0);
+    expect(a.out).toEqual([`${out}.h`]);
+    process.env.PATH = savedPath;
+
+    const bad = capture();
+    expect(await run(["project", "import", out, "--account", "nope"], bad.io, env)).toBe(2);
+    expect(bad.err[0]).toBe("invalid account mapping nope. Use --account <from>=<to> once per source account.");
+    const dup = capture();
+    expect(await run(["project", "import", out], dup.io, env)).toBe(1);
+    expect(dup.err[0]).toBe("conflict: project demo already exists");
+    const i = capture();
+    expect(await run(["project", "import", out, "--id", "copy"], i.io, env)).toBe(0);
+    expect(i.out).toEqual(["copy"]);
+    expect((await call("getProject", { params: { id: "copy" } })).project?.id).toBe("copy");
+    await close();
+  }, 60000);
 });

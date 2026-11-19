@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { SourceNode } from "@pecore/schemas";
-import { ensureConfirmed } from "../definitions/confirm";
+import { blockingImportItem, ensureConfirmed } from "../definitions/confirm";
 import type { SourceScope } from "../definitions/confirm";
 import type { ProjectContext } from "../graph/executor";
 import { runCommandNode } from "../runners/command";
@@ -29,6 +29,8 @@ export async function runSource(ctx: ProjectContext, request: SourceRequest): Pr
   const node = configured && ctx.defs.nodes.get(configured);
   const scope: SourceScope | undefined = configured ? sourceScope(ctx, configured) : undefined;
   if (!node || node.kind !== "source" || !scope) throw new Error(`project ${ctx.id} has no source node`);
+  const importItem: string | null = blockingImportItem(ctx.db);
+  if (importItem !== null) return { kind: "waiting", reason: "confirmation", itemId: importItem };
   const nodeDir: string = join(ctx.dir, "nodes");
   const confirmation = await ensureConfirmed(ctx.db, null, nodeDir, node, scope);
   if (!confirmation.confirmed) return { kind: "waiting", reason: "confirmation", itemId: confirmation.itemId };

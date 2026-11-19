@@ -2,6 +2,7 @@ import { monotonicFactory } from "ulid";
 import { z } from "zod";
 import { TicketReply, TicketSnapshot } from "@pecore/schemas";
 import type { StoredEvent } from "@pecore/schemas";
+import { blockingImportItem } from "../definitions/confirm";
 import type { ProjectContext } from "../graph/executor";
 import type { TicketOrder } from "../jobs/plan";
 import { subjectHash } from "../runners/human";
@@ -37,7 +38,7 @@ function interval(ctx: ProjectContext): number {
 
 async function poll(ctx: ProjectContext, sink: OrderSink, rehand: Set<string>, active: () => boolean): Promise<void> {
   const source = ctx.project.source;
-  if (!source) return;
+  if (!source || blockingImportItem(ctx.db) !== null) return;
   const current = (): boolean => active() && ctx.project.source === source;
   const db = ctx.db.db;
   const warn = (error: unknown): void => console.error(`source of project ${ctx.id}:`, error);

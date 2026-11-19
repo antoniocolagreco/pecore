@@ -35,6 +35,13 @@ export function runFiles(node: Node): string[] {
 export type SourceScope = Pick<Project, "repo" | "baseBranch"> & { source: NonNullable<Project["source"]> };
 export type ConfirmSubject = { path: string; kind: "engine-node" | "source-node"; definition: unknown; scripts: Record<string, string> };
 export type RecipeChangeSubject = { path: string; content: string; baseSha256: string | null };
+export type ImportSubject = { path: string; definition: Node; files: Record<string, string> };
+
+export function blockingImportItem(db: ProjectDb): string | null {
+  const item = db.db.prepare(`SELECT id FROM human_queue WHERE kind = 'import' AND
+    (state = 'open' OR (state = 'resolved' AND choice = 'reject')) ORDER BY state, id LIMIT 1`).get() as { id: string } | undefined;
+  return item?.id ?? null;
+}
 
 export function stageRecipeChange(db: ProjectDb, subject: RecipeChangeSubject): string {
   const hash: string = createHash("sha256").update(JSON.stringify(subject)).digest("hex");

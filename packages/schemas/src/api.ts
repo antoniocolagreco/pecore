@@ -17,6 +17,34 @@ export const CreateProjectBody = z
   .strict();
 export type CreateProjectBody = z.infer<typeof CreateProjectBody>;
 
+export const ExportProjectBody = z.object({
+  path: z.string().min(1),
+  history: z.boolean().default(false),
+  logs: z.boolean().default(false),
+  acceptFindings: z.array(z.string()).default([]),
+}).strict().refine((body) => !body.logs || body.history, { path: ["logs"], message: "logs require history" });
+export type ExportProjectBody = z.infer<typeof ExportProjectBody>;
+
+const ExportFinding = z.object({ fingerprint: z.string(), file: z.string(), line: z.number().int(), rule: z.string() });
+export const ExportProjectResult = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("findings"), findings: z.array(ExportFinding) }),
+  z.object({ state: z.literal("written"), path: z.string() }),
+]);
+export type ExportProjectResult = z.infer<typeof ExportProjectResult>;
+
+export const ImportProjectBody = z.object({
+  path: z.string().min(1),
+  id: ProjectId.optional(),
+  accounts: z.record(z.string().min(1), z.string().min(1)).optional(),
+}).strict();
+export type ImportProjectBody = z.infer<typeof ImportProjectBody>;
+
+export const ImportProjectResult = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("needs-accounts"), accounts: z.array(z.object({ id: z.string(), kind: z.enum(["model", "forge", "service"]) })) }),
+  z.object({ state: z.literal("imported"), id: ProjectId }),
+]);
+export type ImportProjectResult = z.infer<typeof ImportProjectResult>;
+
 export const CreateJobBody = z
   .object({
     project: ProjectId,
@@ -407,6 +435,8 @@ const control = (name: string) => ({ method: "POST", path: `/jobs/:id/${name}`, 
 export const routes = {
   listProjects: { method: "GET", path: "/projects", response: z.array(ProjectView) },
   createProject: { method: "POST", path: "/projects", body: CreateProjectBody, response: z.object({ id: ProjectId }) },
+  exportProject: { method: "POST", path: "/projects/:id/export", params: IdParams, body: ExportProjectBody, response: ExportProjectResult },
+  importProject: { method: "POST", path: "/projects/import", body: ImportProjectBody, response: ImportProjectResult },
   getProject: { method: "GET", path: "/projects/:id", params: IdParams, response: ProjectView },
   deleteProject: { method: "DELETE", path: "/projects/:id", params: IdParams, response: Ok },
   getArtifact: {

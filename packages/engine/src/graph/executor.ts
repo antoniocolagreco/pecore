@@ -7,8 +7,8 @@ import type { AgentNode, Artifact, ArtifactType, FailureReason, ForgeAccount, Jo
 import { Recipe, SpecArtifact } from "@pecore/schemas";
 import { spawnFor } from "../accounts/agents";
 import type { AgentServices } from "../accounts/agents";
-import { ensureConfirmed, needsConfirmation, recordConfirmation } from "../definitions/confirm";
-import type { ConfirmSubject } from "../definitions/confirm";
+import { blockingImportItem, ensureConfirmed, needsConfirmation, recordConfirmation, subjectSha } from "../definitions/confirm";
+import type { ConfirmSubject, ImportSubject } from "../definitions/confirm";
 import type { Definitions } from "../definitions/load";
 import { effectRecorder } from "../jobs/effects";
 import type { JobAttachment } from "../jobs/create";
@@ -305,6 +305,10 @@ export class JobExecutor {
   }
 
   private async startJob(job: JobRow): Promise<boolean> {
+    if (blockingImportItem(this.ctx.db) !== null) {
+      this.setState(job.id, "queued", "confirmation");
+      return false;
+    }
     const decision = this.recipeConfirmation(job.id);
     if (decision === "rejected") {
       this.setState(job.id, "stopped", null);
@@ -312,10 +316,18 @@ export class JobExecutor {
       return false;
     }
     if (job.waiting_reason === "parent_job" || job.waiting_reason === "parent_failed") return false;
+    if (job.waiting_reason === "confirmation" && job.parent_job_id) {
+      const parent: JobRow = this.job(job.parent_job_id);
+      if (parent.merged_at === null && (parent.state !== "succeeded" || !(await commitSha(this.ctx.dir, latestArtifact(this.ctx.db.events(parent.id), "commit"))))) {
+        this.setState(job.id, "queued", isFinal(parent.state) && parent.state !== "succeeded" ? "parent_failed" : "parent_job");
+        return false;
+      }
+    }
     if (decision === "waiting") {
       this.setState(job.id, "queued", "confirmation");
       return false;
     }
+    if (job.waiting_reason === "confirmation") this.setState(job.id, "queued", null);
     if (job.id !== setupJobId && this.ctx.held?.()) return false;
     if (!(await enoughDisk(this.ctx.dir, this.ctx.settings.minFreeDiskGb))) {
       if (job.waiting_reason !== "disk") this.ctx.db.append([{ jobId: job.id, type: "job.state_changed", payload: { state: "queued", reason: "disk" } }]);
@@ -404,7 +416,7 @@ export class JobExecutor {
     for (const child of this.children(parentId)) {
       if (child.state !== "queued") continue;
       if (parent.state === "succeeded") void this.startChild(parentId, child.id);
-      else if (child.waiting_reason !== "parent_failed") {
+      else if (child.waiting_reason !== "parent_failed" && blockingImportItem(this.ctx.db) === null) {
         this.ctx.db.append([{ jobId: child.id, type: "job.state_changed", payload: { state: "queued", reason: "parent_failed" } }]);
         this.ctx.changed(child.id);
         this.ctx.notify({ kind: "needs-user", title: child.title, body: `its parent job ended ${parent.state}`, jobId: child.id });
@@ -459,7 +471,7 @@ export class JobExecutor {
     await this.exclusive(jobId, async () => {
       const job = this.job(jobId);
       const request = this.pendingBaseChange(jobId);
-      if (!request || !this.idle(job)) return;
+      if (!request || !this.idle(job) || blockingImportItem(this.ctx.db) !== null) return;
       const repo = join(this.ctx.dir, "repo.git");
       const base = request.base ?? (request.target.startsWith(jobBranch("")) ? await branchHead(repo, request.target) : await fetchBase(this.ctx, request.target));
       if (!base) throw new Error(`branch ${request.target} not found`);
@@ -491,6 +503,7 @@ export class JobExecutor {
   async checkMerge(jobId: string): Promise<boolean> {
     const job = this.job(jobId);
     if (job.merged_at !== null) return true;
+    if (blockingImportItem(this.ctx.db) !== null) return false;
     const url = await this.mergedUrl(job);
     if (url === null) return false;
     await this.deliveryMerged(job, url);
@@ -1040,6 +1053,18 @@ export class JobExecutor {
     if (!item) throw new Error(`queue item ${itemId} not found`);
     if (item.state !== "open" || item.subject_hash !== hash) throw new Error("the item changed or was resolved");
     if (!(JSON.parse(item.choices) as string[]).includes(choice)) throw new Error(`${choice} is not a choice of this item`);
+    if (item.kind === "import") {
+      const { path, definition, files }: ImportSubject = JSON.parse(item.subject) as ImportSubject;
+      const events: NewEvent[] = [{ jobId: null, type: "queue.resolved", payload: { itemId, state: "resolved", choice, note } }];
+      if (choice === "confirm" && definition.kind === "command" && (needsConfirmation(definition) || definition.mergedCheck)) {
+        events.push({ jobId: null, type: "confirmation.recorded", payload: { path, sha256: subjectSha({ definition, scripts: files }) } });
+      }
+      this.ctx.db.append(events);
+      if (blockingImportItem(this.ctx.db) === null) {
+        for (const job of this.jobs()) if (job.state === "queued" && job.waiting_reason === "confirmation") await this.release(job.id, ["confirmation"]);
+      }
+      return;
+    }
     if (item.kind === "ticket") {
       const { orderId } = JSON.parse(item.subject) as { orderId: string };
       resolveTicketOrder(this.ctx, itemId, orderId, choice, note);
@@ -1164,6 +1189,7 @@ export class JobExecutor {
       const job = this.job(jobId);
       if (job.state !== "failed" && job.state !== "stopped") throw new Error(`job ${jobId} is ${job.state}`);
       if (job.archived) throw new Error(`job ${jobId} is archived`);
+      if (blockingImportItem(this.ctx.db) !== null) throw new Error("The project waits for confirmation of its imported nodes");
       if (this.recipeConfirmation(jobId) !== "allowed") throw new Error("the job's recipe change was not confirmed");
       const wd = workdirOf(this.ctx.dir, jobId);
       const exists = await gitWork(this.ctx.user, this.ctx.dir, [`--git-dir=${join(this.ctx.dir, "repo.git")}`, "worktree", "list", "--porcelain"]);

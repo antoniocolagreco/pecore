@@ -4,6 +4,7 @@ import { join, relative } from "node:path";
 import { monotonicFactory } from "ulid";
 import { Recipe } from "@pecore/schemas";
 import type { Artifact } from "@pecore/schemas";
+import { blockingImportItem } from "../definitions/confirm";
 import type { RecipeChangeSubject } from "../definitions/confirm";
 import { checkRecipe, hasCommitNode } from "../definitions/recipe-check";
 import type { JobRow, ProjectContext } from "../graph/executor";
@@ -83,6 +84,7 @@ export async function createJob(ctx: ProjectContext, req: CreateJob): Promise<st
       attachments.push({ type: "attachment", path: relative(ctx.dir, file), sha256: createHash("sha256").update(data).digest("hex"), contentState: null });
     }
   }
+  if (blockingImportItem(ctx.db) !== null) reason = "confirmation";
   ctx.db.append([
     {
       jobId: id,

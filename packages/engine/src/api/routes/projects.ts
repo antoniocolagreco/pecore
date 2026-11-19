@@ -2,6 +2,7 @@ import type { CreationView, JobState, ProjectView } from "@pecore/schemas";
 import type { Engine } from "../../main";
 import { NotFoundError } from "../../main";
 import { ProjectCreateError, setupJobId } from "../../projects/create";
+import { InvalidArchive, ShareConflict } from "../../share/archive";
 import { HttpError } from "../server";
 import type { Handlers } from "../server";
 
@@ -38,6 +39,23 @@ export function projectHandlers(engine: Engine) {
         throw e;
       }
       return { id: body.project.id };
+    },
+    exportProject: async ({ params, body }) => {
+      try {
+        return await engine.exportProject(params.id, body);
+      } catch (error) {
+        if (error instanceof ShareConflict) throw new HttpError("conflict", error.message);
+        throw error;
+      }
+    },
+    importProject: async ({ body }) => {
+      try {
+        return await engine.importProject(body);
+      } catch (error) {
+        if (error instanceof ShareConflict) throw new HttpError("conflict", error.message);
+        if (error instanceof InvalidArchive || error instanceof ProjectCreateError) throw new HttpError("bad_request", error.message);
+        throw error;
+      }
     },
     deleteProject: async ({ params }) => {
       if (!engine.projects.has(params.id)) throw new NotFoundError(`project ${params.id} not found`);

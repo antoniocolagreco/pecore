@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { mkdirSync } from "node:fs";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -50,7 +51,7 @@ export async function readCreation(dir: string): Promise<Creation | null> {
   return text === null ? null : (JSON.parse(text) as Creation);
 }
 
-async function done(dir: string, step: CreationStep, recipes: string[]): Promise<void> {
+export async function writeCreation(dir: string, step: CreationStep, recipes: string[]): Promise<void> {
   await writeFile(creatingFile(dir), JSON.stringify({ step, recipes } satisfies Creation) + "\n");
 }
 
@@ -83,18 +84,23 @@ export async function beginProject(home: string, input: ProjectInput, recipes: s
   const project = parsed.data;
   const account = forgeAccountOf(project, opts.accounts);
   const dir = join(homePaths(home).projects, project.id);
-  if (await exists(dir)) throw new ProjectCreateError(1, `project ${project.id} already exists`);
+  try {
+    if (mkdirSync(dir, { recursive: true, mode: 0o755 }) === undefined) throw new ProjectCreateError(1, `project ${project.id} already exists`);
+  } catch (error) {
+    if (error instanceof ProjectCreateError) throw error;
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new ProjectCreateError(1, `project ${project.id} already exists`);
+    throw new ProjectCreateError(3, (error as Error).message);
+  }
   const library = homePaths(home).library;
   const p = projectPaths(dir);
   try {
-    await mkdir(dir, { recursive: true, mode: 0o755 });
     for (const d of [p.nodes, p.recipes, p.knowledge, p.work, p.artifacts, p.logs]) await mkdir(d, { recursive: true });
     const defaults = await projectDefaults(library, project.repo, account?.forge ?? null, recipes.filter((r): r is DefaultRecipe => ["feature", "bugfix", "local-only"].includes(r)));
     for (const name of recipes) check(3, await instantiateRecipe(library, dir, name, defaults.rename));
     if (project.createRepo !== null) check(3, await instantiateNode(library, dir, project.createRepo));
     await writeFile(p.project, JSON.stringify(project, null, 2) + "\n");
     new ProjectDb(p.db).close();
-    await done(dir, 3, recipes);
+    await writeCreation(dir, 3, recipes);
     return project;
   } catch (e) {
     await rm(dir, { recursive: true, force: true });
@@ -120,7 +126,7 @@ export async function prepareRepo(home: string, dir: string, project: Project, o
     if (e instanceof ProjectCreateError) throw e;
     throw new ProjectCreateError(4, (e as Error).message);
   }
-  await done(dir, 4, creation.recipes);
+  await writeCreation(dir, 4, creation.recipes);
   return "ready";
 }
 
@@ -131,7 +137,7 @@ export async function repoCreated(dir: string, project: Project): Promise<void> 
   await gitApp(repo, ["remote", "add", "origin", project.repo!.url]);
   await gitApp(repo, ["config", "--replace-all", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"]);
   await deleteBranch(repo, jobBranch(setupJobId));
-  await done(dir, 4, creation.recipes);
+  await writeCreation(dir, 4, creation.recipes);
 }
 
 async function hasGroup(group: string): Promise<boolean> {
@@ -149,7 +155,7 @@ export async function finishProject(home: string, dir: string, project: Project,
     } catch (e) {
       throw new ProjectCreateError(5, (e as Error).message);
     }
-    await done(dir, 5, creation.recipes);
+    await writeCreation(dir, 5, creation.recipes);
   }
   try {
     const script = projectAccessScript(dir, appUser, opts.protectedMode);

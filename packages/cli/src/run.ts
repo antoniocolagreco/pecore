@@ -2,11 +2,13 @@ import { readFile } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { ApiError } from "@pecore/schemas";
-import type { ApiClient, WhyView } from "@pecore/schemas";
+import type { ApiClient, ExportProjectResult, ImportProjectResult, WhyView } from "@pecore/schemas";
 import { connect, NotRunningError, pecoreHome } from "./connect";
 
 export const usage = `Usage:
   pecore project list
+  pecore project export <id> [--out <file>] [--history] [--logs] [--accept-findings]
+  pecore project import <file> [--id <new-id>] [--account <from>=<to> ...]
   pecore job list [--project <id>] [--archived]
   pecore job why <job>
   pecore job stop|pause|play|resume|archive|delete <job>
@@ -35,11 +37,47 @@ function table(rows: string[][]): string {
 const controls = { stop: "stopJob", pause: "pauseJob", play: "playJob", resume: "resumeJob", archive: "archiveJob", delete: "deleteJob" } as const;
 
 async function command(call: ApiClient, home: string, args: string[], out: Out): Promise<number> {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { project: { type: "string" }, archived: { type: "boolean" }, target: { type: "string" } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
+    project: { type: "string" }, archived: { type: "boolean" }, target: { type: "string" },
+    out: { type: "string" }, history: { type: "boolean" }, logs: { type: "boolean" }, "accept-findings": { type: "boolean" },
+    id: { type: "string" }, account: { type: "string", multiple: true },
+  } });
   const [group, action, id] = positionals;
   if (group === "project" && action === "list") {
     const projects = await call("listProjects");
     out.log(table([["ID", "NAME", "REPO", "BASE"], ...projects.map((p) => [p.id, p.project?.name ?? "(invalid)", p.project ? (p.project.repo?.url ?? "local only") : "", p.project?.baseBranch ?? ""])]));
+    return 0;
+  }
+  if (group === "project" && action === "export" && id && positionals.length === 3) {
+    const path: string = resolve(values.out ?? `${id}.tar.zst`);
+    const body = { path, history: values.history ?? false, logs: values.logs ?? false };
+    let result: ExportProjectResult = await call("exportProject", { params: { id }, body });
+    if (result.state === "findings" && values["accept-findings"]) {
+      result = await call("exportProject", { params: { id }, body: { ...body, acceptFindings: result.findings.map((f) => f.fingerprint) } });
+    }
+    if (result.state === "findings") {
+      out.error(table([["FILE", "LINE", "RULE", "FINGERPRINT"], ...result.findings.map((f) => [f.file, String(f.line), f.rule, f.fingerprint])]));
+      return 1;
+    }
+    out.log(result.path);
+    return 0;
+  }
+  if (group === "project" && action === "import" && id && positionals.length === 3) {
+    const accounts: Map<string, string> = new Map();
+    for (const mapping of values.account ?? []) {
+      const [from, to, extra]: string[] = mapping.split("=");
+      if (!from || !to || extra !== undefined || accounts.has(from)) {
+        out.error(`invalid account mapping ${mapping}. Use --account <from>=<to> once per source account.`);
+        return 2;
+      }
+      accounts.set(from, to);
+    }
+    const result: ImportProjectResult = await call("importProject", { body: { path: resolve(id), ...(values.id === undefined ? {} : { id: values.id }), accounts: Object.fromEntries(accounts) } });
+    if (result.state === "needs-accounts") {
+      out.error(table([["ACCOUNT", "KIND"], ...result.accounts.map((a) => [a.id, a.kind])]));
+      return 1;
+    }
+    out.log(result.id);
     return 0;
   }
   if (group === "job" && action === "list") {

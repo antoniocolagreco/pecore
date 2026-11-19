@@ -216,12 +216,13 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
 
   it("marks a turn cut by a restart interrupted, and Retry reruns it with the same order", async () => {
     const t = await setup((root) => [
-      [...init(), ...newSession, { expect: "session/prompt" }, { sleep: 60000 }],
+      [...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "first.json") }, { sleep: 60000 }],
       [...init(), { expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }, { expect: "session/prompt" }, { dump: join(root, "retried.json") }, { waitFile: join(root, "done") }, ...replyWith("Retried.")],
     ]);
     const chat = await t.call("createChat", { body: { title: "Orders" } });
     const message = await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Add an API and a UI job to demo" } });
-    await until(async () => (await t.call("getChat", { params: { id: chat.id } })).messages.find((x) => x.id === message.id)?.state === "running");
+    await until(() => existsSync(join(t.root, "first.json")));
+    expect((await t.call("getChat", { params: { id: chat.id } })).messages.find((x) => x.id === message.id)?.state).toBe("running");
     await t.close();
 
     const again = await t.open();
