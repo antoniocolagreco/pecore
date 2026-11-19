@@ -76,6 +76,16 @@
 .warning {
   margin-top: 6px;
   color: var(--status-warning);
+  overflow-wrap: anywhere;
+}
+
+.warning pre {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.nav {
+  overflow-x: hidden;
 }
 
 .main {

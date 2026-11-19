@@ -143,6 +143,7 @@ export function JobGraph({ recipe, definitions, runs, selected, onSelect }: {
         edges={edges}
         edgeTypes={edgeTypes}
         fitView
+        fitViewOptions={{ maxZoom: 1 }}
         minZoom={0.2}
         nodesDraggable={false}
         nodesConnectable={false}

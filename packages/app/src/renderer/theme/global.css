@@ -76,6 +76,37 @@ pre {
   font-size: 12.5px;
 }
 
+.react-flow__edge-textbg {
+  fill: var(--surface-raised);
+}
+
+.react-flow__edge-text {
+  fill: var(--text);
+}
+
+.react-flow__edge-path {
+  stroke: var(--text-muted);
+}
+
+.react-flow__controls-button {
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border);
+  fill: var(--text);
+  color: var(--text);
+}
+
+.react-flow__controls-button:hover {
+  background: var(--surface);
+}
+
+.react-flow__attribution {
+  display: none;
+}
+
+.react-flow__minimap {
+  background: var(--surface);
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation: none !important;
