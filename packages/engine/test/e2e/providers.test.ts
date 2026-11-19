@@ -79,7 +79,7 @@ describe.skipIf(!real)("phase 6 gate: Codex and opencode connectors with the use
     }, 900_000);
   }
 
-  for (const [account, model, effort] of [["codex", "gpt-6.2-sol", "medium"], ["opencode", "opencode/deepseek-v4.1-flash-free", null]] as const) {
+  for (const [account, model, effort] of [["codex", "gpt-6.2-sol", "medium"], ["opencode", "openrouter/deepseek/deepseek-v4.1-flash", null]] as const) {
     it(`runs the local-only recipe (spec, tests, code, checks, review, approval, commit) with every agent node on ${account}`, async () => {
       const home = join(await tempDir(), "home");
       await mkdir(home, { recursive: true });
