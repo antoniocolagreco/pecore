@@ -990,7 +990,7 @@ Recorded ACP traffic for tests lives in `packages/agents/fixtures/<connector>/<c
 
 ### Engine and main process messages
 
-Over `parentPort`: engine to main `ready {port, token}`, `notify {title, body, kind}`, `admin {script}` (main runs the admin prompt and replies `admin.result`), `active {jobs}` (reply to `active?`), `shutdown.done`. Main to engine: `active?`, `shutdown`.
+Over `parentPort`: engine to main `ready {port, token}`, `error {message}` (the engine could not start; main shows it and quits), `notify {title, body, kind}`, `admin {script}` (main runs the admin prompt and replies `admin.result`), `active {jobs}` (reply to `active?`), `shutdown.done`. Main to engine: `active?`, `shutdown`.
 
 Window and tray: closing the window hides it; the app, the engine and the jobs keep running. A tray icon (Electron `Tray`) shows the number of running jobs and items in the Inbox, and has "Open PeCore" and "Quit". The app holds a single-instance lock (`app.requestSingleInstanceLock()`): launching it again shows the existing window, so the window can be reopened on a Linux desktop with no tray. The first time the window is hidden, a notification says that jobs keep running and how to quit.
 
