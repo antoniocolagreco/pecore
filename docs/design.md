@@ -117,7 +117,7 @@ Each question must be answered before the build phase named in brackets (see Bui
 
 ### CUJ 1: Bug fix from a GitHub issue
 
-*   **Given**: project `progetto-1` points to `github.com/pappa/pippo` with account `account-1`. Its `bugfix` recipe uses instances of check templates for the project's toolchain and the nodes `git-commit`, `git-push`, `github-pr` and `github-issue-comment`. An issue labelled `factory` exists.
+*   **Given**: project `progetto-1` points to `github.com/pappa/pippo` with account `account-1`. Its `bugfix` recipe uses instances of check templates for the project's toolchain and the nodes `git-commit`, `git-push`, `github-pr` and `github-issue-comment`. Its `source` is an instance of `github-issues`. An issue labelled `factory` exists.
 *   **When**: the user tells the orchestrator "fix issue 42 of progetto-1".
 *   **Then**:
     1.  The orchestrator reads the issue, picks recipe `bugfix`, and starts a job.
@@ -1292,7 +1292,7 @@ Entry gates: a phase does not start until these open findings of the second full
 |---|---|
 | 4 | resolved below (Phase 4 decisions) |
 | 5 | resolved below (Phase 5 decisions) |
-| 6 | ticket intake persisted through job creation, with a stable intake id and no-source projects; how an agent creates an `agent-question` and how the answer reaches its next turn; images in orders; protected orchestrator after restart with the new MCP token; that token reaches `claude` on its command line (`--mcp-config`, when `CLAUDE_CODE_EXECUTABLE` is set), readable by every local user in `/proc` ([sudo spike](spikes/sudo.md)) |
+| 6 | ticket intake: resolved (Phase 6 decision 1); how an agent creates an `agent-question` and how the answer reaches its next turn; images in orders; protected orchestrator after restart with the new MCP token; that token reaches `claude` on its command line (`--mcp-config`, when `CLAUDE_CODE_EXECUTABLE` is set), readable by every local user in `/proc` ([sudo spike](spikes/sudo.md)) |
 | macOS pass | Keychain with an empty password: path, creation and unlock after logout; pass criteria of the macOS gate |
 
 #### Phase 4 decisions
@@ -1325,3 +1325,9 @@ Each line closes one entry gate of phase 5 and overrides the earlier text it con
 3.  **`/live` authentication.** A browser `WebSocket` cannot send headers. Every client opens `/live` without a token and sends `{"auth": "<token>"}` as its first message. The server sends nothing before it, and closes the socket with code 4401 when the token is wrong or does not arrive within 5 seconds. A token in the query string would end up in logs; header injection by the main process (`webRequest`) would work only for the renderer.
 4.  **Typed operations.** `packages/schemas/src/api.ts` holds one table of routes: method, path, and the Zod schemas of params, query, body and response. The server registers its routes from the table and validates every input (400 with the Zod issues); tests also validate the responses. The renderer client and the CLI call routes through one typed function built from the same table, so a changed route breaks the build of both. An error body is `{error, message}`, with `error` one of `bad_request` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404), `gone` (410), `conflict` (409), `engine_error` (500). The routes the GUI needed and the API table lacked (wizard progress, Retry and Cancel of a creation, status, first run, prerequisite recheck, usage, themes, normalised log history, on-demand merge check, play interrupted jobs) are in the API table above.
 5.  **Owner of `run/api.json`.** Only the engine writes `run/api.json`: after the API listens, mode 0600, written to a temporary file and renamed. It deletes the file at shutdown. The main process gets port and token from `ready` and never reads the file. A file left by a crash points to a closed port, so the CLI prints `PeCore is not running: open the app`. When `shutdown.done` does not arrive within 15 seconds, the main process kills the engine process and exits; the next start runs the sweep of section 1 and the services sweep of 4.9.
+
+#### Phase 6 decisions
+
+Each line closes one entry gate of phase 6 and overrides the earlier text it contradicts.
+
+1.  **Orders.** A ticket seen by intake, or a chat message, is an order with a stable id: the `ticket.seen` event for a ticket, the message id for a chat. `tickets_seen` gains `state` (`received`, `confirming`, `handed`, `asking`, `planned`, `done`, `dropped`), set by the events `order.read`, `order.handed`, `order.asked`, `order.planned`, `order.done`, `order.dropped`. The orchestrator calls `create_jobs` once per order with the whole plan: each job has a `key`, and `dependsOn` names keys. The engine stores the plan in `order.planned`, then creates the jobs one by one; `jobs` gains `order_id` and `order_key`, with a unique index on both. A second `create_jobs` for the same order is refused and returns the plan and its jobs. At start the engine resumes every ticket order not `done` or `dropped`: `received` runs `read` again, `handed` runs the orchestrator turn again with the actions already recorded, `planned` creates the missing jobs from the stored plan without the model. A comment posted just before a crash can be posted twice. A chat turn cut by a crash is not rerun: the message shows Retry, which reuses the same order. A project without `source` takes orders only from chat; `read_ticket` needs a source.
