@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import type { CSSProperties } from "react";
 import { BaseEdge, MarkerType, Position, ReactFlow } from "@xyflow/react";
 import type { Edge, EdgeProps, Node } from "@xyflow/react";
 import { Node as NodeDefinition, Recipe } from "@pecore/schemas";
@@ -115,7 +116,7 @@ export function JobGraph({ recipe, definitions, runs, selected, onSelect }: {
       position: recipe.layout?.[id] ?? positions.get(id)!,
       data: { label: <><strong>{id}</strong><StateLabel info={info} />{run && backTargets.has(id) && <span>Round {run.round}</span>}</> },
       className: s.node,
-      style: { borderColor: toneColor(info.tone) },
+      style: { "--tone": toneColor(info.tone) } as CSSProperties,
       sourcePosition: Position.Bottom,
       targetPosition: Position.Top,
       selected: run !== undefined && run.id === selected,

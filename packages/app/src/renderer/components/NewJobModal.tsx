@@ -1,8 +1,14 @@
 import { useEffect, useState } from "react";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
+import { Button } from "../ds/button";
+import { TextArea, TextField } from "../ds/field";
+import { ChevronDownIcon } from "../ds/icons";
+import { Dialog } from "../ds/overlay";
+import { Select } from "../ds/select";
 import { useProjectFilter } from "../shell/filter";
-import { Button, ErrorText, Field, Modal, ui } from "./ui";
+import { ErrorText } from "./ui";
+import s from "./NewJobModal.module.css";
 
 export function NewJobModal({ open, onClose, onCreated, parentJobId }: { open: boolean; onClose(): void; onCreated(id: string): void; parentJobId?: string }) {
   const { project: filter } = useProjectFilter();
@@ -15,6 +21,7 @@ export function NewJobModal({ open, onClose, onCreated, parentJobId }: { open: b
   const [ticketId, setTicketId] = useState("");
   const [baseBranch, setBaseBranch] = useState("");
   const [parent, setParent] = useState(parentJobId ?? "");
+  const [more, setMore] = useState(Boolean(parentJobId));
   const current = ready.find((p) => p.id === project)?.project ?? null;
   const recipes = useData(() => (project ? call("listDefinitions", { query: { dir: `projects/${project}/recipes` } }) : Promise.resolve([])), [project]);
   const jobs = useData(() => (project ? call("listJobs", { query: { project, archived: "false" } }) : Promise.resolve([])), [project]);
@@ -48,70 +55,60 @@ export function NewJobModal({ open, onClose, onCreated, parentJobId }: { open: b
     onClose();
     onCreated(id);
   });
+  const recipeNames: string[] = (recipes.data ?? []).map((r) => r.path.split("/").pop()!.replace(/\.json$/, ""));
 
   return (
-    <Modal open={open} onClose={onClose} title="New job">
+    <Dialog
+      open={open}
+      onOpenChange={(o) => !o && onClose()}
+      title="New job"
+      description="Describe the change; PeCore runs the project's recipe on it."
+      width={560}
+      footer={<>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button variant="primary" type="submit" form="new-job" disabled={!project || !title} loading={create.busy}>Create</Button>
+      </>}
+    >
       <form
-        className={ui.stack}
+        id="new-job"
+        className={s.form}
         onSubmit={(e) => {
           e.preventDefault();
-          void create.run();
+          if (project && title) void create.run();
         }}
       >
-        <Field label="Title">
-          <input required value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
-        </Field>
-        <Field label="Project">
-          <select value={project} onChange={(e) => setProject(e.target.value)}>
-            {ready.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.project!.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Recipe">
-          <select value={recipe} onChange={(e) => setRecipe(e.target.value)}>
-            {(recipes.data ?? []).map((r) => {
-              const name = r.path.split("/").pop()!.replace(/\.json$/, "");
-              return (
-                <option key={name} value={name}>
-                  {name}
-                  {name === current?.defaultRecipe ? " (default)" : ""}
-                </option>
-              );
-            })}
-          </select>
-        </Field>
-        <Field label="Ticket text">
-          <textarea rows={6} value={ticket} onChange={(e) => setTicket(e.target.value)} />
-        </Field>
-        <div className={ui.row}>
-          <Field label="Ticket reference (optional)">
-            <input value={ticketId} onChange={(e) => setTicketId(e.target.value)} placeholder="e.g. 42" />
-          </Field>
-          <Field label="Base branch">
-            <input value={baseBranch} onChange={(e) => setBaseBranch(e.target.value)} />
-          </Field>
+        <TextField label="Title" value={title} onValueChange={setTitle} placeholder="e.g. Fix the login redirect" autoFocus required />
+        <div className={s.row}>
+          <Select label="Project" value={project || null} onValueChange={(v) => setProject(v ?? "")} options={ready.map((p) => ({ value: p.id, label: p.project!.name }))} placeholder="Choose a project" />
+          <Select
+            label="Recipe"
+            value={recipe || null}
+            onValueChange={(v) => setRecipe(v ?? "")}
+            options={recipeNames.map((name) => ({ value: name, label: name, detail: name === current?.defaultRecipe ? "default" : undefined }))}
+            placeholder="Choose a recipe"
+          />
         </div>
-        <Field label="Parent job (optional)">
-          <select value={parent} onChange={(e) => setParent(e.target.value)}>
-            <option value="">None</option>
-            {(jobs.data ?? []).map((j) => (
-              <option key={j.id} value={j.id}>
-                {j.title}
-              </option>
-            ))}
-          </select>
-        </Field>
+        <TextArea label="Ticket text" value={ticket} onValueChange={setTicket} placeholder="What should change, and how will you know it works?" />
+        <button type="button" className={s.more} aria-expanded={more} onClick={() => setMore(!more)}>
+          <ChevronDownIcon size={13} className={s.chevron} data-open={more ? "" : undefined} />
+          More options
+        </button>
+        {more && (
+          <div className={s.advanced}>
+            <div className={s.row}>
+              <TextField label="Ticket reference" value={ticketId} onValueChange={setTicketId} placeholder="e.g. 42" />
+              <TextField label="Base branch" value={baseBranch} onValueChange={setBaseBranch} mono />
+            </div>
+            <Select
+              label="Parent job"
+              value={parent || "none"}
+              onValueChange={(v) => setParent(!v || v === "none" ? "" : v)}
+              options={[{ value: "none", label: "None" }, ...(jobs.data ?? []).map((j) => ({ value: j.id, label: j.title }))]}
+            />
+          </div>
+        )}
         <ErrorText error={create.error} />
-        <div className={ui.row} style={{ justifyContent: "flex-end" }}>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button kind="primary" type="submit" disabled={!project || !title || create.busy}>
-            Create
-          </Button>
-        </div>
       </form>
-    </Modal>
+    </Dialog>
   );
 }

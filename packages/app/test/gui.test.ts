@@ -67,6 +67,10 @@ const deliverPr = {
 };
 
 const visible = (l: Locator, timeout = 10_000) => l.waitFor({ state: "visible", timeout });
+const choose = async (field: Locator, option: string) => {
+  await field.click();
+  await field.page().getByRole("option", { name: option, exact: true }).click();
+};
 const gui = !built || process.env.PECORE_GUI !== "1";
 
 async function launch(root: string, nodes: Record<string, unknown>, recipes: Record<string, unknown>, accounts: unknown[] = [], prepare?: (home: string) => Promise<void>): Promise<{ app: ElectronApplication; page: Page }> {
@@ -150,7 +154,7 @@ describe.skipIf(gui)("phase 5 gate: G16 actions from the GUI (built app, headles
     await page.getByRole("banner").getByRole("button", { name: "New job" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Title").fill("Add hello");
-    await dialog.getByLabel("Recipe").selectOption("reviewed");
+    await choose(dialog.getByLabel("Recipe"), "reviewed");
     await dialog.getByLabel("Ticket text").fill("Please add hello.txt");
     await dialog.getByRole("button", { name: "Create" }).click();
     await go("#/jobs");
@@ -170,7 +174,7 @@ describe.skipIf(gui)("phase 5 gate: G16 actions from the GUI (built app, headles
     await page.getByRole("banner").getByRole("button", { name: "New job" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Title").fill(title);
-    await dialog.getByLabel("Recipe").selectOption("reviewed");
+    await choose(dialog.getByLabel("Recipe"), "reviewed");
     await dialog.getByLabel("Ticket text").fill("x");
     await dialog.getByRole("button", { name: "Create" }).click();
     await dialog.waitFor({ state: "hidden" });
@@ -443,9 +447,9 @@ describe.skipIf(gui)("phase 5 gate: forge actions from the GUI (fake gh)", () =>
     await go("#/jobs");
     await page.getByRole("banner").getByRole("button", { name: "New job" }).click();
     const create = page.getByRole("dialog");
-    await create.getByLabel("Project").selectOption("shop");
+    await choose(create.getByLabel("Project"), "Shop");
     await create.getByLabel("Title").fill("Deliver hello");
-    await create.getByLabel("Recipe").selectOption("deliver-pr");
+    await choose(create.getByLabel("Recipe"), "deliver-pr");
     await create.getByLabel("Ticket text").fill("Please add hello.txt");
     await create.getByRole("button", { name: "Create" }).click();
     await create.waitFor({ state: "hidden" });
