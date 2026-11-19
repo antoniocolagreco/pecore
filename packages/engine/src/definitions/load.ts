@@ -35,10 +35,10 @@ export function zodErrors(file: string, error: z.ZodError): DefinitionError[] {
   return error.issues.map((i) => ({ file, path: i.path.join("."), message: i.message }));
 }
 
-async function parseFile<S extends z.ZodType>(file: string, schema: S): Promise<Loaded<z.infer<S>>> {
+async function parseFile<S extends z.ZodType>(file: string, schema: S, prepare?: (value: unknown) => unknown): Promise<Loaded<z.infer<S>>> {
   const { value, error } = await readJson(file);
   if (error) return { value: null, errors: [error] };
-  const r = schema.safeParse(value);
+  const r = schema.safeParse(prepare ? prepare(value) : value);
   return r.success ? { value: r.data, errors: [] } : { value: null, errors: zodErrors(file, r.error) };
 }
 
@@ -140,19 +140,22 @@ export async function loadProject(projectDir: string): Promise<LoadedProject> {
   return { ...defs, project, errors };
 }
 
-async function parseOptional<S extends z.ZodType>(file: string, schema: S): Promise<Loaded<z.infer<S>>> {
+async function parseOptional<S extends z.ZodType>(file: string, schema: S, prepare?: (value: unknown) => unknown): Promise<Loaded<z.infer<S>>> {
   if (!(await exists(file))) {
     const r = schema.safeParse({});
     return r.success ? { value: r.data, errors: [] } : { value: null, errors: zodErrors(file, r.error) };
   }
-  return parseFile(file, schema);
+  return parseFile(file, schema, prepare);
 }
 
 export type Global = { settings: Settings; accounts: Accounts; profiles: Profiles; tiers: Tiers };
 
 export async function loadGlobal(home: string): Promise<{ value: Global | null; errors: DefinitionError[] }> {
   const [settings, accounts, profiles, tiers] = await Promise.all([
-    parseOptional(join(home, "settings.json"), Settings),
+    parseOptional(join(home, "settings.json"), Settings, (value) => {
+      if (value !== null && typeof value === "object") Reflect.deleteProperty(value, "firstRunDone");
+      return value;
+    }),
     parseOptional(join(home, "accounts.json"), Accounts),
     parseOptional(join(home, "profiles.json"), Profiles),
     parseOptional(join(home, "tiers.json"), Tiers),

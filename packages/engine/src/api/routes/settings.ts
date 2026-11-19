@@ -23,19 +23,16 @@ function sha256(bytes: Buffer | string): string {
 
 export function globalFileHandlers(engine: Engine) {
   const paths = homePaths(resolve(engine.opts.home));
-  let pending: Promise<unknown> = Promise.resolve();
 
   function get<K extends keyof Global>(kind: K): Promise<{ value: Global[K]; sha256: string }> {
-    const result = pending.then(async () => {
+    return engine.withGlobalFiles(async () => {
       const bytes: Buffer | null = await readBytes(paths[kind]);
       return { value: engine.global()[kind], sha256: sha256(bytes ?? "") };
     });
-    pending = result.catch(() => undefined);
-    return result;
   }
 
   function put(kind: keyof Global, value: Global[keyof Global], baseSha256: string): Promise<{ sha256: string }> {
-    const result = pending.then(async () => {
+    return engine.withGlobalFiles(async () => {
       const file: string = paths[kind];
       const before: Buffer | null = await readBytes(file);
       if (sha256(before ?? "") !== baseSha256) throw new HttpError("conflict", "the file changed since it was loaded");
@@ -57,8 +54,6 @@ export function globalFileHandlers(engine: Engine) {
       engine.definitionChanged(name, hash);
       return { sha256: hash };
     });
-    pending = result.catch(() => undefined);
-    return result;
   }
 
   return {

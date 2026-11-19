@@ -8,6 +8,7 @@ import { Button, ui } from "../components/ui";
 import { CommandPalette } from "./CommandPalette";
 import { useProjectFilter } from "./filter";
 import { Notifications } from "./Notifications";
+import { SetupBanner } from "./SetupBanner";
 import s from "./Layout.module.css";
 
 const nav: { group: string; items: { to: string; label: string; badge?: "inbox" | "orchestrator" }[] }[] = [
@@ -86,6 +87,7 @@ export function Layout() {
           <CommandPalette />
         </header>
         {!connected ? <div className={ui.banner}>Disconnected, reconnecting… Controls are disabled and data may be stale.</div> : null}
+        <SetupBanner />
         {st?.globalPause ? (
           <div className={ui.banner}>
             Global pause is on: running jobs hold and queued jobs do not start.{" "}

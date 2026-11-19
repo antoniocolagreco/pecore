@@ -1,14 +1,13 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Theme } from "@pecore/schemas";
-import type { FirstRunView, PrerequisiteView, TierName, UsageView } from "@pecore/schemas";
-import { loadLibrary, zodErrors } from "../../definitions/load";
+import type { PrerequisiteView, UsageView } from "@pecore/schemas";
+import { zodErrors } from "../../definitions/load";
 import { homePaths } from "../../home/layout";
 import { checkPrerequisites } from "../../home/prerequisites";
 import type { Prerequisite } from "../../home/prerequisites";
 import type { Engine } from "../../main";
 import { NotFoundError } from "../../main";
-import { checkHome } from "../../osuser/home-check";
 import { HttpError } from "../server";
 import type { Handlers } from "../server";
 
@@ -18,37 +17,6 @@ async function prerequisites(engine: Engine): Promise<Prerequisite[]> {
   const { settings, accounts } = engine.global();
   const services = [...engine.projects.values()].some(({ ctx }) => ctx.project.services !== null);
   return checkPrerequisites({ accounts: accounts.accounts, protectedMode: settings.protectedMode, services, servicesRuntime: settings.servicesRuntime });
-}
-
-async function usedTiers(engine: Engine): Promise<Set<TierName>> {
-  const lib = await loadLibrary(homePaths(engine.opts.home).library);
-  const out = new Set<TierName>();
-  for (const recipe of lib.recipes.values())
-    for (const rn of Object.values(recipe.nodes)) {
-      const node = lib.nodes.get(rn.use);
-      if (node?.kind !== "agent") continue;
-      const tier = rn.agent?.tier ?? (rn.agent?.profiles === undefined ? node.agent.tier : undefined);
-      if (tier) out.add(tier);
-    }
-  return out;
-}
-
-async function firstRun(engine: Engine): Promise<FirstRunView> {
-  const { settings, accounts, tiers } = engine.global();
-  const steps: FirstRunView["steps"] = [];
-  const pre = await prerequisites(engine).catch((e: unknown) => [{ tool: "prerequisites", ok: false, version: null, problem: (e as Error).message }]);
-  steps.push({ step: "prerequisites", ok: pre.every((p) => p.ok), problems: pre.filter((p) => !p.ok).map((p) => `${p.tool}: ${p.problem}`) });
-  const home = await checkHome().catch((e: unknown) => [{ path: (e as Error).message, mode: 0, fix: [] }]);
-  steps.push({ step: "home", ok: home.length === 0, problems: home.map((f) => `${f.path} can be read by other users`) });
-  const models = accounts.accounts.filter((a) => a.kind === "model");
-  const logins = await engine.loginViews();
-  const accountProblems = models.length === 0 ? ["no model account"] : logins.some((l) => l.state === "logged_in") ? [] : logins.map((l) => `${l.account}: ${l.state}`);
-  steps.push({ step: "accounts", ok: accountProblems.length === 0, problems: accountProblems });
-  const missing = [...(await usedTiers(engine))].filter((t) => tiers.tiers[t].length === 0);
-  steps.push({ step: "tiers", ok: missing.length === 0, problems: missing.map((t) => `tier ${t} has no profile`) });
-  steps.push({ step: "orchestrator", ok: settings.orchestrator !== null, problems: settings.orchestrator === null ? ["no orchestrator profile"] : [] });
-  steps.push({ step: "project", ok: engine.projects.size > 0, problems: engine.projects.size > 0 ? [] : ["no project yet"] });
-  return { done: settings.firstRunDone, steps };
 }
 
 function localDay(now = new Date()): string {
@@ -122,7 +90,8 @@ export function systemHandlers(engine: Engine) {
     startAccountLogin: async ({ params }) => ({ loginId: await conflictOn(() => engine.startAccountLogin(params.id)) }),
     accountOptions: async ({ params }) => engine.accountOptions(params.id),
     checkPrerequisites: async (): Promise<PrerequisiteView[]> => (await prerequisites(engine)).map((p) => ({ ...p, setting: prerequisiteSetting[p.tool] ?? null })),
-    getFirstRun: async () => firstRun(engine),
+    getSetup: async () => engine.setupView(),
+    startSetupLogin: async ({ params }) => ({ loginId: await conflictOn(() => engine.startSetupLogin(params.connector)) }),
     getUsage: async ({ query }) => usage(engine, query.from, query.to),
     listThemes: async () => themes(engine),
   } satisfies Partial<Handlers>;

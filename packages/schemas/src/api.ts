@@ -371,12 +371,17 @@ export const AccountState = z.enum(["logged_in", "logged_out", "unknown"]);
 export const PrerequisiteView = z.object({ tool: z.string(), ok: z.boolean(), version: z.string().nullable(), problem: z.string().nullable(), setting: z.string().nullable() });
 export type PrerequisiteView = z.infer<typeof PrerequisiteView>;
 
-export const FirstRunStep = z.enum(["prerequisites", "home", "accounts", "tiers", "orchestrator", "project"]);
-export const FirstRunView = z.object({
-  done: z.boolean(),
-  steps: z.array(z.object({ step: FirstRunStep, ok: z.boolean(), problems: z.array(z.string()) })),
+export const BuiltInHarness = z.enum(["claude-code", "codex", "opencode"]);
+export type BuiltInHarness = z.infer<typeof BuiltInHarness>;
+
+const SetupHarness = z.object({
+  connector: BuiltInHarness,
+  installed: z.boolean(),
+  version: z.string().nullable(),
+  loggedIn: z.boolean(),
 });
-export type FirstRunView = z.infer<typeof FirstRunView>;
+export const SetupView = z.object({ harnesses: z.array(SetupHarness), modelAccountWorks: z.boolean() });
+export type SetupView = z.infer<typeof SetupView>;
 
 const TokenCounts = z.object({ input: z.number(), output: z.number(), cacheRead: z.number(), cacheWrite: z.number() });
 
@@ -508,7 +513,8 @@ export const routes = {
   startAccountLogin: { method: "POST", path: "/accounts/:id/login", params: IdParams, response: z.object({ loginId: z.string() }) },
   accountOptions: { method: "GET", path: "/accounts/:id/options", params: IdParams, response: z.object({ models: z.array(z.string()), efforts: z.array(z.string()) }).nullable() },
   checkPrerequisites: { method: "POST", path: "/prerequisites/check", response: z.array(PrerequisiteView) },
-  getFirstRun: { method: "GET", path: "/first-run", response: FirstRunView },
+  getSetup: { method: "GET", path: "/setup", response: SetupView },
+  startSetupLogin: { method: "POST", path: "/setup/:connector/login", params: z.object({ connector: BuiltInHarness }), response: z.object({ loginId: z.string() }) },
   getUsage: { method: "GET", path: "/usage", query: z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }), response: UsageView },
   listThemes: { method: "GET", path: "/themes", response: z.array(ThemeFileView) },
   getLog: { method: "GET", path: "/logs/:id", params: IdParams, query: LogQuery, response: z.union([z.object({ view: z.literal("raw"), lines: z.array(z.unknown()) }), z.object({ view: z.literal("events"), events: z.array(LogEvent) })]) },

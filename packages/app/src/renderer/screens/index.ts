@@ -11,4 +11,3 @@ export { RecipeEditor } from "./RecipeEditor";
 export { Library } from "./Library";
 export { Usage } from "./Usage";
 export { Settings } from "./Settings";
-export { FirstRun } from "./FirstRun";

@@ -12,7 +12,7 @@ import s from "./CommandPalette.module.css";
 const screens: { name: string; path: string }[] = [
   { name: "Factory", path: "/" }, { name: "Jobs", path: "/jobs" }, { name: "Inbox", path: "/inbox" },
   { name: "Projects", path: "/projects" }, { name: "New project", path: "/projects/new" }, { name: "Library", path: "/library" },
-  { name: "Usage", path: "/usage" }, { name: "Settings", path: "/settings" }, { name: "First run", path: "/first-run" },
+  { name: "Usage", path: "/usage" }, { name: "Settings", path: "/settings" }, { name: "Orchestrator", path: "/orchestrator" },
 ];
 
 const controls = [

@@ -1,13 +1,14 @@
 import { EventEmitter } from "node:events";
+import { createHash } from "node:crypto";
 import { readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { applyTraverseAcls } from "./osuser/acl";
 import { cpus } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { removeAs } from "./workdir/fs-as";
-import { defaultJobLimit } from "@pecore/schemas";
-import { listOptions } from "@pecore/agents";
+import { BuiltInHarness, defaultJobLimit } from "@pecore/schemas";
+import { listOptions, satisfies } from "@pecore/agents";
 import type { LoginState } from "@pecore/agents";
-import type { Account, Accounts, ForgeAccount, JobState, LiveMessage, LoginView, Profiles, ProjectInput, Settings, Tiers, WhyView } from "@pecore/schemas";
+import type { Account, Accounts, ForgeAccount, JobState, LiveMessage, LoginView, Profiles, ProjectInput, Settings, SetupView, Tiers, WhyView } from "@pecore/schemas";
 import type { ExportProjectBody, ExportProjectResult, ImportProjectBody, ImportProjectResult } from "@pecore/schemas";
 import { AgentServices, protectedUser, spawnFor } from "./accounts/agents";
 import type { AgentPaths, LoginInfo } from "./accounts/agents";
@@ -26,6 +27,7 @@ import { resumeOrders } from "./jobs/plan";
 import type { CreateJob } from "./jobs/create";
 import type { TicketOrder } from "./jobs/plan";
 import { homePaths, initHome } from "./home/layout";
+import { autoSetup } from "./home/autosetup";
 import { takeLock } from "./home/lock";
 import { beginProject, cancelCreation, finishProject, prepareRepo, readCreation, repoCreated, setupJobId } from "./projects/create";
 import type { CreateOptions } from "./projects/create";
@@ -44,7 +46,7 @@ import { intakeSink } from "./orchestrator/intake";
 import { exportProject } from "./share/export";
 import { beginImport } from "./share/import";
 
-export type EngineOptions = { home: string; library: string; agents?: AgentPaths; checkLogins?: boolean; admin?: (script: string) => Promise<void>; orders?: OrderSink };
+export type EngineOptions = { home: string; library: string; agents?: AgentPaths; checkLogins?: boolean; admin?: (script: string) => Promise<void>; orders?: OrderSink; notify?: (notification: Pick<Notification, "kind" | "title" | "body">) => void };
 
 export class EngineStartError extends Error {
   constructor(readonly errors: DefinitionError[]) {
@@ -72,6 +74,9 @@ export class Engine extends EventEmitter {
   private stoppingOrchestrator: Promise<void> | null = null;
   private releaseLock!: () => Promise<void>;
   private stopMergeWatch: () => void = () => undefined;
+  private globalFilesPending: Promise<unknown> = Promise.resolve();
+  private shuttingDown: boolean = false;
+  private setupHarnesses: SetupView["harnesses"] = BuiltInHarness.options.map((connector) => ({ connector, installed: false, version: null, loggedIn: false }));
   globalPause = false;
   private readonly loginRunner = new LoginRunner((p) => this.live({ type: "login.progress", ...p }));
   private readonly pausedByGlobal = new Set<string>();
@@ -82,6 +87,7 @@ export class Engine extends EventEmitter {
 
   static async start(opts: EngineOptions): Promise<Engine> {
     const e = new Engine(opts);
+    if (opts.notify) e.on("notify", opts.notify);
     await e.init();
     return e;
   }
@@ -112,6 +118,7 @@ export class Engine extends EventEmitter {
     });
     this.chats = new ChatsDb(p.chatsDb);
     this.orchestrator = new OrchestratorChats(this, this.chats, (message) => this.live(message));
+    if (this.opts.checkLogins !== false) await this.runAutoSetup();
     for (const id of (await readdir(p.projects).catch(() => [] as string[])).sort()) {
       await this.openProject(id);
       const creation = await readCreation(this.projectDir(id));
@@ -134,7 +141,7 @@ export class Engine extends EventEmitter {
         for (const { executor } of this.projects.values()) await executor.checkMerges();
       },
     );
-    if (this.agents && this.opts.checkLogins !== false) void this.agents.checkAll().then(() => this.emit("logins"));
+    if (this.agents && this.opts.checkLogins !== false) void this.agents.checkAll().then(() => this.emit("logins")).catch((error: unknown) => console.error("login check:", error));
     if (this.opts.orders) {
       for (const [project, resumed] of resumedOrders) project.sourcePolling = startSourcePolling(project.ctx, this.opts.orders, resumed);
     }
@@ -147,6 +154,42 @@ export class Engine extends EventEmitter {
 
   global(): Global {
     return { settings: this.settings, accounts: this.accounts, profiles: this.profiles, tiers: this.tiers };
+  }
+
+  withGlobalFiles<T>(work: () => Promise<T>): Promise<T> {
+    const result: Promise<T> = this.globalFilesPending.then(work);
+    this.globalFilesPending = result.catch(() => undefined);
+    return result;
+  }
+
+  private async runAutoSetup(): Promise<void> {
+    const agents: AgentServices | null = this.agents;
+    if (!agents || this.shuttingDown) return;
+    await this.withGlobalFiles(async () => {
+      const { harnesses, changes } = await autoSetup(this.opts.home, agents);
+      this.setupHarnesses = harnesses;
+      if (!changes) return;
+      await this.reloadGlobal();
+      const notification: Pick<Notification, "kind" | "title" | "body"> = { kind: "auto-setup", title: "PeCore setup", body: changes.message };
+      this.chats.addNotification(notification);
+      this.emit("notify", notification);
+      this.live({ type: "notify", ...notification });
+      for (const [kind, content] of Object.entries(changes.files)) {
+        this.definitionChanged(`${kind}.json`, createHash("sha256").update(content).digest("hex"));
+      }
+    }).catch((error: unknown) => console.error("auto-setup:", error));
+  }
+
+  async setupView(): Promise<SetupView> {
+    const logins: LoginView[] = await this.loginViews().catch(() => []);
+    const modelAccountWorks: boolean = logins.some((login) => {
+      const harness: SetupView["harnesses"][number] | undefined = this.setupHarnesses.find((item) => item.connector === login.connector);
+      if (!harness) return login.state === "logged_in";
+      if (harness.connector === "opencode") return harness.loggedIn;
+      const range: string | undefined = this.agents?.connector(login.connector)?.harness.versionRange;
+      return login.state === "logged_in" && harness.version !== null && range !== undefined && satisfies(harness.version, range);
+    });
+    return { harnesses: this.setupHarnesses, modelAccountWorks };
   }
 
   private orderSink(): OrderSink | null {
@@ -247,8 +290,23 @@ export class Engine extends EventEmitter {
   async startLogin(account: string, osUser: string): Promise<string> {
     const l = (await this.agents?.logins())?.find((x) => x.account === account && x.osUser === osUser);
     if (!l) throw new NotFoundError(`no login for account ${account} and user ${osUser}`);
-    await this.loginRunner.harness(this.agents!, l, async () => (await this.checkLoginInfo(l)).state);
+    await this.loginRunner.harness(this.agents!, l, () => this.finishHarnessLogin(l));
     return l.id;
+  }
+
+  async startSetupLogin(connector: BuiltInHarness): Promise<string> {
+    if (!this.agents || !this.setupHarnesses.some((harness) => harness.connector === connector && harness.installed)) throw new NotFoundError(`${connector} is not installed`);
+    const login: LoginInfo = await this.agents.setupLogin(connector);
+    await this.loginRunner.harness(this.agents, login, () => this.finishHarnessLogin(login));
+    return login.id;
+  }
+
+  private async finishHarnessLogin(login: LoginInfo): Promise<string> {
+    try {
+      return (await this.checkLoginInfo(login)).state;
+    } finally {
+      await this.runAutoSetup();
+    }
   }
 
   sendLoginCode(id: string, code: string): void {
@@ -293,7 +351,7 @@ export class Engine extends EventEmitter {
     for (const l of ((await this.agents?.logins()) ?? []).filter((x) => x.account === id)) {
       const connector = await this.agents!.resolve(l.connector);
       const options = await listOptions({ connector, login: l, spawn: spawnFor(l.osUser) }).catch(() => null);
-      if (options) return options;
+      if (options) return { models: options.models, efforts: options.efforts };
     }
     return null;
   }
@@ -549,15 +607,17 @@ export class Engine extends EventEmitter {
     const script = protectedModeScript(on, dirs, { createUser: !exists, removeUser });
     if (script !== "") await this.opts.admin(script);
     if (on) await this.protectedTraverse();
-    const file = homePaths(this.opts.home).settings;
-    const current = JSON.parse(await readFile(file, "utf8").catch(() => "{}")) as Record<string, unknown>;
-    await writeFile(file, JSON.stringify({ ...current, protectedMode: on }, null, 2) + "\n");
-    await commitDefinition(this.opts.home, [file], commitMessage("settings", "protectedMode", "edited"));
-    this.settings = { ...this.settings, protectedMode: on };
-    for (const { ctx } of this.projects.values()) {
-      ctx.settings = this.settings;
-      ctx.user = on ? protectedUser : appUser;
-    }
+    await this.withGlobalFiles(async () => {
+      const file = homePaths(this.opts.home).settings;
+      const current = JSON.parse(await readFile(file, "utf8").catch(() => "{}")) as Record<string, unknown>;
+      await writeFile(file, JSON.stringify({ ...current, protectedMode: on }, null, 2) + "\n");
+      await commitDefinition(this.opts.home, [file], commitMessage("settings", "protectedMode", "edited"));
+      this.settings = { ...this.settings, protectedMode: on };
+      for (const { ctx } of this.projects.values()) {
+        ctx.settings = this.settings;
+        ctx.user = on ? protectedUser : appUser;
+      }
+    });
   }
 
   private async protectedTraverse(remove = false): Promise<void> {
@@ -591,11 +651,13 @@ export class Engine extends EventEmitter {
   }
 
   async shutdown(): Promise<void> {
+    this.shuttingDown = true;
     this.stopMergeWatch();
     const chats: Promise<void> = this.stopOrchestrator();
     await Promise.all([...this.projects.values()].map(({ sourcePolling }) => sourcePolling?.close()));
     await chats;
     await this.loginRunner.stopAll();
+    await this.globalFilesPending;
     await Promise.all([...this.projects.values()].map(({ executor }) => executor.close()));
     for (const { ctx } of this.projects.values()) ctx.db.close();
     this.chats.close();

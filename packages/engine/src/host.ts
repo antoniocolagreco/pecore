@@ -64,8 +64,8 @@ export async function host(port: HostPort, env: HostEnv): Promise<{ engine: Engi
       library: join(env.resources, "library"),
       agents: { connectorsDir: join(env.resources, "connectors"), adaptersDir: homePaths(env.home).adapters, adapters: pinned.adapters },
       admin,
+      notify: (n) => port.postMessage({ type: "notify", title: n.title, body: n.body, kind: n.kind }),
     });
-    engine.on("notify", (n: { kind: string; title: string; body: string }) => port.postMessage({ type: "notify", title: n.title, body: n.body, kind: n.kind }));
     api = await startApi(engine, { handlers: handlers(env.version), origins: ["app://pecore", ...(env.devOrigin ? [env.devOrigin] : [])] });
     port.postMessage({ type: "ready", port: api.port, token: api.token });
     return { engine, api };

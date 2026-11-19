@@ -9,18 +9,6 @@ import { handlers } from "./handlers";
 import { startApi } from "./server";
 
 describe("system routes", () => {
-  it("first run reports each step; the project step passes once a project exists", async () => {
-    const { call, close } = await apiProject();
-    const r = await call("getFirstRun");
-    expect(r.done).toBe(false);
-    expect(r.steps.map((s) => s.step)).toEqual(["prerequisites", "home", "accounts", "tiers", "orchestrator", "project"]);
-    expect(r.steps.find((s) => s.step === "project")).toEqual({ step: "project", ok: true, problems: [] });
-    expect(r.steps.find((s) => s.step === "accounts")).toMatchObject({ ok: false, problems: ["no model account"] });
-    expect(r.steps.find((s) => s.step === "orchestrator")).toMatchObject({ ok: false });
-    expect(r.steps.find((s) => s.step === "tiers")!.problems.length).toBeGreaterThan(0);
-    await close();
-  });
-
   it("lists theme files with their tokens or their errors", async () => {
     const { home, call, close } = await apiProject();
     await mkdir(join(home, "themes"), { recursive: true });

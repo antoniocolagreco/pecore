@@ -33,30 +33,7 @@ function csp(port: number): string {
 async function homeLocation(): Promise<string> {
   const file = join(app.getPath("userData"), "home.json");
   const stored = await readFile(file, "utf8").then((t) => (JSON.parse(t) as { home: string }).home, () => null);
-  if (stored) return stored;
-  const fallback = join(homedir(), ".pecore");
-  const r = await dialog.showMessageBox({
-    type: "question",
-    title: "PeCore",
-    message: "Where should PeCore keep its data (PECORE_HOME)?",
-    detail: `Default: ${fallback}`,
-    buttons: ["Use the default", "Choose a folder…", "Quit"],
-    defaultId: 0,
-    cancelId: 2,
-  });
-  if (r.response === 2) {
-    app.exit(0);
-    throw new Error("quit");
-  }
-  let home = fallback;
-  if (r.response === 1) {
-    const pick = await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"] });
-    if (pick.canceled || !pick.filePaths[0]) return homeLocation();
-    home = pick.filePaths[0];
-  }
-  await mkdir(app.getPath("userData"), { recursive: true });
-  await writeFile(file, JSON.stringify({ home }) + "\n");
-  return home;
+  return stored || join(homedir(), ".pecore");
 }
 
 async function resourcesDir(): Promise<string> {
@@ -137,7 +114,8 @@ function createWindow(): void {
       }, Number(process.env.PECORE_SCREENSHOT_DELAY ?? 4000));
     });
   }
-  void win.loadURL(`${devUrl ?? "app://pecore/"}${shot ? (process.env.PECORE_SCREENSHOT_ROUTE ?? "") : ""}`);
+  const route: string = (shot && process.env.PECORE_SCREENSHOT_ROUTE) || "#/orchestrator";
+  void win.loadURL(`${devUrl ?? "app://pecore/"}${route}`);
 }
 
 async function updateTray(): Promise<void> {

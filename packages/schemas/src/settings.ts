@@ -32,7 +32,6 @@ export const Settings = z
     quietHours: z.object({ from: Time, to: Time }).strict().nullable().default(null),
     orchestrator: z.object({ profile: z.string().min(1) }).strict().nullable().default(null),
     protectedMode: z.boolean().default(false),
-    firstRunDone: z.boolean().default(false),
     ui: z.record(z.string(), z.unknown()).default({}),
   })
   .strict();

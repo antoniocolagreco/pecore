@@ -338,19 +338,6 @@ describe.skipIf(gui)("phase 5 gate: G16 actions from the GUI (built app, headles
     await shot("factory");
   }, 30_000);
 
-  it("shows the first-run checklist with links to fix each step", async () => {
-    await go("#/first-run");
-    await visible(page.getByRole("heading", { name: "Set up PeCore" }));
-    const list = page.getByRole("listitem");
-    await visible(list.filter({ hasText: "First project" }).getByText(/Ready/));
-    await shot("first-run");
-    const accounts = list.filter({ hasText: /^Accounts/ });
-    if (await accounts.getByRole("link").count()) {
-      await accounts.getByRole("link").click();
-      await page.waitForFunction(() => (globalThis as unknown as { location: { hash: string } }).location.hash.startsWith("#/settings"));
-    }
-  }, 30_000);
-
   it("opens a screen and a job from the command palette", async () => {
     const input = page.getByPlaceholder("Search jobs, projects, definitions and screens");
     const pick = async (search: string, option: RegExp) => {

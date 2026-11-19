@@ -24,6 +24,7 @@ export function homePaths(home: string) {
     settings: join(home, "settings.json"),
     accounts: join(home, "accounts.json"),
     profiles: join(home, "profiles.json"),
+    autoSetup: join(home, "auto-setup.json"),
     tiers: join(home, "tiers.json"),
     chatsDb: join(home, "chats.db"),
     library: join(home, "library"),
@@ -72,7 +73,10 @@ export async function initHome(home: string, opts: { library: string }): Promise
   for (const dir of [p.libraryNodes, p.libraryRecipes, p.projects, p.connectors, p.themes]) await mkdir(dir, { recursive: true });
   await writeSchemas(home);
   if (!created) return { created };
-  await git(home, ["init", "-q", "-b", "main"]);
+  await git(home, ["init", "-q", "-b", "main"]).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") throw new Error("Install Git to create PECORE_HOME, then reopen PeCore.");
+    throw error;
+  });
   await writeFile(join(home, ".gitignore"), homeGitignore);
   await cp(`${opts.library}/`, p.library, { recursive: true, force: false, errorOnExist: false, dereference: true });
   await git(home, ["add", "-A"]);

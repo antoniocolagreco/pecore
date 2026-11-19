@@ -1,6 +1,6 @@
 import { AcpClient, ExitError, RpcError, TimeoutError } from "./acp/client";
 import type { JsonRpcError } from "./acp/client";
-import { connectorProcess, fill, fillSessionValue, forPlatform } from "./connectors";
+import { connectorProcess, fill, fillSessionValue, forPlatform, modelVariant } from "./connectors";
 import { classify } from "./errors";
 import { AsyncQueue } from "./queue";
 import { readerFor } from "./readers";
@@ -151,8 +151,8 @@ export async function startSession(p: StartParams): Promise<Session> {
     }
     if (!sessionId) throw new StartError("other", "no session id");
     turn.model = reader.model?.(session) ?? turn.model;
-    const suppliedModel: RegExpExecArray | null = c.reader === "codex" ? /^(.+)\[([a-z][a-z0-9_-]*)\]$/.exec(p.model) : null;
-    const vars: { model: string; effort: string | null } = { model: suppliedModel?.[1] ?? p.model, effort: p.effort || suppliedModel?.[2] || null };
+    const suppliedModel: ReturnType<typeof modelVariant> = c.reader === "codex" ? modelVariant(p.model) : null;
+    const vars: { model: string; effort: string | null } = { model: suppliedModel?.model ?? p.model, effort: p.effort || suppliedModel?.effort || null };
     for (const [id, value] of c.sessionConfig) {
       const v = fillSessionValue(value, vars);
       if (v === "") continue;

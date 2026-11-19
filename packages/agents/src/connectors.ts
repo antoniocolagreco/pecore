@@ -46,3 +46,8 @@ export function connectorProcess(c: ResolvedConnector, login: { configDir: strin
 export function fillSessionValue(value: string, vars: { model: string; effort?: string | null }): string {
   return value.replace("{model}", vars.model).replace("{effort}", vars.effort ?? "");
 }
+
+export function modelVariant(model: string): { model: string; effort: string } | null {
+  const variant: RegExpExecArray | null = /^(.+)\[([a-z][a-z0-9_-]*)\]$/.exec(model);
+  return variant ? { model: variant[1]!, effort: variant[2]! } : null;
+}

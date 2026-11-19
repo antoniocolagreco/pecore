@@ -9,7 +9,7 @@ import { useConnected } from "../api/live";
 import { StateLabel } from "../components/states";
 import type { StateInfo } from "../components/states";
 import { Button, Empty, ErrorText, Field, Modal, Page, Panel, dateTime, ui } from "../components/ui";
-import { definitionUrl, object, string } from "./NodeEditor";
+import { definitionUrl, object, settingUrl, string } from "./NodeEditor";
 import s from "./Orchestrator.module.css";
 
 type SelectedImage = { key: number; file: File; mime: ChatImageMime; attachmentId?: string };
@@ -129,36 +129,40 @@ function Message({ message, attachments, actions, connected, manual, reload }: {
   );
 }
 
-function Composer({ id, supportsImages, connected, reload }: {
-  id: string;
+function Composer({ id, supportsImages, connected, ready = true, reload }: {
+  id: string | null;
   supportsImages: ChatDetail["supportsImages"];
   connected: boolean;
-  reload(): void;
+  ready?: boolean;
+  reload(chatId: string): void;
 }) {
   const [message, setMessage] = useState<string>("");
   const [images, setImages] = useState<SelectedImage[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
   const nextKey = useRef<number>(0);
+  const draftChat = useRef<string | null>(null);
   const send = useAction(async () => {
+    const chatId: string = id ?? draftChat.current ?? (await call("createChat", { body: { title: "New conversation" } })).id;
+    if (id === null) draftChat.current = chatId;
     const attachmentIds: string[] = [];
     for (const image of images) {
       let attachmentId: string | undefined = image.attachmentId;
       if (!attachmentId) {
         const data: string = await base64(image.file);
-        const attachment: ChatAttachmentView = await call("uploadChatAttachment", { params: { id }, body: { mime: image.mime, data } });
+        const attachment: ChatAttachmentView = await call("uploadChatAttachment", { params: { id: chatId }, body: { mime: image.mime, data } });
         attachmentId = attachment.id;
         setImages((pending) => pending.map((entry) => entry.key === image.key ? { ...entry, attachmentId: attachment.id } : entry));
       }
       attachmentIds.push(attachmentId);
     }
-    await call("sendChatMessage", { params: { id }, body: { text: message, attachmentIds } });
+    await call("sendChatMessage", { params: { id: chatId }, body: { text: message, attachmentIds } });
     setMessage("");
     setImages([]);
     setImageError(null);
-    reload();
+    reload(chatId);
   });
   const disabled: boolean = !connected || send.busy;
-  const canSend: boolean = !disabled && (!!message.trim() || images.length > 0) && (images.length === 0 || supportsImages === true);
+  const canSend: boolean = !disabled && ready && (!!message.trim() || images.length > 0) && (images.length === 0 || supportsImages === true);
   const imageReason: string = supportsImages === true ? "PNG, JPEG, GIF or WebP, up to 10 MB per image."
     : supportsImages === false ? "Images are unavailable with the current orchestrator configuration."
       : "Image support could not be verified for this conversation.";
@@ -184,14 +188,14 @@ function Composer({ id, supportsImages, connected, reload }: {
       if (canSend) void send.run();
     }}>
       <Field label="Message"><textarea rows={3} value={message} disabled={disabled} onChange={(event) => setMessage(event.target.value)} /></Field>
-      <Field label="Attach images">
+      {id !== null && <><Field label="Attach images">
         <input type="file" multiple accept={ChatImageMime.options.join(",")} disabled={disabled || supportsImages !== true}
           aria-describedby="orchestrator-image-support" onChange={(event) => {
             addImages(Array.from(event.currentTarget.files ?? []));
             event.currentTarget.value = "";
           }} />
       </Field>
-      <div id="orchestrator-image-support" className={ui.muted}>{imageReason}</div>
+      <div id="orchestrator-image-support" className={ui.muted}>{imageReason}</div></>}
       {images.length > 0 && <ul className={s.chips} aria-label="Selected images">
         {images.map(({ key, file }) => <li key={key} className={s.chip}>
           {file.name} · {fileSize(file.size)}
@@ -303,6 +307,7 @@ export function Orchestrator() {
   const navigate: ReturnType<typeof useNavigate> = useNavigate();
   const connected: boolean = useConnected();
   const chats = useData(() => call("listChats"), [], (event) => event.type === "chat.message" || event.type === "chat.updated");
+  const settings = useData(() => call("getSettings"), [], (event) => event.type === "definition.changed" && event.path === "settings.json");
   const [creating, setCreating] = useState<boolean>(false);
   const [title, setTitle] = useState<string>("");
   const create = useAction(async () => {
@@ -334,7 +339,14 @@ export function Orchestrator() {
             </li>)}
           </ul>
         </Panel>
-        {id ? <Conversation key={id} id={id} connected={connected} /> : <Panel><Empty>Select a conversation or start a new one.</Empty></Panel>}
+        {id ? <Conversation key={id} id={id} connected={connected} /> : <Panel>
+          <h2 className={s.heading}>New conversation</h2>
+          {settings.data?.value.orchestrator === null && connected && <Link to={settingUrl("orchestrator")}>Choose an orchestrator profile in Settings</Link>}
+          <Composer id={null} connected={connected} ready={!!settings.data?.value.orchestrator} supportsImages={null} reload={(chatId) => {
+            chats.reload();
+            void navigate(conversationUrl(chatId));
+          }} />
+        </Panel>}
       </div>
       <Modal open={creating} title="New conversation" onClose={closeCreate}>
         <form className={ui.stack} onSubmit={(event) => {

@@ -21,11 +21,12 @@ export function prepareLogin({ connector: c, login }: { connector: ResolvedConne
 
 export type LoginState = { state: "logged_in"; email: string; plan?: string } | { state: "logged_out" } | { state: "unknown" };
 
-type ConfigOption = { id: string; category?: string; options?: { value: string }[] };
-type SessionOptions = { configOptions?: ConfigOption[]; models?: { availableModels?: unknown } };
+type ConfigOption = { id: string; category?: string; currentValue?: unknown; options?: { value: string }[] };
+type SessionOptions = { sessionId?: string; configOptions?: ConfigOption[]; models?: { availableModels?: unknown; currentModelId?: unknown } };
 type LoginProbeParams = { connector: ResolvedConnector; login: Login; spawn: Spawn };
+type SessionProbe = { state: LoginState; options: ConfigOption[]; models: string[]; defaultModel: string | null; modelAvailable: boolean };
 
-export async function probeSession(p: LoginProbeParams): Promise<{ state: LoginState; options: ConfigOption[]; models: string[] }> {
+export async function probeSession(p: LoginProbeParams & { model?: string }): Promise<SessionProbe> {
   const cwd = join(p.login.configDir, "probe");
   const conn = await openConnection({ connector: p.connector, login: p.login, spawn: p.spawn, cwd });
   try {
@@ -39,7 +40,26 @@ export async function probeSession(p: LoginProbeParams): Promise<{ state: LoginS
     const models: string[] = p.connector.reader === "codex" && Array.isArray(availableModels)
       ? availableModels.flatMap((model: { modelId?: unknown } | null) => typeof model?.modelId === "string" && model.modelId ? [model.modelId] : [])
       : [];
-    return { state, options: s?.configOptions ?? [], models };
+    const initial: ConfigOption[] = s?.configOptions ?? [];
+    const model: ConfigOption | undefined = initial.find((option) => option.category === "model");
+    const current: unknown = model?.currentValue ?? s?.models?.currentModelId;
+    const defaultModel: string | null = typeof current === "string" && current ? current : null;
+    let options: ConfigOption[] = initial;
+    let modelAvailable: boolean = s !== undefined;
+    if (p.model !== undefined && p.model !== defaultModel) {
+      options = [];
+      modelAvailable = false;
+      if (s?.sessionId && model) {
+        const configured: SessionOptions | undefined = await conn.client.request<SessionOptions>("session/set_config_option", {
+          sessionId: s.sessionId, configId: model.id, value: p.model,
+        }).catch(() => undefined);
+        if (configured?.configOptions?.some((option) => option.id === model.id && option.currentValue === p.model)) {
+          options = configured.configOptions;
+          modelAvailable = true;
+        }
+      }
+    }
+    return { state, options, models, defaultModel, modelAvailable };
   } finally {
     conn.client.endInput();
     await Promise.race([conn.client.exited, new Promise((r) => setTimeout(r, 2000))]);

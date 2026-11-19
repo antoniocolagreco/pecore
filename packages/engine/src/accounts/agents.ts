@@ -112,10 +112,22 @@ export class AgentServices {
       const first = !seen.has(a.connector);
       seen.add(a.connector);
       const defaultDir = !this.settings().protectedMode && first;
-      const id = `${a.id}:${user}`;
-      out.push({ id, account: a.id, osUser: user, connector: a.connector, configDir: join(home, ".pecore-harness", a.id), defaultDir, home, state: this.loginStates.get(id) ?? { state: "unchecked" } });
+      out.push(this.loginTarget(a.connector, a.id, user, home, defaultDir));
     }
     return out;
+  }
+
+  async setupLogin(connector: string): Promise<LoginInfo> {
+    const existing: LoginInfo | undefined = (await this.logins()).find((login) => login.connector === connector);
+    if (existing) return existing;
+    const user: string = this.osUser();
+    const home: string = (await baseEnv(user)).HOME!;
+    return this.loginTarget(connector, connector, user, home, !this.settings().protectedMode);
+  }
+
+  private loginTarget(connector: string, account: string, osUser: string, home: string, defaultDir: boolean): LoginInfo {
+    const id: string = `${account}:${osUser}`;
+    return { id, account, osUser, connector, configDir: join(home, ".pecore-harness", account), defaultDir, home, state: this.loginStates.get(id) ?? { state: "unchecked" } };
   }
 
   async login(accountId: string): Promise<LoginInfo> {
@@ -125,7 +137,7 @@ export class AgentServices {
     return l;
   }
 
-  private async ensureProbeDir(l: LoginInfo): Promise<void> {
+  async ensureProbeDir(l: LoginInfo): Promise<void> {
     if (l.osUser === appUser) await mkdir(join(l.configDir, "probe"), { recursive: true });
     else await mkdirAs(l.osUser, l.home, relative(l.home, join(l.configDir, "probe")));
   }
