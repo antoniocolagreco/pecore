@@ -1,5 +1,7 @@
 import type { JobView, NodeRunView } from "@pecore/schemas";
-import { time, ui } from "./ui";
+import { Badge } from "../ds/feedback";
+import type { Tone as BadgeTone } from "../ds/feedback";
+import { time } from "./ui";
 
 export type Tone = "running" | "success" | "failed" | "warning" | "inactive" | "none";
 
@@ -82,12 +84,15 @@ export function toneColor(tone: Tone): string {
   return tone === "none" ? "var(--text-muted)" : `var(--status-${tone})`;
 }
 
+const badgeTones: Record<Tone, BadgeTone> = { running: "accent", success: "success", failed: "danger", warning: "warning", inactive: "neutral", none: "neutral" };
+
 export function StateLabel({ info }: { info: StateInfo }) {
   return (
-    <span className={[ui.label, info.pulse ? ui.pulse : ""].join(" ")} style={{ color: toneColor(info.tone) }} title={info.detail ?? info.label}>
-      <span aria-hidden>{info.icon}</span>
-      {info.label}
-      {info.detail ? <span style={{ fontWeight: 400 }}>· {info.detail}</span> : null}
+    <span title={info.detail ?? info.label}>
+      <Badge tone={badgeTones[info.tone]} dot pulse={info.pulse}>
+        {info.label}
+        {info.detail ? <span style={{ fontWeight: 400 }}>· {info.detail}</span> : null}
+      </Badge>
     </span>
   );
 }

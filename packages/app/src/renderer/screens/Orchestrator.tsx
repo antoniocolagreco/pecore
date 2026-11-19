@@ -8,19 +8,24 @@ import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { StateLabel } from "../components/states";
 import type { StateInfo } from "../components/states";
-import { Button, Empty, ErrorText, Field, Modal, Page, Panel, dateTime, ui } from "../components/ui";
+import { ErrorText, dateTime, time } from "../components/ui";
+import { Button, IconButton } from "../ds/button";
+import { Alert, Count, EmptyState, Spinner } from "../ds/feedback";
+import { TextField } from "../ds/field";
+import { ArrowUpIcon, ChatIcon, ClipIcon, PlusIcon, SparkIcon, XIcon } from "../ds/icons";
+import { Dialog } from "../ds/overlay";
 import { definitionUrl, object, settingUrl, string } from "./NodeEditor";
 import s from "./Orchestrator.module.css";
 
 type SelectedImage = { key: number; file: File; mime: ChatImageMime; attachmentId?: string };
 type ActionLink = { to: string; label: string };
 
-const messageStates: Record<ChatMessageView["state"], StateInfo> = {
-  queued: { label: "Queued", tone: "warning", icon: "…", detail: null, pulse: false },
-  running: { label: "Running", tone: "running", icon: "●", detail: null, pulse: true },
-  completed: { label: "Completed", tone: "success", icon: "✓", detail: null, pulse: false },
-  interrupted: { label: "Interrupted", tone: "inactive", icon: "■", detail: null, pulse: false },
-  failed: { label: "Failed", tone: "failed", icon: "✕", detail: null, pulse: false },
+const messageStates: Record<ChatMessageView["state"], StateInfo | null> = {
+  queued: { label: "Queued", tone: "warning", icon: "", detail: null, pulse: false },
+  running: { label: "Running", tone: "running", icon: "", detail: null, pulse: true },
+  completed: null,
+  interrupted: { label: "Interrupted", tone: "inactive", icon: "", detail: null, pulse: false },
+  failed: { label: "Failed", tone: "failed", icon: "", detail: null, pulse: false },
 };
 
 function conversationUrl(id: string): string {
@@ -77,18 +82,19 @@ function ActionCard({ action, connected }: { action: ChatActionView; connected: 
   const ticket: string = string(target.ticketId);
   const project: string = string(target.project);
   return (
-    <Panel className={s.action}>
-      <div className={ui.row}>
-        <strong className={s.tool}>{action.tool.replaceAll("_", " ")}</strong>
-        {state && <span className={ui.muted}>{state}</span>}
-        {project && <span className={ui.muted}>{project}</span>}
-        {ticket && <span className={ui.muted}>Ticket {ticket}</span>}
+    <div className={s.action}>
+      <div className={s.actionHead}>
+        <SparkIcon size={13} />
+        <span className={s.tool}>{action.tool.replaceAll("_", " ")}</span>
+        {project && <span className={s.actionMeta}>{project}</span>}
+        {state && <span className={s.actionMeta}>{state}</span>}
+        {ticket && <span className={s.actionMeta}>Ticket {ticket}</span>}
       </div>
       <ErrorText error={error} />
       {links.length > 0 && <ul className={s.links}>
-        {links.map(({ to, label }) => <li key={to}>{connected ? <Link to={to}>{label}</Link> : label}</li>)}
+        {links.map(({ to, label }) => <li key={to}>{connected ? <Link to={to}>{label}</Link> : <span>{label}</span>}</li>)}
       </ul>}
-    </Panel>
+    </div>
   );
 }
 
@@ -104,45 +110,53 @@ function Message({ message, attachments, actions, connected, manual, reload }: {
     await call("retryChatMessage", { params: { id: message.chatId, messageId: message.id } });
     reload();
   });
+  const user: boolean = message.role === "user";
+  const state: StateInfo | null = messageStates[message.state];
   return (
-    <article className={s.message}>
-      <div className={ui.row}>
-        <strong>{message.role === "user" ? manual ? "You" : "Ticket intake" : "Orchestrator"}</strong>
-        <time className={ui.muted} dateTime={new Date(message.createdAt).toISOString()}>{dateTime(message.createdAt)}</time>
-        <StateLabel info={messageStates[message.state]} />
+    <article className={`${s.message} ${user ? s.user : s.assistant}`}>
+      {!user && <span className={s.avatar} aria-hidden><SparkIcon size={14} /></span>}
+      <div className={s.body}>
+        <div className={s.meta}>
+          <span className={s.author}>{user ? manual ? "You" : "Ticket intake" : "Orchestrator"}</span>
+          <time dateTime={new Date(message.createdAt).toISOString()} title={dateTime(message.createdAt)}>{time(message.createdAt)}</time>
+          {state && <StateLabel info={state} />}
+        </div>
+        {message.text && <div className={s.bubble}>
+          <ReactMarkdown skipHtml disallowedElements={["img"]} components={{
+            a: ({ href, children }) => connected && href?.startsWith("https://")
+              ? <a href={href} target="_blank" rel="noreferrer">{children}</a>
+              : <span>{children}</span>,
+          }}>{message.text}</ReactMarkdown>
+        </div>}
+        {attachments.length > 0 && <ul className={s.chips} aria-label="Message attachments">
+          {attachments.map(({ id, mime, size }) => <li className={s.chip} key={id} title={`${size} bytes`}>{mime} · {fileSize(size)}</li>)}
+        </ul>}
+        <ErrorText error={message.error} />
+        {manual && message.state === "interrupted" && <div><Button size="sm" disabled={!connected || retry.busy} loading={retry.busy} onClick={() => void retry.run()}>Retry</Button></div>}
+        <ErrorText error={retry.error} />
+        {actions.map((action) => <ActionCard key={action.id} action={action} connected={connected} />)}
       </div>
-      {message.text && <div className={s.messageText}>
-        <ReactMarkdown skipHtml disallowedElements={["img"]} components={{
-          a: ({ href, children }) => connected && href?.startsWith("https://")
-            ? <a href={href} target="_blank" rel="noreferrer">{children}</a>
-            : <span>{children}</span>,
-        }}>{message.text}</ReactMarkdown>
-      </div>}
-      {attachments.length > 0 && <ul className={s.chips} aria-label="Message attachments">
-        {attachments.map(({ id, mime, size }) => <li className={s.chip} key={id} title={`${size} bytes`}>{mime} · {fileSize(size)}</li>)}
-      </ul>}
-      <ErrorText error={message.error} />
-      {manual && message.state === "interrupted" && <Button disabled={!connected || retry.busy} onClick={() => void retry.run()}>Retry</Button>}
-      <ErrorText error={retry.error} />
-      {actions.map((action) => <ActionCard key={action.id} action={action} connected={connected} />)}
     </article>
   );
 }
 
-function Composer({ id, supportsImages, connected, ready = true, reload }: {
+function Composer({ id, supportsImages, connected, ready = true, reload, autoFocus }: {
   id: string | null;
   supportsImages: ChatDetail["supportsImages"];
   connected: boolean;
   ready?: boolean;
   reload(chatId: string): void;
+  autoFocus?: boolean;
 }) {
   const [message, setMessage] = useState<string>("");
   const [images, setImages] = useState<SelectedImage[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
   const nextKey = useRef<number>(0);
   const draftChat = useRef<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const send = useAction(async () => {
-    const chatId: string = id ?? draftChat.current ?? (await call("createChat", { body: { title: "New conversation" } })).id;
+    const title: string = message.trim().split("\n")[0]!.slice(0, 60) || "New conversation";
+    const chatId: string = id ?? draftChat.current ?? (await call("createChat", { body: { title } })).id;
     if (id === null) draftChat.current = chatId;
     const attachmentIds: string[] = [];
     for (const image of images) {
@@ -163,61 +177,82 @@ function Composer({ id, supportsImages, connected, ready = true, reload }: {
   });
   const disabled: boolean = !connected || send.busy;
   const canSend: boolean = !disabled && ready && (!!message.trim() || images.length > 0) && (images.length === 0 || supportsImages === true);
-  const imageReason: string = supportsImages === true ? "PNG, JPEG, GIF or WebP, up to 10 MB per image."
-    : supportsImages === false ? "Images are unavailable with the current orchestrator configuration."
-      : "Image support could not be verified for this conversation.";
+  const imageReason: string = supportsImages === true ? "Add images: PNG, JPEG, GIF or WebP, up to 10 MB each"
+    : supportsImages === false ? "The current orchestrator cannot read images"
+      : id === null ? "Send the first message, then attach images" : "Checking whether the orchestrator can read images…";
 
   function addImages(files: File[]): void {
     const selected: SelectedImage[] = [];
     const invalid: string[] = [];
     for (const file of files) {
       const mime = ChatImageMime.safeParse(file.type);
-      if (!mime.success || file.size === 0 || file.size > chatAttachmentMaxBytes) {
-        invalid.push(file.name);
-      } else {
-        selected.push({ key: nextKey.current++, file, mime: mime.data });
-      }
+      if (!mime.success || file.size === 0 || file.size > chatAttachmentMaxBytes) invalid.push(file.name);
+      else selected.push({ key: nextKey.current++, file, mime: mime.data });
     }
     setImages((pending) => [...pending, ...selected]);
     setImageError(invalid.length ? `Could not attach ${invalid.join(", ")}. Choose PNG, JPEG, GIF or WebP images up to 10 MB each.` : null);
   }
 
   return (
-    <form className={s.composer} onSubmit={(event) => {
-      event.preventDefault();
-      if (canSend) void send.run();
-    }}>
-      <Field label="Message"><textarea rows={3} value={message} disabled={disabled} onChange={(event) => setMessage(event.target.value)} /></Field>
-      {id !== null && <><Field label="Attach images">
-        <input type="file" multiple accept={ChatImageMime.options.join(",")} disabled={disabled || supportsImages !== true}
-          aria-describedby="orchestrator-image-support" onChange={(event) => {
-            addImages(Array.from(event.currentTarget.files ?? []));
-            event.currentTarget.value = "";
-          }} />
-      </Field>
-      <div id="orchestrator-image-support" className={ui.muted}>{imageReason}</div></>}
-      {images.length > 0 && <ul className={s.chips} aria-label="Selected images">
-        {images.map(({ key, file }) => <li key={key} className={s.chip}>
-          {file.name} · {fileSize(file.size)}
-          <Button aria-label={`Remove ${file.name}`} disabled={disabled} onClick={() => setImages((pending) => pending.filter((image) => image.key !== key))}>Remove</Button>
-        </li>)}
-      </ul>}
-      <ErrorText error={imageError} />
-      <ErrorText error={send.error} />
-      <div><Button type="submit" kind="primary" disabled={!canSend}>{send.busy ? "Sending…" : "Send"}</Button></div>
-    </form>
+    <div className={s.composerWrap}>
+      <form className={s.composer} onSubmit={(event) => {
+        event.preventDefault();
+        if (canSend) void send.run();
+      }}>
+        {images.length > 0 && <ul className={s.chips} aria-label="Selected images">
+          {images.map(({ key, file }) => <li key={key} className={s.chip}>
+            {file.name} · {fileSize(file.size)}
+            <IconButton size="sm" label={`Remove ${file.name}`} icon={<XIcon size={11} />} disabled={disabled} onClick={() => setImages((pending) => pending.filter((image) => image.key !== key))} />
+          </li>)}
+        </ul>}
+        <textarea
+          aria-label="Message"
+          placeholder={id === null ? "Describe what you want built, in your own words…" : "Reply to the orchestrator…"}
+          rows={1}
+          autoFocus={autoFocus}
+          value={message}
+          disabled={disabled}
+          onChange={(event) => setMessage(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              if (canSend) void send.run();
+            }
+          }}
+        />
+        <div className={s.composerBar}>
+          <input
+            ref={fileInput}
+            className={s.hiddenInput}
+            type="file"
+            multiple
+            aria-label="Attach images"
+            accept={ChatImageMime.options.join(",")}
+            disabled={disabled || supportsImages !== true}
+            tabIndex={-1}
+            onChange={(event) => {
+              addImages(Array.from(event.currentTarget.files ?? []));
+              event.currentTarget.value = "";
+            }}
+          />
+          <IconButton size="sm" label={imageReason} icon={<ClipIcon size={15} />} disabled={disabled || supportsImages !== true} onClick={() => fileInput.current?.click()} />
+          <span className={s.composerHint}>{send.busy ? "Sending…" : "Enter to send · Shift Enter for a new line"}</span>
+          <Button type="submit" variant="primary" className={s.send} aria-label="Send" disabled={!canSend} icon={send.busy ? <Spinner size={14} /> : <ArrowUpIcon size={15} strokeWidth={2.2} />} />
+        </div>
+      </form>
+      {(imageError || send.error) && <div className={s.footnote}><ErrorText error={imageError ?? send.error} /></div>}
+    </div>
   );
 }
 
 function DefinitionPreview({ path, onClose }: { path: string; onClose(): void }) {
   const file = useData(() => call("getDefinition", { params: { path } }), [path], (event) => event.type === "definition.changed" && event.path === path);
   return (
-    <Modal open title={path} onClose={onClose}>
+    <Dialog open title={path} onOpenChange={(open) => !open && onClose()} width={720} footer={<Button onClick={onClose}>Close</Button>}>
       <ErrorText error={file.error} />
-      {file.loading && <Empty>Loading definition…</Empty>}
+      {file.loading && <Spinner />}
       {file.data && <pre className={s.definition}>{file.data.content}</pre>}
-      <Button onClick={onClose}>Close</Button>
-    </Modal>
+    </Dialog>
   );
 }
 
@@ -276,29 +311,49 @@ function Conversation({ id, connected }: { id: string; connected: boolean }) {
   }
   const manual: boolean = chat?.chat.projectId === null;
   return (
-    <Panel className={s.conversation}>
-      <ErrorText error={detail.error} />
-      {detail.loading && !chat && <Empty>Loading conversation…</Empty>}
-      {chat && <>
-        <h2 className={s.heading}>{chat.chat.title}</h2>
-        {markRead.error && <div className={ui.row}>
-          <ErrorText error={markRead.error} />
-          <Button disabled={!connected || markRead.busy} onClick={() => void markRead.run()}>Mark as read</Button>
-        </div>}
-        <div ref={history} className={s.history} role="log" aria-label="Conversation messages" tabIndex={0} onScroll={(event) => {
-          const pane: HTMLDivElement = event.currentTarget;
-          followHistory.current = pane.scrollHeight - pane.clientHeight - pane.scrollTop <= 48;
-        }}>
-          {chat.messages.length === 0 && <Empty>No messages yet</Empty>}
-          {chat.messages.map((message) => <Message key={message.id} message={message} connected={connected} manual={manual}
+    <section className={s.pane}>
+      <header className={s.paneHeader}>
+        <h2 className={s.paneTitle}>{chat?.chat.title ?? ""}</h2>
+        {chat && !manual && <span className={s.actionMeta}>Ticket intake · read only</span>}
+      </header>
+      {detail.error && <div className={s.footnote}><ErrorText error={detail.error} /></div>}
+      {markRead.error && <div className={s.footnote}><Alert tone="danger" actions={<Button size="sm" disabled={!connected || markRead.busy} onClick={() => void markRead.run()}>Mark as read</Button>}>{markRead.error}</Alert></div>}
+      <div ref={history} className={s.history} role="log" aria-label="Conversation messages" tabIndex={0} onScroll={(event) => {
+        const pane: HTMLDivElement = event.currentTarget;
+        followHistory.current = pane.scrollHeight - pane.clientHeight - pane.scrollTop <= 48;
+      }}>
+        <div className={s.thread}>
+          {detail.loading && !chat && <Spinner />}
+          {chat?.messages.length === 0 && <EmptyState icon={<ChatIcon size={18} />} title="No messages yet">Tell the orchestrator what you want: it plans the work and creates the jobs.</EmptyState>}
+          {chat?.messages.map((message) => <Message key={message.id} message={message} connected={connected} manual={manual}
             actions={actions.get(message.id) ?? []} attachments={attachments.get(message.id) ?? []} reload={detail.reload} />)}
         </div>
-        {manual
-          ? <Composer id={id} connected={connected} supportsImages={chat.supportsImages} reload={detail.reload} />
-          : <div className={ui.muted}>Ticket intake conversations are read-only.</div>}
-      </>}
+      </div>
+      {chat && manual && <Composer id={id} connected={connected} supportsImages={chat.supportsImages} reload={detail.reload} />}
       {definition && <DefinitionPreview key={definition} path={definition} onClose={() => setQuery({}, { replace: true })} />}
-    </Panel>
+    </section>
+  );
+}
+
+function Start({ connected, ready, onCreated }: { connected: boolean; ready: boolean | null; onCreated(chatId: string): void }) {
+  return (
+    <section className={s.pane}>
+      <div className={s.start}>
+        <div className={s.startHead}>
+          <span className={s.startIcon}><SparkIcon size={22} /></span>
+          <h2 className={s.startTitle}>What should PeCore build?</h2>
+          <p className={s.startText}>Describe a feature, a bug or a whole project. The orchestrator plans it, creates the jobs and keeps you posted here.</p>
+        </div>
+        {ready === false && connected && (
+          <div className={s.footnote}>
+            <Alert tone="warning" title="No orchestrator yet" actions={<Link to={settingUrl("orchestrator")}>Choose one in Settings</Link>}>
+              Log in to Claude Code, Codex or OpenCode and PeCore picks one for you.
+            </Alert>
+          </div>
+        )}
+        <Composer id={null} connected={connected} ready={ready === true} supportsImages={null} reload={onCreated} autoFocus />
+      </div>
+    </section>
   );
 }
 
@@ -324,43 +379,52 @@ export function Orchestrator() {
     setTitle("");
     create.clear();
   }
+  const ready: boolean | null = settings.data ? settings.data.value.orchestrator !== null : null;
   return (
-    <Page title="Orchestrator" actions={<Button kind="primary" disabled={!connected} onClick={() => setCreating(true)}>New conversation</Button>}>
-      <div className={s.split}>
-        <Panel className={s.conversations}>
-          <h2 className={s.heading}>Conversations</h2>
-          <ErrorText error={chats.error} />
-          {chats.loading && !chats.data && <Empty>Loading conversations…</Empty>}
-          {chats.data?.length === 0 && <Empty>No conversations yet</Empty>}
-          <ul className={s.list}>
-            {chats.data?.map((chat) => <li key={chat.id} className={chat.id === id ? s.selected : undefined}>
-              {connected ? <Link to={conversationUrl(chat.id)} aria-current={chat.id === id ? "page" : undefined}>{chat.title}</Link> : <span>{chat.title}</span>}
-              {chat.unread > 0 && <span className={s.unread}>{chat.unread} unread</span>}
-            </li>)}
-          </ul>
-        </Panel>
-        {id ? <Conversation key={id} id={id} connected={connected} /> : <Panel>
-          <h2 className={s.heading}>New conversation</h2>
-          {settings.data?.value.orchestrator === null && connected && <Link to={settingUrl("orchestrator")}>Choose an orchestrator profile in Settings</Link>}
-          <Composer id={null} connected={connected} ready={!!settings.data?.value.orchestrator} supportsImages={null} reload={(chatId) => {
-            chats.reload();
-            void navigate(conversationUrl(chatId));
-          }} />
-        </Panel>}
-      </div>
-      <Modal open={creating} title="New conversation" onClose={closeCreate}>
-        <form className={ui.stack} onSubmit={(event) => {
+    <div className={s.root}>
+      <aside className={s.list}>
+        <header className={s.listHeader}>
+          <h1 className={s.listTitle}>Conversations</h1>
+          <IconButton label="New conversation" icon={<PlusIcon />} disabled={!connected} onClick={() => setCreating(true)} />
+        </header>
+        <ErrorText error={chats.error} />
+        <ul className={s.items}>
+          {chats.data?.length === 0 && <li className={s.actionMeta} style={{ padding: "8px 10px" }}>No conversations yet</li>}
+          {chats.data?.map((chat) => <li key={chat.id}>
+            {connected
+              ? <Link className={s.item} to={conversationUrl(chat.id)} aria-current={chat.id === id ? "page" : undefined}>
+                <ChatIcon size={14} />
+                <span className={s.itemTitle}>{chat.title}</span>
+                <Count value={chat.unread} label={`${chat.unread} unread`} />
+              </Link>
+              : <span className={s.item}><span className={s.itemTitle}>{chat.title}</span></span>}
+          </li>)}
+        </ul>
+      </aside>
+      {id
+        ? <Conversation key={id} id={id} connected={connected} />
+        : <Start connected={connected} ready={ready} onCreated={(chatId) => {
+          chats.reload();
+          void navigate(conversationUrl(chatId));
+        }} />}
+      <Dialog
+        open={creating}
+        onOpenChange={(open) => !open && closeCreate()}
+        title="New conversation"
+        width={420}
+        footer={<>
+          <Button disabled={create.busy} onClick={closeCreate}>Cancel</Button>
+          <Button type="submit" form="new-conversation" variant="primary" disabled={!canCreate} loading={create.busy}>Create conversation</Button>
+        </>}
+      >
+        <form id="new-conversation" onSubmit={(event) => {
           event.preventDefault();
           if (canCreate) void create.run();
         }}>
-          <Field label="Title"><input autoFocus required value={title} disabled={!connected || create.busy} onChange={(event) => setTitle(event.target.value)} /></Field>
-          <ErrorText error={create.error} />
-          <div className={ui.row}>
-            <Button type="submit" kind="primary" disabled={!canCreate}>{create.busy ? "Creating…" : "Create conversation"}</Button>
-            <Button disabled={create.busy} onClick={closeCreate}>Cancel</Button>
-          </div>
+          <TextField label="Title" value={title} onValueChange={setTitle} disabled={!connected || create.busy} autoFocus placeholder="e.g. Checkout redesign" />
         </form>
-      </Modal>
-    </Page>
+        <ErrorText error={create.error} />
+      </Dialog>
+    </div>
   );
 }
