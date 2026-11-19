@@ -5,7 +5,7 @@ export type JobState = z.infer<typeof JobState>;
 
 export const finalJobStates = ["succeeded", "not_delivered", "failed", "stopped"] as const satisfies readonly JobState[];
 
-export const JobWaitingReason = z.enum(["parent_job", "parent_failed", "concurrency", "disk"]);
+export const JobWaitingReason = z.enum(["parent_job", "parent_failed", "concurrency", "disk", "network", "auth"]);
 export type JobWaitingReason = z.infer<typeof JobWaitingReason>;
 
 export const PauseReason = z.enum(["user", "quit"]);

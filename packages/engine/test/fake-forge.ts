@@ -148,6 +148,16 @@ export class FakeForge {
     return commit;
   }
 
+  advance(repo: string, branch: string, file: string): string {
+    const remote = this.remote(repo);
+    const parent = this.remoteHead(repo, branch)!;
+    const blob = execFileSync("git", ["--git-dir", remote, "hash-object", "-w", "--stdin"], { input: `${file}\n`, encoding: "utf8" }).trim();
+    const tree = execFileSync("git", ["--git-dir", remote, "mktree"], { input: `100644 blob ${blob}\t${file}\n`, encoding: "utf8" }).trim();
+    const commit = execFileSync("git", ["--git-dir", remote, "commit-tree", tree, "-p", parent, "-m", `add ${file}`], { encoding: "utf8" }).trim();
+    execFileSync("git", ["--git-dir", remote, "update-ref", `refs/heads/${branch}`, commit]);
+    return commit;
+  }
+
   remoteHead(repo: string, branch: string): string | null {
     try {
       return execFileSync("git", ["--git-dir", this.remote(repo), "rev-parse", "--verify", `refs/heads/${branch}`], { encoding: "utf8" }).trim();

@@ -285,9 +285,40 @@ export class JobExecutor {
       if (job.waiting_reason !== "disk") this.ctx.db.append([{ jobId: job.id, type: "job.state_changed", payload: { state: "queued", reason: "disk" } }]);
       return false;
     }
-    await addWorktree(this.ctx.user, this.ctx.dir, job.id, job.base);
+    const base = await this.freshBase(job);
+    if (base === null) return false;
+    await addWorktree(this.ctx.user, this.ctx.dir, job.id, base);
     this.setState(job.id, "running", null);
     return true;
+  }
+
+  private async freshBase(job: JobRow): Promise<string | null> {
+    const repo = this.ctx.project.repo;
+    if (repo === null || job.id === setupJobId || job.target.startsWith(jobBranch(""))) return job.base;
+    if ((job.waiting_reason === "network" || job.waiting_reason === "auth") && this.timers.has(job.id)) return null;
+    let head: string;
+    try {
+      head = await fetchBase(this.ctx, job.target);
+    } catch (e) {
+      const account = this.ctx.forgeAccount(repo.account);
+      const auth = e instanceof ToolAuthError || (account !== undefined && !(await identityOk(account)));
+      const reason = auth ? "auth" : "network";
+      const delay = this.backoff(job.id);
+      this.ctx.db.append([{ jobId: job.id, type: "job.state_changed", payload: { state: "queued", reason } }]);
+      this.ctx.changed(job.id);
+      if (auth && job.waiting_reason !== "auth") this.ctx.notify({ kind: "login", title: job.title, body: `the login of ${repo.account} expired or does not match`, jobId: job.id });
+      this.timers.set(
+        job.id,
+        setTimeout(() => {
+          this.timers.delete(job.id);
+          void this.tick(job.id);
+        }, delay),
+      );
+      return null;
+    }
+    this.networkFailures.delete(job.id);
+    if (head !== job.base) this.ctx.db.append([{ jobId: job.id, type: "job.base_changed", payload: { cause: "fetched", base: head, oldBase: head, target: job.target } }]);
+    return head;
   }
 
   private async finish(job: JobRow, state: "succeeded" | "not_delivered" | "failed", reason: string | null): Promise<void> {
