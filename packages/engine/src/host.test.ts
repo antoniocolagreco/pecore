@@ -48,7 +48,7 @@ describe("engine host over parentPort", () => {
   it("routes the admin prompt through the main process and reports its failure", async () => {
     const { port, sent, send } = fakePort();
     const started = await host(port, { home: join(await tempDir(), "home"), resources: await resources(), version: "1" });
-    const result = started!.engine.setProtectedMode(true).catch((e: Error) => e.message);
+    const result = started!.engine.setProtectedMode(false, true).catch((e: Error) => e.message);
     const admin = await until(() => sent.find((m): m is Extract<EngineMessage, { type: "admin" }> => m.type === "admin"));
     expect(admin.script).toContain("pecore-agent");
     send({ type: "admin.result", id: admin.id, ok: false, error: "dismissed" });

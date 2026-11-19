@@ -33,7 +33,7 @@ export class SpawnError extends Error {
 }
 
 const pidLine = /^PECORE_PID (\d+)$/;
-const wrapper = 'echo "PECORE_PID $$" >&2; exec env -i "$@"';
+const wrapper = 'cd -- "$1" || exit 126; shift; echo "PECORE_PID $$" >&2; exec env -i "$@"';
 const stopGraceMs = 5000;
 
 function sleep(ms: number) {
@@ -101,9 +101,9 @@ export async function spawnAs(p: SpawnParams): Promise<Proc> {
   const sudo = p.user !== appUser;
   const vars = Object.entries(p.env).map(([k, v]) => `${k}=${v}`);
   const [cmd, args, env] = sudo
-    ? (["sudo", ["-n", "-H", "-u", p.user, "--", "/usr/bin/setsid", "/bin/sh", "-c", wrapper, "sh", ...vars, ...p.argv], {}] as const)
+    ? (["sudo", ["-n", "-H", "-u", p.user, "--", "/usr/bin/setsid", "/bin/sh", "-c", wrapper, "sh", p.cwd, ...vars, ...p.argv], {}] as const)
     : ([p.argv[0]!, p.argv.slice(1), p.env] as const);
-  const child = spawn(cmd, args, { cwd: p.cwd, env: env as NodeJS.ProcessEnv, detached: true, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(cmd, args, { cwd: sudo ? "/" : p.cwd, env: env as NodeJS.ProcessEnv, detached: true, stdio: ["pipe", "pipe", "pipe"] });
   const exited = new Promise<Exit>((resolve) => child.once("close", (code, signal) => resolve({ code, signal })));
   const failed = new Promise<never>((_, reject) =>
     child.once("error", (e: NodeJS.ErrnoException) => reject(new SpawnError(e.message, e.code === "ENOENT" ? "not_found" : "other"))),

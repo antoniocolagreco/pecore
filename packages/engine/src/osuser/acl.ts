@@ -18,8 +18,8 @@ export function traverseAclCommands(target: string, user: string, from: string =
   }
 }
 
-export async function applyTraverseAcls(target: string, user: string, from?: string): Promise<void> {
-  const commands = traverseAclCommands(target, user, from);
+export async function applyTraverseAcls(target: string, user: string, from?: string, remove = false): Promise<void> {
+  const commands = traverseAclCommands(target, user, from).map((argv) => (remove ? ["setfacl", "-x", `u:${user}`, "--", argv.at(-1)!] : argv));
   const env = await baseEnv(appUser);
   for (const argv of commands) {
     const result = await run({ user: appUser, argv, env, cwd: sep });

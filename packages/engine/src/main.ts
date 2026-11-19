@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
-import { readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { applyTraverseAcls } from "./osuser/acl";
 import { cpus } from "node:os";
 import { join, relative } from "node:path";
 import { removeAs } from "./workdir/fs-as";
@@ -25,7 +26,7 @@ import { homePaths, initHome } from "./home/layout";
 import { takeLock } from "./home/lock";
 import { beginProject, cancelCreation, finishProject, prepareRepo, readCreation, repoCreated, setupJobId } from "./projects/create";
 import type { CreateOptions } from "./projects/create";
-import { appUser } from "./runners/process";
+import { appUser, baseEnv } from "./runners/process";
 import { protectedModeScript, protectedUserExists } from "./osuser/protected-mode";
 import { commitDefinition, commitMessage } from "./home/git-commit";
 import { ServicesRuntimeController } from "./services/runtime";
@@ -448,7 +449,11 @@ export class Engine extends EventEmitter {
       await new Promise((r) => setTimeout(r, 200));
     }
     const dirs = [...this.projects.values()].map((p) => p.ctx.dir);
-    await this.opts.admin(protectedModeScript(on, dirs, { createUser: !(await protectedUserExists()), removeUser }));
+    const exists = await protectedUserExists();
+    if (!on && removeUser && exists) await this.protectedTraverse(true);
+    const script = protectedModeScript(on, dirs, { createUser: !exists, removeUser });
+    if (script !== "") await this.opts.admin(script);
+    if (on) await this.protectedTraverse();
     const file = homePaths(this.opts.home).settings;
     const current = JSON.parse(await readFile(file, "utf8").catch(() => "{}")) as Record<string, unknown>;
     await writeFile(file, JSON.stringify({ ...current, protectedMode: on }, null, 2) + "\n");
@@ -457,6 +462,21 @@ export class Engine extends EventEmitter {
     for (const { ctx } of this.projects.values()) {
       ctx.settings = this.settings;
       ctx.user = on ? protectedUser : appUser;
+    }
+  }
+
+  private async protectedTraverse(remove = false): Promise<void> {
+    const home = (await baseEnv(appUser)).HOME!;
+    const targets = [join(homePaths(this.opts.home).adapters, "version")];
+    for (const connector of new Set(this.accounts.accounts.flatMap((a) => (a.kind === "model" ? [a.connector] : [])))) {
+      const resolved = await this.agents?.resolve(connector).catch(() => null);
+      if (!resolved) continue;
+      targets.push(resolved.harnessPath, await realpath(resolved.harnessPath));
+    }
+    for (const target of new Set(targets)) {
+      const rel = relative(home, target);
+      if (rel === "" || rel.startsWith("..")) continue;
+      await applyTraverseAcls(target, protectedUser, home, remove);
     }
   }
 
