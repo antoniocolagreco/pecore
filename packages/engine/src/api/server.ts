@@ -69,7 +69,7 @@ export async function startApi(engine: Engine, opts: ApiOptions): Promise<ApiSer
     if (origin !== undefined && !origins.has(origin)) return send(reply, "forbidden", `Origin ${origin} is not allowed`);
     if (origin !== undefined) reply.header("access-control-allow-origin", origin).header("vary", "origin");
     if (req.method === "OPTIONS")
-      return reply.header("access-control-allow-methods", "GET, POST, PUT, PATCH, DELETE").header("access-control-allow-headers", "authorization, content-type, if-match").code(204).send();
+      return reply.header("access-control-allow-methods", "GET, POST, PUT, PATCH, DELETE").header("access-control-allow-headers", "authorization, content-type").code(204).send();
     if (req.url === "/live") return;
     if (!tokenOk(req.headers.authorization)) return send(reply, "unauthorized", "missing or wrong token");
   });

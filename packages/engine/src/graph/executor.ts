@@ -820,6 +820,21 @@ export class JobExecutor {
     );
   }
 
+  async releaseAuth(account: string, osUser: string | null): Promise<void> {
+    for (const job of this.jobs()) {
+      if (job.waiting_reason !== "auth") continue;
+      if (job.state === "queued" && this.ctx.project.repo?.account === account) {
+        clearTimeout(this.timers.get(job.id));
+        this.timers.delete(job.id);
+        void this.tick(job.id);
+      }
+      if (job.state !== "waiting") continue;
+      const run = this.runs(job.id).find((r) => r.state === "waiting" && r.waiting_reason === "auth");
+      const row = run ? (this.ctx.db.db.prepare("SELECT auth_account, auth_os_user FROM node_runs WHERE id = ?").get(run.id) as { auth_account: string | null; auth_os_user: string | null }) : null;
+      if (row?.auth_account === account && (osUser === null || row.auth_os_user === osUser)) await this.release(job.id, ["auth"]);
+    }
+  }
+
   async release(jobId: string, reasons: string[]): Promise<void> {
     this.timers.delete(jobId);
     await this.exclusive(jobId, async () => {
@@ -884,6 +899,9 @@ export class JobExecutor {
       onRaw: (line) => {
         x.log.write(line);
         this.ctx.live?.(attemptId, line);
+      },
+      onEvent: (e) => {
+        if (e.type === "quota") this.ctx.agents?.noteQuota(profile.account, e.quota);
       },
     });
     const usage = r.usage;

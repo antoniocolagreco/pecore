@@ -1,5 +1,9 @@
 import { z } from "zod";
+import { Accounts } from "./accounts";
 import { Artifact } from "./artifacts";
+import { Profiles } from "./profiles";
+import { Settings } from "./settings";
+import { Tiers } from "./tiers";
 import { Name } from "./common";
 import { AuthKind, JobState, NodeRunState } from "./errors";
 import { QueueKind } from "./events";
@@ -226,6 +230,99 @@ export const NotificationView = z.object({
 });
 export type NotificationView = z.infer<typeof NotificationView>;
 
+const Sha = z.string().regex(/^[0-9a-f]{64}$/);
+const PathParams = z.object({ path: z.string().min(1) });
+
+export const DefinitionFile = z.object({ path: z.string(), content: z.string(), sha256: Sha });
+export type DefinitionFile = z.infer<typeof DefinitionFile>;
+
+export const DefinitionEntry = z.object({ path: z.string(), sha256: Sha, value: z.unknown().nullable(), errors: z.array(DefinitionErrorView) });
+export type DefinitionEntry = z.infer<typeof DefinitionEntry>;
+
+export const SaveDefinitionBody = z.object({ content: z.string(), baseSha256: Sha.nullable() }).strict();
+export type SaveDefinitionBody = z.infer<typeof SaveDefinitionBody>;
+
+export const SaveDefinitionResult = z.object({ sha256: Sha, confirmItemIds: z.array(z.string()) });
+
+export const ValidateDefinitionBody = z.object({ path: z.string().min(1), content: z.string() }).strict();
+
+export const InstantiateBody = z.object({ kind: z.enum(["node", "recipe"]), name: Name, project: ProjectId }).strict();
+export type InstantiateBody = z.infer<typeof InstantiateBody>;
+
+export const InstantiateResult = z.object({ created: z.array(z.string()), kept: z.array(z.string()), confirmItemIds: z.array(z.string()) });
+
+const globalFile = <S extends z.ZodType>(name: string, schema: S) =>
+  ({
+    get: { method: "GET", path: `/${name}`, response: z.object({ value: schema, sha256: Sha }) },
+    put: { method: "PUT", path: `/${name}`, body: z.object({ value: schema, baseSha256: Sha }).strict(), response: z.object({ sha256: Sha }) },
+  }) as const;
+const settingsFile = globalFile("settings", Settings);
+const accountsFile = globalFile("accounts", Accounts);
+const profilesFile = globalFile("profiles", Profiles);
+const tiersFile = globalFile("tiers", Tiers);
+
+export const LoginView = z.object({
+  id: z.string(),
+  account: z.string(),
+  osUser: z.string(),
+  connector: z.string(),
+  defaultDir: z.boolean(),
+  state: z.enum(["logged_in", "logged_out", "unknown", "unchecked"]),
+  email: z.string().nullable(),
+  plan: z.string().nullable(),
+  running: z.boolean(),
+});
+export type LoginView = z.infer<typeof LoginView>;
+
+export const AccountState = z.enum(["logged_in", "logged_out", "unknown"]);
+
+export const PrerequisiteView = z.object({ tool: z.string(), ok: z.boolean(), version: z.string().nullable(), problem: z.string().nullable(), setting: z.string().nullable() });
+export type PrerequisiteView = z.infer<typeof PrerequisiteView>;
+
+export const FirstRunStep = z.enum(["prerequisites", "home", "accounts", "tiers", "orchestrator", "project"]);
+export const FirstRunView = z.object({
+  done: z.boolean(),
+  steps: z.array(z.object({ step: FirstRunStep, ok: z.boolean(), problems: z.array(z.string()) })),
+});
+export type FirstRunView = z.infer<typeof FirstRunView>;
+
+const TokenCounts = z.object({ input: z.number(), output: z.number(), cacheRead: z.number(), cacheWrite: z.number() });
+
+export const UsageView = z.object({
+  days: z.array(z.object({ day: z.string(), project: z.string(), account: z.string(), tokens: TokenCounts, cost: z.number() })),
+  budgets: z.array(z.object({ project: z.string(), dayTokens: z.number().nullable(), dayUsd: z.number().nullable(), usedTokens: z.number(), usedUsd: z.number() })),
+  cooldowns: z.array(z.object({ account: z.string(), kind: z.enum(["quota", "rate_limit"]), until: z.number() })),
+  quotas: z.array(z.object({ account: z.string(), status: z.string(), resetAt: z.number().nullable(), windows: z.record(z.string(), z.object({ utilization: z.number(), resetAt: z.number() })), seenAt: z.number() })),
+});
+export type UsageView = z.infer<typeof UsageView>;
+
+export const themeTokens = [
+  "bg",
+  "bg-gradient-1",
+  "bg-gradient-2",
+  "surface",
+  "surface-raised",
+  "border",
+  "text",
+  "text-muted",
+  "accent",
+  "status-running",
+  "status-success",
+  "status-failed",
+  "status-warning",
+  "status-inactive",
+] as const;
+export const ThemeToken = z.enum(themeTokens);
+export const Theme = z
+  .object({
+    $schema: z.string().optional(),
+    name: z.string().min(1),
+    tokens: z.partialRecord(ThemeToken, z.string().regex(/^(#[0-9a-fA-F]{3,8}|(rgb|rgba|hsl|hsla)\([^)]*\))$/, "a CSS color")),
+  })
+  .strict();
+export type Theme = z.infer<typeof Theme>;
+export const ThemeFileView = z.object({ file: z.string(), theme: Theme.nullable(), errors: z.array(DefinitionErrorView) });
+
 const ListJobsQuery = z.object({ project: ProjectId.optional(), archived: z.enum(["true", "false"]).optional() });
 const ListQueueQuery = z.object({ project: ProjectId.optional(), state: z.enum(["open", "resolved", "cancelled"]).optional() });
 const LogQuery = z.object({ view: z.enum(["events", "raw"]).default("raw") });
@@ -268,6 +365,31 @@ export const routes = {
   answerQueue: { method: "POST", path: "/queue/:id", params: IdParams, body: QueueChoiceBody, response: Ok },
   getStatus: { method: "GET", path: "/status", response: StatusView },
   listNotifications: { method: "GET", path: "/notifications", response: z.array(NotificationView) },
+  listDefinitions: { method: "GET", path: "/definitions", query: z.object({ dir: z.string().min(1) }), response: z.array(DefinitionEntry) },
+  getDefinition: { method: "GET", path: "/definitions/*path", params: PathParams, response: DefinitionFile },
+  saveDefinition: { method: "PUT", path: "/definitions/*path", params: PathParams, body: SaveDefinitionBody, response: SaveDefinitionResult },
+  validateDefinition: { method: "POST", path: "/definitions/validate", body: ValidateDefinitionBody, response: z.object({ errors: z.array(DefinitionErrorView) }) },
+  instantiate: { method: "POST", path: "/definitions/instantiate", body: InstantiateBody, response: InstantiateResult },
+  getSettings: settingsFile.get,
+  putSettings: settingsFile.put,
+  getAccounts: accountsFile.get,
+  putAccounts: accountsFile.put,
+  getProfiles: profilesFile.get,
+  putProfiles: profilesFile.put,
+  getTiers: tiersFile.get,
+  putTiers: tiersFile.put,
+  setProtectedMode: { method: "POST", path: "/protected-mode", body: ProtectedModeBody, response: Ok },
+  listLogins: { method: "GET", path: "/logins", response: z.array(LoginView) },
+  startLogin: { method: "POST", path: "/logins", body: StartLoginBody, response: z.object({ loginId: z.string() }) },
+  loginCode: { method: "POST", path: "/logins/:id/code", params: IdParams, body: LoginCodeBody, response: Ok },
+  recheckLogin: { method: "POST", path: "/logins/:id/recheck", params: IdParams, response: LoginView },
+  recheckAccount: { method: "POST", path: "/accounts/:id/recheck", params: IdParams, response: z.object({ state: AccountState }) },
+  startAccountLogin: { method: "POST", path: "/accounts/:id/login", params: IdParams, response: z.object({ loginId: z.string() }) },
+  accountOptions: { method: "GET", path: "/accounts/:id/options", params: IdParams, response: z.object({ models: z.array(z.string()), efforts: z.array(z.string()) }).nullable() },
+  checkPrerequisites: { method: "POST", path: "/prerequisites/check", response: z.array(PrerequisiteView) },
+  getFirstRun: { method: "GET", path: "/first-run", response: FirstRunView },
+  getUsage: { method: "GET", path: "/usage", query: z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }), response: UsageView },
+  listThemes: { method: "GET", path: "/themes", response: z.array(ThemeFileView) },
   getLog: { method: "GET", path: "/logs/:id", params: IdParams, query: LogQuery, response: z.union([z.object({ view: z.literal("raw"), lines: z.array(z.unknown()) }), z.object({ view: z.literal("events"), events: z.array(LogEvent) })]) },
 } as const satisfies Record<string, RouteDef>;
 

@@ -5,7 +5,7 @@ import { delimiter, join, relative } from "node:path";
 import { mkdirAs } from "../workdir/fs-as";
 import { promisify } from "node:util";
 import { checkLogin, parseConnector } from "@pecore/agents";
-import type { Login, LoginState, ResolvedConnector, Spawn } from "@pecore/agents";
+import type { Login, LoginState, Quota, ResolvedConnector, Spawn } from "@pecore/agents";
 import type { Accounts, Connector, ModelAccount, Settings } from "@pecore/schemas";
 import { appUser, baseEnv, spawnAs } from "../runners/process";
 
@@ -167,5 +167,11 @@ export class AgentServices {
 
   clearCooldown(account: string): void {
     this.cooldowns.delete(account);
+  }
+
+  readonly quotas = new Map<string, { quota: Quota; seenAt: number }>();
+
+  noteQuota(account: string, quota: Quota, now = Date.now()): void {
+    this.quotas.set(account, { quota, seenAt: now });
   }
 }

@@ -3,11 +3,15 @@ import { readdir, readFile, writeFile } from "node:fs/promises";
 import { cpus } from "node:os";
 import { join } from "node:path";
 import { defaultJobLimit } from "@pecore/schemas";
-import type { Accounts, ForgeAccount, JobState, LiveMessage, Profiles, ProjectInput, Settings, Tiers, WhyView } from "@pecore/schemas";
-import { AgentServices, protectedUser } from "./accounts/agents";
-import type { AgentPaths } from "./accounts/agents";
+import { listOptions } from "@pecore/agents";
+import type { LoginState } from "@pecore/agents";
+import type { Account, Accounts, ForgeAccount, JobState, LiveMessage, LoginView, Profiles, ProjectInput, Settings, Tiers, WhyView } from "@pecore/schemas";
+import { AgentServices, protectedUser, spawnFor } from "./accounts/agents";
+import type { AgentPaths, LoginInfo } from "./accounts/agents";
+import { LoginRunner } from "./accounts/login";
+import { identityOk } from "./runners/forge-env";
 import { loadGlobal, loadProject } from "./definitions/load";
-import type { DefinitionError } from "./definitions/load";
+import type { DefinitionError, Global } from "./definitions/load";
 import { JobExecutor } from "./graph/executor";
 import type { JobRow, ProjectContext } from "./graph/executor";
 import { logEvents } from "./observability/log-events";
@@ -55,6 +59,7 @@ export class Engine extends EventEmitter {
   private releaseLock!: () => Promise<void>;
   private stopMergeWatch: () => void = () => undefined;
   globalPause = false;
+  private readonly loginRunner = new LoginRunner((p) => this.live({ type: "login.progress", ...p }));
   private readonly pausedByGlobal = new Set<string>();
 
   private constructor(readonly opts: EngineOptions) {
@@ -84,9 +89,8 @@ export class Engine extends EventEmitter {
       this.agents = new AgentServices(this.opts.agents, this.opts.home, () => this.settings, () => this.accounts);
       for (const e of await this.agents.loadConnectors()) console.error(e);
     }
-    const jobLimit = this.settings.limits.jobs ?? defaultJobLimit(cpus().length);
     this.pools = new Pools((pool) => {
-      if (pool === "jobs") return jobLimit;
+      if (pool === "jobs") return this.settings.limits.jobs ?? defaultJobLimit(cpus().length);
       if (pool === "agents") return this.settings.limits.agents;
       if (pool.startsWith("jobs:")) return this.projects.get(pool.slice(5))?.ctx.project.limits.jobs ?? null;
       if (pool.startsWith("provider:")) return this.settings.limits.providers[pool.slice(9)] ?? null;
@@ -113,8 +117,131 @@ export class Engine extends EventEmitter {
     if (this.agents && this.opts.checkLogins !== false) void this.agents.checkAll().then(() => this.emit("logins"));
   }
 
-  private projectDir(id: string): string {
+  projectDir(id: string): string {
     return this.settings.projectPaths[id] ?? join(homePaths(this.opts.home).projects, id);
+  }
+
+  global(): Global {
+    return { settings: this.settings, accounts: this.accounts, profiles: this.profiles, tiers: this.tiers };
+  }
+
+  async reloadProject(id: string): Promise<DefinitionError[]> {
+    const p = this.projects.get(id);
+    if (!p) return [];
+    const loaded = await loadProject(p.ctx.dir);
+    if (loaded.project) {
+      p.ctx.project = loaded.project;
+      p.ctx.defs = loaded;
+    }
+    if (loaded.errors.length) this.projectErrors.set(id, loaded.errors);
+    else this.projectErrors.delete(id);
+    this.live({ type: "project.updated", projectId: id });
+    return loaded.errors;
+  }
+
+  async reloadGlobal(): Promise<DefinitionError[]> {
+    const g = await loadGlobal(this.opts.home);
+    if (!g.value) return g.errors;
+    this.settings = g.value.settings;
+    this.accounts = g.value.accounts;
+    this.profiles = g.value.profiles;
+    this.tiers = g.value.tiers;
+    for (const { ctx } of this.projects.values()) ctx.settings = this.settings;
+    this.kick();
+    return [];
+  }
+
+  private loginView(l: LoginInfo): LoginView {
+    const s = l.state;
+    return {
+      id: l.id,
+      account: l.account,
+      osUser: l.osUser,
+      connector: l.connector,
+      defaultDir: l.defaultDir,
+      state: s.state,
+      email: s.state === "logged_in" ? s.email : null,
+      plan: s.state === "logged_in" ? (s.plan ?? null) : null,
+      running: this.loginRunner.isActive(l.id),
+    };
+  }
+
+  private async loginInfo(id: string): Promise<LoginInfo> {
+    const l = (await this.agents?.logins())?.find((x) => x.id === id);
+    if (!l) throw new NotFoundError(`login ${id} not found`);
+    return l;
+  }
+
+  async loginViews(): Promise<LoginView[]> {
+    return ((await this.agents?.logins()) ?? []).map((l) => this.loginView(l));
+  }
+
+  private async releaseAuth(account: string, osUser: string | null): Promise<void> {
+    for (const { executor } of this.projects.values()) await executor.releaseAuth(account, osUser);
+  }
+
+  private async checkLoginInfo(l: LoginInfo): Promise<LoginState> {
+    const state = await this.agents!.check(l);
+    if (state.state !== "logged_out") await this.releaseAuth(l.account, l.osUser);
+    return state;
+  }
+
+  async startLogin(account: string, osUser: string): Promise<string> {
+    const l = (await this.agents?.logins())?.find((x) => x.account === account && x.osUser === osUser);
+    if (!l) throw new NotFoundError(`no login for account ${account} and user ${osUser}`);
+    await this.loginRunner.harness(this.agents!, l, async () => (await this.checkLoginInfo(l)).state);
+    return l.id;
+  }
+
+  sendLoginCode(id: string, code: string): void {
+    this.loginRunner.sendCode(id, code);
+  }
+
+  async recheckLogin(id: string): Promise<LoginView> {
+    const l = await this.loginInfo(id);
+    await this.checkLoginInfo(l);
+    return this.loginView(await this.loginInfo(id));
+  }
+
+  private account(id: string): Account {
+    const a = this.accounts.accounts.find((x) => x.id === id);
+    if (!a) throw new NotFoundError(`account ${id} not found`);
+    return a;
+  }
+
+  async recheckAccount(id: string): Promise<"logged_in" | "logged_out" | "unknown"> {
+    const a = this.account(id);
+    if (a.kind === "forge") {
+      const ok = await identityOk(a);
+      if (ok) await this.releaseAuth(id, null);
+      return ok ? "logged_in" : "logged_out";
+    }
+    if (a.kind === "service") return "unknown";
+    const states = [];
+    for (const l of ((await this.agents?.logins()) ?? []).filter((x) => x.account === id)) states.push((await this.checkLoginInfo(l)).state);
+    return states.includes("logged_out") ? "logged_out" : states.length > 0 && states.every((s) => s === "logged_in") ? "logged_in" : "unknown";
+  }
+
+  async startAccountLogin(id: string): Promise<string> {
+    const a = this.account(id);
+    if (a.kind !== "forge") throw new Error(`account ${id} has no tool login in PeCore; log in with ${a.kind === "service" ? a.tool : "the harness"} and recheck`);
+    const loginId = `tool:${id}`;
+    await this.loginRunner.tool(loginId, a, () => this.recheckAccount(id));
+    return loginId;
+  }
+
+  async accountOptions(id: string): Promise<{ models: string[]; efforts: string[] } | null> {
+    this.account(id);
+    for (const l of ((await this.agents?.logins()) ?? []).filter((x) => x.account === id)) {
+      const connector = await this.agents!.resolve(l.connector);
+      const options = await listOptions({ connector, login: l, spawn: spawnFor(l.osUser) }).catch(() => null);
+      if (options) return options;
+    }
+    return null;
+  }
+
+  definitionChanged(path: string, sha256: string | null): void {
+    this.live({ type: "definition.changed", path, sha256 });
   }
 
   private async openProject(id: string): Promise<void> {
@@ -332,6 +459,7 @@ export class Engine extends EventEmitter {
 
   async shutdown(): Promise<void> {
     this.stopMergeWatch();
+    await this.loginRunner.stopAll();
     await Promise.all([...this.projects.values()].map(({ executor }) => executor.close()));
     for (const { ctx } of this.projects.values()) ctx.db.close();
     this.chats.close();
