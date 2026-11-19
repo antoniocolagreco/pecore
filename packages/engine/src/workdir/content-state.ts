@@ -38,7 +38,7 @@ export async function restoreState(user: string, workdir: string, tree: string):
   await gitWork(user, workdir, ["reset", "-q"]);
 }
 
-export type GitRecord = { branch: string | null; head: string | null; stash: string | null };
+export type GitRecord = { branch: string | null; head: string | null };
 
 async function revParse(user: string, workdir: string, ref: string): Promise<string | null> {
   const r = await gitWorkResult(user, workdir, ["rev-parse", "-q", "--verify", ref]);
@@ -49,7 +49,6 @@ export async function recordGit(user: string, workdir: string, jobId: string): P
   return {
     branch: await revParse(user, workdir, `refs/heads/${jobBranch(jobId)}`),
     head: await revParse(user, workdir, "HEAD"),
-    stash: await revParse(user, workdir, "refs/stash"),
   };
 }
 
@@ -61,8 +60,6 @@ export async function undoInterrupted(user: string, workdir: string, jobId: stri
   if (rec.branch) await gitWork(user, workdir, ["update-ref", branch, rec.branch]);
   await gitWork(user, workdir, ["symbolic-ref", "HEAD", branch]);
   if (rec.head && rec.head !== rec.branch) await gitWork(user, workdir, ["update-ref", "--no-deref", "HEAD", rec.head]);
-  if (rec.stash) await gitWork(user, workdir, ["update-ref", "refs/stash", rec.stash]);
-  else await gitWorkResult(user, workdir, ["update-ref", "-d", "refs/stash"]);
   await restoreState(user, workdir, contentBefore);
 }
 

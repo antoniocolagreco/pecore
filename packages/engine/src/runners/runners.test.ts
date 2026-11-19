@@ -11,7 +11,7 @@ import { pickOutcome, runCommandNode } from "./command";
 import type { CommandRun } from "./command";
 import { placeholderValues, repoOwnerAndName, substituteArgv } from "./placeholders";
 import { readProbe } from "./probe";
-import { appUser, run, spawnAs } from "./process";
+import { appUser, killInDir, run, spawnAs } from "./process";
 
 const u = appUser;
 
@@ -71,6 +71,21 @@ describe("process", () => {
   it("times out", async () => {
     const r = await run({ user: u, argv: ["sleep", "10"], env: { PATH: "/usr/bin:/bin" }, cwd: "/", timeoutMs: 100 });
     expect(r.timedOut).toBe(true);
+  });
+
+  it("kills detached processes whose working directory is inside the job workdir, and only those (decision 16)", async () => {
+    const root = await tempDir();
+    const wd = join(root, "work", "J1");
+    const other = join(root, "work", "J10");
+    await mkdir(join(wd, "sub"), { recursive: true });
+    await mkdir(other, { recursive: true });
+    const inside = await spawnAs({ user: u, argv: ["sleep", "30"], env: { PATH: "/usr/bin:/bin" }, cwd: join(wd, "sub") });
+    const outside = await spawnAs({ user: u, argv: ["sleep", "30"], env: { PATH: "/usr/bin:/bin" }, cwd: other });
+    await killInDir(u, wd);
+    expect((await inside.exited).signal).toBe("SIGKILL");
+    const alive = await Promise.race([outside.exited.then(() => false), new Promise((r) => setTimeout(() => r(true), 200))]);
+    expect(alive).toBe(true);
+    await outside.stop();
   });
 });
 

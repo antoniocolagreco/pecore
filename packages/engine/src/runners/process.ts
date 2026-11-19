@@ -74,6 +74,16 @@ export async function stopGroup(user: string, pgid: number): Promise<void> {
   await signalGroup(user, pgid, "KILL");
 }
 
+const killInDirScript = `for p in /proc/[0-9]*; do
+  d=$(readlink "$p/cwd" 2>/dev/null) || continue
+  case "$d" in "$1"|"$1"/*) kill -KILL "\${p#/proc/}" 2>/dev/null || : ;; esac
+done`;
+
+export async function killInDir(user: string, dir: string): Promise<void> {
+  if (process.platform !== "linux") throw new Error("not supported on macOS yet");
+  await run({ user, argv: ["/bin/sh", "-c", killInDirScript, "sh", dir], env: await baseEnv(user), cwd: "/", timeoutMs: 30_000 });
+}
+
 function makeStop(user: string, pgid: number, exited: Promise<Exit>): () => Promise<void> {
   let stopping: Promise<void> | null = null;
   return () => {

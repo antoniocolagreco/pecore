@@ -123,7 +123,7 @@ export class ProjectDb {
       case "node_run.git_recorded":
         run("UPDATE node_runs SET git_before = @git WHERE id = @id", {
           id: e.payload.nodeRunId,
-          git: JSON.stringify({ branch: e.payload.branch, head: e.payload.head, stash: e.payload.stash }),
+          git: JSON.stringify({ branch: e.payload.branch, head: e.payload.head }),
         });
         return;
       case "node_run.completed":

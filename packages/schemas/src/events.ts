@@ -65,7 +65,7 @@ export const EventBody = z.discriminatedUnion("type", [
   ),
   ev(
     "node_run.git_recorded",
-    z.object({ nodeRunId: z.string(), branch: z.string().nullable(), head: z.string().nullable(), stash: z.string().nullable() }),
+    z.object({ nodeRunId: z.string(), branch: z.string().nullable(), head: z.string().nullable() }),
   ),
   ev(
     "node_run.completed",

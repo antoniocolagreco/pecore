@@ -142,6 +142,7 @@ export async function runCommandNode(c: CommandRun): Promise<CommandOutcome> {
     if (r.code === null) return { kind: "failed", reason: "PROCESS_KILLED", log };
     if (r.code === 127) return { kind: "failed", reason: "COMMAND_NOT_FOUND", log };
     const outcome = pickOutcome(c.node.outcomeRules, r);
+    if (outcome === null && engine) return { kind: "waiting", reason: "network", log: log + "no outcome rule matched\n" };
     if (outcome === null) return { kind: "failed", reason: "HARNESS_ERROR", log: log + "no outcome rule matched\n" };
     const outputs = [];
     for (const [type, rule] of Object.entries(c.node.outputRules) as [ArtifactType, OutputRule][]) {

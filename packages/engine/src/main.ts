@@ -3,7 +3,7 @@ import { readdir } from "node:fs/promises";
 import { cpus } from "node:os";
 import { join } from "node:path";
 import { defaultJobLimit } from "@pecore/schemas";
-import type { Accounts, Profiles, ProjectInput, Settings, Tiers } from "@pecore/schemas";
+import type { Accounts, ForgeAccount, Profiles, ProjectInput, Settings, Tiers } from "@pecore/schemas";
 import { AgentServices } from "./accounts/agents";
 import type { AgentPaths } from "./accounts/agents";
 import { loadGlobal, loadProject } from "./definitions/load";
@@ -112,6 +112,7 @@ export class Engine extends EventEmitter {
       changed: (jobId) => this.emit("job", { projectId: id, jobId }),
       released: () => this.kick(),
       agents: this.agents,
+      forgeAccount: (accountId) => this.accounts.accounts.find((a): a is ForgeAccount => a.kind === "forge" && a.id === accountId),
       global: () => ({ profiles: this.profiles, tiers: this.tiers }),
       live: (attemptId, line) => this.emit("log", { projectId: id, attemptId, line }),
     };

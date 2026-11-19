@@ -3,7 +3,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, matchesGlob, relative } from "node:path";
 import { monotonicFactory } from "ulid";
 import type { RawLine, Usage } from "@pecore/agents";
-import type { AgentNode, Artifact, ArtifactType, FailureReason, JobState, Node, Profiles, Project, Recipe, Settings, Tiers, WaitingReason } from "@pecore/schemas";
+import type { AgentNode, Artifact, ArtifactType, FailureReason, ForgeAccount, JobState, Node, Profiles, Project, Recipe, Settings, Tiers, WaitingReason } from "@pecore/schemas";
 import { SpecArtifact } from "@pecore/schemas";
 import { spawnFor } from "../accounts/agents";
 import type { AgentServices } from "../accounts/agents";
@@ -15,17 +15,19 @@ import { LogWriter } from "../observability/logs";
 import { runAgentNode } from "../runners/agent";
 import { runCommandNode } from "../runners/command";
 import type { CommandRun } from "../runners/command";
+import { forgeEnv, identityOk, ToolAuthError } from "../runners/forge-env";
 import { budgetBlock } from "../scheduler/budget";
 import { candidateProfiles, pickProfile } from "../scheduler/tiers";
 import type { ProfileChoice } from "../scheduler/tiers";
 import { humanItem, humanResult } from "../runners/human";
 import { paramsWithDefaults } from "../runners/placeholders";
-import { signalGroup, stopGroup } from "../runners/process";
+import { appUser, killInDir, signalGroup, stopGroup } from "../runners/process";
 import { enoughDisk } from "../scheduler/disk";
 import type { Pools } from "../scheduler/pools";
 import { poolsFor } from "../scheduler/pools";
 import type { ProjectDb } from "../store/project-db";
 import { contentState, deleteScratch, recordGit, restoreState, undoInterrupted } from "../workdir/content-state";
+import type { GitRecord } from "../workdir/content-state";
 import { gitWork } from "../workdir/git-as";
 import { jobBranch } from "../workdir/repo";
 import { addWorktree, recreateWorktree, removeWorktree, workdirOf } from "../workdir/worktrees";
@@ -80,6 +82,7 @@ export type ProjectContext = {
   changed(jobId: string): void;
   released(): void;
   agents: AgentServices | null;
+  forgeAccount(id: string): ForgeAccount | undefined;
   global(): { profiles: Profiles; tiers: Tiers };
   live?: (attemptId: string, line: RawLine) => void;
 };
@@ -338,6 +341,16 @@ export class JobExecutor {
       confirmedScripts = c.scripts;
     }
 
+    const tools = node.kind === "command" ? this.toolAccounts(node.credentials) : [];
+    const toolEnv: Record<string, string> = {};
+    try {
+      for (const a of tools) Object.assign(toolEnv, await forgeEnv(a));
+    } catch (e) {
+      if (!(e instanceof ToolAuthError)) throw e;
+      this.waitAuth(job, run.id, e.account);
+      return false;
+    }
+
     let profile: Extract<ProfileChoice, { kind: "profile" }> | null = null;
     let pools = poolsFor(this.ctx.id);
     if (node.kind === "agent") {
@@ -401,9 +414,11 @@ export class JobExecutor {
         const latest = this.latest(job.id);
         const commit = latest.get("commit");
         const commitSha = commit ? (JSON.parse(await readFile(join(this.ctx.dir, commit.path), "utf8")) as { sha: string }).sha : null;
+        const ticket = latest.get("ticket");
+        const ticketId = ticket ? (JSON.parse(await readFile(join(this.ctx.dir, ticket.path), "utf8")) as { id: string | null }).id : null;
         const context = {
           job: { id: job.id, title: job.title, branch: job.branch, base: job.base, oldBase: job.old_base, target: job.target, commit: commitSha },
-          ticketId: null,
+          ticketId,
           project: { repoDir: join(this.ctx.dir, "repo.git"), repoUrl: this.ctx.project.repo?.url ?? null },
         };
         const inputs = [...node.inputs, ...node.optionalInputs].flatMap((t) => {
@@ -427,6 +442,7 @@ export class JobExecutor {
                 context,
                 inputs,
                 cleanTree: node.cleanCheckout ? before : null,
+                extraEnv: toolEnv,
                 ...(confirmedScripts ? { scripts: confirmedScripts } : {}),
                 onStart,
                 effect: effectRecorder(this.ctx.db, job.id, run.id, run.node),
@@ -454,12 +470,14 @@ export class JobExecutor {
           end(result.reason);
           await undoInterrupted(this.ctx.user, wd, job.id, git, before);
           if (result.reason === "network") {
-            const n = this.networkFailures.get(run.id) ?? 0;
-            this.networkFailures.set(run.id, n + 1);
-            const delay = backoffMs[Math.min(n, backoffMs.length - 1)]!;
-            this.setRun(job.id, run.id, "waiting", "network", { resetAt: Date.now() + delay });
-            this.setState(job.id, "waiting", "network");
-            this.timers.set(job.id, setTimeout(() => void this.retryNetwork(job.id, run.id), delay));
+            const expired = (await Promise.all(tools.map(async (a) => ((await identityOk(a)) ? null : a.id)))).find((id) => id !== null);
+            if (expired) this.waitAuth(job, run.id, expired);
+            else {
+              const delay = this.backoff(run.id);
+              this.setRun(job.id, run.id, "waiting", "network", { resetAt: Date.now() + delay });
+              this.setState(job.id, "waiting", "network");
+              this.timers.set(job.id, setTimeout(() => void this.retryWait(job.id, run.id, "network"), delay));
+            }
           } else if (result.reason === "auth") {
             this.ctx.db.append([{ jobId: job.id, type: "node_run.state_changed", payload: { nodeRunId: run.id, state: "waiting", waitingReason: "auth", auth: { account: profile!.account, osUser: this.ctx.user, kind: "harness" } } }]);
             this.setState(job.id, "waiting", "auth");
@@ -514,6 +532,29 @@ export class JobExecutor {
       this.ctx.pools.release(pools);
       this.ctx.released();
     }
+  }
+
+  private toolAccounts(credentials: string[]): ForgeAccount[] {
+    return credentials.map((name) => {
+      const id = name === "project.account" ? this.ctx.project.repo?.account : name;
+      const account = id === undefined ? undefined : this.ctx.forgeAccount(id);
+      if (!account) throw new Error(`forge account ${id ?? name} not found`);
+      return account;
+    });
+  }
+
+  private backoff(nodeRunId: string): number {
+    const n = this.networkFailures.get(nodeRunId) ?? 0;
+    this.networkFailures.set(nodeRunId, n + 1);
+    return backoffMs[Math.min(n, backoffMs.length - 1)]!;
+  }
+
+  private waitAuth(job: JobRow, nodeRunId: string, account: string): void {
+    const delay = this.backoff(nodeRunId);
+    this.ctx.db.append([{ jobId: job.id, type: "node_run.state_changed", payload: { nodeRunId, state: "waiting", waitingReason: "auth", resetAt: Date.now() + delay, auth: { account, osUser: appUser, kind: "tool" } } }]);
+    this.setState(job.id, "waiting", "auth");
+    this.ctx.notify({ kind: "login", title: job.title, body: `the login of ${account} expired or does not match`, jobId: job.id });
+    this.timers.set(job.id, setTimeout(() => void this.retryWait(job.id, nodeRunId, "auth"), delay));
   }
 
   private providersOf(jobId: string, nodeIds: string[]): Set<string> {
@@ -636,16 +677,16 @@ export class JobExecutor {
     this.ctx.notify({ kind: "job-finished", title: job.title, body: `failed: ${reason}`, jobId: job.id });
   }
 
-  private async interrupt(jobId: string, nodeRunId: string, git: { branch: string | null; head: string | null; stash: string | null } | null, before: string | null): Promise<void> {
+  private async interrupt(jobId: string, nodeRunId: string, git: GitRecord | null, before: string | null): Promise<void> {
     if (git && before) await undoInterrupted(this.ctx.user, workdirOf(this.ctx.dir, jobId), jobId, git, before);
     this.setRun(jobId, nodeRunId, "interrupted", null);
   }
 
-  private async retryNetwork(jobId: string, nodeRunId: string): Promise<void> {
+  private async retryWait(jobId: string, nodeRunId: string, reason: "network" | "auth"): Promise<void> {
     this.timers.delete(jobId);
     await this.exclusive(jobId, async () => {
       const job = this.job(jobId);
-      if (job.state !== "waiting" || job.waiting_reason !== "network") return;
+      if (job.state !== "waiting" || job.waiting_reason !== reason) return;
       this.setRun(jobId, nodeRunId, "waiting", "concurrency");
       this.setState(jobId, "running", null);
     });
@@ -728,6 +769,7 @@ export class JobExecutor {
     this.stopRequested.add(jobId);
     const proc = this.running.get(jobId);
     if (proc) await stopGroup(proc.user, proc.pgid);
+    await killInDir(this.ctx.user, workdirOf(this.ctx.dir, jobId));
     await this.exclusive(jobId, async () => {
       this.stopRequested.delete(jobId);
       const t = this.timers.get(jobId);
@@ -760,7 +802,7 @@ export class JobExecutor {
       const open = this.runs(job.id).filter((r) => r.state === "running");
       for (const r of open) {
         if (r.pgid !== null && r.os_user !== null) await signalGroup(r.os_user, r.pgid, "KILL");
-        const git = r.git_before ? (JSON.parse(r.git_before) as { branch: string | null; head: string | null; stash: string | null }) : null;
+        const git = r.git_before ? (JSON.parse(r.git_before) as GitRecord) : null;
         const before = r.content_before;
         await this.interrupt(job.id, r.id, git, before).catch(() => this.setRun(job.id, r.id, "interrupted", null));
       }

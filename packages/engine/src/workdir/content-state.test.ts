@@ -79,7 +79,7 @@ describe("content state", () => {
     expect((await readdir(join(wd, "coverage")))).toEqual(["old.json"]);
   });
 
-  it("undoes a commit and stash made by an interrupted run", async () => {
+  it("undoes a commit made by an interrupted run", async () => {
     const { wd } = await setup();
     await writeFile(join(wd, "a.txt"), "a");
     const rec = await recordGit(u, wd, "J1");
@@ -87,7 +87,6 @@ describe("content state", () => {
     await gitWork(u, wd, ["add", "-A"]);
     await gitWork(u, wd, ["commit", "-q", "-m", "x"]);
     await writeFile(join(wd, "b.txt"), "b");
-    await gitWork(u, wd, ["stash", "push", "-q", "--include-untracked"]);
     await undoInterrupted(u, wd, "J1", rec, before);
     expect(await recordGit(u, wd, "J1")).toEqual(rec);
     expect(await contentState(u, wd)).toBe(before);
