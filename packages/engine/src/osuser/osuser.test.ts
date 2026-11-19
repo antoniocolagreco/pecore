@@ -8,6 +8,7 @@ import { appUser } from "../runners/process";
 import { createLocalRepo } from "../workdir/repo";
 import { traverseAclCommands } from "./acl";
 import { checkHome } from "./home-check";
+import { protectedModeScript } from "./protected-mode";
 import { createProtectedUserScript, projectAccessScript, removeProtectedUserScript } from "./script";
 
 const execFileP = promisify(execFile);
@@ -93,6 +94,25 @@ describe("project access script", () => {
     await createLocalRepo(join(root, "real", "repo.git"), "main");
     await execFileP("ln", ["-s", join(root, "real"), join(root, "link")]);
     await expect(execFileP("sh", ["-c", projectAccessScript(join(root, "link"), appUser, false)])).rejects.toThrow();
+  });
+});
+
+describe("protected mode switch (decision 14)", () => {
+  it("turning it on creates the user and runs the group step for every project in one script", async () => {
+    const script = protectedModeScript(true, ["/home/ann/pecore/projects/a", "/home/ann/pecore/projects/b"], { createUser: true, removeUser: false });
+    await syntaxOk(script);
+    expect(script).toContain("useradd --system");
+    expect(script).toContain("chmod 3775 -- '/home/ann/pecore/projects/a/repo.git'");
+    expect(script).toContain("chmod 3775 -- '/home/ann/pecore/projects/b/repo.git'");
+    expect(protectedModeScript(true, [], { createUser: false, removeUser: false })).not.toContain("useradd");
+  });
+
+  it("turning it off gives every workdir back to the app user and removes the user only on request", async () => {
+    const off = protectedModeScript(false, ["/home/ann/pecore/projects/a"], { createUser: false, removeUser: false });
+    await syntaxOk(off);
+    expect(off).toContain("chmod 00755 -- '/home/ann/pecore/projects/a/repo.git'");
+    expect(off).not.toContain("userdel");
+    expect(protectedModeScript(false, [], { createUser: false, removeUser: true })).toContain("userdel --remove");
   });
 });
 

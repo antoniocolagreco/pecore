@@ -3,8 +3,8 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, matchesGlob, relative } from "node:path";
 import { monotonicFactory } from "ulid";
 import type { RawLine, Usage } from "@pecore/agents";
-import type { AgentNode, Artifact, ArtifactType, FailureReason, ForgeAccount, JobState, Node, Profiles, Project, Recipe, Settings, Tiers, WaitingReason } from "@pecore/schemas";
-import { SpecArtifact } from "@pecore/schemas";
+import type { AgentNode, Artifact, ArtifactType, FailureReason, ForgeAccount, JobState, Node, Profiles, Project, Settings, Tiers, WaitingReason } from "@pecore/schemas";
+import { Recipe, SpecArtifact } from "@pecore/schemas";
 import { spawnFor } from "../accounts/agents";
 import type { AgentServices } from "../accounts/agents";
 import { ensureConfirmed, needsConfirmation, recordConfirmation } from "../definitions/confirm";
@@ -30,6 +30,9 @@ import type { ProjectDb } from "../store/project-db";
 import { contentState, deleteScratch, recordGit, restoreState, undoInterrupted } from "../workdir/content-state";
 import type { GitRecord } from "../workdir/content-state";
 import { gitWork } from "../workdir/git-as";
+import { setupJobId } from "../projects/create";
+import { JobServices, recordServicesConfirmation } from "../services/job-services";
+import type { ServicesSubject } from "../services/job-services";
 import { branchHead, jobBranch } from "../workdir/repo";
 import { addWorktree, recreateWorktree, removeWorktree, workdirOf } from "../workdir/worktrees";
 import { assertTransition, isFinal } from "./job-machine";
@@ -86,6 +89,7 @@ export type ProjectContext = {
   released(): void;
   agents: AgentServices | null;
   forgeAccount(id: string): ForgeAccount | undefined;
+  setupEnded?: (state: JobState) => void;
   global(): { profiles: Profiles; tiers: Tiers };
   live?: (attemptId: string, line: RawLine) => void;
 };
@@ -120,7 +124,11 @@ export class JobExecutor {
   private readonly networkFailures = new Map<string, number>();
   private closing = false;
 
-  constructor(readonly ctx: ProjectContext) {}
+  readonly services: JobServices;
+
+  constructor(readonly ctx: ProjectContext) {
+    this.services = new JobServices(ctx.db, ctx.dir, ctx.project.services, () => ctx.settings.servicesRuntime);
+  }
 
   job(id: string): JobRow {
     const row = this.ctx.db.db.prepare("SELECT * FROM jobs WHERE id = ?").get(id) as JobRow | undefined;
@@ -142,6 +150,9 @@ export class JobExecutor {
     if (job.state !== state) assertTransition(job.state, state, { archived: job.archived === 1, ...(cause ? { cause } : {}) });
     this.ctx.db.append([{ jobId, type: "job.state_changed", payload: { state, reason } }]);
     this.ctx.changed(jobId);
+    const log = (e: unknown) => console.error(`services of job ${jobId}:`, e);
+    if (state === "paused") void this.services.stop(jobId).catch(log);
+    if (isFinal(state)) void this.services.down(jobId).catch(log);
   }
 
   private setRun(jobId: string, nodeRunId: string, state: "waiting" | "running" | "interrupted" | "skipped", reason: WaitingReason | null, extra: { queueItemId?: string; pgid?: number; osUser?: string; resetAt?: number } = {}): void {
@@ -290,8 +301,28 @@ export class JobExecutor {
     return this.ctx.db.db.prepare("SELECT * FROM jobs WHERE parent_job_id = ? ORDER BY id").all(parentId) as JobRow[];
   }
 
+  async createSetupJob(createRepo: string): Promise<void> {
+    if (this.ctx.db.db.prepare("SELECT 1 FROM jobs WHERE id = ?").get(setupJobId)) return;
+    const node = this.ctx.defs.nodes.get(createRepo);
+    if (!node || node.kind !== "command") throw new Error(`repo creation node ${createRepo} not found`);
+    const recipe = Recipe.parse({
+      name: setupJobId,
+      description: "Create the remote repository",
+      start: "create",
+      successOutcomes: node.outcomes.filter((o) => !node.failOutcomes.includes(o)).map((o) => `create:${o}`),
+      nodes: { create: { use: createRepo } },
+    });
+    const baseBranch = this.ctx.project.baseBranch;
+    const base = await branchHead(join(this.ctx.dir, "repo.git"), baseBranch);
+    if (!base) throw new Error(`branch ${baseBranch} not found`);
+    this.ctx.db.append([{ jobId: setupJobId, type: "job.created", payload: { title: "Create the remote repository", recipe, ticket: null, parentJobId: null, baseBranch, base, target: baseBranch, branch: jobBranch(setupJobId) } }]);
+    this.ctx.changed(setupJobId);
+    void this.tick(setupJobId);
+  }
+
   private parentEnded(parentId: string): void {
     const parent = this.job(parentId);
+    if (parentId === setupJobId) this.ctx.setupEnded?.(parent.state);
     for (const child of this.children(parentId)) {
       if (child.state !== "queued") continue;
       if (parent.state === "succeeded") void this.startChild(parentId, child.id);
@@ -460,6 +491,24 @@ export class JobExecutor {
       confirmedScripts = c.scripts;
     }
 
+    let servicesEnv: Record<string, string> = {};
+    if (job.id !== setupJobId) {
+      const s = await this.services.ensure(job.id, job.base, () => {
+        this.setRun(job.id, run.id, "waiting", "services");
+        this.setState(job.id, "waiting", "services");
+      });
+      if (s.kind === "confirm") {
+        if (run.waiting_reason !== "confirmation") {
+          this.setRun(job.id, run.id, "waiting", "confirmation", { queueItemId: s.itemId });
+          this.ctx.notify({ kind: "needs-user", title: job.title, body: "a new compose file waits for your confirmation", jobId: job.id });
+        }
+        this.setState(job.id, "waiting", "confirmation");
+        return false;
+      }
+      servicesEnv = s.env;
+      if (this.job(job.id).state === "waiting") this.setState(job.id, "running", null);
+    }
+
     const tools = node.kind === "command" ? this.toolAccounts(node.credentials) : [];
     const toolEnv: Record<string, string> = {};
     try {
@@ -553,12 +602,12 @@ export class JobExecutor {
                 context,
                 inputs,
                 cleanTree: node.cleanCheckout ? before : null,
-                extraEnv: toolEnv,
+                extraEnv: { ...servicesEnv, ...toolEnv },
                 ...(confirmedScripts ? { scripts: confirmedScripts } : {}),
                 onStart,
                 effect: effectRecorder(this.ctx.db, job.id, run.id, run.node),
               })
-            : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, sessionGroup, { wd, context, inputs, log, onStart });
+            : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, sessionGroup, { wd, context, inputs, log, onStart, env: servicesEnv });
         this.running.delete(job.id);
         if (result.log) log.write({ dir: "cmd", text: result.log, at: Date.now() });
         await log.close();
@@ -745,7 +794,7 @@ export class JobExecutor {
     profile: Extract<ProfileChoice, { kind: "profile" }>,
     attemptId: string,
     sessionGroup: string | null,
-    x: { wd: string; context: CommandRun["context"]; inputs: CommandRun["inputs"]; log: LogWriter; onStart: (pgid: number, user: string) => void },
+    x: { wd: string; context: CommandRun["context"]; inputs: CommandRun["inputs"]; log: LogWriter; onStart: (pgid: number, user: string) => void; env: Record<string, string> },
   ): Promise<Attempt> {
     const agents = this.ctx.agents!;
     const account = agents.account(profile.account);
@@ -757,7 +806,7 @@ export class JobExecutor {
       return { kind: "failed", reason: "COMMAND_NOT_FOUND", log: (e as Error).message };
     }
     const login = await agents.login(account.id);
-    const spawn = spawnFor(this.ctx.user);
+    const spawn = spawnFor(this.ctx.user, x.env);
     const resumeId = this.resumeSession(job.id, run.node, profile.profile, node.resume, sessionGroup);
     const r = await runAgentNode({
       node,
@@ -825,6 +874,12 @@ export class JobExecutor {
     if (item.kind === "engine-node" || item.kind === "source-node") {
       this.ctx.db.append([{ jobId: null, type: "queue.resolved", payload: { itemId, state: "resolved", choice, note } }]);
       if (choice === "confirm") recordConfirmation(this.ctx.db, JSON.parse(item.subject) as ConfirmSubject);
+      for (const j of this.jobs()) if (j.state === "waiting" && j.waiting_reason === "confirmation") await this.release(j.id, ["confirmation"]);
+      return;
+    }
+    if (item.kind === "services") {
+      this.ctx.db.append([{ jobId: null, type: "queue.resolved", payload: { itemId, state: "resolved", choice, note } }]);
+      if (choice === "confirm") recordServicesConfirmation(this.ctx.db, JSON.parse(item.subject) as ServicesSubject);
       for (const j of this.jobs()) if (j.state === "waiting" && j.waiting_reason === "confirmation") await this.release(j.id, ["confirmation"]);
       return;
     }
@@ -956,6 +1011,7 @@ export class JobExecutor {
       if (live.length > 0) throw new Error(`job ${jobId} has children that are not finished: ${live.map((c) => c.id).join(", ")}`);
       await removeWorktree(this.ctx.user, this.ctx.dir, workdirOf(this.ctx.dir, jobId));
       await gitWork(this.ctx.user, this.ctx.dir, [`--git-dir=${join(this.ctx.dir, "repo.git")}`, "update-ref", "-d", `refs/heads/${jobBranch(jobId)}`]).catch(() => "");
+      await this.services.down(jobId);
       await rm(join(this.ctx.dir, "artifacts", jobId), { recursive: true, force: true });
       const logs = this.ctx.db.db.prepare("SELECT a.log_path FROM attempts a JOIN node_runs n ON a.node_run_id = n.id WHERE n.job_id = ?").all(jobId) as { log_path: string }[];
       for (const { log_path } of logs) await rm(join(this.ctx.dir, log_path), { force: true });
@@ -990,5 +1046,6 @@ export class JobExecutor {
     const procs = [...this.running.values()].filter((p): p is { pgid: number; user: string } => p !== null);
     await Promise.all(procs.map((p) => stopGroup(p.user, p.pgid)));
     await Promise.all([...this.locks.values()]);
+    await this.services.stopAll().catch((e: unknown) => console.error("services:", e));
   }
 }
