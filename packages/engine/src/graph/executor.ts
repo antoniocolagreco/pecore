@@ -381,15 +381,19 @@ export class JobExecutor {
   }
 
   async checkMerges(): Promise<void> {
-    for (const parent of this.jobs()) {
-      if (parent.merged_at !== null || !this.children(parent.id).some((c) => !isFinal(c.state))) continue;
-      try {
-        const url = await this.mergedUrl(parent);
-        if (url !== null) await this.deliveryMerged(parent, url);
-      } catch (e) {
-        console.error(`merge check of job ${parent.id}:`, e);
-      }
+    for (const job of this.jobs()) {
+      if (job.merged_at !== null) continue;
+      await this.checkMerge(job.id).catch((e: unknown) => console.error(`merge check of job ${job.id}:`, e));
     }
+  }
+
+  async checkMerge(jobId: string): Promise<boolean> {
+    const job = this.job(jobId);
+    if (job.merged_at !== null) return true;
+    const url = await this.mergedUrl(job);
+    if (url === null) return false;
+    await this.deliveryMerged(job, url);
+    return true;
   }
 
   private async mergedUrl(parent: JobRow): Promise<string | null> {

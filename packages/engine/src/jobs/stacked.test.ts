@@ -175,7 +175,7 @@ describe("stacked jobs (4.6, decision 10)", () => {
     await until(() => job(parent).state === "succeeded");
     const child = await engine.createJob("demo", { title: "child", ticket: { text: "y" }, recipe: "reviewed", parentJobId: parent });
     await until(() => openItem(child));
-    await p.executor.checkMerges();
+    expect(await p.executor.checkMerge(parent)).toBe(false);
     expect(job(parent).merged_at).toBeNull();
     await writeFile(marker, "");
     await p.executor.checkMerges();
