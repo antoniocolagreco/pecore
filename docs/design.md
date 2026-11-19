@@ -74,7 +74,7 @@ What none of them offers together:
 *   **G11. Rules live in recipes.** Checks, reviewers, approvals, what runs again after a rebase, providers, tiers and budget limits are recipe or project configuration. The empty recipe is valid: the job opens and closes.
 *   **G12. Crash safety.** After a crash, or after the app quits during a delivery, no `runsAs: engine` node repeats an action its probe reports as done, and every job that existed before is present afterwards: `queued` jobs stay `queued`, the others are `paused` or in a final state. Verified by killing the engine during each delivery node in a test.
 *   **G13. Diagnosis in under a minute.** For any job, the user can see in the GUI or the CLI which node is running, why the job waits, and open the raw harness log, in under one minute.
-*   **G14. Installable by others.** On a fresh Linux or macOS machine, a guided first run in the GUI checks prerequisites, creates `PECORE_HOME`, adds accounts (the harness logins the user already has count as done) and creates the first project, without editing files by hand and without a new login.
+*   **G14. Installable by others, with zero configuration.** On a fresh Linux or macOS machine where the user already uses a coding agent (Claude Code, Codex or opencode), PeCore works as soon as it is opened: it creates `PECORE_HOME`, finds the harness logins and sets up accounts, profiles, tiers and the orchestrator by itself (Auto-setup), with no setting to fill, no file to edit and no new login.
 *   **G15. Pluggable services runtime.** The container runtime for job services (Postgres, Kafka) is a setting: Podman, Docker, or on macOS Podman machine, Colima or OrbStack. Each needs Compose v2.
 *   **G16. GUI first.** Every feature is usable from the React GUI; the only terminal step is the manual fallback for creating the protected user (CUJ 6). The GUI covers chat, recipe graph editor with drag and drop, live job graph with node state and logs one click away, template and instance editors with AI assistance, settings, account and harness logins. Harness logins for the protected user run from the GUI, which shows the harness's login URL or code.
 *   **G17. Job controls.**
@@ -968,7 +968,7 @@ Recorded ACP traffic for tests lives in `packages/agents/fixtures/<connector>/<c
 | `POST /pause`, `POST /play`, `POST /play-interrupted` | global controls; `play-interrupted` plays every job paused by the app quit |
 | `GET /projects/:id/creation`, `POST /projects/:id/creation/{retry,cancel}` | an unfinished project creation: the state of each task of "Project creation", the error, the open confirmation item of the repo creation node; Retry and Cancel (decision 13) |
 | `GET /status` | app version, home check warnings, global pause, jobs paused by the quit, Inbox count |
-| `GET /first-run` | the check of each first run step (ui-design.md First run) |
+| `GET /setup` | what auto-setup found: each built-in harness (installed, version, logged in) and whether any model account works; feeds the banner of ui-design.md "Zero-config start" |
 | `POST /prerequisites/check` | runs the checks of decision 12 for the features in use; each result names the setting it points to |
 | `GET /usage?from&to` | tokens per account, project and day; cost of API key accounts; budgets with their use; cooldowns; the last quota seen per account (5.3) |
 | `GET /themes` | the theme files of `PECORE_HOME/themes/`, each with its tokens or its validation error |
@@ -1008,6 +1008,18 @@ Quit (tray, app menu, Cmd+Q): main asks the engine `active?`. If jobs are `runni
 4.  With `repo: null`: create `repo.git` with one empty initial commit on `baseBranch`; no `createRepo`, no clone. If the remote exists: clone into `repo.git`. Otherwise create the empty repo and run the `createRepo` node once, as a job-less node run recorded under the pseudo-job id `project-setup` with the usual probe, confirmation and `effect.*` events.
 5.  Configure `repo.git` (Fixed choices), run the home check, commit the definitions to `PECORE_HOME`.
 6.  In protected mode, give `pecore-agent` access to the new project (group and ACLs, Fixed choices). No login is needed: logins belong to the user, not to the project.
+
+### Auto-setup
+
+`src/home/autosetup.ts`, run by `Engine.start` after the home and the connectors are loaded, and again when a harness login finishes. It only adds what is missing: it never edits or removes an account, profile, tier entry or setting the user has. Each run that changes something is one `PECORE_HOME` commit `auto-setup: <what>` and one notification, for example "Set up Claude Code and Codex: 8 profiles".
+
+1.  Harnesses: for each built-in connector, in the order claude-code, codex, opencode, the harness is found in the supported version range and the user is logged in (the connector's login check; opencode has no identity, so it counts as logged in when it lists at least one model).
+2.  Accounts: each such harness with no model account on its connector gets `{ id: <connector name>, kind: "model", connector, login: "subscription" }`, with its provider.
+3.  Profiles: the models of each new account come from `listOptions`; for opencode, the default model of the user's opencode configuration, otherwise the first model it lists. The shipped file `resources/defaults.json` gives, per connector and per tier, an ordered list of model name patterns and an effort, for example claude-code: frontier `opus` high, strong `sonnet` high, standard `sonnet` medium, cheap `haiku` low. Each tier gets the profile `<connector>-<tier>` with the first available model that matches; a tier with no match uses the model of the nearest stronger tier.
+4.  Tiers: each tier gets the new profiles appended after the ones already there, in connector order, so a tier can fall back to another provider.
+5.  Orchestrator: when no profile is set, the `frontier` profile of the first account.
+
+With no harness found and logged in, nothing changes and the GUI shows the banner of ui-design.md "Zero-config start". Tests: fake harness programs on `PATH` with a fake login check and model list; a second run changes nothing; accounts, profiles and tiers set by the user are kept; no harness gives no change.
 
 ### Job creation
 
@@ -1100,6 +1112,7 @@ Everything that knows ACP or a harness lives here (section 5). It imports only `
 | `src/main.ts` | entry point, in order: reads `PECORE_HOME`; takes the lock file; writes `schemas/`; kills processes left from a previous run (section 1); removes orphan `pecore-*` compose projects (4.9); runs the home check (section 8); opens the projects; sets interrupted jobs to `paused`; starts the API and the MCP server and writes `run/api.json`; sends `ready`; then, in the background, runs `checkLogin` for every harness login (3.4); handles `shutdown` (Engine and main process messages) |
 | **home/** | |
 | `src/home/layout.ts` | paths of section 2; on first run creates `PECORE_HOME` and `run/` (0700), runs `git init` with the `.gitignore` of section 2, and copies the shipped `library/` into it; when the app version changed, copies the bundled adapters to `adapters/` (Fixed choices: Adapters) |
+| `src/home/autosetup.ts` | Auto-setup: accounts, profiles, tiers and orchestrator profile from the installed and logged-in harnesses (Detailed Implementation, "Auto-setup") |
 | `src/home/git-commit.ts` | commits every definition change to `PECORE_HOME` (or to the project's own repo if it was moved) with the message `<kind> <name>: <created\|edited\|deleted>` |
 | `src/home/lock.ts` | one engine per `PECORE_HOME`; a lock whose pid is not running is taken over |
 | `src/home/prerequisites.ts` | first-run and start checks: git, sudo, setfacl (Linux), Compose v2, gitleaks; when an account needs them: gh 2.40 or later, glab; for each harness login, `checkPrerequisites` as its OS user (5.1), after adding the traverse ACLs of 5.7 |
@@ -1205,7 +1218,7 @@ The screens below come from G16. Their layout is designed in [ui-design.md](ui-d
 | `src/renderer/api/live.ts` | WebSocket subscription |
 | `src/renderer/shell/` | navigation, top bar (project filter, global pause, New job, notifications), command palette (`cmdk`), disconnected banner ([ui-design.md](ui-design.md) Proposed Design, Cross-cutting behaviour) |
 | `src/renderer/theme/` | theme tokens as CSS variables, loading of `PECORE_HOME/themes/*.json` with schema and fallback (UI4, UI16) |
-| `src/renderer/screens/FirstRun.tsx` | first run steps with their done-checks (ui-design.md First run) |
+| `src/renderer/shell/SetupBanner.tsx` | the banner shown when no harness is installed and logged in (ui-design.md "Zero-config start") |
 | `src/renderer/screens/Factory.tsx` | home: counters, unfinished jobs, "Play interrupted jobs" |
 | `src/renderer/screens/Jobs.tsx` | every job, filters, stacked jobs as a tree, controls by state |
 | `src/renderer/screens/JobView.tsx` | header and controls, Graph and History tabs, node run detail, log, artifact viewer, result view |

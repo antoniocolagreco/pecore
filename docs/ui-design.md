@@ -318,18 +318,15 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   Protected mode (IF6): one switch with a short explanation (agents cannot read your files and logins; one login per harness account for `pecore-agent`; agents can read all `pecore-agent` logins). Turning it on opens the admin prompt; if it cannot (no polkit agent), the page shows the exact script with a Copy button and "I ran it, recheck". Then the page lists each model account with a Login button for `pecore-agent`, showing the URL or code. Turning it off asks whether to also remove `pecore-agent`.
 *   "Recheck prerequisites", with a link to the setting each failed check points to.
 
-### First run (full screen)
+### Zero-config start (replaces the first run checklist)
 
-*   Before the engine starts, if no `PECORE_HOME` location is stored, a small window asks for it (default `~/.pecore`) and stores it outside it (design.md section 2, `main/index.ts`). Then the engine starts on that home.
-*   Opens while `firstRunDone` in `settings.json` is false.
-*   Steps, each done when its check passes, so the first run reopens at the first step whose check fails:
-    1.  Prerequisites: git, sudo, setfacl (Linux), Compose v2, gitleaks.
-    2.  `PECORE_HOME`: passes the home check.
-    3.  Accounts: at least one model account, its harness found in a supported version and already logged in (the user's own login, nothing to do in PeCore); forge CLIs checked when a forge account is added.
-    4.  Profiles and tiers: every tier used by the shipped recipes has a profile.
-    5.  Orchestrator: profile set.
-    6.  First project: the new project wizard; can be skipped.
-*   When the last step ends, `firstRunDone` is set and Factory opens.
+Goal: minimum friction. The user opens PeCore and it works, with no setting to fill and no file to edit.
+
+*   No location window: `PECORE_HOME` is `~/.pecore` unless a location is already stored; it can be moved later from Settings.
+*   No first run screen and no `firstRunDone`. The app opens on the Orchestrator page, with a new conversation ready.
+*   At every engine start, auto-setup runs (design.md "Auto-setup"). It finds the installed harnesses, adds an account for each one the user is logged in to, creates profiles from the models each harness reports, fills the tiers and sets the orchestrator profile. It only adds what is missing and never changes what the user set.
+*   When no harness is installed and logged in, a banner on every page says so, with the install link of each supported harness and a Log in button for the installed ones. Nothing is disabled that can work without it.
+*   Missing prerequisites (git, Compose, gitleaks, gh, glab) are warnings on the feature that needs them, as in "Missing configuration and warnings" below, never a blocking step.
 
 ## Cross-cutting behaviour
 
