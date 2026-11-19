@@ -3,34 +3,68 @@ import { Popover } from "@base-ui/react/popover";
 import { useNavigate } from "react-router";
 import { call } from "../api/client";
 import { useData } from "../api/hooks";
-import { Button, dateTime, ui } from "../components/ui";
+import { dateTime } from "../components/ui";
+import { Button } from "../ds/button";
+import { EmptyState } from "../ds/feedback";
+import { BellIcon } from "../ds/icons";
+import s from "./Layout.module.css";
 
 export function Notifications() {
   const navigate = useNavigate();
   const [seen, setSeen] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
   const list = useData(() => call("listNotifications"), [], (m) => m.type === "notify" || m.type === "job.updated");
   const items = list.data ?? [];
   const unread = seen === null ? 0 : items.filter((n) => n.id > seen).length;
   return (
-    <Popover.Root onOpenChange={(open) => open && setSeen(items[0]?.id ?? "")}>
-      <Popover.Trigger render={<Button aria-label="Notifications">🔔{unread > 0 ? ` ${unread}` : ""}</Button>} />
+    <Popover.Root
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) setSeen(items[0]?.id ?? "");
+      }}
+    >
+      <Popover.Trigger
+        render={
+          <Button
+            variant="ghost"
+            icon={<>{<BellIcon />}{unread > 0 && <span className={s.unread} />}</>}
+            aria-label={unread > 0 ? `Notifications, ${unread} new` : "Notifications"}
+          />
+        }
+      />
       <Popover.Portal>
-        <Popover.Positioner sideOffset={6} align="end">
-          <Popover.Popup className={ui.panel} style={{ width: 380, maxHeight: 460, overflow: "auto" }}>
-            {items.length === 0 ? <div className={ui.empty}>No notifications</div> : null}
-            {items.map((n) => (
-              <div
-                key={n.id}
-                style={{ padding: "6px 0", borderBottom: "1px solid var(--border)", cursor: n.target?.job ? "pointer" : "default" }}
-                onClick={() => n.target?.job && navigate(`/jobs/${n.target.job}`)}
-              >
-                <div className={ui.row} style={{ justifyContent: "space-between" }}>
-                  <strong>{n.title}</strong>
-                  <span className={ui.muted}>{dateTime(n.createdAt)}</span>
-                </div>
-                <div className={ui.muted}>{n.body}</div>
-              </div>
-            ))}
+        <Popover.Positioner sideOffset={8} align="end" style={{ zIndex: 50 }}>
+          <Popover.Popup className={s.notifications}>
+            <div className={s.notificationsTitle}>Notifications</div>
+            {items.length === 0 && <EmptyState icon={<BellIcon size={18} />} title="No notifications">Finished jobs, setup changes and problems show up here.</EmptyState>}
+            {items.map((n) => {
+              const job = n.target?.job;
+              const body = (
+                <>
+                  <span className={s.notificationHead}>
+                    <strong>{n.title}</strong>
+                    <span className={s.notificationTime}>{dateTime(n.createdAt)}</span>
+                  </span>
+                  <span className={s.notificationBody}>{n.body}</span>
+                </>
+              );
+              return job ? (
+                <button
+                  key={n.id}
+                  type="button"
+                  className={s.notification}
+                  onClick={() => {
+                    setOpen(false);
+                    void navigate(`/jobs/${job}`);
+                  }}
+                >
+                  {body}
+                </button>
+              ) : (
+                <div key={n.id} className={s.notification}>{body}</div>
+              );
+            })}
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>

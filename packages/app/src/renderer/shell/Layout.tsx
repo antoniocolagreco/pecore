@@ -1,30 +1,40 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { NewJobModal } from "../components/NewJobModal";
-import { Button, ui } from "../components/ui";
+import { Button, IconButton } from "../ds/button";
+import { Alert, Count } from "../ds/feedback";
+import { BookIcon, ChartIcon, ChatIcon, FactoryIcon, FolderIcon, GearIcon, InboxIcon, ListIcon, PauseIcon, PlayIcon, PlusIcon, SparkIcon } from "../ds/icons";
+import { Select } from "../ds/select";
 import { CommandPalette } from "./CommandPalette";
 import { useProjectFilter } from "./filter";
 import { Notifications } from "./Notifications";
 import { SetupBanner } from "./SetupBanner";
 import s from "./Layout.module.css";
 
-const nav: { group: string; items: { to: string; label: string; badge?: "inbox" | "orchestrator" }[] }[] = [
+type Badge = "inbox" | "orchestrator";
+
+const nav: { group: string | null; items: { to: string; label: string; icon: ReactNode; badge?: Badge }[] }[] = [
   {
-    group: "Workspace",
+    group: null,
     items: [
-      { to: "/", label: "Factory" },
-      { to: "/jobs", label: "Jobs" },
-      { to: "/inbox", label: "Inbox", badge: "inbox" },
-      { to: "/orchestrator", label: "Orchestrator", badge: "orchestrator" },
-      { to: "/projects", label: "Projects" },
-      { to: "/usage", label: "Usage" },
+      { to: "/orchestrator", label: "Orchestrator", icon: <ChatIcon />, badge: "orchestrator" },
+      { to: "/inbox", label: "Inbox", icon: <InboxIcon />, badge: "inbox" },
+      { to: "/", label: "Factory", icon: <FactoryIcon /> },
+      { to: "/jobs", label: "Jobs", icon: <ListIcon /> },
+      { to: "/projects", label: "Projects", icon: <FolderIcon /> },
     ],
   },
-  { group: "Build", items: [{ to: "/library", label: "Library" }] },
-  { group: "System", items: [{ to: "/settings", label: "Settings" }] },
+  {
+    group: "Build",
+    items: [
+      { to: "/library", label: "Library", icon: <BookIcon /> },
+      { to: "/usage", label: "Usage", icon: <ChartIcon /> },
+    ],
+  },
 ];
 
 export function Layout() {
@@ -38,65 +48,81 @@ export function Layout() {
   const [newJob, setNewJob] = useState(false);
   const pause = useAction(() => (status.data?.globalPause ? call("playAll") : call("pauseAll")).then(status.reload));
   const st = status.data;
+  const counts: Record<Badge, { value: number; label: string }> = {
+    inbox: { value: st?.inbox ?? 0, label: `${st?.inbox ?? 0} waiting` },
+    orchestrator: { value: unread, label: `${unread} unread` },
+  };
 
   return (
     <div className={s.shell}>
-      <nav className={s.nav} aria-label="Main">
-        <div className={s.brand}>PeCore</div>
+      <nav className={s.sidebar} aria-label="Main">
+        <div className={s.brand}>
+          <span className={s.mark}><SparkIcon size={14} /></span>
+          PeCore
+        </div>
         {nav.map((g) => (
-          <div key={g.group} className={s.group}>
-            <div className={s.groupTitle}>{g.group}</div>
+          <div key={g.group ?? "main"} className={s.group}>
+            {g.group && <div className={s.groupTitle}>{g.group}</div>}
             {g.items.map((i) => (
               <NavLink key={i.to} to={i.to} end={i.to === "/"} className={({ isActive }) => [s.link, isActive ? s.active : ""].join(" ")}>
-                {i.label}
-                {i.badge === "inbox" && st && st.inbox > 0 ? <span className={s.badge}>{st.inbox}</span> : null}
-                {i.badge === "orchestrator" && unread > 0 ? <span className={s.badge} aria-label={`${unread} unread`}>{unread}</span> : null}
+                {i.icon}
+                <span className={s.linkLabel}>{i.label}</span>
+                {i.badge && <Count value={counts[i.badge].value} label={counts[i.badge].label} />}
               </NavLink>
             ))}
           </div>
         ))}
-        <div className={s.engine}>
-          <span style={{ color: connected ? "var(--status-success)" : "var(--status-failed)" }}>●</span> {connected ? "Engine running" : "Disconnected"}
-          {st ? <div className={ui.muted}>v{st.version}</div> : null}
-          {st && st.homeFindings.length > 0 ? (
-            <div className={s.warning} title={st.homeFindings.map((f) => f.fix.join(" ")).join("\n")}>
-              Login files readable by others: {st.homeFindings.map((f) => f.path).join(", ")}
-              <pre className={ui.mono}>{st.homeFindings.map((f) => f.fix.join(" ")).join("\n")}</pre>
-            </div>
-          ) : null}
+        <div className={s.footer}>
+          <NavLink to="/settings" className={({ isActive }) => [s.link, isActive ? s.active : ""].join(" ")}>
+            <GearIcon />
+            <span className={s.linkLabel}>Settings</span>
+          </NavLink>
+          <div className={s.engine} role="status">
+            <span className={s.engineDot} data-off={connected ? undefined : ""} />
+            {connected ? "Engine running" : "Disconnected"}
+            {st && <span className={s.version}>v{st.version}</span>}
+          </div>
         </div>
       </nav>
       <div className={s.main}>
-        <header className={s.top}>
-          <select aria-label="Project filter" value={project ?? ""} onChange={(e) => setProject(e.target.value || null)}>
-            <option value="">All projects</option>
-            {(projects.data ?? []).map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.project?.name ?? p.id}
-              </option>
-            ))}
-          </select>
-          <Button onClick={() => void pause.run()} disabled={!connected || pause.busy}>
-            {st?.globalPause ? "▶ Play all" : "❚❚ Pause all"}
-          </Button>
-          <Button kind="primary" onClick={() => setNewJob(true)} disabled={!connected}>
+        <header className={s.toolbar}>
+          <Select
+            className={s.filter}
+            ariaLabel="Project filter"
+            value={project ?? "all"}
+            onValueChange={(v) => setProject(v === "all" || v === null ? null : v)}
+            options={[{ value: "all", label: "All projects" }, ...(projects.data ?? []).map((p) => ({ value: p.id, label: p.project?.name ?? p.id }))]}
+          />
+          <div className={s.spacer} />
+          <CommandPalette />
+          <IconButton
+            label={st?.globalPause ? "Play all" : "Pause all"}
+            className={st?.globalPause ? s.pausedButton : undefined}
+            icon={st?.globalPause ? <PlayIcon /> : <PauseIcon />}
+            onClick={() => void pause.run()}
+            disabled={!connected || pause.busy}
+          />
+          <Notifications />
+          <Button variant="primary" icon={<PlusIcon />} onClick={() => setNewJob(true)} disabled={!connected}>
             New job
           </Button>
-          <div style={{ flex: 1 }} />
-          <Notifications />
-          <CommandPalette />
         </header>
-        {!connected ? <div className={ui.banner}>Disconnected, reconnecting… Controls are disabled and data may be stale.</div> : null}
-        <SetupBanner />
-        {st?.globalPause ? (
-          <div className={ui.banner}>
-            Global pause is on: running jobs hold and queued jobs do not start.{" "}
-            <Button onClick={() => void pause.run()} disabled={!connected}>
-              Play
-            </Button>
-          </div>
-        ) : null}
-        {pause.error ? <div className={ui.banner}>{pause.error}</div> : null}
+        <div className={s.alerts}>
+          {!connected && <Alert tone="danger" title="Disconnected from the engine">Reconnecting… Controls are disabled and data may be stale.</Alert>}
+          <SetupBanner />
+          {st?.globalPause && (
+            <Alert tone="warning" title="Global pause is on" actions={<Button size="sm" onClick={() => void pause.run()} disabled={!connected}>Play</Button>}>
+              Running jobs hold and queued jobs do not start.
+            </Alert>
+          )}
+          {pause.error && <Alert tone="danger">{pause.error}</Alert>}
+          {st && st.homeFindings.length > 0 && (
+            <Alert tone="warning" title="Login files can be read by other users">
+              {st.homeFindings.map((f) => f.path).join(", ")}
+              <pre className={s.fixes}>{st.homeFindings.map((f) => f.fix.join(" ")).join("\n")}</pre>
+            </Alert>
+          )}
+        </div>
         <main className={s.content} aria-disabled={!connected}>
           <Outlet />
         </main>

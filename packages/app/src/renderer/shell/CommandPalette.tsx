@@ -7,7 +7,10 @@ import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { Button, ErrorText, Modal, ui } from "../components/ui";
 import { definitionUrl, object, string } from "../screens/NodeEditor";
+import { Kbd } from "../ds/feedback";
+import { SearchIcon } from "../ds/icons";
 import s from "./CommandPalette.module.css";
+import layout from "./Layout.module.css";
 
 const screens: { name: string; path: string }[] = [
   { name: "Factory", path: "/" }, { name: "Jobs", path: "/jobs" }, { name: "Inbox", path: "/inbox" },
@@ -107,7 +110,11 @@ export function CommandPalette() {
     return () => window.removeEventListener("keydown", shortcut);
   }, [connected]);
   return <>
-    <Button disabled={!connected} onClick={() => setOpen(true)} aria-keyshortcuts="Control+k Meta+k">Search <kbd>Ctrl/⌘ K</kbd></Button>
+    <button type="button" className={layout.search} disabled={!connected} onClick={() => setOpen(true)} aria-keyshortcuts="Control+k Meta+k">
+      <SearchIcon size={14} />
+      <span className={layout.searchLabel}>Search</span>
+      <Kbd>Ctrl K</Kbd>
+    </button>
     <Modal open={open} onClose={() => setOpen(false)} title="Command palette">
       {open && <PaletteContent close={() => setOpen(false)} />}
     </Modal>

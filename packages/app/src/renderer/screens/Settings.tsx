@@ -290,7 +290,7 @@ function SettingsFields({ value, update, profiles, dirtyJson, savedKey, markJson
     </Section>
     <Section id="appearance" title="Appearance">
       <Field label="Theme"><select value={theme} onChange={(event) => update({ ...value, ui: { ...value.ui, theme: event.target.value } })}>
-        <option value="builtin:dark">Dark</option><option value="builtin:light">Light</option>
+        <option value="builtin:system">System</option><option value="builtin:light">Light</option><option value="builtin:dark">Dark</option>
         {!theme.startsWith("builtin:") && !themes.data?.some(({ file }) => file === theme) && <option value={theme}>{theme} (missing)</option>}
         {themes.data?.map((item) => <option key={item.file} value={item.file} disabled={!item.theme}>{item.theme?.name ?? item.file}</option>)}
       </select></Field>

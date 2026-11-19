@@ -1,102 +1,136 @@
 :root {
-  --bg: #232a2e;
-  --bg-gradient-1: #42644d38;
-  --bg-gradient-2: #9a904224;
-  --surface: #2b3537;
-  --surface-raised: #303b3d;
-  --border: #455154;
-  --text: #e6e4d4;
-  --text-muted: #a7b0a4;
-  --accent: #83c092;
-  --status-running: #7fbbb3;
-  --status-success: #a7c080;
-  --status-failed: #e67e80;
-  --status-warning: #dbbc7f;
-  --status-inactive: #7f9187;
-  --radius: 10px;
+  --surface-raised: var(--control-bg);
+  --border: var(--separator);
+  --text-muted: var(--text-2);
+  --status-running: var(--accent);
+  --status-success: var(--success);
+  --status-failed: var(--danger);
+  --status-warning: var(--warning);
+  --status-inactive: var(--text-3);
   --gap: 12px;
-  --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
-  color-scheme: dark light;
-}
-
-* {
-  box-sizing: border-box;
 }
 
 html,
 body,
 #root {
   height: 100%;
-  margin: 0;
-}
-
-body {
-  font: 14px/1.45 var(--font);
-  color: var(--text);
-  background:
-    radial-gradient(ellipse 65% 52% at 13% 84%, var(--bg-gradient-1), transparent 80%),
-    radial-gradient(ellipse 52% 55% at 89% 5%, var(--bg-gradient-2), transparent 75%),
-    var(--bg);
   overflow: hidden;
 }
 
 a {
   color: var(--accent);
+  text-decoration: none;
 }
 
-button,
-input,
+a:hover {
+  text-decoration: underline;
+}
+
+input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"]),
 select,
 textarea {
-  font: inherit;
-  color: inherit;
+  min-height: var(--control-h);
+  padding: 5px 10px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  box-shadow: var(--control-shadow);
+  font-size: var(--text-size);
+  outline: 0;
+  transition:
+    border-color var(--fast) ease,
+    box-shadow var(--medium) var(--ease-out);
 }
 
-input,
-select,
-textarea {
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 8px;
+input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"]):hover,
+select:hover,
+textarea:hover {
+  border-color: var(--control-border-hover);
 }
 
-input:focus-visible,
+input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"]):focus-visible,
 select:focus-visible,
-textarea:focus-visible,
+textarea:focus-visible {
+  border-color: var(--accent);
+  box-shadow: var(--control-shadow), 0 0 0 3.5px var(--ring);
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  opacity: 0.55;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+textarea {
+  line-height: 1.45;
+}
+
 button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline: 0;
 }
 
 code,
 pre {
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: 12px;
+}
+
+kbd {
+  font-family: var(--font);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 6px;
+  background: var(--fill-strong) padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-3) padding-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .react-flow__edge-textbg {
-  fill: var(--surface-raised);
+  fill: var(--surface);
 }
 
 .react-flow__edge-text {
-  fill: var(--text);
+  fill: var(--text-2);
+  font-size: 11px;
 }
 
 .react-flow__edge-path {
-  stroke: var(--text-muted);
+  stroke: var(--text-3);
+}
+
+.react-flow__controls {
+  overflow: hidden;
+  border-radius: var(--radius);
+  box-shadow: var(--popover-shadow);
 }
 
 .react-flow__controls-button {
-  background: var(--surface-raised);
-  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  border-bottom: 1px solid var(--separator);
   fill: var(--text);
   color: var(--text);
 }
 
 .react-flow__controls-button:hover {
-  background: var(--surface);
+  background: var(--control-bg-hover);
 }
 
 .react-flow__attribution {
@@ -105,11 +139,4 @@ pre {
 
 .react-flow__minimap {
   background: var(--surface);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  * {
-    animation: none !important;
-    transition: none !important;
-  }
 }

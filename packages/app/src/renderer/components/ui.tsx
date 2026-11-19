@@ -1,11 +1,13 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { Dialog } from "@base-ui/react/dialog";
+import { Button as DsButton } from "../ds/button";
+import { EmptyState } from "../ds/feedback";
+import { Dialog } from "../ds/overlay";
 import s from "./ui.module.css";
 
 export { s as ui };
 
-export function Button({ kind, className, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { kind?: "primary" | "danger" }) {
-  return <button type="button" className={[s.button, kind ? s[kind] : "", className ?? ""].join(" ")} {...rest} />;
+export function Button({ kind, children, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { kind?: "primary" | "danger" }) {
+  return <DsButton variant={kind ?? "secondary"} {...rest}>{children}</DsButton>;
 }
 
 export function Panel({ children, className }: { children: ReactNode; className?: string }) {
@@ -15,17 +17,17 @@ export function Panel({ children, className }: { children: ReactNode; className?
 export function Page({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
   return (
     <div className={s.page}>
-      <div className={s.row} style={{ justifyContent: "space-between" }}>
+      <header className={s.pageHeader}>
         <h1 className={s.title}>{title}</h1>
         <div className={s.row}>{actions}</div>
-      </div>
+      </header>
       <div className={s.stack}>{children}</div>
     </div>
   );
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <div className={s.empty}>{children}</div>;
+  return <EmptyState title={children} />;
 }
 
 export function ErrorText({ error }: { error: string | Error | null | undefined }) {
@@ -48,15 +50,9 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 
 export function Modal({ open, onClose, title, children }: { open: boolean; onClose(): void; title: string; children: ReactNode }) {
   return (
-    <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Backdrop className={s.overlay} />
-        <Dialog.Popup className={s.dialog}>
-          <Dialog.Title className={s.title}>{title}</Dialog.Title>
-          {children}
-        </Dialog.Popup>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()} title={title} width={640}>
+      {children}
+    </Dialog>
   );
 }
 

@@ -28,13 +28,14 @@ function SelectItem({ option }: { option: Option }) {
 }
 
 export function Select({
-  label, description, error, disabled, className, options, value, defaultValue, onValueChange, placeholder = "Choose…",
+  label, description, error, disabled, className, options, value, defaultValue, onValueChange, placeholder = "Choose…", ariaLabel,
 }: FieldProps & {
   options: Option[] | OptionGroup[];
   value?: string | null;
   defaultValue?: string | null;
   onValueChange?: (value: string | null) => void;
   placeholder?: string;
+  ariaLabel?: string;
 }) {
   const flat: Option[] = isGroups(options) ? options.flatMap((g) => g.options) : options;
   return (
@@ -46,7 +47,7 @@ export function Select({
         onValueChange={(next) => onValueChange?.(next as string | null)}
         disabled={disabled}
       >
-        <BaseSelect.Trigger className={s.trigger}>
+        <BaseSelect.Trigger className={s.trigger} aria-label={ariaLabel}>
           <BaseSelect.Value className={s.value} placeholder={placeholder} />
           <BaseSelect.Icon className={s.chevron}>
             <ChevronUpDownIcon size={12} strokeWidth={2} />

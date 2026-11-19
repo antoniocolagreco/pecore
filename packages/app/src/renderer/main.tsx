@@ -6,6 +6,8 @@ import { Layout } from "./shell/Layout";
 import { FilterProvider } from "./shell/filter";
 import { ThemeLoader } from "./theme/ThemeLoader";
 import * as screens from "./screens";
+import { ToastProvider, TooltipProvider } from "./ds/overlay";
+import "./ds/tokens.css";
 import "./theme/global.css";
 
 const router = createHashRouter([
@@ -35,9 +37,13 @@ const router = createHashRouter([
 startLive();
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <FilterProvider>
-      <ThemeLoader />
-      <RouterProvider router={router} />
-    </FilterProvider>
+    <TooltipProvider>
+      <ToastProvider>
+        <FilterProvider>
+          <ThemeLoader />
+          <RouterProvider router={router} />
+        </FilterProvider>
+      </ToastProvider>
+    </TooltipProvider>
   </StrictMode>,
 );

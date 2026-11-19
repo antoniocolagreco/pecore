@@ -1,52 +1,50 @@
-import { themeTokens } from "@pecore/schemas";
-import type { Theme } from "@pecore/schemas";
+import type { Theme, themeTokens } from "@pecore/schemas";
 
-export type Tokens = Record<(typeof themeTokens)[number], string>;
+type ThemeToken = (typeof themeTokens)[number];
 
-export const everforestDark: Tokens = {
-  bg: "#232a2e",
-  "bg-gradient-1": "#42644d38",
-  "bg-gradient-2": "#9a904224",
-  surface: "#2b3537",
-  "surface-raised": "#303b3d",
-  border: "#455154",
-  text: "#e6e4d4",
-  "text-muted": "#a7b0a4",
-  accent: "#83c092",
-  "status-running": "#7fbbb3",
-  "status-success": "#a7c080",
-  "status-failed": "#e67e80",
-  "status-warning": "#dbbc7f",
-  "status-inactive": "#7f9187",
+export type Mode = "light" | "dark";
+
+const tokenVars: Record<ThemeToken, string[]> = {
+  bg: ["--bg"],
+  "bg-gradient-1": [],
+  "bg-gradient-2": [],
+  surface: ["--surface"],
+  "surface-raised": ["--control-bg", "--control-bg-hover"],
+  border: ["--control-border", "--separator"],
+  text: ["--text"],
+  "text-muted": ["--text-2"],
+  accent: ["--accent", "--accent-hover"],
+  "status-running": [],
+  "status-success": ["--success"],
+  "status-failed": ["--danger"],
+  "status-warning": ["--warning"],
+  "status-inactive": ["--text-3"],
 };
 
-export const everforestLight: Tokens = {
-  bg: "#fdf6e3",
-  "bg-gradient-1": "#93b25926",
-  "bg-gradient-2": "#dfa00020",
-  surface: "#f4f0d9",
-  "surface-raised": "#efebd4",
-  border: "#d8d3ba",
-  text: "#4f5b62",
-  "text-muted": "#6f7f74",
-  accent: "#35a77c",
-  "status-running": "#3a94c5",
-  "status-success": "#6f8a00",
-  "status-failed": "#d84a47",
-  "status-warning": "#b98400",
-  "status-inactive": "#879386",
-};
-
-export const builtinThemes: { id: string; name: string; tokens: Tokens }[] = [
-  { id: "builtin:dark", name: "Dark green", tokens: everforestDark },
-  { id: "builtin:light", name: "Light", tokens: everforestLight },
-];
-
-export function resolveTokens(theme: Theme | null): Tokens {
-  return { ...everforestDark, ...(theme?.tokens ?? {}) };
+export function systemMode(): Mode {
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-export function applyTokens(tokens: Tokens): void {
+export function luminance(color: string): number | null {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})/i.exec(color)?.[1];
+  if (!hex) return null;
+  const full = hex.length === 3 ? hex.replace(/./g, (c) => c + c) : hex;
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) / 255);
+  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+}
+
+export function applyTheme(mode: Mode, theme: Theme | null): () => void {
   const root = document.documentElement;
-  for (const key of themeTokens) root.style.setProperty(`--${key}`, tokens[key]);
+  const bg = theme?.tokens.bg ? luminance(theme.tokens.bg) : null;
+  root.dataset.theme = bg === null ? mode : bg < 0.5 ? "dark" : "light";
+  const set: string[] = [];
+  for (const [token, value] of Object.entries(theme?.tokens ?? {})) {
+    for (const name of tokenVars[token as ThemeToken] ?? []) {
+      root.style.setProperty(name, value);
+      set.push(name);
+    }
+  }
+  return () => {
+    for (const name of set) root.style.removeProperty(name);
+  };
 }

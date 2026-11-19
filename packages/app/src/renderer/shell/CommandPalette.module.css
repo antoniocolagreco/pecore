@@ -1,29 +1,48 @@
 .command {
   display: grid;
-  gap: var(--gap);
+  gap: 10px;
+}
+
+.command :global([cmdk-input]) {
+  width: 100%;
+  height: 40px;
+  font-size: 15px;
 }
 
 .results {
   max-height: min(55vh, 26rem);
   overflow: auto;
+  scroll-padding-block: 4px;
+}
+
+.results :global([cmdk-empty]) {
+  padding: 20px;
+  color: var(--text-3);
+  text-align: center;
 }
 
 .results :global([cmdk-item]) {
-  padding: 8px 10px;
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--gap);
-  border-radius: 6px;
-  cursor: pointer;
+  gap: 12px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border-radius: 7px;
+  cursor: default;
+  user-select: none;
 }
 
 .results :global([cmdk-item][data-selected="true"]) {
-  background: var(--surface-raised);
-  outline: 1px solid var(--accent);
-  outline-offset: -1px;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.results :global([cmdk-item][data-selected="true"]) small {
+  color: rgb(255 255 255 / 0.75);
 }
 
 .results :global([cmdk-item][aria-disabled="true"]),
 .results small {
-  color: var(--text-muted);
+  color: var(--text-3);
 }
