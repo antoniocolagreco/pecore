@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { gitApp, gitAppResult } from "./git-as";
+import { dirname, join, resolve } from "node:path";
+import { credentialHelper } from "../runners/forge-env";
+import { gitApp, gitAppIn, gitAppResult } from "./git-as";
 
 const emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
@@ -37,4 +38,21 @@ export async function deleteBranch(repoGit: string, branch: string): Promise<voi
 
 export function jobBranch(jobId: string): string {
   return `factory/${jobId}`;
+}
+
+export async function cloneRepo(repoGit: string, url: string, helper: string | null, env: Record<string, string>): Promise<void> {
+  const config = helper === null ? [] : credentialHelper(helper);
+  const target = resolve(repoGit);
+  const cwd = dirname(target);
+  await mkdir(cwd, { recursive: true });
+  await gitAppIn(cwd, [...config, "clone", "--bare", "--no-hardlinks", "--origin", "origin", "--", url, target], { env });
+  await configureRepo(target);
+  await gitApp(target, ["config", "--replace-all", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"]);
+}
+
+export async function fetchBranch(repoGit: string, branch: string, helper: string | null, env: Record<string, string>): Promise<void> {
+  const config = helper === null ? [] : credentialHelper(helper);
+  const ref = `refs/heads/${branch}`;
+  await gitApp(repoGit, ["check-ref-format", ref]);
+  await gitApp(repoGit, [...config, "fetch", "--no-tags", "--no-recurse-submodules", "origin", `+${ref}:${ref}`], { env });
 }

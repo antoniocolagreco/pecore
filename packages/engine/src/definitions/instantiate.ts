@@ -14,8 +14,9 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-async function copyJson(from: string, to: string, schema: string): Promise<void> {
+async function copyJson(from: string, to: string, schema: string, update?: (value: Record<string, unknown>) => void): Promise<void> {
   const value = JSON.parse(await readFile(from, "utf8")) as Record<string, unknown>;
+  update?.(value);
   await writeFile(to, JSON.stringify({ ...value, $schema: `../../../schemas/${schema}` }, null, 2) + "\n");
 }
 
@@ -54,7 +55,7 @@ export async function instantiateNode(libraryDir: string, projectDir: string, na
   return result;
 }
 
-export async function instantiateRecipe(libraryDir: string, projectDir: string, name: string): Promise<InstantiateResult> {
+export async function instantiateRecipe(libraryDir: string, projectDir: string, name: string, rename: Record<string, string> = {}): Promise<InstantiateResult> {
   const result: InstantiateResult = { written: [], kept: [], errors: [] };
   const source = join(libraryDir, "recipes", `${name}.json`);
   const loaded = await loadRecipeFile(source);
@@ -62,7 +63,8 @@ export async function instantiateRecipe(libraryDir: string, projectDir: string, 
     result.errors.push(...loaded.errors);
     return result;
   }
-  for (const use of new Set(Object.values(loaded.value.nodes).map((n) => n.use))) {
+  const renamedUse = (use: string) => (Object.hasOwn(rename, use) ? rename[use] : undefined) ?? use;
+  for (const use of new Set(Object.values(loaded.value.nodes).map((n) => renamedUse(n.use)))) {
     const r = await instantiateNode(libraryDir, projectDir, use);
     result.written.push(...r.written);
     result.kept.push(...r.kept);
@@ -75,7 +77,10 @@ export async function instantiateRecipe(libraryDir: string, projectDir: string, 
     return result;
   }
   await mkdir(join(projectDir, "recipes"), { recursive: true });
-  await copyJson(source, target, "recipe.json");
+  await copyJson(source, target, "recipe.json", (recipe) => {
+    const nodes = recipe.nodes as Record<string, { use: string }> | undefined;
+    for (const node of Object.values(nodes ?? {})) node.use = renamedUse(node.use);
+  });
   result.written.push(target);
   return result;
 }

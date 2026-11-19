@@ -25,6 +25,10 @@ export async function gitApp(repoGit: string, args: string[], opts: Opts = {}): 
   return (await git(appUser, repoGit, [`--git-dir=${repoGit}`], args, opts)).stdout;
 }
 
+export async function gitAppIn(cwd: string, args: string[], opts: Opts = {}): Promise<string> {
+  return (await git(appUser, cwd, [], args, opts)).stdout;
+}
+
 export async function gitAppResult(repoGit: string, args: string[], opts: Opts = {}) {
   return git(appUser, repoGit, [`--git-dir=${repoGit}`], args, { ...opts, allowFail: true });
 }
