@@ -1,0 +1,13 @@
+{
+  "name": "@pecore/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "pecore": "out/pecore.mjs" },
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@pecore/schemas": "workspace:*"
+  }
+}

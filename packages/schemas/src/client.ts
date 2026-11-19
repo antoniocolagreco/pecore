@@ -1,5 +1,5 @@
 import { ApiErrorBody, routes } from "./api";
-import type { RouteDef, RouteInput, RouteName, RouteOutput, Routes } from "./api";
+import type { RouteDef, RouteInput, RouteName, RouteResult, Routes } from "./api";
 
 export class ApiError extends Error {
   constructor(
@@ -19,7 +19,7 @@ export function routePath(path: string, params: Record<string, string> = {}): st
 }
 
 type Takes<N extends RouteName> = Routes[N] extends { params: unknown } | { query: unknown } | { body: unknown } ? true : false;
-export type ApiClient = <N extends RouteName>(name: N, ...input: Takes<N> extends true ? [RouteInput<N>] : [RouteInput<N>?]) => Promise<RouteOutput<N>>;
+export type ApiClient = <N extends RouteName>(name: N, ...input: Takes<N> extends true ? [RouteInput<N>] : [RouteInput<N>?]) => Promise<RouteResult<N>>;
 
 export function apiClient(opts: { port: number; token: string; fetch?: typeof fetch }): ApiClient {
   const doFetch = opts.fetch ?? fetch;

@@ -411,3 +411,4 @@ export type RouteParsed<N extends RouteName> = {
   body: Routes[N] extends { body: infer S extends z.ZodType } ? z.output<S> : undefined;
 };
 export type RouteOutput<N extends RouteName> = z.input<Routes[N]["response"]>;
+export type RouteResult<N extends RouteName> = z.output<Routes[N]["response"]>;
