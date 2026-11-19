@@ -1,0 +1,208 @@
+.tabList {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--separator);
+}
+
+.tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--text-size);
+  font-weight: 500;
+  cursor: default;
+  outline: 0;
+  transition: color var(--fast) ease;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab[data-active] {
+  color: var(--text);
+}
+
+.tab:focus-visible {
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.tabIndicator {
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  translate: var(--active-tab-left) 0;
+  width: var(--active-tab-width);
+  transition:
+    translate var(--spring-time) var(--spring),
+    width var(--spring-time) var(--spring);
+}
+
+.tabPanel {
+  padding-top: 16px;
+  outline: 0;
+  animation: panel-in var(--medium) var(--ease-out);
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--text-size);
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 32px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--separator);
+  background: var(--surface);
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.table td {
+  height: 42px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--separator);
+  vertical-align: middle;
+}
+
+.table tr:last-child td {
+  border-bottom: 0;
+}
+
+.row {
+  transition: background-color var(--fast) ease;
+}
+
+.clickable {
+  cursor: default;
+}
+
+.clickable:hover td {
+  background: color-mix(in srgb, var(--fill) 60%, transparent);
+}
+
+.clickable:focus-visible {
+  outline: 0;
+}
+
+.clickable:focus-visible td {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.rowEnter {
+  animation: row-in var(--medium) var(--ease-out);
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.alignEnd {
+  text-align: right !important;
+}
+
+.muted {
+  color: var(--text-2);
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.truncate {
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: 0 0 0 0.5px var(--separator), 0 1px 2px rgb(0 0 0 / 0.04);
+  transition:
+    box-shadow var(--medium) var(--ease-out),
+    scale var(--spring-time) var(--spring);
+}
+
+a.stat,
+button.stat {
+  border: 0;
+  text-align: left;
+  color: inherit;
+  text-decoration: none;
+  font: inherit;
+}
+
+a.stat:hover,
+button.stat:hover {
+  box-shadow: 0 0 0 0.5px var(--separator), 0 4px 14px -4px rgb(0 0 0 / 0.14);
+}
+
+a.stat:active,
+button.stat:active {
+  scale: 0.98;
+}
+
+.statValue {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.statLabel {
+  color: var(--text-2);
+  font-size: var(--text-size-sm);
+}
+
+.statAttention .statValue {
+  color: var(--accent);
+}
+
+.statDanger .statValue {
+  color: var(--danger);
+}

@@ -1,0 +1,90 @@
+import type { CSSProperties, ReactNode } from "react";
+import s from "./feedback.module.css";
+import { AlertIcon, CheckCircleIcon, InfoIcon } from "./icons";
+
+export type Tone = "neutral" | "accent" | "success" | "warning" | "danger";
+
+export function Spinner({ size = 16 }: { size?: number }) {
+  return (
+    <svg className={s.spinner} width={size} height={size} viewBox="0 0 16 16" fill="none" aria-label="Loading" role="img">
+      <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2" />
+      <path d="M14.5 8A6.5 6.5 0 0 0 8 1.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function Badge({ tone = "neutral", dot, pulse, children }: { tone?: Tone; dot?: boolean; pulse?: boolean; children: ReactNode }) {
+  return (
+    <span className={`${s.badge} ${s[tone]}`}>
+      {dot && <span className={`${s.dot} ${pulse ? s.pulse : ""}`} />}
+      {children}
+    </span>
+  );
+}
+
+export function Count({ value, label }: { value: number; label?: string }) {
+  if (value <= 0) return null;
+  return <span key={value} className={s.count} aria-label={label}>{value > 99 ? "99+" : value}</span>;
+}
+
+const alertIcons: Record<Tone, ReactNode> = {
+  neutral: <InfoIcon />,
+  accent: <InfoIcon />,
+  success: <CheckCircleIcon />,
+  warning: <AlertIcon />,
+  danger: <AlertIcon />,
+};
+
+export function Alert({ tone = "accent", title, children, actions }: { tone?: Tone; title?: ReactNode; children?: ReactNode; actions?: ReactNode }) {
+  return (
+    <div className={`${s.alert} ${s[tone]}`} role={tone === "danger" ? "alert" : "status"}>
+      {alertIcons[tone]}
+      <div className={s.alertBody}>
+        {title && <span className={s.alertTitle}>{title}</span>}
+        {children && <span className={title ? s.alertText : undefined}>{children}</span>}
+      </div>
+      {actions && <div className={s.alertActions}>{actions}</div>}
+    </div>
+  );
+}
+
+export function EmptyState({ icon, title, children, action }: { icon?: ReactNode; title: ReactNode; children?: ReactNode; action?: ReactNode }) {
+  return (
+    <div className={s.empty}>
+      {icon && <div className={s.emptyIcon}>{icon}</div>}
+      <div className={s.emptyTitle}>{title}</div>
+      {children && <div className={s.emptyText}>{children}</div>}
+      {action && <div className={s.emptyAction}>{action}</div>}
+    </div>
+  );
+}
+
+export function Card({ title, actions, padded, className, children }: { title?: ReactNode; actions?: ReactNode; padded?: boolean; className?: string; children: ReactNode }) {
+  return (
+    <section className={[s.card, padded && !title ? s.cardPadded : "", className ?? ""].join(" ")}>
+      {title !== undefined && (
+        <header className={s.cardHeader}>
+          <h3 className={s.cardTitle}>{title}</h3>
+          {actions}
+        </header>
+      )}
+      {title !== undefined ? <div className={padded === false ? undefined : s.cardBody}>{children}</div> : children}
+    </section>
+  );
+}
+
+export function Kbd({ children }: { children: ReactNode }) {
+  return <kbd className={s.kbd}>{children}</kbd>;
+}
+
+export function Progress({ value }: { value: number | null }) {
+  return (
+    <div className={s.progress} role="progressbar" aria-valuenow={value ?? undefined} aria-valuemin={0} aria-valuemax={100}>
+      <div className={`${s.progressBar} ${value === null ? s.progressIndeterminate : ""}`} style={value === null ? undefined : { width: `${value}%` }} />
+    </div>
+  );
+}
+
+export function Skeleton({ width = "100%", height = 14, style }: { width?: number | string; height?: number; style?: CSSProperties }) {
+  return <div className={s.skeleton} style={{ width, height, ...style }} />;
+}

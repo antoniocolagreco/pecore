@@ -2,9 +2,13 @@ import { StrictMode, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import "../ds/tokens.css";
+import { Button, IconButton } from "../ds/button";
 import { Checkbox, RadioGroup, Switch } from "../ds/choice";
+import { Stat, Stats, Table, Tabs } from "../ds/data";
+import { Alert, Badge, Card, Count, EmptyState, Kbd, Progress, Skeleton, Spinner } from "../ds/feedback";
 import { PasswordField, SearchField, TextArea, TextField } from "../ds/field";
-import { FolderIcon, LinkIcon, MonitorIcon, MoonIcon, SunIcon } from "../ds/icons";
+import { ArrowUpIcon, BellIcon, ChatIcon, FolderIcon, InboxIcon, LinkIcon, MonitorIcon, MoonIcon, MoreIcon, PauseIcon, PlayIcon, PlusIcon, RefreshIcon, StopIcon, SunIcon, TrashIcon } from "../ds/icons";
+import { Dialog, Menu, ToastProvider, TooltipProvider, useToasts } from "../ds/overlay";
 import { Combobox, MultiCombobox, Select } from "../ds/select";
 import { NumberField, Segmented, Slider } from "../ds/values";
 import g from "./gallery.module.css";
@@ -132,7 +136,7 @@ function Gallery() {
       <header className={g.header}>
         <div>
           <h1 className={g.title}>Components</h1>
-          <p className={g.subtitle}>PeCore design system · inputs</p>
+          <p className={g.subtitle}>PeCore design system</p>
         </div>
         <Segmented
           label="Theme"
@@ -271,12 +275,204 @@ function Gallery() {
           </div>
         </Example>
       </Section>
+
+      <MoreComponents />
     </div>
+  );
+}
+
+type DemoJob = { id: string; title: string; project: string; state: "running" | "waiting" | "failed" | "succeeded"; node: string; age: string };
+
+const demoJobs: DemoJob[] = [
+  { id: "1", title: "Fix login redirect loop", project: "shop", state: "running", node: "write", age: "4m" },
+  { id: "2", title: "Add dark mode to settings", project: "pippo", state: "waiting", node: "human-review", age: "12m" },
+  { id: "3", title: "Upgrade to React 19", project: "blog", state: "failed", node: "test", age: "1h" },
+  { id: "4", title: "Rust check for clippy warnings", project: "space-game", state: "succeeded", node: "commit", age: "3h" },
+];
+
+function StateBadge({ state }: { state: DemoJob["state"] }) {
+  if (state === "running") return <Badge tone="accent" dot pulse>Running</Badge>;
+  if (state === "waiting") return <Badge tone="warning" dot>Needs you</Badge>;
+  if (state === "failed") return <Badge tone="danger" dot>Failed</Badge>;
+  return <Badge tone="success" dot>Done</Badge>;
+}
+
+function MoreComponents() {
+  const toasts = useToasts();
+  const [dialog, setDialog] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  return (
+    <>
+      <Section title="Buttons" note="Press any button: it gives a little under the finger. Hover the icon buttons for tooltips.">
+        <Example caption="Variants">
+          <div className={g.row}>
+            <Button variant="primary" icon={<PlusIcon />}>New job</Button>
+            <Button>Cancel</Button>
+            <Button variant="ghost">Skip</Button>
+            <Button variant="danger" icon={<TrashIcon />}>Delete</Button>
+          </div>
+        </Example>
+        <Example caption="Sizes and states">
+          <div className={g.row}>
+            <Button size="sm">Small</Button>
+            <Button size="lg" variant="primary">Large</Button>
+            <Button disabled>Disabled</Button>
+            <Button variant="primary" loading={busy} onClick={() => { setBusy(true); setTimeout(() => setBusy(false), 1600); }}>Save</Button>
+          </div>
+        </Example>
+        <Example caption="Icon buttons with tooltip">
+          <div className={g.row}>
+            <IconButton label="Pause" shortcut="Space" icon={<PauseIcon />} />
+            <IconButton label="Resume" icon={<PlayIcon />} />
+            <IconButton label="Stop" icon={<StopIcon />} />
+            <IconButton label="Retry" icon={<RefreshIcon />} />
+            <Menu
+              align="end"
+              trigger={<Button variant="ghost" icon={<MoreIcon />} aria-label="More" />}
+              items={[
+                { label: "Open in terminal", onSelect: () => undefined, shortcut: "Ctrl T" },
+                { label: "Copy branch name", onSelect: () => undefined },
+                "separator",
+                { label: "Archive", onSelect: () => undefined },
+                { label: "Delete job", icon: <TrashIcon />, danger: true, onSelect: () => setConfirm(true) },
+              ]}
+            />
+          </div>
+        </Example>
+      </Section>
+
+      <Section title="Status and feedback" note="Badges for job states, counters, alerts with actions, progress and loading placeholders.">
+        <Example caption="Job states">
+          <div className={g.row}>
+            <StateBadge state="running" />
+            <StateBadge state="waiting" />
+            <StateBadge state="failed" />
+            <StateBadge state="succeeded" />
+            <Badge>Paused</Badge>
+          </div>
+        </Example>
+        <Example caption="Counters and keys">
+          <div className={g.row}>
+            <span className={g.inline}><InboxIcon /> Inbox <Count value={3} /></span>
+            <span className={g.inline}><ChatIcon /> Orchestrator <Count value={12} /></span>
+            <span className={g.inline}>Search <Kbd>Ctrl</Kbd><Kbd>K</Kbd></span>
+          </div>
+        </Example>
+        <Example caption="Progress and loading">
+          <div className={g.stack}>
+            <Progress value={62} />
+            <Progress value={null} />
+            <div className={g.row}><Spinner /> <span className={g.output}>Checking the login…</span></div>
+            <Skeleton width="70%" />
+            <Skeleton width="45%" />
+          </div>
+        </Example>
+        <Example caption="Alerts">
+          <div className={g.stack}>
+            <Alert tone="warning" title="Global pause is on" actions={<Button size="sm">Resume all</Button>}>Running jobs hold and queued jobs do not start.</Alert>
+            <Alert tone="danger" title="Codex is logged out">Jobs that use it wait until you log in again.</Alert>
+            <Alert tone="success">PeCore set up Claude Code and Codex: 8 profiles added.</Alert>
+          </div>
+        </Example>
+      </Section>
+
+      <Section title="Overlays" note="Dialogs scale in over a blurred backdrop; toasts stack and expand on hover, swipe right to dismiss.">
+        <Example caption="Dialog">
+          <div className={g.row}>
+            <Button onClick={() => setDialog(true)}>New project…</Button>
+            <Button variant="danger" onClick={() => setConfirm(true)}>Delete job…</Button>
+          </div>
+        </Example>
+        <Example caption="Toasts">
+          <div className={g.row}>
+            <Button
+              icon={<BellIcon />}
+              onClick={() => toasts.add({ title: "Job finished", description: `“Fix login redirect loop” is ready for review.` })}
+            >
+              Show a toast
+            </Button>
+          </div>
+        </Example>
+      </Section>
+
+      <Section title="Data" note="Stats link to their list; rows are keyboard focusable; tabs slide their indicator.">
+        <div className={g.wide}>
+          <Stats>
+            <Stat value={3} label="Need you" tone="attention" onClick={() => undefined} />
+            <Stat value={2} label="Running" />
+            <Stat value={1} label="Failed" tone="danger" onClick={() => undefined} />
+            <Stat value="184k" label="Tokens today" />
+            <Stat value="$1.92" label="Cost today" />
+          </Stats>
+        </div>
+        <div className={g.wide}>
+          <Card title="Active jobs" actions={<Button size="sm" variant="ghost">View all</Button>} padded={false}>
+            <Table
+              label="Active jobs"
+              rows={demoJobs}
+              rowKey={(j) => j.id}
+              onRowClick={() => undefined}
+              columns={[
+                { key: "title", header: "Title", cell: (j) => j.title },
+                { key: "project", header: "Project", cell: (j) => j.project, muted: true, width: 120 },
+                { key: "state", header: "State", cell: (j) => <StateBadge state={j.state} />, width: 120 },
+                { key: "node", header: "Step", cell: (j) => j.node, muted: true, width: 130 },
+                { key: "age", header: "Started", cell: (j) => j.age, muted: true, align: "end", width: 80 },
+              ]}
+            />
+          </Card>
+        </div>
+        <div className={g.wide}>
+          <Tabs
+            tabs={[
+              { value: "graph", label: "Graph", content: <span className={g.output}>The recipe graph goes here.</span> },
+              { value: "history", label: "History", content: <span className={g.output}>Every attempt with its logs.</span> },
+              { value: "diff", label: "Changes", content: <span className={g.output}>The diff against the target branch.</span> },
+            ]}
+          />
+        </div>
+        <div className={g.wide}>
+          <Card padded>
+            <EmptyState
+              icon={<InboxIcon size={20} />}
+              title="Nothing needs you"
+              action={<Button variant="primary" icon={<ArrowUpIcon />}>Give the orchestrator a task</Button>}
+            >
+              When a job waits for a review or a decision, it shows up here.
+            </EmptyState>
+          </Card>
+        </div>
+      </Section>
+
+      <Dialog
+        open={dialog}
+        onOpenChange={setDialog}
+        title="New project"
+        description="PeCore creates the folder and the repository for you."
+        footer={<><Button onClick={() => setDialog(false)}>Cancel</Button><Button variant="primary" onClick={() => setDialog(false)}>Create</Button></>}
+      >
+        <TextField label="Name" defaultValue="space-game" autoFocus />
+        <Select label="Recipe" options={recipes} defaultValue="feature" />
+      </Dialog>
+      <Dialog
+        open={confirm}
+        onOpenChange={setConfirm}
+        title="Delete “Upgrade to React 19”?"
+        description="Its branch, logs and artifacts are removed. This cannot be undone."
+        width={400}
+        footer={<><Button onClick={() => setConfirm(false)}>Cancel</Button><Button variant="dangerSolid" onClick={() => setConfirm(false)}>Delete</Button></>}
+      />
+    </>
   );
 }
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <Gallery />
+    <TooltipProvider>
+      <ToastProvider>
+        <Gallery />
+      </ToastProvider>
+    </TooltipProvider>
   </StrictMode>,
 );
