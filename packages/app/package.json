@@ -9,6 +9,8 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
+    "gallery": "vite --config gallery.vite.config.ts",
+    "gallery:build": "vite build --config gallery.vite.config.ts",
     "dist": "pnpm --filter @pecore/agents build-adapters && pnpm build && electron-builder --linux --publish never"
   },
   "dependencies": {

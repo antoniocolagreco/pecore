@@ -1,0 +1,233 @@
+.scrub {
+  align-self: flex-start;
+  cursor: ew-resize;
+  user-select: none;
+}
+
+.scrub .label {
+  cursor: ew-resize;
+}
+
+.label {
+  font-size: var(--text-size);
+  font-weight: 500;
+}
+
+.scrubCursor {
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.5));
+  color: var(--text);
+}
+
+.numberGroup {
+  width: 140px;
+  padding-right: 3px;
+}
+
+.numberInput {
+  font-variant-numeric: tabular-nums;
+}
+
+.unit {
+  padding-right: 6px;
+  color: var(--text-3);
+  user-select: none;
+}
+
+.stepper {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 18px;
+  height: 24px;
+  border-radius: 5px;
+  background: var(--fill);
+  overflow: hidden;
+}
+
+.step {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  cursor: default;
+  transition:
+    background-color var(--fast) ease,
+    color var(--fast) ease;
+}
+
+.step:hover:not([data-disabled]) {
+  color: var(--text);
+  background: var(--fill);
+}
+
+.step:active:not([data-disabled]) {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.step[data-disabled] {
+  color: var(--text-3);
+}
+
+.slider {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sliderHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.sliderValue {
+  font-size: var(--text-size);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.control {
+  display: flex;
+  align-items: center;
+  height: 22px;
+  touch-action: none;
+  user-select: none;
+}
+
+.track {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--fill-strong);
+}
+
+.indicator {
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.slider[data-disabled] .indicator {
+  background: var(--text-3);
+}
+
+.thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--knob);
+  box-shadow: var(--knob-shadow), 0 0 0 0 transparent;
+  outline: 0;
+  transition:
+    scale var(--spring-time) var(--spring),
+    box-shadow var(--medium) var(--ease-out);
+}
+
+.thumb:hover {
+  scale: 1.08;
+}
+
+.thumb[data-dragging] {
+  scale: 1.18;
+}
+
+.thumb:has(:focus-visible) {
+  box-shadow: var(--knob-shadow), 0 0 0 3.5px var(--ring);
+}
+
+.ticks {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 9px;
+  font-size: 11px;
+  color: var(--text-3);
+  user-select: none;
+}
+
+.segmented {
+  position: relative;
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 2px;
+  border-radius: var(--radius);
+  background: var(--fill);
+  isolation: isolate;
+}
+
+.segment {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 64px;
+  height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--text-size);
+  font-weight: 500;
+  cursor: default;
+  outline: 0;
+  transition:
+    color var(--medium) var(--ease-out),
+    scale var(--spring-time) var(--spring);
+}
+
+.segment:hover {
+  color: var(--text);
+}
+
+.segment[data-pressed] {
+  color: var(--text);
+}
+
+.segment:active {
+  scale: 0.96;
+}
+
+.segment:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.segment + .segment::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 1px;
+  background: var(--separator);
+  transition: opacity var(--fast) ease;
+}
+
+.segment[data-pressed]::before,
+.segment[data-pressed] + .segment::before {
+  opacity: 0;
+}
+
+.pill {
+  position: absolute;
+  z-index: 0;
+  top: 2px;
+  left: 0;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--control-bg);
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.06), 0 2px 4px rgb(0 0 0 / 0.1), 0 1px 1px rgb(0 0 0 / 0.06);
+  transition:
+    translate var(--spring-time) var(--spring),
+    width var(--spring-time) var(--spring);
+}
+
+:root[data-theme="dark"] .pill {
+  background: rgb(255 255 255 / 0.16);
+  box-shadow: inset 0 0.5px 0 rgb(255 255 255 / 0.1), 0 1px 3px rgb(0 0 0 / 0.3);
+}
