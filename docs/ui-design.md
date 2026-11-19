@@ -208,7 +208,7 @@ The prototype is normative only for: the Everforest palette and gradients, the I
     *   files changed (from the `diff` artifact);
     *   check nodes with their last outcome; no test counts;
     *   open findings (from the `findings` artifact);
-    *   delivery link; "Merged" only when `merged_at` is set (only for succeeded jobs with children, design.md 4.6);
+    *   delivery link; "Merged" only when `merged_at` is set (design.md Phase 4 decision 10);
     *   no summary text unless an artifact provides it.
 
 ### Job controls
@@ -219,7 +219,8 @@ The prototype is normative only for: the Everforest palette and gradients, the I
 | Play | paused | Continues from the next node. |
 | Stop | queued, running, waiting, paused | Kills the running node now; the job ends Stopped. No confirmation: Resume restarts it. |
 | Resume | failed, stopped | Restarts the failed or stopped node from scratch, in the same workdir. |
-| Realign | running, waiting, paused, succeeded, not_delivered, when the recipe has `onBaseChanged` | Moves the job onto the current base and re-runs the recipe's rebase path. A waiting human review is discarded. |
+| Realign | queued, succeeded, not_delivered, stopped, failed (design.md Phase 4 decision 15); a started job also needs `onBaseChanged` in its recipe | Moves the job onto the current head of its target branch, or onto another target branch chosen here, which the PR then targets too. A started job re-runs the recipe's rebase path. |
+| Check merge | a job with a delivery not yet merged | Asks the forge now whether the PR is merged. Opening the job view does the same once. |
 | Archive | final states | Hides the job from default lists. |
 | Delete | final states, no children outside a final state | Asks for confirmation, listing what is removed: workdir, local branch, artifacts, logs, history. Nothing on the forge is touched. |
 

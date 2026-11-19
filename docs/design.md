@@ -953,8 +953,8 @@ Recorded ACP traffic for tests lives in `packages/agents/fixtures/<connector>/<c
 
 ### Local API, WebSocket and MCP
 
-*   The engine binds `127.0.0.1` on port 0 and writes `run/api.json` (`{ "port", "token" }`, mode 0600). The token is a random 32-byte value made by the engine at each start. The main process reads the file and gives port and token to the renderer through preload; the CLI reads the same file.
-*   Every request carries `Authorization: Bearer <token>`; the server also checks `Host` and `Origin`.
+*   The engine binds `127.0.0.1` on port 0 and writes `run/api.json` (`{ "port", "token" }`, mode 0600). The token is a random 32-byte value made by the engine at each start. The engine also sends port and token to the main process in `ready`; the main process gives them to the renderer through preload and never reads the file. The CLI reads the file.
+*   Every request carries `Authorization: Bearer <token>`, except `/live`, which authenticates with its first message. The server also checks `Host` and `Origin` (Phase 5 decisions).
 
 | Method and path | Purpose |
 |---|---|
@@ -962,8 +962,14 @@ Recorded ACP traffic for tests lives in `packages/agents/fixtures/<connector>/<c
 | `POST /projects/:id/export`, `POST /projects/import` | share |
 | `GET /jobs`, `GET /jobs/:id`, `GET /jobs/:id/why` | list and read |
 | `POST /jobs` | create (Job creation below) |
-| `POST /jobs/:id/{stop,pause,play,resume,archive,delete,realign}` | controls |
-| `POST /pause`, `POST /play` | global controls |
+| `POST /jobs/:id/{stop,pause,play,resume,archive,delete,realign,check-merge}` | controls; `check-merge` runs merge detection for the job now (decision 10) |
+| `POST /pause`, `POST /play`, `POST /play-interrupted` | global controls; `play-interrupted` plays every job paused by the app quit |
+| `GET /projects/:id/creation`, `POST /projects/:id/creation/{retry,cancel}` | an unfinished project creation: the state of each task of "Project creation", the error, the open confirmation item of the repo creation node; Retry and Cancel (decision 13) |
+| `GET /status` | app version, home check warnings, global pause, jobs paused by the quit, Inbox count |
+| `GET /first-run` | the check of each first run step (ui-design.md First run) |
+| `POST /prerequisites/check` | runs the checks of decision 12 for the features in use; each result names the setting it points to |
+| `GET /usage?from&to` | tokens per account, project and day; cost of API key accounts; budgets with their use; cooldowns; the last quota seen per account (5.3) |
+| `GET /themes` | the theme files of `PECORE_HOME/themes/`, each with its tokens or its validation error |
 | `GET /queue`, `POST /queue/:id` | waiting items and the user's choice; the body carries `{choice, note, input, hash}`, where `hash` is the sha256 of the item's `subject` the GUI showed; the engine refuses the choice (409) if the item changed, was resolved or was cancelled since |
 | `GET/PUT /definitions/*path`, `POST /definitions/validate`, `POST /definitions/instantiate` | templates and instances; `GET` returns the file's sha256, `PUT` carries it as `If-Match` and is refused (409) when the file changed since |
 | `DELETE /projects/:id` | project delete (4.8) |
@@ -977,14 +983,14 @@ Recorded ACP traffic for tests lives in `packages/agents/fixtures/<connector>/<c
 | `POST /accounts/:id/login` | start a forge or service tool login; progress over WebSocket |
 | `GET /accounts/:id/options` | the models and efforts the account's connector offers (`listOptions` through any logged-in login of the account), for the profile editor |
 | `GET/POST /chats`, `POST /chats/:id/messages` | orchestrator chat; a message has text, attachments and an optional `context` of references (section 6) |
-| `GET /artifacts/:job/:run/:name`, `GET /logs/:attempt` | files |
+| `GET /artifacts/:job/:run/:name`, `GET /logs/:attempt?view=events\|raw` | files; `events` returns the normalised events of the attempt (the shape of `log.line`), `raw` the JSONL lines; 410 when retention removed the log |
 
-*   WebSocket `/live` sends a union of `job.updated`, `node_run.updated`, `queue.updated`, `definition.changed` (path, new hash), `log.line`, `login.progress`, `chat.message`, `chat.action`, `notify`. `log.line` is sent only for attempts the client subscribed to (`{subscribe: attempt id}`, `{unsubscribe: attempt id}`), so the GUI receives the lines of the log it shows and nothing else.
+*   WebSocket `/live` sends a union of `job.updated`, `node_run.updated`, `queue.updated`, `project.updated` (a creation step changed), `definition.changed` (path, new hash), `log.line` (one normalised event), `login.progress`, `chat.message`, `chat.action`, `notify`. `log.line` is sent only for attempts the client subscribed to (`{subscribe: attempt id}`, `{unsubscribe: attempt id}`), so the GUI receives the lines of the log it shows and nothing else.
 *   MCP: HTTP transport (streamable HTTP) on a second `127.0.0.1` port, header `Authorization: Bearer <orchestrator token>`. The token is made at each start and passed in the `mcpServers` field of the orchestrator's `session/new`, with the URL and the header.
 
 ### Engine and main process messages
 
-Over `parentPort`: engine to main `ready {port}`, `notify {title, body, kind}`, `admin {script}` (main runs the admin prompt and replies `admin.result`), `active {jobs}` (reply to `active?`), `shutdown.done`. Main to engine: `active?`, `shutdown`.
+Over `parentPort`: engine to main `ready {port, token}`, `notify {title, body, kind}`, `admin {script}` (main runs the admin prompt and replies `admin.result`), `active {jobs}` (reply to `active?`), `shutdown.done`. Main to engine: `active?`, `shutdown`.
 
 Window and tray: closing the window hides it; the app, the engine and the jobs keep running. A tray icon (Electron `Tray`) shows the number of running jobs and items in the Inbox, and has "Open PeCore" and "Quit". The app holds a single-instance lock (`app.requestSingleInstanceLock()`): launching it again shows the existing window, so the window can be reopened on a Linux desktop with no tray. The first time the window is hidden, a notification says that jobs keep running and how to quit.
 
@@ -1190,7 +1196,7 @@ The screens below come from G16. Their layout is designed in [ui-design.md](ui-d
 | `src/main/admin.ts` | runs the privileged script text with `pkexec` or `osascript` (Fixed choices) |
 | `src/main/notifications.ts` | native notifications for `notify` messages; optional sound; quiet hours |
 | `src/main/updater.ts` | auto-update |
-| `src/preload/index.ts` | exposes only the API port and token (from `run/api.json`) to the renderer |
+| `src/preload/index.ts` | exposes only the API port and token (from the `ready` message) to the renderer |
 | `src/renderer/main.tsx` | React root and routes |
 | `src/renderer/api/client.ts` | typed HTTP client from `@pecore/schemas` |
 | `src/renderer/api/live.ts` | WebSocket subscription |
@@ -1285,7 +1291,7 @@ Entry gates: a phase does not start until these open findings of the second full
 | Phase | Must be resolved before it starts |
 |---|---|
 | 4 | resolved below (Phase 4 decisions) |
-| 5 | renderer transport and authentication for `/live` (a browser WebSocket cannot send a Bearer header), `Host` and `Origin` rules, typed GUI operations; the owner of `run/api.json` |
+| 5 | resolved below (Phase 5 decisions) |
 | 6 | ticket intake persisted through job creation, with a stable intake id and no-source projects; how an agent creates an `agent-question` and how the answer reaches its next turn; images in orders; protected orchestrator after restart with the new MCP token; that token reaches `claude` on its command line (`--mcp-config`, when `CLAUDE_CODE_EXECUTABLE` is set), readable by every local user in `/proc` ([sudo spike](spikes/sudo.md)) |
 | macOS pass | Keychain with an empty password: path, creation and unlock after logout; pass criteria of the macOS gate |
 
@@ -1309,3 +1315,13 @@ Each line closes one entry gate of phase 4 and overrides the earlier text it con
 14. **Group before relogin.** The admin prompt that turns protected mode on also runs the group and ACL steps for every existing project as root. A project created later, while the app user's session does not have the group yet (`id -Gn`), gets its group step through an admin prompt too; the GUI suggests logging out and in to avoid it.
 15. **Base changes only on a job that does not work.** A base change is a request (4.2): applied at once on a `queued`, `succeeded`, `not_delivered`, `stopped` or `failed` job, otherwise applied when the job reaches one of those states. The user cannot realign a `running`, `waiting` or `paused` job. A job therefore re-enters at `onBaseChanged` only after its `start` node has completed, and the recipe validator counts the ticket and the outputs of `start` as available at `onBaseChanged`.
 16. **Detached processes on job stop.** Every process the engine starts for a job, agent or command, gets `PECORE_JOB_ID=<job id>` in its environment, and its children inherit it. After stopping the group, the engine kills, as the project user, every process of that user whose environment holds that exact variable (`/proc/<pid>/environ` on Linux; macOS in the macOS pass). The user's own shells and editors in the workdir lack it and survive; a process that removes the variable on purpose escapes. The `kill -KILL -1` sweep stays only for app start and quit in protected mode.
+
+#### Phase 5 decisions
+
+Each line closes one entry gate of phase 5 and overrides the earlier text it contradicts.
+
+1.  **Renderer origin.** The packaged app loads the renderer from the custom scheme `app://pecore/` (Electron `protocol.handle`, registered as standard and secure), not from `file://`: a `file://` page sends `Origin: null`, which a sandboxed iframe on any website also sends. The development app loads it from the electron-vite dev server; the main process passes that origin to the engine in `PECORE_DEV_ORIGIN`, only when the app is not packaged. The renderer's Content-Security-Policy allows `connect-src` only to `http://127.0.0.1:<port>` and `ws://127.0.0.1:<port>`, so a script injected through rendered agent output cannot send the token elsewhere.
+2.  **Host and Origin.** Every HTTP request and the `/live` upgrade are checked before the token. `Host` must be exactly `127.0.0.1:<port>`, which blocks DNS rebinding (a website whose name resolves to 127.0.0.1 still sends its own name as `Host`). `Origin` must be absent (the CLI and other non-browser clients; a browser always sends it on a cross-origin request and on a WebSocket) or equal to `app://pecore` or `PECORE_DEV_ORIGIN`. Any other value gives 403. The renderer's origin differs from the API's, so its requests with `Authorization` are preflighted: the server answers `OPTIONS` for an allowed origin without the token, with that origin in `Access-Control-Allow-Origin` and the headers `authorization`, `content-type`, `if-match`.
+3.  **`/live` authentication.** A browser `WebSocket` cannot send headers. Every client opens `/live` without a token and sends `{"auth": "<token>"}` as its first message. The server sends nothing before it, and closes the socket with code 4401 when the token is wrong or does not arrive within 5 seconds. A token in the query string would end up in logs; header injection by the main process (`webRequest`) would work only for the renderer.
+4.  **Typed operations.** `packages/schemas/src/api.ts` holds one table of routes: method, path, and the Zod schemas of params, query, body and response. The server registers its routes from the table and validates every input (400 with the Zod issues); tests also validate the responses. The renderer client and the CLI call routes through one typed function built from the same table, so a changed route breaks the build of both. An error body is `{error, message}`, with `error` one of `bad_request` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404), `gone` (410), `conflict` (409), `engine_error` (500). The routes the GUI needed and the API table lacked (wizard progress, Retry and Cancel of a creation, status, first run, prerequisite recheck, usage, themes, normalised log history, on-demand merge check, play interrupted jobs) are in the API table above.
+5.  **Owner of `run/api.json`.** Only the engine writes `run/api.json`: after the API listens, mode 0600, written to a temporary file and renamed. It deletes the file at shutdown. The main process gets port and token from `ready` and never reads the file. A file left by a crash points to a closed port, so the CLI prints `PeCore is not running: open the app`. When `shutdown.done` does not arrive within 15 seconds, the main process kills the engine process and exits; the next start runs the sweep of section 1 and the services sweep of 4.9.
