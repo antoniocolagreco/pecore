@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,6 +11,7 @@ const platform = process.env.PECORE_TARGET_PLATFORM ?? process.platform;
 const arch = process.env.PECORE_TARGET_ARCH ?? process.arch;
 
 mkdirSync(out, { recursive: true });
+copyFileSync(join(root, "scripts", "orchestrator-mcp.mjs"), join(out, "orchestrator-mcp.mjs"));
 
 for (const [pkg, { version }] of Object.entries(pins.adapters)) {
   const dir = join(out, `${pkg}@${version}`);

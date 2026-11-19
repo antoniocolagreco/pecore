@@ -44,3 +44,18 @@ export async function readLog(path: string): Promise<LogLine[]> {
     .filter(Boolean)
     .map((l) => JSON.parse(l) as LogLine);
 }
+
+export async function readLogTail(path: string, limit: number): Promise<{ bytes: Buffer; truncated: boolean }> {
+  let bytes: Buffer = Buffer.alloc(0);
+  let truncated = false;
+  await pipeline(createReadStream(path), createZstdDecompress(), async (stream) => {
+    for await (const value of stream) {
+      const chunk: Buffer = value as Buffer;
+      if (bytes.length + chunk.length > limit) truncated = true;
+      bytes = chunk.length >= limit
+        ? Buffer.from(chunk.subarray(chunk.length - limit))
+        : Buffer.concat([bytes.subarray(Math.max(0, bytes.length + chunk.length - limit)), chunk]);
+    }
+  });
+  return { bytes, truncated };
+}

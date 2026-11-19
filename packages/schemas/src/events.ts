@@ -44,9 +44,11 @@ export const OrderPlan = z.array(z.object({
   ticketText: z.string(),
   dependsOn: z.array(z.string().min(1)).max(1),
   baseBranch: z.string().min(1).optional(),
+  attachmentIds: z.array(z.ulid()).optional(),
 }).strict());
 export type OrderPlan = z.infer<typeof OrderPlan>;
 
+const StoredOrderPlan = z.array(OrderPlan.element.extend({ recipeConfirmationId: z.ulid().optional() }));
 const OrderId = z.string().min(1);
 const ev = <T extends string, P extends z.ZodType>(type: T, payload: P) => z.object({ type: z.literal(type), payload });
 
@@ -57,6 +59,8 @@ export const EventBody = z.discriminatedUnion("type", [
       title: z.string(),
       recipe: z.unknown(),
       ticket: Artifact.nullable(),
+      attachments: z.array(Artifact).optional(),
+      recipeConfirmationId: z.ulid().optional(),
       parentJobId: z.string().nullable(),
       baseBranch: z.string(),
       base: z.string().nullable(),
@@ -145,7 +149,7 @@ export const EventBody = z.discriminatedUnion("type", [
   ev("order.read", z.object({ orderId: OrderId, ticket: TicketSnapshot, trusted: z.boolean() })),
   ev("order.handed", z.object({ orderId: OrderId, replies: z.array(TicketReply).optional(), askId: z.ulid().nullish() })),
   ev("order.asked", z.object({ orderId: OrderId, commentAt: z.number().int().nonnegative() })),
-  ev("order.planned", z.object({ orderId: OrderId, plan: OrderPlan })),
+  ev("order.planned", z.object({ orderId: OrderId, plan: StoredOrderPlan })),
   ev("order.done", z.object({ orderId: OrderId })),
   ev("order.dropped", z.object({ orderId: OrderId, reason: z.string() })),
 ]);

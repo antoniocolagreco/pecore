@@ -4,7 +4,7 @@ export const ArtifactType = z.enum(["ticket", "spec", "findings", "risk", "check
 export type ArtifactType = z.infer<typeof ArtifactType>;
 
 export const Artifact = z.object({
-  type: ArtifactType,
+  type: ArtifactType.or(z.literal("attachment")),
   path: z.string(),
   sha256: z.string().regex(/^[0-9a-f]{64}$/),
   contentState: z.string().nullable(),

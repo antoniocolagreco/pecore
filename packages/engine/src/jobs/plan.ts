@@ -25,7 +25,7 @@ function ticketOrder(ctx: ProjectContext, orderId: string): TicketOrder | undefi
   return ctx.db.db.prepare("SELECT order_id, source, ticket_id, state FROM tickets_seen WHERE order_id = ?").get(orderId) as TicketOrder | undefined;
 }
 
-function validatePlan(ctx: ProjectContext, plan: OrderPlan): OrderPlan {
+function validatePlan(ctx: ProjectContext, plan: OrderPlan): PlannedOrder["plan"] {
   const recipes: Map<string, Recipe> = new Map();
   return OrderPlan.parse(plan).map((entry) => {
     if (recipes.has(entry.key)) throw new JobCreateError(`duplicate order key ${entry.key}`);
@@ -36,8 +36,10 @@ function validatePlan(ctx: ProjectContext, plan: OrderPlan): OrderPlan {
       if (!hasCommitNode(parent, ctx.defs.nodes)) throw new JobCreateError(`the recipe for parent key ${parentKey} has no commit node`);
     }
     const recipe: string = entry.recipe ?? ctx.project.defaultRecipe;
-    recipes.set(entry.key, recipeForJob(ctx, recipe));
-    return { ...entry, recipe };
+    const pending = ctx.db.db.prepare(`SELECT id FROM human_queue WHERE state = 'open' AND kind = 'recipe-change'
+      AND json_extract(subject, '$.path') = ? ORDER BY id DESC LIMIT 1`).get(`projects/${ctx.id}/recipes/${recipe}.json`) as { id: string } | undefined;
+    recipes.set(entry.key, recipeForJob(ctx, recipe, pending?.id));
+    return { ...entry, recipe, ...(pending ? { recipeConfirmationId: pending.id } : {}) };
   });
 }
 
@@ -50,6 +52,8 @@ async function createMissing(ctx: ProjectContext, { orderId, plan }: PlannedOrde
       const parentKey: string | undefined = entry.dependsOn[0];
       const parentJobId: string | null | undefined = parentKey === undefined ? null : ids.get(parentKey);
       if (parentJobId === undefined) throw new JobCreateError(`no job exists for parent key ${parentKey}`);
+      const attachmentIds: string[] = entry.attachmentIds ?? [];
+      if (attachmentIds.length && !ctx.orderAttachments) throw new JobCreateError("order attachments are unavailable");
       const id: string = await createJob(ctx, {
         title: entry.title,
         ticket: { text: entry.ticketText, source: ticket?.source, id: ticket?.ticket_id },
@@ -58,8 +62,11 @@ async function createMissing(ctx: ProjectContext, { orderId, plan }: PlannedOrde
         parentJobId,
         orderId,
         orderKey: entry.key,
+        ...(attachmentIds.length ? { attachments: await ctx.orderAttachments!(orderId, attachmentIds) } : {}),
+        recipeConfirmationId: entry.recipeConfirmationId,
       });
       ids.set(entry.key, id);
+      if (ticket) ctx.notify({ kind: "ticket-job-started", title: entry.title, body: `Job created from ticket ${ticket.ticket_id}`, jobId: id });
     }
     const existing: Map<string, string> = orderJobs(ctx, orderId);
     if (!plan.every((entry) => existing.has(entry.key))) throw new JobCreateError(`order ${orderId} is missing jobs`);
@@ -83,11 +90,15 @@ export async function planOrder(ctx: ProjectContext, orderId: string, plan: Orde
   const events: StoredEvent[] = ctx.db.orderEvents(orderId);
   const stored = events.find((event) => event.type === "order.planned");
   if (stored) {
-    await creating.get(ctx)?.get(orderId)?.catch(() => undefined);
+    const pending: Promise<void> | undefined = creating.get(ctx)?.get(orderId);
+    if (pending) await pending.catch(() => undefined);
+    else if (!events.some((event) => event.type === "order.done")) {
+      await finishPlan(ctx, stored.payload).catch((error: unknown) => console.error(`order ${orderId}:`, error));
+    }
     return { accepted: false, plan: stored.payload.plan, jobIds: Object.fromEntries(orderJobs(ctx, orderId)) };
   }
   if (events.some((event) => event.type === "order.dropped")) throw new JobCreateError(`order ${orderId} was dropped`);
-  const validated: OrderPlan = validatePlan(ctx, plan);
+  const validated: PlannedOrder["plan"] = validatePlan(ctx, plan);
   const payload: PlannedOrder = { orderId, plan: validated };
   ctx.db.append([{ jobId: null, type: "order.planned", payload }]);
   await finishPlan(ctx, payload);

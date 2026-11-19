@@ -48,14 +48,31 @@ export type TurnResult = {
   text: string;
 };
 
-export type McpServer = { type: "http"; name: string; url: string; headers: { name: string; value: string }[] };
+type AcpMetadata = { _meta?: Record<string, unknown> | null };
+
+export type McpServer = AcpMetadata & (
+  | { type: "http"; name: string; url: string; headers: { name: string; value: string }[] }
+  | { name: string; command: string; args: string[]; env: { name: string; value: string }[] }
+);
+
+type ContentAnnotations = AcpMetadata & { audience?: ("user" | "assistant")[] | null; lastModified?: string | null; priority?: number | null };
+type ResourceContents = AcpMetadata & { uri: string; mimeType?: string | null } & ({ text: string } | { blob: string });
+
+export type PromptContent = AcpMetadata & { annotations?: ContentAnnotations | null } & (
+  | { type: "text"; text: string }
+  | { type: "image"; mimeType: string; data: string; uri?: string | null }
+  | { type: "audio"; mimeType: string; data: string }
+  | { type: "resource_link"; name: string; uri: string; title?: string | null; description?: string | null; mimeType?: string | null; size?: number | null }
+  | { type: "resource"; resource: ResourceContents }
+);
 
 export type Session = {
   sessionId: string;
   resumed: boolean;
+  supportsImages: boolean;
   events: AsyncIterable<AgentEvent>;
   raw: AsyncIterable<RawLine>;
-  prompt(text: string): Promise<TurnResult>;
+  prompt(content: string | readonly PromptContent[]): Promise<TurnResult>;
   cancel(): Promise<void>;
   close(): Promise<void>;
 };

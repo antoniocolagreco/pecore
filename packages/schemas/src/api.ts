@@ -82,6 +82,7 @@ export const LiveMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("login.progress"), loginId: z.string(), text: z.string(), url: z.string().nullable(), done: z.boolean() }),
   z.object({ type: z.literal("chat.message"), chatId: z.string(), messageId: z.string() }),
   z.object({ type: z.literal("chat.action"), chatId: z.string(), actionId: z.string() }),
+  z.object({ type: z.literal("chat.updated"), chatId: z.string() }),
   z.object({ type: z.literal("notify"), kind: z.string(), title: z.string(), body: z.string() }),
 ]);
 export type LiveMessage = z.infer<typeof LiveMessage>;
@@ -106,6 +107,69 @@ const Ok = z.object({ ok: z.literal(true) });
 const IdParams = z.object({ id: z.string().min(1) });
 
 export const DefinitionErrorView = z.object({ file: z.string(), path: z.string(), message: z.string() });
+
+export const chatAttachmentMaxBytes = 10_000_000;
+const chatAttachmentMaxBase64 = 4 * Math.ceil(chatAttachmentMaxBytes / 3);
+export const ChatImageMime = z.enum(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+export type ChatImageMime = z.infer<typeof ChatImageMime>;
+export const ChatReference = z.strictObject({
+  project: ProjectId.optional(),
+  jobId: z.string().min(1).optional(),
+  nodeRunId: z.string().min(1).optional(),
+  recipe: Name.optional(),
+  node: Name.optional(),
+  template: Name.optional(),
+}).refine((reference) => Object.keys(reference).length > 0, "a context reference is required");
+export type ChatReference = z.infer<typeof ChatReference>;
+export const ChatView = z.object({
+  id: z.string(),
+  title: z.string(),
+  projectId: ProjectId.nullable(),
+  createdAt: z.number(),
+  lastReadAt: z.number().nullable(),
+  unread: z.number().int().nonnegative(),
+});
+export type ChatView = z.infer<typeof ChatView>;
+export const ChatMessageView = z.object({
+  id: z.string(),
+  chatId: z.string(),
+  role: z.enum(["user", "assistant"]),
+  text: z.string(),
+  context: z.array(ChatReference),
+  createdAt: z.number(),
+  state: z.enum(["queued", "running", "completed", "interrupted", "failed"]),
+  error: z.string().nullable(),
+});
+export type ChatMessageView = z.infer<typeof ChatMessageView>;
+export const ChatAttachmentView = z.object({
+  id: z.string(),
+  messageId: z.string().nullable(),
+  mime: ChatImageMime,
+  size: z.number().int().nonnegative(),
+});
+export type ChatAttachmentView = z.infer<typeof ChatAttachmentView>;
+export const ChatActionView = z.object({
+  id: z.string(),
+  messageId: z.string(),
+  tool: z.string(),
+  target: z.unknown(),
+  createdAt: z.number(),
+});
+export type ChatActionView = z.infer<typeof ChatActionView>;
+export const ChatDetail = z.object({
+  chat: ChatView,
+  messages: z.array(ChatMessageView),
+  actions: z.array(ChatActionView),
+  attachments: z.array(ChatAttachmentView),
+  supportsImages: z.boolean().nullable(),
+});
+export type ChatDetail = z.infer<typeof ChatDetail>;
+export const SendChatMessageBody = z.strictObject({
+  text: z.string(),
+  context: z.array(ChatReference).default([]),
+  attachmentIds: z.array(z.ulid()).default([]),
+}).refine(({ text, attachmentIds }) => text.trim() !== "" || attachmentIds.length > 0, "text or an attachment is required");
+export type SendChatMessageBody = z.infer<typeof SendChatMessageBody>;
 
 export const CreationView = z.object({
   step: z.number().int().min(0).max(6),
@@ -334,6 +398,7 @@ export type RouteDef = {
   params?: z.ZodType;
   query?: z.ZodType;
   body?: z.ZodType;
+  bodyLimit?: number;
   response: z.ZodType;
 };
 
@@ -348,7 +413,7 @@ export const routes = {
     method: "GET",
     path: "/artifacts/:job/:run/:name",
     params: z.object({ job: z.string().min(1), run: z.string().min(1), name: z.string().min(1) }),
-    response: z.object({ artifact: Artifact, content: z.string() }),
+    response: z.object({ artifact: Artifact, content: z.string(), encoding: z.literal("base64").optional() }),
   },
   getCreation: { method: "GET", path: "/projects/:id/creation", params: IdParams, response: CreationView },
   retryCreation: { method: "POST", path: "/projects/:id/creation/retry", params: IdParams, response: Ok },
@@ -372,6 +437,25 @@ export const routes = {
   answerQueue: { method: "POST", path: "/queue/:id", params: IdParams, body: QueueChoiceBody, response: Ok },
   getStatus: { method: "GET", path: "/status", response: StatusView },
   listNotifications: { method: "GET", path: "/notifications", response: z.array(NotificationView) },
+  listChats: { method: "GET", path: "/chats", response: z.array(ChatView) },
+  createChat: { method: "POST", path: "/chats", body: z.strictObject({ title: z.string().trim().min(1) }), response: ChatView },
+  getChat: { method: "GET", path: "/chats/:id", params: IdParams, response: ChatDetail },
+  sendChatMessage: { method: "POST", path: "/chats/:id/messages", params: IdParams, body: SendChatMessageBody, response: ChatMessageView },
+  uploadChatAttachment: {
+    method: "POST",
+    path: "/chats/:id/attachments",
+    params: IdParams,
+    body: z.strictObject({ mime: ChatImageMime, data: z.base64().max(chatAttachmentMaxBase64) }),
+    bodyLimit: chatAttachmentMaxBase64 + 1024,
+    response: ChatAttachmentView,
+  },
+  retryChatMessage: {
+    method: "POST",
+    path: "/chats/:id/messages/:messageId/retry",
+    params: IdParams.extend({ messageId: z.string().min(1) }),
+    response: ChatMessageView,
+  },
+  markChatRead: { method: "POST", path: "/chats/:id/read", params: IdParams, response: ChatView },
   listDefinitions: { method: "GET", path: "/definitions", query: z.object({ dir: z.string().min(1) }), response: z.array(DefinitionEntry) },
   getDefinition: { method: "GET", path: "/definitions/*path", params: PathParams, response: DefinitionFile },
   saveDefinition: { method: "PUT", path: "/definitions/*path", params: PathParams, body: SaveDefinitionBody, response: SaveDefinitionResult },

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { loadNodeFile, loadRecipeFile } from "./load";
 import type { DefinitionError } from "./load";
 
-export type InstantiateResult = { written: string[]; kept: string[]; errors: DefinitionError[] };
+export type InstantiateResult = { written: string[]; kept: string[]; errors: DefinitionError[]; stagedRecipe?: { path: string; content: string } };
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -14,10 +14,10 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-async function copyJson(from: string, to: string, schema: string, update?: (value: Record<string, unknown>) => void): Promise<void> {
+async function instanceJson(from: string, schema: string, update?: (value: Record<string, unknown>) => void): Promise<string> {
   const value = JSON.parse(await readFile(from, "utf8")) as Record<string, unknown>;
   update?.(value);
-  await writeFile(to, JSON.stringify({ ...value, $schema: `../../../schemas/${schema}` }, null, 2) + "\n");
+  return JSON.stringify({ ...value, $schema: `../../../schemas/${schema}` }, null, 2) + "\n";
 }
 
 export async function instantiateNode(libraryDir: string, projectDir: string, name: string): Promise<InstantiateResult> {
@@ -50,12 +50,12 @@ export async function instantiateNode(libraryDir: string, projectDir: string, na
     await copyFile(join(libraryDir, "nodes", file), to);
     result.written.push(to);
   }
-  await copyJson(source, target, "node.json");
+  await writeFile(target, await instanceJson(source, "node.json"));
   result.written.push(target);
   return result;
 }
 
-export async function instantiateRecipe(libraryDir: string, projectDir: string, name: string, rename: Record<string, string> = {}): Promise<InstantiateResult> {
+export async function instantiateRecipe(libraryDir: string, projectDir: string, name: string, rename: Record<string, string> = {}, stage = false): Promise<InstantiateResult> {
   const result: InstantiateResult = { written: [], kept: [], errors: [] };
   const source = join(libraryDir, "recipes", `${name}.json`);
   const loaded = await loadRecipeFile(source);
@@ -76,11 +76,16 @@ export async function instantiateRecipe(libraryDir: string, projectDir: string, 
     result.kept.push(target);
     return result;
   }
-  await mkdir(join(projectDir, "recipes"), { recursive: true });
-  await copyJson(source, target, "recipe.json", (recipe) => {
+  const content: string = await instanceJson(source, "recipe.json", (recipe) => {
     const nodes = recipe.nodes as Record<string, { use: string }> | undefined;
     for (const node of Object.values(nodes ?? {})) node.use = renamedUse(node.use);
   });
+  if (stage) {
+    result.stagedRecipe = { path: target, content };
+    return result;
+  }
+  await mkdir(join(projectDir, "recipes"), { recursive: true });
+  await writeFile(target, content);
   result.written.push(target);
   return result;
 }

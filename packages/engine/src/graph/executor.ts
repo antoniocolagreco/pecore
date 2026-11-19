@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join, matchesGlob, relative } from "node:path";
+import { basename, join, matchesGlob, relative } from "node:path";
 import { monotonicFactory } from "ulid";
 import type { RawLine, Usage } from "@pecore/agents";
 import type { AgentNode, Artifact, ArtifactType, FailureReason, ForgeAccount, JobState, Node, Profiles, Project, Settings, Tiers, WaitingReason } from "@pecore/schemas";
@@ -11,6 +11,7 @@ import { ensureConfirmed, needsConfirmation, recordConfirmation } from "../defin
 import type { ConfirmSubject } from "../definitions/confirm";
 import type { Definitions } from "../definitions/load";
 import { effectRecorder } from "../jobs/effects";
+import type { JobAttachment } from "../jobs/create";
 import { LogWriter } from "../observability/logs";
 import { runAgentNode } from "../runners/agent";
 import type { AgentContinuation, AgentQuestion } from "../runners/agent";
@@ -32,6 +33,7 @@ import { resolveTicketOrder } from "../sources/poll";
 import { contentState, deleteScratch, recordGit, restoreState, undoInterrupted } from "../workdir/content-state";
 import type { GitRecord } from "../workdir/content-state";
 import { gitWork } from "../workdir/git-as";
+import { writeFileAs } from "../workdir/fs-as";
 import { setupJobId } from "../projects/create";
 import { JobServices, recordServicesConfirmation } from "../services/job-services";
 import type { ServicesSubject } from "../services/job-services";
@@ -95,6 +97,7 @@ export type ProjectContext = {
   held?: () => boolean;
   global(): { profiles: Profiles; tiers: Tiers };
   live?: (attemptId: string, line: RawLine) => void;
+  orderAttachments?: (orderId: string, attachmentIds: string[]) => Promise<JobAttachment[]>;
 };
 
 type AttemptExtra = { usage?: Usage; model?: string; cost?: number | null; log: string };
@@ -234,7 +237,10 @@ export class JobExecutor {
   artifacts(jobId: string): Artifact[] {
     const out: Artifact[] = [];
     for (const e of this.ctx.db.events(jobId)) {
-      if (e.type === "job.created" && e.payload.ticket) out.push(e.payload.ticket);
+      if (e.type === "job.created") {
+        if (e.payload.ticket) out.push(e.payload.ticket);
+        out.push(...(e.payload.attachments ?? []));
+      }
       if (e.type === "node_run.completed") out.push(...e.payload.artifacts);
     }
     return out;
@@ -242,7 +248,7 @@ export class JobExecutor {
 
   private latest(jobId: string): Map<ArtifactType, Artifact> {
     const m = new Map<ArtifactType, Artifact>();
-    for (const a of this.artifacts(jobId)) m.set(a.type, a);
+    for (const a of this.artifacts(jobId)) if (a.type !== "attachment") m.set(a.type, a);
     return m;
   }
 
@@ -299,7 +305,17 @@ export class JobExecutor {
   }
 
   private async startJob(job: JobRow): Promise<boolean> {
+    const decision = this.recipeConfirmation(job.id);
+    if (decision === "rejected") {
+      this.setState(job.id, "stopped", null);
+      this.ended(job.id);
+      return false;
+    }
     if (job.waiting_reason === "parent_job" || job.waiting_reason === "parent_failed") return false;
+    if (decision === "waiting") {
+      this.setState(job.id, "queued", "confirmation");
+      return false;
+    }
     if (job.id !== setupJobId && this.ctx.held?.()) return false;
     if (!(await enoughDisk(this.ctx.dir, this.ctx.settings.minFreeDiskGb))) {
       if (job.waiting_reason !== "disk") this.ctx.db.append([{ jobId: job.id, type: "job.state_changed", payload: { state: "queued", reason: "disk" } }]);
@@ -307,9 +323,19 @@ export class JobExecutor {
     }
     const base = await this.freshBase(job);
     if (base === null) return false;
-    await addWorktree(this.ctx.user, this.ctx.dir, job.id, base);
+    const wd: string = await addWorktree(this.ctx.user, this.ctx.dir, job.id, base);
     this.setState(job.id, "running", null);
+    await this.copyAttachments(job.id, wd);
     return true;
+  }
+
+  private recipeConfirmation(jobId: string): "allowed" | "waiting" | "rejected" {
+    const row = this.ctx.db.db.prepare(`SELECT q.state, q.choice FROM events e
+      LEFT JOIN human_queue q ON q.id = json_extract(e.payload, '$.recipeConfirmationId')
+      WHERE e.job_id = ? AND e.type = 'job.created' AND json_type(e.payload, '$.recipeConfirmationId') = 'text'`)
+      .get(jobId) as { state: string | null; choice: string | null } | undefined;
+    if (!row || (row.state === "resolved" && row.choice === "confirm")) return "allowed";
+    return row.state === "open" ? "waiting" : "rejected";
   }
 
   private async freshBase(job: JobRow): Promise<string | null> {
@@ -438,13 +464,16 @@ export class JobExecutor {
       const base = request.base ?? (request.target.startsWith(jobBranch("")) ? await branchHead(repo, request.target) : await fetchBase(this.ctx, request.target));
       if (!base) throw new Error(`branch ${request.target} not found`);
       const changed = { jobId, type: "job.base_changed" as const, payload: { cause: request.cause, base, oldBase: job.base, target: request.target } };
-      if (job.state === "queued" || this.recipe(job).onBaseChanged === undefined) {
+      if (job.state === "queued" || this.recipeConfirmation(jobId) !== "allowed" || this.recipe(job).onBaseChanged === undefined) {
         this.ctx.db.append([changed]);
         this.ctx.changed(jobId);
         return;
       }
       const worktrees = await gitWork(this.ctx.user, this.ctx.dir, [`--git-dir=${repo}`, "worktree", "list", "--porcelain"]);
-      if (!worktrees.includes(`worktree ${workdirOf(this.ctx.dir, jobId)}\n`)) await recreateWorktree(this.ctx.user, this.ctx.dir, jobId);
+      if (!worktrees.includes(`worktree ${workdirOf(this.ctx.dir, jobId)}\n`)) {
+        const wd: string = await recreateWorktree(this.ctx.user, this.ctx.dir, jobId);
+        await this.copyAttachments(jobId, wd);
+      }
       this.ctx.db.append([changed, ...(job.archived ? [{ jobId, type: "job.unarchived" as const, payload: {} }] : [])]);
       this.setState(jobId, "running", null, "base_change");
       reentered = true;
@@ -930,6 +959,7 @@ export class JobExecutor {
     const login = await agents.login(account.id);
     const spawn = spawnFor(this.ctx.user, { ...x.env, PECORE_JOB_ID: job.id });
     const resumeId = this.resumeSession(job.id, run.node, profile.profile, node.resume, sessionGroup);
+    const attachments: string[] = await this.copyAttachments(job.id, x.wd);
     const r = await runAgentNode({
       node,
       nodeDir: join(this.ctx.dir, "nodes"),
@@ -938,6 +968,7 @@ export class JobExecutor {
       workdir: x.wd,
       context: x.context,
       inputs: x.inputs,
+      attachments,
       knowledge: await this.knowledgeFiles(node.knowledge),
       connector,
       login,
@@ -963,6 +994,17 @@ export class JobExecutor {
     if (r.kind === "question") return { ...common, kind: "question", pending: r.pending, quotaRejected: r.quotaRejected };
     if (r.kind === "waiting") return { ...common, kind: "waiting", reason: r.reason, ...(r.resetAt !== undefined ? { resetAt: r.resetAt } : {}) };
     return { ...common, kind: "failed", reason: r.reason };
+  }
+
+  private async copyAttachments(jobId: string, wd: string): Promise<string[]> {
+    const created = this.ctx.db.events(jobId).find((event) => event.type === "job.created");
+    const paths: string[] = [];
+    for (const artifact of created?.payload.attachments ?? []) {
+      const path: string = `.pecore/attachments/${basename(artifact.path)}`;
+      await writeFileAs(this.ctx.user, wd, path, await readFile(join(this.ctx.dir, artifact.path)));
+      paths.push(path);
+    }
+    return paths;
   }
 
   private complete(jobId: string, nodeRunId: string, outcome: string, before: string | null, after: string | null, artifacts: Artifact[]): void {
@@ -1122,9 +1164,11 @@ export class JobExecutor {
       const job = this.job(jobId);
       if (job.state !== "failed" && job.state !== "stopped") throw new Error(`job ${jobId} is ${job.state}`);
       if (job.archived) throw new Error(`job ${jobId} is archived`);
+      if (this.recipeConfirmation(jobId) !== "allowed") throw new Error("the job's recipe change was not confirmed");
       const wd = workdirOf(this.ctx.dir, jobId);
       const exists = await gitWork(this.ctx.user, this.ctx.dir, [`--git-dir=${join(this.ctx.dir, "repo.git")}`, "worktree", "list", "--porcelain"]);
       if (!exists.includes(`worktree ${wd}\n`)) await recreateWorktree(this.ctx.user, this.ctx.dir, jobId);
+      await this.copyAttachments(jobId, wd);
       this.setState(jobId, "running", null, "resume");
     });
     void this.tick(jobId);

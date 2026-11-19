@@ -20,7 +20,7 @@ export function humanItem(nodeRunId: string, recipeNodeId: string, node: HumanNo
     node: recipeNodeId,
     description: node.description,
     contentState,
-    show: artifacts.filter((a) => node.show.includes(a.type)),
+    show: artifacts.filter((a) => a.type !== "attachment" && node.show.includes(a.type)),
     answer: node.answer,
   };
   return { kind: "human-node" as const, subject, subjectHash: subjectHash(subject), choices: [...node.outcomes] };

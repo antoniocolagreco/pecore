@@ -39,7 +39,9 @@ export async function host(port: HostPort, env: HostEnv): Promise<{ engine: Engi
     if (m.type === "shutdown" && !stopping) {
       stopping = true;
       void (async () => {
+        const chats = engine?.stopOrchestrator();
         await api?.close().catch((err: unknown) => console.error("api close:", err));
+        await chats?.catch((err: unknown) => console.error("orchestrator close:", err));
         await engine?.shutdown().catch((err: unknown) => console.error("engine shutdown:", err));
         port.postMessage({ type: "shutdown.done" });
       })();

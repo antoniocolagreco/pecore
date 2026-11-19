@@ -34,6 +34,22 @@ export function runFiles(node: Node): string[] {
 
 export type SourceScope = Pick<Project, "repo" | "baseBranch"> & { source: NonNullable<Project["source"]> };
 export type ConfirmSubject = { path: string; kind: "engine-node" | "source-node"; definition: unknown; scripts: Record<string, string> };
+export type RecipeChangeSubject = { path: string; content: string; baseSha256: string | null };
+
+export function stageRecipeChange(db: ProjectDb, subject: RecipeChangeSubject): string {
+  const hash: string = createHash("sha256").update(JSON.stringify(subject)).digest("hex");
+  const open = db.db.prepare("SELECT id, subject_hash FROM human_queue WHERE state = 'open' AND kind = 'recipe-change' AND json_extract(subject, '$.path') = ?").all(subject.path) as { id: string; subject_hash: string }[];
+  const existing = open.find((item) => item.subject_hash === hash);
+  if (existing) return existing.id;
+  const itemId: string = ulid();
+  db.append([
+    ...open.map(({ id }) => ({
+      jobId: null, type: "queue.resolved" as const, payload: { itemId: id, state: "cancelled" as const, choice: null, note: "the recipe proposal changed" },
+    })),
+    { jobId: null, type: "queue.added", payload: { itemId, kind: "recipe-change", subject, subjectHash: hash, choices: ["confirm", "reject"] } },
+  ]);
+  return itemId;
+}
 
 export function subjectSha(s: { definition: unknown; scripts: Record<string, string> }): string {
   const h = createHash("sha256").update(canonical(s.definition));

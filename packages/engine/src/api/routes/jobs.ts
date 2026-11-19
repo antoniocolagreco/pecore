@@ -135,11 +135,13 @@ export function jobHandlers(engine: Engine) {
       const path = `artifacts/${params.job}/${params.run}/${params.name}`;
       const artifact = executor.artifacts(params.job).find((a) => a.path === path);
       if (!artifact) throw new NotFoundError(`artifact ${path} not found`);
-      const content = await readFile(join(ctx.dir, artifact.path), "utf8").catch((e: NodeJS.ErrnoException) => {
+      const bytes = await readFile(join(ctx.dir, artifact.path)).catch((e: NodeJS.ErrnoException) => {
         if (e.code === "ENOENT") throw new HttpError("gone", `artifact ${path} was removed`);
         throw e;
       });
-      return { artifact, content };
+      return artifact.type === "attachment"
+        ? { artifact, content: bytes.toString("base64"), encoding: "base64" }
+        : { artifact, content: bytes.toString("utf8") };
     },
     createJob: async ({ body }) => {
       if (!engine.projects.has(body.project)) throw new NotFoundError(`project ${body.project} not found`);

@@ -10,6 +10,7 @@ import type { ApiErrorCode, RouteDef, RouteName, RouteOutput, RouteParsed } from
 import { homePaths } from "../home/layout";
 import type { Engine } from "../main";
 import { NotFoundError } from "../main";
+import { mcpRoute } from "../orchestrator/mcp";
 import { liveRoute } from "./ws";
 
 export class HttpError extends Error {
@@ -54,8 +55,10 @@ function parsePart(schema: z.ZodType | undefined, value: unknown, what: string):
 
 export async function startApi(engine: Engine, opts: ApiOptions): Promise<ApiServer> {
   const token = randomBytes(32).toString("hex");
+  const orchestratorToken: string = randomBytes(32).toString("hex");
   const expected = Buffer.from(`Bearer ${token}`);
-  const tokenOk = (header: string | undefined) => header !== undefined && Buffer.byteLength(header) === expected.length && timingSafeEqual(Buffer.from(header), expected);
+  const expectedOrchestrator: Buffer = Buffer.from(`Bearer ${orchestratorToken}`);
+  const tokenOk = (header: string | undefined, bearer: Buffer): boolean => header !== undefined && Buffer.byteLength(header) === bearer.length && timingSafeEqual(Buffer.from(header), bearer);
   const origins = new Set(opts.origins ?? ["app://pecore"]);
   const handlers = opts.handlers(engine) as Record<RouteName, (input: unknown) => Promise<unknown>>;
   let port = 0;
@@ -71,7 +74,8 @@ export async function startApi(engine: Engine, opts: ApiOptions): Promise<ApiSer
     if (req.method === "OPTIONS")
       return reply.header("access-control-allow-methods", "GET, POST, PUT, PATCH, DELETE").header("access-control-allow-headers", "authorization, content-type").code(204).send();
     if (req.url === "/live") return;
-    if (!tokenOk(req.headers.authorization)) return send(reply, "unauthorized", "missing or wrong token");
+    const bearer: Buffer = req.method === "POST" && req.routeOptions.url === "/mcp" ? expectedOrchestrator : expected;
+    if (!tokenOk(req.headers.authorization, bearer)) return send(reply, "unauthorized", "missing or wrong token");
   });
 
   app.setErrorHandler((e: Error & { statusCode?: number }, _req, reply) => {
@@ -87,6 +91,7 @@ export async function startApi(engine: Engine, opts: ApiOptions): Promise<ApiSer
     app.route({
       method: def.method,
       url: fastifyPath(def.path),
+      ...(def.bodyLimit === undefined ? {} : { bodyLimit: def.bodyLimit }),
       handler: async (req) => {
         const input = {
           params: parsePart(def.params, routeParams(def.path, req.params), "params"),
@@ -100,12 +105,19 @@ export async function startApi(engine: Engine, opts: ApiOptions): Promise<ApiSer
     });
   }
   liveRoute(app, engine, token);
+  mcpRoute(app, engine);
 
   await app.listen({ host: "127.0.0.1", port: 0 });
   port = (app.server.address() as AddressInfo).port;
   const file = homePaths(engine.opts.home).apiFile;
-  await writeFile(`${file}.tmp`, JSON.stringify({ port, token }) + "\n", { mode: 0o600 });
-  await rename(`${file}.tmp`, file);
+  try {
+    await engine.startOrchestrator(`http://127.0.0.1:${port}/mcp`, orchestratorToken);
+    await writeFile(`${file}.tmp`, JSON.stringify({ port, token }) + "\n", { mode: 0o600 });
+    await rename(`${file}.tmp`, file);
+  } catch (e) {
+    await app.close();
+    throw e;
+  }
   return {
     port,
     token,

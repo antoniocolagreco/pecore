@@ -36,6 +36,10 @@ function queuedReason(ctx: ProjectContext, job: JobRow, globalPause: boolean): W
       return reason({ reason: "network", text: `Could not fetch ${job.target} from the forge: no network or the forge is down; retrying`, account });
     case "auth":
       return reason({ reason: "auth", text: `Could not fetch ${job.target}: the login of account ${account ?? "?"} expired or does not match; log in and recheck`, account });
+    case "confirmation": {
+      const created = ctx.db.events(job.id).find((event) => event.type === "job.created");
+      return reason({ reason: "confirmation", text: "The job waits for confirmation of its recipe change", queueItemId: created?.payload.recipeConfirmationId ?? null });
+    }
     default:
       return globalPause ? reason({ reason: "global_pause", text: "The global pause is on: queued jobs do not start" }) : reason({ reason: "scheduler", text: "Waits for the scheduler" });
   }

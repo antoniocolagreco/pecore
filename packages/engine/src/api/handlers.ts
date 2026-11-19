@@ -1,4 +1,5 @@
 import type { Engine } from "../main";
+import { chatHandlers } from "./routes/chats";
 import { definitionHandlers } from "./routes/definitions";
 import { jobHandlers } from "./routes/jobs";
 import { globalFileHandlers } from "./routes/settings";
@@ -11,6 +12,7 @@ import type { Handlers } from "./server";
 export function handlers(version: string) {
   return (engine: Engine): Handlers => ({
     ...projectHandlers(engine),
+    ...chatHandlers(engine),
     ...jobHandlers(engine),
     ...queueHandlers(engine),
     ...statusHandlers(engine, version),

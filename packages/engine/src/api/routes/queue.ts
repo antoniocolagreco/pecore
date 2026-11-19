@@ -2,6 +2,7 @@ import type { QueueItemView } from "@pecore/schemas";
 import type { Engine } from "../../main";
 import { HttpError } from "../server";
 import type { Handlers } from "../server";
+import { definitionOperations } from "./definitions";
 
 type QueueDbRow = {
   id: string;
@@ -33,6 +34,7 @@ const itemView = (projectId: string, r: QueueDbRow): QueueItemView => ({
 });
 
 export function queueHandlers(engine: Engine) {
+  const definitions = definitionOperations(engine);
   return {
     listQueue: async ({ query }) => {
       const out: QueueItemView[] = [];
@@ -49,7 +51,8 @@ export function queueHandlers(engine: Engine) {
       if (item.state !== "open" || item.subject_hash !== body.hash) throw new HttpError("conflict", "the item changed, was resolved or was cancelled since it was shown");
       if (!(JSON.parse(item.choices) as string[]).includes(body.choice)) throw new HttpError("bad_request", `${body.choice} is not a choice of this item`);
       if (item.kind === "agent-question" && !body.note?.trim()) throw new HttpError("bad_request", "an answer is required");
-      await executor.answer(params.id, body.choice, body.note, body.hash);
+      if (item.kind === "recipe-change") await definitions.answerRecipeChange(params.id, ctx.id, body.choice, body.note, body.hash);
+      else await executor.answer(params.id, body.choice, body.note, body.hash);
       return { ok: true };
     },
   } satisfies Partial<Handlers>;

@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { lstat, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { Connector, Name, Node, Project, Recipe } from "@pecore/schemas";
-import type { DefinitionEntry } from "@pecore/schemas";
-import { ensureConfirmed, needsConfirmation, runFiles } from "../../definitions/confirm";
+import type { DefinitionEntry, InstantiateBody, RouteOutput } from "@pecore/schemas";
+import { ensureConfirmed, needsConfirmation, runFiles, stageRecipeChange } from "../../definitions/confirm";
+import type { RecipeChangeSubject } from "../../definitions/confirm";
 import { sourceScope } from "../../sources/run";
 import { instantiateNode, instantiateRecipe } from "../../definitions/instantiate";
 import { zodErrors } from "../../definitions/load";
@@ -19,6 +20,7 @@ import { HttpError } from "../server";
 import type { Handlers } from "../server";
 
 type DefinitionKind = "node" | "recipe" | "project" | "connector" | "knowledge" | "prompt" | "script";
+const pendingDefinitions: WeakMap<Engine, Promise<unknown>> = new WeakMap();
 
 function pathParts(path: string): string[] {
   const parts: string[] = path.split("/");
@@ -114,12 +116,15 @@ async function confirmNodes(engine: Engine, id: string, nodesDir: string, affect
 }
 
 export function definitionHandlers(engine: Engine) {
+  return definitionOperations(engine).handlers;
+}
+
+export function definitionOperations(engine: Engine) {
   const home = homePaths(resolve(engine.opts.home));
-  let pending: Promise<unknown> = Promise.resolve();
 
   function mutate<T>(action: () => Promise<T>): Promise<T> {
-    const result: Promise<T> = pending.then(action);
-    pending = result.catch(() => undefined);
+    const result: Promise<T> = (pendingDefinitions.get(engine) ?? Promise.resolve()).then(action);
+    pendingDefinitions.set(engine, result.catch(() => undefined));
     return result;
   }
 
@@ -164,6 +169,7 @@ export function definitionHandlers(engine: Engine) {
     if (kind === "recipe") {
       const result = Recipe.safeParse(value);
       if (!result.success) return { value, errors: zodErrors(path, result.error) };
+      if (result.data.name !== basename(path, ".json")) errors.push({ file: path, path: "name", message: `name must match the file name ${basename(path, ".json")}` });
       if (id) errors.push(...checkRecipe(result.data, projectContext(engine, id).defs.nodes).map((issue) => ({ file: path, ...issue })));
       return { value, errors };
     }
@@ -180,7 +186,7 @@ export function definitionHandlers(engine: Engine) {
     return { value, errors };
   }
 
-  return {
+  const handlers = {
     listDefinitions: async ({ query: { dir } }) => {
       const target = location(dir, true);
       await rejectSymlinks(target.root, target.absPath);
@@ -205,53 +211,105 @@ export function definitionHandlers(engine: Engine) {
       const { kind, id } = location(path, false);
       return { errors: inspect(path, kind, id, content).errors };
     },
-    saveDefinition: ({ params: { path }, body: { content, baseSha256 } }) => mutate(async () => {
-      const { root, absPath, kind, id, projectDir, file } = location(path, false);
-      await rejectSymlinks(root, absPath);
-      const before: Buffer | null = await optionalBytes(absPath);
-      if ((before === null ? null : sha256(before)) !== baseSha256) throw new HttpError("conflict", "the file changed since it was loaded");
-      const { errors } = inspect(path, kind, id, content);
-      if (errors.length) throw new HttpError("bad_request", errors.map((error) => error.message).join("\n"));
-      const bytes: Buffer = Buffer.from(content, "utf8");
-      const hash: string = sha256(bytes);
-      const name: string = kind === "project" ? id! : basename(file, extname(file));
-      await mkdir(dirname(absPath), { recursive: true });
-      await writeFile(absPath, bytes);
-      await commitFiles(home.home, projectDir, [absPath], commitMessage(kind!, name, before === null ? "created" : "edited"));
-      if (id) await engine.reloadProject(id);
-      engine.definitionChanged(path, hash);
-      const confirmItemIds: string[] = id && projectDir && (kind === "node" || kind === "prompt" || kind === "script")
-        ? await confirmNodes(engine, id, join(projectDir, "nodes"), (node) => kind === "node" ? node.name === name : runFiles(node).includes(file))
-        : [];
-      return { sha256: hash, confirmItemIds };
-    }),
-    instantiate: ({ body: { kind, name, project: id } }) => mutate(async () => {
-      const { project } = projectContext(engine, id);
-      const projectDir: string = resolve(engine.projectDir(id));
-      let rename: Record<string, string> = {};
-      if (kind === "recipe" && project.repo !== null) {
-        try {
-          const account = forgeAccountOf(project, engine.global().accounts);
-          ({ rename } = await projectDefaults(home.library, project.repo, account?.forge ?? null, []));
-        } catch (e) {
-          if (e instanceof ProjectCreateError) throw new HttpError("bad_request", e.message);
-          throw e;
-        }
-      }
-      const nodesDir: string = join(projectDir, "nodes");
-      await rejectSymlinks(projectDir, nodesDir);
-      if (kind === "recipe") await rejectSymlinks(projectDir, join(projectDir, "recipes"));
-      const result = kind === "node"
-        ? await instantiateNode(home.library, projectDir, name)
-        : await instantiateRecipe(home.library, projectDir, name, rename);
-      if (result.errors.length) throw new HttpError("bad_request", result.errors.map((error) => error.message).join("\n"));
-      await commitFiles(home.home, projectDir, result.written, commitMessage(kind, name, "created"));
-      await engine.reloadProject(id);
-      const layoutPath = (file: string): string => `projects/${id}/${relative(projectDir, file).split(sep).join("/")}`;
-      for (const file of result.written) engine.definitionChanged(layoutPath(file), sha256(await readFile(file)));
-      const written: Set<string> = new Set(result.written);
-      const confirmItemIds: string[] = await confirmNodes(engine, id, nodesDir, (node) => written.has(join(nodesDir, `${node.name}.json`)));
-      return { created: result.written.map(layoutPath), kept: result.kept.map(layoutPath), confirmItemIds };
-    }),
+    saveDefinition: ({ params: { path }, body: { content, baseSha256 } }) => mutate(async () => save(path, content, baseSha256)),
+    instantiate: ({ body }) => mutate(async () => instantiate(body, false)),
   } satisfies Partial<Handlers>;
+
+  async function save(path: string, content: string, baseSha256: string | null, approving = false): Promise<RouteOutput<"saveDefinition">> {
+    const { root, absPath, kind, id, projectDir, file } = location(path, false);
+    await rejectSymlinks(root, absPath);
+    const before: Buffer | null = await optionalBytes(absPath);
+    const bytes: Buffer = Buffer.from(content, "utf8");
+    if ((before === null ? null : sha256(before)) !== baseSha256 && !(approving && before?.equals(bytes))) {
+      throw new HttpError("conflict", "the file changed since it was loaded");
+    }
+    const { errors } = inspect(path, kind, id, content);
+    if (errors.length) throw new HttpError("bad_request", errors.map((error) => error.message).join("\n"));
+    const hash: string = sha256(bytes);
+    const name: string = kind === "project" ? id! : basename(file, extname(file));
+    await mkdir(dirname(absPath), { recursive: true });
+    await writeFile(absPath, bytes);
+    await commitFiles(home.home, projectDir, [absPath], commitMessage(kind!, name, before === null ? "created" : "edited"));
+    if (id) await engine.reloadProject(id);
+    engine.definitionChanged(path, hash);
+    const confirmItemIds: string[] = id && projectDir && (kind === "node" || kind === "prompt" || kind === "script")
+      ? await confirmNodes(engine, id, join(projectDir, "nodes"), (node) => kind === "node" ? node.name === name : runFiles(node).includes(file))
+      : [];
+    return { sha256: hash, confirmItemIds };
+  }
+
+  async function instantiate({ kind, name, project: id }: InstantiateBody, stage: boolean): Promise<RouteOutput<"instantiate"> & { errors?: DefinitionError[] }> {
+    const { project } = projectContext(engine, id);
+    const projectDir: string = resolve(engine.projectDir(id));
+    let rename: Record<string, string> = {};
+    if (kind === "recipe" && project.repo !== null) {
+      try {
+        const account = forgeAccountOf(project, engine.global().accounts);
+        ({ rename } = await projectDefaults(home.library, project.repo, account?.forge ?? null, []));
+      } catch (e) {
+        if (e instanceof ProjectCreateError) throw new HttpError("bad_request", e.message);
+        throw e;
+      }
+    }
+    const nodesDir: string = join(projectDir, "nodes");
+    await rejectSymlinks(projectDir, nodesDir);
+    if (kind === "recipe") await rejectSymlinks(projectDir, join(projectDir, "recipes"));
+    const result = kind === "node"
+      ? await instantiateNode(home.library, projectDir, name)
+      : await instantiateRecipe(home.library, projectDir, name, rename, stage);
+    if (result.errors.length) {
+      if (stage) return { created: [], kept: [], confirmItemIds: [], errors: result.errors };
+      throw new HttpError("bad_request", result.errors.map((error) => error.message).join("\n"));
+    }
+    await commitFiles(home.home, projectDir, result.written, commitMessage(kind, name, "created"));
+    await engine.reloadProject(id);
+    const layoutPath = (file: string): string => `projects/${id}/${relative(projectDir, file).split(sep).join("/")}`;
+    for (const file of result.written) engine.definitionChanged(layoutPath(file), sha256(await readFile(file)));
+    const written: Set<string> = new Set(result.written);
+    const confirmItemIds: string[] = await confirmNodes(engine, id, nodesDir, (node) => written.has(join(nodesDir, `${node.name}.json`)));
+    if (result.stagedRecipe) {
+      const path: string = layoutPath(result.stagedRecipe.path);
+      const content: string = result.stagedRecipe.content;
+      const { errors } = inspect(path, "recipe", id, content);
+      if (errors.length) return { created: result.written.map(layoutPath), kept: result.kept.map(layoutPath), confirmItemIds, errors };
+      await rejectSymlinks(projectDir, result.stagedRecipe.path);
+      const ctx = projectContext(engine, id);
+      confirmItemIds.push(stageRecipeChange(ctx.db, { path, content, baseSha256: null }));
+      ctx.released();
+    }
+    return { created: result.written.map(layoutPath), kept: result.kept.map(layoutPath), confirmItemIds };
+  }
+
+  return {
+    handlers,
+    write: (path: string, content: string) => mutate(async () => {
+      const { root, absPath, kind, id } = location(path, false);
+      await rejectSymlinks(root, absPath);
+      const { errors } = inspect(path, kind, id, content);
+      if (errors.length) return { errors };
+      const before: Buffer | null = await optionalBytes(absPath);
+      const baseSha256: string | null = before === null ? null : sha256(before);
+      if (kind === "recipe" && id) {
+        const ctx = projectContext(engine, id);
+        const itemId: string = stageRecipeChange(ctx.db, { path, content, baseSha256 });
+        ctx.released();
+        return { errors, confirmItemIds: [itemId] };
+      }
+      return { errors, ...await save(path, content, baseSha256) };
+    }),
+    stageInstantiation: (body: InstantiateBody) => mutate(async () => instantiate(body, true)),
+    answerRecipeChange: (id: string, projectId: string, choice: string, note: string | null, hash: string) => mutate(async () => {
+      const ctx = projectContext(engine, projectId);
+      const { db } = ctx;
+      const item = db.db.prepare("SELECT state, subject, subject_hash FROM human_queue WHERE id = ? AND kind = 'recipe-change'").get(id) as
+        { state: string; subject: string; subject_hash: string } | undefined;
+      if (item?.state !== "open" || item.subject_hash !== hash) throw new HttpError("conflict", "the item changed or was resolved");
+      if (choice === "confirm") {
+        const { path, content, baseSha256 } = JSON.parse(item.subject) as RecipeChangeSubject;
+        await save(path, content, baseSha256, true);
+      }
+      db.append([{ jobId: null, type: "queue.resolved", payload: { itemId: id, state: "resolved", choice, note } }]);
+      ctx.released();
+    }),
+  };
 }

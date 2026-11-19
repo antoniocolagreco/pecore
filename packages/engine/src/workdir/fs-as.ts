@@ -52,8 +52,14 @@ export async function existsAs(user: string, root: string, rel: string): Promise
   return true;
 }
 
-export async function writeFileAs(user: string, root: string, rel: string, content: string | Buffer): Promise<void> {
-  const r = await sh(user, root, relPath(rel), `mkdir -p -- "$(dirname -- "$2")" || exit 1; p="$2"; while [ "$p" != "." ]; do if [ -L "$p" ]; then exit ${SYMLINK}; fi; p=$(dirname -- "$p"); done; cat > "$2"`, [], content);
+export async function writeFileAs(user: string, root: string, rel: string, content: string | Buffer, mode?: 0o600): Promise<void> {
+  const write: string = mode === undefined ? 'cat > "$2"' : [
+    '[ ! -d "$2" ] || exit 1',
+    'tmp=$(mktemp "$(dirname -- "$2")/.pecore-XXXXXX") || exit 1',
+    'trap \'rm -f -- "$tmp"\' EXIT',
+    'cat > "$tmp" && chmod 600 "$tmp" && mv -f -- "$tmp" "$2"',
+  ].join("; ");
+  const r = await sh(user, root, relPath(rel), `${mode === undefined ? "" : "umask 077; "}mkdir -p -- "$(dirname -- "$2")" || exit 1; p="$2"; while [ "$p" != "." ]; do if [ -L "$p" ]; then exit ${SYMLINK}; fi; p=$(dirname -- "$p"); done; ${write}`, [], content);
   if (r.code !== 0) fail(rel, r);
 }
 

@@ -6,11 +6,14 @@ import { AsyncQueue } from "./queue";
 import { readerFor } from "./readers/claude-code";
 import type { Account } from "./readers/claude-code";
 import { StartError } from "./types";
-import type { AgentEvent, Login, McpServer, Quota, ResolvedConnector, Session, Spawn, TurnResult } from "./types";
+import type { AgentEvent, Login, McpServer, PromptContent, Quota, ResolvedConnector, Session, Spawn, TurnResult } from "./types";
 
 type ConfigOption = { id: string; category?: string; currentValue?: unknown; options?: { value: string }[] };
 type SessionResult = { sessionId?: string; configOptions?: ConfigOption[] };
-type InitResult = { agentInfo?: { version?: string }; agentCapabilities?: { loadSession?: boolean; sessionCapabilities?: { resume?: unknown } } };
+type InitResult = {
+  agentInfo?: { version?: string };
+  agentCapabilities?: { loadSession?: boolean; sessionCapabilities?: { resume?: unknown }; promptCapabilities?: { image?: boolean } };
+};
 
 export type StartParams = {
   connector: ResolvedConnector;
@@ -68,9 +71,15 @@ export async function openConnection(p: { connector: ResolvedConnector; login: L
   }
 }
 
+export async function probeImageSupport(p: Pick<StartParams, "connector" | "login" | "spawn" | "cwd">): Promise<boolean> {
+  const { client, init } = await openConnection(p);
+  await client.proc.stop();
+  return init.agentCapabilities?.promptCapabilities?.image === true;
+}
+
 export async function startSession(p: StartParams): Promise<Session> {
   const c = p.connector;
-  const secrets = (p.mcpServers ?? []).flatMap((s) => s.headers.map((h) => h.value));
+  const secrets = (p.mcpServers ?? []).flatMap((s) => ("headers" in s ? s.headers : s.env).map(({ value }) => value));
   const { client, init } = await openConnection({ connector: c, login: p.login, spawn: p.spawn, cwd: p.cwd, secrets, ...(p.requestTimeoutMs !== undefined ? { requestTimeoutMs: p.requestTimeoutMs } : {}) });
   const reader = readerFor(c.reader);
   const events = new AsyncQueue<AgentEvent>();
@@ -157,16 +166,18 @@ export async function startSession(p: StartParams): Promise<Session> {
   return {
     sessionId: sid,
     resumed,
+    supportsImages: init.agentCapabilities?.promptCapabilities?.image === true,
     events,
     raw: client.raw,
-    async prompt(text: string): Promise<TurnResult> {
+    async prompt(content: string | readonly PromptContent[]): Promise<TurnResult> {
       turn.text = "";
       turn.quota = undefined;
       const at = Date.now();
       let result: { stopReason?: TurnResult["stopReason"] } | undefined;
       let error: JsonRpcError | undefined;
       try {
-        result = await client.request("session/prompt", { sessionId: sid, prompt: [{ type: "text", text }] }, null);
+        const prompt: readonly PromptContent[] = typeof content === "string" ? [{ type: "text", text: content }] : content;
+        result = await client.request("session/prompt", { sessionId: sid, prompt }, null);
       } catch (e) {
         if (e instanceof RpcError) error = e.error;
         else if (e instanceof ExitError || e instanceof TimeoutError) error = { code: -1, message: e.message };

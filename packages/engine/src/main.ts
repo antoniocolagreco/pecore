@@ -38,6 +38,8 @@ import { ChatsDb } from "./store/chats-db";
 import { ProjectDb } from "./store/project-db";
 import { startSourcePolling } from "./sources/poll";
 import type { OrderSink } from "./sources/poll";
+import { OrchestratorChats } from "./orchestrator/chat";
+import { intakeSink } from "./orchestrator/intake";
 
 export type EngineOptions = { home: string; library: string; agents?: AgentPaths; checkLogins?: boolean; admin?: (script: string) => Promise<void>; orders?: OrderSink };
 
@@ -61,7 +63,10 @@ export class Engine extends EventEmitter {
   private profiles!: Profiles;
   private tiers!: Tiers;
   agents: AgentServices | null = null;
+  orchestrator!: OrchestratorChats;
   private chats!: ChatsDb;
+  private intake: OrderSink | null = null;
+  private stoppingOrchestrator: Promise<void> | null = null;
   private releaseLock!: () => Promise<void>;
   private stopMergeWatch: () => void = () => undefined;
   globalPause = false;
@@ -103,6 +108,7 @@ export class Engine extends EventEmitter {
       return null;
     });
     this.chats = new ChatsDb(p.chatsDb);
+    this.orchestrator = new OrchestratorChats(this, this.chats, (message) => this.live(message));
     for (const id of (await readdir(p.projects).catch(() => [] as string[])).sort()) {
       await this.openProject(id);
       const creation = await readCreation(this.projectDir(id));
@@ -139,6 +145,38 @@ export class Engine extends EventEmitter {
     return { settings: this.settings, accounts: this.accounts, profiles: this.profiles, tiers: this.tiers };
   }
 
+  private orderSink(): OrderSink | null {
+    return this.opts.orders ?? (this.settings.orchestrator ? this.intake : null);
+  }
+
+  async startOrchestrator(url: string, token: string): Promise<void> {
+    await this.orchestrator.start(url, token);
+    this.intake = intakeSink(this.orchestrator);
+    await this.refreshSourcePolling();
+  }
+
+  stopOrchestrator(): Promise<void> {
+    this.stoppingOrchestrator ??= this.orchestrator.close();
+    return this.stoppingOrchestrator;
+  }
+
+  private async refreshSourcePolling(): Promise<void> {
+    const sink: OrderSink | null = this.orderSink();
+    for (const project of this.projects.values()) {
+      if (!sink && project.sourcePolling) {
+        const existing = project.sourcePolling;
+        delete project.sourcePolling;
+        await existing.close();
+      }
+      if (sink && !project.sourcePolling && !this.creating.has(project.ctx.id)) {
+        const resumed: TicketOrder[] = await resumeOrders(project.ctx);
+        if (sink === this.orderSink() && !this.stoppingOrchestrator && !project.sourcePolling) {
+          project.sourcePolling = startSourcePolling(project.ctx, sink, resumed);
+        }
+      }
+    }
+  }
+
   async reloadProject(id: string): Promise<DefinitionError[]> {
     const p = this.projects.get(id);
     if (!p) return [];
@@ -162,6 +200,7 @@ export class Engine extends EventEmitter {
     this.profiles = g.value.profiles;
     this.tiers = g.value.tiers;
     for (const { ctx } of this.projects.values()) ctx.settings = this.settings;
+    await this.refreshSourcePolling();
     this.kick();
     return [];
   }
@@ -288,6 +327,7 @@ export class Engine extends EventEmitter {
       released: () => this.kick(),
       held: () => this.globalPause,
       agents: this.agents,
+      orderAttachments: (orderId, attachmentIds) => this.orchestrator.jobAttachments(orderId, attachmentIds),
       setupEnded: (state) => this.setupEnded(id, state),
       forgeAccount: (accountId) => this.accounts.accounts.find((a): a is ForgeAccount => a.kind === "forge" && a.id === accountId),
       global: () => ({ profiles: this.profiles, tiers: this.tiers }),
@@ -413,7 +453,8 @@ export class Engine extends EventEmitter {
         return;
       }
       const findings = await finishProject(this.opts.home, dir, ctx.project, this.createOptions());
-      if (this.opts.orders && !loaded.sourcePolling) loaded.sourcePolling = startSourcePolling(ctx, this.opts.orders, []);
+      const sink: OrderSink | null = this.orderSink();
+      if (sink && !loaded.sourcePolling) loaded.sourcePolling = startSourcePolling(ctx, sink, []);
       this.setCreating(id, null);
       for (const f of findings) {
         const body = `${f.path} can be read by other users; run: ${f.fix.join(" ")}`;
@@ -515,7 +556,9 @@ export class Engine extends EventEmitter {
 
   async shutdown(): Promise<void> {
     this.stopMergeWatch();
+    const chats: Promise<void> = this.stopOrchestrator();
     await Promise.all([...this.projects.values()].map(({ sourcePolling }) => sourcePolling?.close()));
+    await chats;
     await this.loginRunner.stopAll();
     await Promise.all([...this.projects.values()].map(({ executor }) => executor.close()));
     for (const { ctx } of this.projects.values()) ctx.db.close();

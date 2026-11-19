@@ -14,6 +14,7 @@ const steps = readFileSync(scripts[Math.min(n, scripts.length - 1)], "utf8")
 const inbox = [];
 const waiting = [];
 let lastId = null;
+let lastMsg = null;
 
 createInterface({ input: process.stdin }).on("line", (line) => {
   const msg = JSON.parse(line);
@@ -38,6 +39,7 @@ for (const step of steps) {
       if (msg === null) process.exit(0);
       if (msg.method === step.expect || (step.expect === "response" && msg.method === undefined)) {
         if (msg.id !== undefined && msg.method !== undefined) lastId = msg.id;
+        lastMsg = msg;
         break;
       }
       if (step.strict) {
@@ -51,6 +53,10 @@ for (const step of steps) {
     const path = resolve(process.cwd(), step.write.path);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, step.write.content);
+  } else if ("dump" in step) {
+    writeFileSync(step.dump, JSON.stringify(lastMsg));
+  } else if ("waitFile" in step) {
+    while (!existsSync(step.waitFile)) await new Promise((r) => setTimeout(r, 25));
   } else if ("sleep" in step) {
     await new Promise((r) => setTimeout(r, step.sleep));
   } else if ("exit" in step) {

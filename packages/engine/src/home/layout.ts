@@ -13,6 +13,7 @@ export const homeGitignore = [
   "projects/*/logs/",
   "schemas/",
   "adapters/",
+  "chat-attachments/",
   "run/",
   "",
 ].join("\n");
@@ -91,10 +92,10 @@ export async function syncAdapters(home: string, opts: { source: string; appVers
   const dir = homePaths(home).adapters;
   const versionFile = join(dir, "version");
   const current = await readFile(versionFile, "utf8").catch(() => null);
-  if (current?.trim() === opts.appVersion) return false;
+  if (current?.trim() === opts.appVersion && (!(await exists(join(opts.source, "orchestrator-mcp.mjs"))) || (await exists(join(dir, "orchestrator-mcp.mjs"))))) return false;
   await mkdir(dir, { recursive: true });
   await cp(`${opts.source}/`, dir, { recursive: true, force: true, preserveTimestamps: true, dereference: true });
-  const keep = new Set(["version", "node", ...opts.pinned]);
+  const keep = new Set(["version", "node", "orchestrator-mcp.mjs", ...opts.pinned]);
   for (const entry of await readdir(dir)) {
     if (entry.startsWith("@")) {
       for (const inner of await readdir(join(dir, entry))) if (!keep.has(`${entry}/${inner}`)) await rm(join(dir, entry, inner), { recursive: true, force: true });
