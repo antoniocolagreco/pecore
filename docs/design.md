@@ -1141,7 +1141,7 @@ Everything that knows ACP or a harness lives here (section 5). It imports only `
 | `src/jobs/create.ts` | Job creation above |
 | `src/jobs/controls.ts` | global pause and play (global pause also holds queued jobs); per job stop, pause, play, resume, realign, archive, delete (G17); refuses delete of a parent with live children (4.6) |
 | `src/jobs/stacked.ts` | `parentJobId`, `dependsOn`, base and old base, `job.base_changed` for children |
-| `src/jobs/merge-watch.ts` | runs `mergedCheck` of `succeeded` parents every `mergeCheckSec`; on merge, notifies the children (4.6) |
+| `src/jobs/merge-watch.ts` | runs `mergedCheck` of every job with a delivery not yet merged every `mergeCheckSec`; on merge, notifies the children (4.6) |
 | `src/jobs/delete.ts` | removes the local branch, worktree, artifacts, logs, services and rows of a job; project delete calls it for every job, then removes the project directory and definitions; never acts on the forge (4.8) |
 | `src/jobs/effects.ts` | writes the events `effect.requested`, `effect.completed`, `effect.failed` around engine nodes (4.8) |
 | **osuser/** | |
