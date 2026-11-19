@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { Engine } from "../../src/main";
+import { gitApp } from "../../src/workdir/git-as";
 import { shippedLibrary, tempDir } from "../tmp";
 
 const real = process.env.PECORE_REAL === "1";
@@ -76,5 +77,41 @@ describe.skipIf(!real)("phase 6 gate: Codex and opencode connectors with the use
       expect(run.content_after).not.toBe(run.content_before);
       await engine.shutdown();
     }, 900_000);
+  }
+
+  for (const [account, model, effort] of [["codex", "gpt-6.2-sol", "medium"], ["opencode", "opencode/deepseek-v4.1-flash-free", null]] as const) {
+    it(`runs the local-only recipe (spec, tests, code, checks, review, approval, commit) with every agent node on ${account}`, async () => {
+      const home = join(await tempDir(), "home");
+      await mkdir(home, { recursive: true });
+      await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts }));
+      await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p", account, model, ...(effort ? { effort } : {}) }] }));
+      await writeFile(join(home, "tiers.json"), JSON.stringify({ tiers: { frontier: ["p"], strong: ["p"], standard: ["p"], cheap: ["p"] } }));
+      const adapters = (await import(join(agentsRoot, "adapters.json"), { with: { type: "json" } })).default as { adapters: Record<string, { version: string; entry: string }> };
+      const engine = await Engine.start({ home, library: shippedLibrary, agents: { connectorsDir, adaptersDir: join(agentsRoot, "out", "adapters"), adapters: adapters.adapters }, checkLogins: false });
+      await engine.createProject({ id: "demo", name: "Demo", repo: null, defaultRecipe: "local-only" }, ["local-only"]);
+      const p = engine.project("demo");
+      const id = await engine.createJob("demo", {
+        title: "Add a sum function",
+        ticket: { text: "Create src/math.ts exporting `sum(a: number, b: number): number` that returns a + b. Add Vitest tests for it. The repository is empty: set up a minimal TypeScript project." },
+      });
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const j = p.executor.job(id);
+        if (j.state === "waiting" && j.waiting_reason === "human") {
+          const item = p.ctx.db.db.prepare("SELECT id, subject_hash FROM human_queue WHERE state = 'open' AND kind = 'human-node'").get() as { id: string; subject_hash: string };
+          await p.executor.answer(item.id, "approve", null, item.subject_hash);
+          continue;
+        }
+        if (["succeeded", "failed", "not_delivered", "stopped"].includes(j.state) || (j.state === "waiting" && j.waiting_reason !== "concurrency")) break;
+      }
+      const j = p.executor.job(id);
+      console.log(account, "FINAL", j.state, j.failure_reason, j.waiting_reason);
+      console.log(p.ctx.db.db.prepare("SELECT n.node, n.outcome, n.failure_reason, a.model, a.tokens_in, a.tokens_out FROM node_runs n LEFT JOIN attempts a ON a.node_run_id = n.id ORDER BY n.rowid").all());
+      expect(j.state).toBe("succeeded");
+      const agents = p.ctx.db.db.prepare("SELECT DISTINCT n.node FROM node_runs n JOIN attempts a ON a.node_run_id = n.id WHERE a.tokens_out > 0").pluck().all();
+      expect(agents).toEqual(expect.arrayContaining(["spec", "tests", "code", "review", "approve"]));
+      expect(await gitApp(join(p.ctx.dir, "repo.git"), ["ls-tree", "-r", "--name-only", `factory/${id}`])).toContain("src/math.ts");
+      await engine.shutdown();
+    }, 3_600_000);
   }
 });

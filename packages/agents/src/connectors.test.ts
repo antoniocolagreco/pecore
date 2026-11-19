@@ -105,6 +105,13 @@ describe("codex and opencode connectors: recorded traffic through their readers"
     expect(r.turns.flatMap((t) => t.events)).toContainEqual(expect.objectContaining({ type: "account", email: "user@example.com" }));
   });
 
+  it("opencode free model limit: the shipped connector rule makes it quota, not a harness error", () => {
+    const file = fileURLToPath(new URL("../../app/resources/connectors/opencode.json", import.meta.url));
+    const { connector } = parseConnector(JSON.parse(readFileSync(file, "utf8")));
+    const error = { code: -32603, message: "Internal error: Free usage limit reached. Connect a provider or subscribe to OpenCode Go to keep going, or switch models.", data: { service: "session", errorName: "provider.free-limit" } };
+    expect(classify({ error, text: "", rules: connector!.errors, at: 1000 })).toEqual({ kind: "quota", raw: JSON.stringify(error) });
+  });
+
   it("opencode auth-missing: -32000 Authentication required is auth", async () => {
     const r = await replay(join(fixturesDir, "opencode", "auth-missing.jsonl"), "opencode");
     const kind = r.startError?.kind ?? r.turns[0]?.result.error?.kind;
