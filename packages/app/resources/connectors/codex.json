@@ -5,6 +5,7 @@
   "kind": "adapter",
   "harness": { "program": "codex", "versionArgs": ["--version"], "versionRange": ">=0.169.0" },
   "command": ["{nodePath}", "{adapter:@agentclientprotocol/codex-acp}"],
+  "env": { "CODEX_PATH": "{harnessPath}" },
   "configDirEnv": "CODEX_HOME",
   "configDirFiles": [{ "path": "config.toml", "content": "cli_auth_credentials_store = \"file\"\n" }],
   "sessionConfig": [["mode", "agent-full-access"], ["model", "{model}"], ["reasoning_effort", "{effort}"]],

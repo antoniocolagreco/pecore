@@ -1,0 +1,80 @@
+import { cp, mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { Engine } from "../../src/main";
+import { shippedLibrary, tempDir } from "../tmp";
+
+const real = process.env.PECORE_REAL === "1";
+const agentsRoot = fileURLToPath(new URL("../../../agents/", import.meta.url));
+const connectorsDir = fileURLToPath(new URL("../../../app/resources/connectors/", import.meta.url));
+const accounts = [
+  { id: "codex", kind: "model", provider: "openai", connector: "codex", login: "subscription" },
+  { id: "opencode", kind: "model", provider: "deepseek", connector: "opencode", login: "subscription" },
+];
+
+async function start() {
+  const home = join(await tempDir(), "home");
+  await mkdir(home, { recursive: true });
+  await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts }));
+  const adapters = (await import(join(agentsRoot, "adapters.json"), { with: { type: "json" } })).default as { adapters: Record<string, { version: string; entry: string }> };
+  return Engine.start({ home, library: shippedLibrary, agents: { connectorsDir, adaptersDir: join(agentsRoot, "out", "adapters"), adapters: adapters.adapters }, checkLogins: false });
+}
+
+describe.skipIf(!real)("phase 6 gate: Codex and opencode connectors with the user's existing logins", () => {
+  it("checks both logins and lists their models", async () => {
+    const engine = await start();
+    for (const view of await engine.loginViews()) await engine.recheckLogin(view.id);
+    const views = await engine.loginViews();
+    console.log(JSON.stringify(views.map((v) => ({ account: v.account, state: v.state, plan: v.plan, hasEmail: v.email !== null }))));
+    expect(views.find((v) => v.account === "codex")).toMatchObject({ state: "logged_in", email: expect.any(String) });
+    expect(views.find((v) => v.account === "opencode")?.state).toBe("unknown");
+    expect((await engine.accountOptions("codex"))?.models).toContain("gpt-6.2-sol");
+    expect(await engine.accountOptions("opencode")).toBeNull();
+    await engine.shutdown();
+  }, 300_000);
+
+  for (const [account, model, effort] of [["codex", "gpt-6.2-sol", "low"], ["opencode", "opencode/deepseek-v4.1-flash-free", null]] as const) {
+    it(`runs one agent node through ${account} to its outcome, with tokens recorded`, async () => {
+      const root = await tempDir();
+      const library = join(root, "library");
+      await cp(shippedLibrary, library, { recursive: true });
+      await writeFile(join(library, "nodes", "agent-x.json"), JSON.stringify({
+        name: "agent-x",
+        description: "writes done.txt",
+        kind: "agent",
+        prompt: "agent-x.md",
+        agent: { profiles: ["p"] },
+        inputs: ["ticket"],
+        outcomes: ["done"],
+        changesFiles: true,
+        timeoutSec: 600,
+        outputSchema: { type: "object", required: ["outcome"], properties: { outcome: { enum: ["done"] } } },
+      }));
+      await writeFile(join(library, "nodes", "agent-x.md"), "Create the file done.txt containing the single word ok. Do nothing else.\n");
+      await writeFile(join(library, "recipes", "one-agent.json"), JSON.stringify({ name: "one-agent", description: "one agent", start: "x", successOutcomes: ["x:done"], nodes: { x: { use: "agent-x" } }, edges: [] }));
+      const home = join(root, "home");
+      await mkdir(home, { recursive: true });
+      await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts }));
+      await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p", account, model, ...(effort ? { effort } : {}) }] }));
+      const adapters = (await import(join(agentsRoot, "adapters.json"), { with: { type: "json" } })).default as { adapters: Record<string, { version: string; entry: string }> };
+      const engine = await Engine.start({ home, library, agents: { connectorsDir, adaptersDir: join(agentsRoot, "out", "adapters"), adapters: adapters.adapters }, checkLogins: false });
+      await engine.createProject({ id: "demo", name: "Demo", repo: null, defaultRecipe: "one-agent" }, ["one-agent"]);
+      const p = engine.project("demo");
+      const id = await engine.createJob("demo", { title: "Write done", ticket: { text: "write done.txt" } });
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const j = p.executor.job(id);
+        if (["succeeded", "failed", "not_delivered", "stopped"].includes(j.state) || (j.state === "waiting" && j.waiting_reason !== "concurrency")) break;
+      }
+      const j = p.executor.job(id);
+      const attempt = p.ctx.db.db.prepare("SELECT model, tokens_in, tokens_out, cache_read, cost, end_reason FROM attempts").get() as { model: string | null; tokens_in: number; tokens_out: number };
+      console.log(account, j.state, j.failure_reason, j.waiting_reason, JSON.stringify(attempt));
+      expect(j.state).toBe("succeeded");
+      expect(attempt.tokens_out).toBeGreaterThan(0);
+      const run = p.ctx.db.db.prepare("SELECT content_before, content_after FROM node_runs WHERE job_id = ?").get(id) as { content_before: string; content_after: string };
+      expect(run.content_after).not.toBe(run.content_before);
+      await engine.shutdown();
+    }, 900_000);
+  }
+});
