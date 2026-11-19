@@ -1192,7 +1192,7 @@ The screens below come from G16. Their layout is designed in [ui-design.md](ui-d
 
 | File | What and why |
 |---|---|
-| `electron-builder.yml` | AppImage, deb, dmg, zip; auto-update from GitHub Releases; rebuilds `better-sqlite3` for Electron; bundles `library/`, `connectors/` and the adapters (Fixed choices: Adapters) as extra resources |
+| `electron-builder.yml` | AppImage, deb, dmg, zip; auto-update from GitHub Releases; rebuilds `better-sqlite3` for Electron; bundles `library/`, `connectors/` and the adapters (Fixed choices: Adapters) as extra resources. Built so far (phase 6): the Linux AppImage only; deb needs a project homepage, macOS and auto-update come with the release workflow. The engine copies the adapters into `PECORE_HOME/adapters` with directories 0755 and files 0644 or 0755, whatever the modes inside the app |
 | `electron.vite.config.ts` | builds main, preload and renderer |
 | `src/main/index.ts` | window, menus, tray and single-instance lock; if `userData/home.json` is missing, asks for the `PECORE_HOME` location (default `~/.pecore`) in a small main-process window and writes `home.json`, before the engine starts; then starts the engine; the quit confirmation and the shutdown sequence on `before-quit` (Engine and main process messages) |
 | `src/main/engine.ts` | `utilityProcess.fork` of the engine with `PECORE_HOME`; handles `parentPort` messages |

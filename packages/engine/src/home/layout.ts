@@ -1,4 +1,4 @@
-import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { jsonSchemas } from "@pecore/schemas";
 import { git } from "./git-commit";
@@ -101,6 +101,12 @@ export async function syncAdapters(home: string, opts: { source: string; appVers
       for (const inner of await readdir(join(dir, entry))) if (!keep.has(`${entry}/${inner}`)) await rm(join(dir, entry, inner), { recursive: true, force: true });
       if ((await readdir(join(dir, entry))).length === 0) await rm(join(dir, entry), { recursive: true, force: true });
     } else if (!keep.has(entry)) await rm(join(dir, entry), { recursive: true, force: true });
+  }
+  await chmod(dir, 0o755);
+  for (const entry of await readdir(dir, { recursive: true, withFileTypes: true })) {
+    const path = join(entry.parentPath, entry.name);
+    if (entry.isDirectory()) await chmod(path, 0o755);
+    else if (entry.isFile()) await chmod(path, (await stat(path)).mode & 0o111 ? 0o755 : 0o644);
   }
   await writeFile(versionFile, opts.appVersion + "\n");
   return true;

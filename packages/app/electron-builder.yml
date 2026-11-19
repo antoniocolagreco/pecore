@@ -1,0 +1,23 @@
+appId: app.pecore.desktop
+extraMetadata:
+  author: PeCore contributors
+  description: PeCore is a desktop software factory.
+  desktopName: pecore.desktop
+  license: MIT
+files:
+  - out/**/*
+extraResources:
+  - from: resources
+    to: .
+  - from: ../agents/out/adapters
+    to: adapters
+  - from: ../agents/adapters.json
+    to: adapters.json
+publish: null
+linux:
+  target:
+    - AppImage
+  executableName: pecore
+  icon: resources/icon.png
+  category: Development
+  syncDesktopName: true

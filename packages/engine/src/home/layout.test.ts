@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { shippedLibrary, tempDir } from "../../test/tmp";
@@ -61,6 +61,25 @@ describe("PECORE_HOME layout", () => {
     expect((await readdir(join(home, "adapters"))).sort()).toEqual(["a@1", "node", "version"]);
     expect((await stat(join(home, "adapters", "node", "bin", "node"))).mode & 0o777).toBe(0o755);
     expect(await syncAdapters(home, { source, appVersion: "1.0.0", pinned: ["a@1"] })).toBe(false);
+  });
+
+  it("makes the copied adapters readable by every user even when the app's own copy is private, keeping executables executable", async () => {
+    const root = await tempDir();
+    const home = join(root, "home");
+    const source = join(root, "adapters");
+    await mkdir(join(source, "a@1", "dist"), { recursive: true, mode: 0o700 });
+    await mkdir(join(source, "node", "bin"), { recursive: true, mode: 0o700 });
+    await writeFile(join(source, "a@1", "dist", "index.js"), "x", { mode: 0o600 });
+    await writeFile(join(source, "node", "bin", "node"), "x", { mode: 0o700 });
+    for (const d of ["a@1", "a@1/dist", "node", "node/bin"]) await chmod(join(source, d), 0o700);
+    await syncAdapters(home, { source, appVersion: "1.0.0", pinned: ["a@1"] });
+    const mode = async (p: string) => (await stat(join(home, "adapters", p))).mode & 0o777;
+    expect(await mode(".")).toBe(0o755);
+    expect(await mode("a@1")).toBe(0o755);
+    expect(await mode("a@1/dist")).toBe(0o755);
+    expect(await mode("a@1/dist/index.js")).toBe(0o644);
+    expect(await mode("node/bin")).toBe(0o755);
+    expect(await mode("node/bin/node")).toBe(0o755);
   });
 
   it("keeps scoped adapters that are pinned and removes their old versions", async () => {
