@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { monotonicFactory } from "ulid";
-import type { Node } from "@pecore/schemas";
+import { Node } from "@pecore/schemas";
+import type { Project } from "@pecore/schemas";
 import type { ProjectDb } from "../store/project-db";
 
 const ulid = monotonicFactory();
@@ -31,6 +32,7 @@ export function runFiles(node: Node): string[] {
   return [...new Set(out)].sort();
 }
 
+export type SourceScope = Pick<Project, "repo" | "baseBranch"> & { source: NonNullable<Project["source"]> };
 export type ConfirmSubject = { path: string; kind: "engine-node" | "source-node"; definition: unknown; scripts: Record<string, string> };
 
 export function subjectSha(s: { definition: unknown; scripts: Record<string, string> }): string {
@@ -43,21 +45,26 @@ export function needsConfirmation(node: Node): boolean {
   return node.kind === "source" || (node.kind === "command" && node.runsAs === "engine");
 }
 
-export async function readSubject(nodesDir: string, node: Node): Promise<ConfirmSubject> {
+export async function readSubject(nodesDir: string, node: Node, scope?: SourceScope): Promise<ConfirmSubject> {
   const path = `nodes/${node.name}.json`;
   const definition = JSON.parse(await readFile(join(nodesDir, `${node.name}.json`), "utf8")) as unknown;
+  const snapshot: Node = node.kind === "source" ? Node.parse(definition) : node;
+  if (snapshot.kind !== node.kind || snapshot.name !== node.name) throw new Error(`node ${node.name} changed`);
   const scripts: Record<string, string> = {};
-  for (const f of runFiles(node)) scripts[f] = await readFile(join(nodesDir, f), "utf8");
-  return { path, kind: node.kind === "source" ? "source-node" : "engine-node", definition, scripts };
+  for (const f of runFiles(snapshot)) scripts[f] = await readFile(join(nodesDir, f), "utf8");
+  return { path, kind: node.kind === "source" ? "source-node" : "engine-node", definition: scope ? { node: definition, project: scope } : definition, scripts };
 }
 
-export type ConfirmState = { confirmed: true; scripts: Record<string, string> } | { confirmed: false; itemId: string };
+export type ConfirmState = { confirmed: true; scripts: Record<string, string>; definition: unknown } | { confirmed: false; itemId: string };
 
-export async function ensureConfirmed(db: ProjectDb, jobId: string | null, nodesDir: string, node: Node): Promise<ConfirmState> {
-  const subject = await readSubject(nodesDir, node);
+export async function ensureConfirmed(db: ProjectDb, jobId: string | null, nodesDir: string, node: Node, scope?: SourceScope): Promise<ConfirmState> {
+  const subject = await readSubject(nodesDir, node, scope);
   const sha = subjectSha(subject);
   const row = db.db.prepare("SELECT sha256 FROM confirmed_hashes WHERE path = ?").get(subject.path) as { sha256: string } | undefined;
-  if (row?.sha256 === sha) return { confirmed: true, scripts: subject.scripts };
+  if (row?.sha256 === sha) {
+    const definition: unknown = scope ? (subject.definition as { node: unknown }).node : subject.definition;
+    return { confirmed: true, scripts: subject.scripts, definition };
+  }
   const open = db.db.prepare("SELECT id, subject_hash, subject FROM human_queue WHERE state = 'open' AND kind IN ('engine-node', 'source-node')").all() as { id: string; subject_hash: string; subject: string }[];
   const itemHash = createHash("sha256").update(JSON.stringify(subject)).digest("hex");
   for (const item of open) {

@@ -25,6 +25,29 @@ const QueueKind = z.enum([
 export type QueueKind = z.infer<typeof QueueKind>;
 export { QueueKind };
 
+export const TicketSnapshot = z.object({
+  title: z.string(),
+  body: z.string(),
+  author: z.string().nullish().transform((name) => name ?? null),
+  labeledBy: z.string().nullish().transform((name) => name ?? null),
+  attachments: z.array(z.string()).default([]),
+});
+export type TicketSnapshot = z.infer<typeof TicketSnapshot>;
+
+export const TicketReply = z.object({ id: z.string().optional(), body: z.string(), author: z.string().nullable(), createdAt: z.string() });
+export type TicketReply = z.infer<typeof TicketReply>;
+
+export const OrderPlan = z.array(z.object({
+  key: z.string().min(1),
+  title: z.string().min(1),
+  recipe: z.string().min(1).optional(),
+  ticketText: z.string(),
+  dependsOn: z.array(z.string().min(1)).max(1),
+  baseBranch: z.string().min(1).optional(),
+}).strict());
+export type OrderPlan = z.infer<typeof OrderPlan>;
+
+const OrderId = z.string().min(1);
 const ev = <T extends string, P extends z.ZodType>(type: T, payload: P) => z.object({ type: z.literal(type), payload });
 
 export const EventBody = z.discriminatedUnion("type", [
@@ -39,6 +62,8 @@ export const EventBody = z.discriminatedUnion("type", [
       base: z.string().nullable(),
       target: z.string(),
       branch: z.string(),
+      orderId: OrderId.optional(),
+      orderKey: z.string().min(1).optional(),
     }),
   ),
   ev("job.state_changed", z.object({ state: JobState, reason: z.union([JobWaitingReason, PauseReason, z.string()]).nullable() })),
@@ -116,7 +141,13 @@ export const EventBody = z.discriminatedUnion("type", [
     z.object({ itemId: z.string(), state: z.enum(["resolved", "cancelled"]), choice: z.string().nullable(), note: z.string().nullable() }),
   ),
   ev("confirmation.recorded", z.object({ path: z.string(), sha256: z.string() })),
-  ev("ticket.seen", z.object({ source: z.string(), ticketId: z.string() })),
+  ev("ticket.seen", z.object({ source: z.string(), ticketId: z.string(), orderId: z.ulid() })),
+  ev("order.read", z.object({ orderId: OrderId, ticket: TicketSnapshot, trusted: z.boolean() })),
+  ev("order.handed", z.object({ orderId: OrderId, replies: z.array(TicketReply).optional(), askId: z.ulid().nullish() })),
+  ev("order.asked", z.object({ orderId: OrderId, commentAt: z.number().int().nonnegative() })),
+  ev("order.planned", z.object({ orderId: OrderId, plan: OrderPlan })),
+  ev("order.done", z.object({ orderId: OrderId })),
+  ev("order.dropped", z.object({ orderId: OrderId, reason: z.string() })),
 ]);
 export type EventBody = z.infer<typeof EventBody>;
 export type EventType = EventBody["type"];

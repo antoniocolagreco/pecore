@@ -102,6 +102,29 @@ describe("agent nodes with the fake agent (5.4)", () => {
     await engine.shutdown();
   });
 
+  it("asks the user through .pecore/question.json and sends the answer as the next prompt of the same session (Phase 6 decision 2)", async () => {
+    const asks = [...init, ...newSession, prompt, { write: { path: ".pecore/question.json", content: JSON.stringify({ question: "Email or username?" }) } }, usageAnswer];
+    const answered = [...init, ...resumeSession, prompt, output({ outcome: "done" }), usageAnswer];
+    const { engine, p, id } = await setup([asks, answered]);
+    const waiting = await until(final(p, id));
+    expect(waiting).toMatchObject({ state: "waiting", waiting_reason: "human" });
+    const item = p.ctx.db.db.prepare("SELECT id, kind, subject, subject_hash FROM human_queue WHERE state = 'open'").get() as { id: string; kind: string; subject: string; subject_hash: string };
+    expect(item.kind).toBe("agent-question");
+    expect(JSON.parse(item.subject)).toMatchObject({ question: "Email or username?", sessionId: "S1" });
+    await p.executor.answer(item.id, "answer", "Email", item.subject_hash);
+    const j = await until(() => (p.executor.job(id).state === "succeeded" ? p.executor.job(id) : undefined));
+    expect(j.state).toBe("succeeded");
+    expect(p.ctx.db.db.prepare("SELECT session_id, resumed FROM attempts ORDER BY started_at").all()).toEqual([
+      { session_id: "S1", resumed: 0 },
+      { session_id: "S1", resumed: 1 },
+    ]);
+    const logs = p.ctx.db.db.prepare("SELECT log_path FROM attempts ORDER BY started_at").all() as { log_path: string }[];
+    const raw = await import("../observability/logs").then((m) => m.readLog(join(p.ctx.dir, logs[1]!.log_path)));
+    const sent = raw.find((l) => l.dir === "out" && (l.msg as { method?: string }).method === "session/prompt") as { msg: { params: { prompt: { text: string }[] } } };
+    expect(sent.msg.params.prompt[0]!.text).toContain("Email");
+    await engine.shutdown();
+  });
+
   it("waits for quota with the reset time from data.errorKind, without using a retry", async () => {
     const resetsAt = Math.floor(Date.now() / 1000) + 3600;
     const { engine, p, id } = await setup([[...init, ...newSession, prompt, { send: { jsonrpc: "2.0", id: "$id", error: { code: -32603, message: "limit", data: { errorKind: "rate_limit", rateLimit: { resetsAt } } } } }]]);

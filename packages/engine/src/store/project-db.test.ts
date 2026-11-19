@@ -15,11 +15,11 @@ describe("pecore.db", () => {
   it("applies the migrations once, in WAL mode", async () => {
     const path = join(await tempDir(), "pecore.db");
     const db = new ProjectDb(path);
-    expect(db.version()).toBe(1);
+    expect(db.version()).toBe(2);
     expect(db.db.pragma("journal_mode", { simple: true })).toBe("wal");
     db.close();
     const again = new ProjectDb(path);
-    expect(again.version()).toBe(1);
+    expect(again.version()).toBe(2);
     const tables = (again.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as { name: string }[]).map((r) => r.name);
     expect(tables).toEqual(["attempts", "confirmed_hashes", "events", "human_queue", "jobs", "node_runs", "schema_version", "tickets_seen", "usage_daily"]);
     again.close();

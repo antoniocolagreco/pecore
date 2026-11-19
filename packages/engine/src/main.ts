@@ -21,7 +21,9 @@ import { whyJob } from "./observability/why";
 import type { Notification } from "./store/chats-db";
 import { createJob } from "./jobs/create";
 import { startMergeWatch } from "./jobs/merge-watch";
+import { resumeOrders } from "./jobs/plan";
 import type { CreateJob } from "./jobs/create";
+import type { TicketOrder } from "./jobs/plan";
 import { homePaths, initHome } from "./home/layout";
 import { takeLock } from "./home/lock";
 import { beginProject, cancelCreation, finishProject, prepareRepo, readCreation, repoCreated, setupJobId } from "./projects/create";
@@ -34,8 +36,10 @@ import { isFinal } from "./graph/job-machine";
 import { Pools } from "./scheduler/pools";
 import { ChatsDb } from "./store/chats-db";
 import { ProjectDb } from "./store/project-db";
+import { startSourcePolling } from "./sources/poll";
+import type { OrderSink } from "./sources/poll";
 
-export type EngineOptions = { home: string; library: string; agents?: AgentPaths; checkLogins?: boolean; admin?: (script: string) => Promise<void> };
+export type EngineOptions = { home: string; library: string; agents?: AgentPaths; checkLogins?: boolean; admin?: (script: string) => Promise<void>; orders?: OrderSink };
 
 export class EngineStartError extends Error {
   constructor(readonly errors: DefinitionError[]) {
@@ -45,7 +49,7 @@ export class EngineStartError extends Error {
 
 export class NotFoundError extends Error {}
 
-type LoadedProject = { ctx: ProjectContext; executor: JobExecutor };
+type LoadedProject = { ctx: ProjectContext; executor: JobExecutor; sourcePolling?: ReturnType<typeof startSourcePolling> };
 
 export class Engine extends EventEmitter {
   readonly projects = new Map<string, LoadedProject>();
@@ -105,6 +109,11 @@ export class Engine extends EventEmitter {
       if (creation) this.creating.set(id, { step: creation.step, error: "the app quit during project creation" });
     }
     for (const { executor } of this.projects.values()) await executor.recoverAfterRestart();
+    const resumedOrders: Map<LoadedProject, TicketOrder[]> = new Map();
+    for (const project of this.projects.values()) {
+      const resumed = await resumeOrders(project.ctx);
+      if (this.opts.orders && !this.creating.has(project.ctx.id)) resumedOrders.set(project, resumed);
+    }
     if (this.settings.servicesRuntime !== null && [...this.projects.values()].some(({ ctx }) => ctx.project.services !== null)) {
       const live = (jobId: string) => [...this.projects.values()].some(({ executor }) => executor.jobs().some((j) => j.id === jobId && !isFinal(j.state)));
       await new ServicesRuntimeController(this.settings.servicesRuntime).sweep((jobId) => !live(jobId)).catch((e: unknown) => console.error("services sweep:", e));
@@ -117,6 +126,9 @@ export class Engine extends EventEmitter {
       },
     );
     if (this.agents && this.opts.checkLogins !== false) void this.agents.checkAll().then(() => this.emit("logins"));
+    if (this.opts.orders) {
+      for (const [project, resumed] of resumedOrders) project.sourcePolling = startSourcePolling(project.ctx, this.opts.orders, resumed);
+    }
   }
 
   projectDir(id: string): string {
@@ -134,6 +146,7 @@ export class Engine extends EventEmitter {
     if (loaded.project) {
       p.ctx.project = loaded.project;
       p.ctx.defs = loaded;
+      p.sourcePolling?.wake();
     }
     if (loaded.errors.length) this.projectErrors.set(id, loaded.errors);
     else this.projectErrors.delete(id);
@@ -288,6 +301,7 @@ export class Engine extends EventEmitter {
         if (e.type.startsWith("node_run.") && e.jobId !== null && "nodeRunId" in e.payload) this.live({ type: "node_run.updated", projectId: id, jobId: e.jobId, nodeRunId: e.payload.nodeRunId });
         if (e.type.startsWith("job.") && e.jobId !== null) this.live({ type: "job.updated", projectId: id, jobId: e.jobId });
         if (e.type === "queue.added" || e.type === "queue.resolved") this.live({ type: "queue.updated", projectId: id, itemId: e.payload.itemId });
+        if (e.type === "queue.resolved" && e.jobId === null && e.payload.choice === "confirm") this.projects.get(id)?.sourcePolling?.wake();
       }
     };
     this.projects.set(id, { ctx, executor: new JobExecutor(ctx) });
@@ -384,7 +398,8 @@ export class Engine extends EventEmitter {
     const creation = await readCreation(dir);
     if (!creation) return;
     if (!this.projects.has(id)) await this.openProject(id);
-    const { ctx, executor } = this.project(id);
+    const loaded: LoadedProject = this.project(id);
+    const { ctx, executor } = loaded;
     try {
       if (creation.step < 4 && (await prepareRepo(this.opts.home, dir, ctx.project, this.createOptions())) === "setup") {
         const setup = executor.jobs().find((j) => j.id === setupJobId);
@@ -398,6 +413,7 @@ export class Engine extends EventEmitter {
         return;
       }
       const findings = await finishProject(this.opts.home, dir, ctx.project, this.createOptions());
+      if (this.opts.orders && !loaded.sourcePolling) loaded.sourcePolling = startSourcePolling(ctx, this.opts.orders, []);
       this.setCreating(id, null);
       for (const f of findings) {
         const body = `${f.path} can be read by other users; run: ${f.fix.join(" ")}`;
@@ -414,6 +430,7 @@ export class Engine extends EventEmitter {
     if (!(await readCreation(dir))) throw new Error(`project ${id} is not being created`);
     const p = this.projects.get(id);
     if (p) {
+      await p.sourcePolling?.close();
       await p.executor.close();
       p.ctx.db.close();
       this.projects.delete(id);
@@ -424,9 +441,10 @@ export class Engine extends EventEmitter {
 
   async deleteProject(id: string): Promise<void> {
     const p = this.project(id);
-    const jobs = p.executor.jobs();
-    const running = jobs.filter((j) => j.state === "running");
+    const running = p.executor.jobs().filter((j) => j.state === "running");
     if (running.length > 0) throw new Error(`stop the running jobs first: ${running.map((j) => j.title).join(", ")}`);
+    await p.sourcePolling?.close();
+    const jobs = p.executor.jobs();
     for (const j of jobs) if (!isFinal(j.state)) await p.executor.stop(j.id);
     for (const j of jobs) await p.executor.services.down(j.id).catch((e: unknown) => console.error("services:", e));
     await p.executor.close();
@@ -497,6 +515,7 @@ export class Engine extends EventEmitter {
 
   async shutdown(): Promise<void> {
     this.stopMergeWatch();
+    await Promise.all([...this.projects.values()].map(({ sourcePolling }) => sourcePolling?.close()));
     await this.loginRunner.stopAll();
     await Promise.all([...this.projects.values()].map(({ executor }) => executor.close()));
     for (const { ctx } of this.projects.values()) ctx.db.close();
@@ -505,4 +524,4 @@ export class Engine extends EventEmitter {
   }
 }
 
-export type { CreateJob };
+export type { CreateJob, OrderSink };

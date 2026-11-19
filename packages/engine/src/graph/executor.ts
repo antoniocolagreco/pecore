@@ -13,20 +13,22 @@ import type { Definitions } from "../definitions/load";
 import { effectRecorder } from "../jobs/effects";
 import { LogWriter } from "../observability/logs";
 import { runAgentNode } from "../runners/agent";
+import type { AgentContinuation, AgentQuestion } from "../runners/agent";
 import { commitSha, fetchBase, latestArtifact, reentryPending } from "../jobs/stacked";
 import { runCommandNode, runMergedCheck } from "../runners/command";
 import type { CommandRun } from "../runners/command";
-import { forgeEnv, identityOk, ToolAuthError } from "../runners/forge-env";
+import { forgeEnv, identityOk, toolAccounts, ToolAuthError } from "../runners/forge-env";
 import { budgetBlock } from "../scheduler/budget";
 import { candidateProfiles, pickProfile } from "../scheduler/tiers";
 import type { ProfileChoice } from "../scheduler/tiers";
-import { humanItem, humanResult } from "../runners/human";
+import { humanItem, humanResult, subjectHash } from "../runners/human";
 import { paramsWithDefaults } from "../runners/placeholders";
 import { appUser, killJobProcesses, signalGroup, stopGroup } from "../runners/process";
 import { enoughDisk } from "../scheduler/disk";
 import type { Pools } from "../scheduler/pools";
 import { poolsFor } from "../scheduler/pools";
-import type { ProjectDb } from "../store/project-db";
+import type { NewEvent, ProjectDb } from "../store/project-db";
+import { resolveTicketOrder } from "../sources/poll";
 import { contentState, deleteScratch, recordGit, restoreState, undoInterrupted } from "../workdir/content-state";
 import type { GitRecord } from "../workdir/content-state";
 import { gitWork } from "../workdir/git-as";
@@ -98,8 +100,24 @@ export type ProjectContext = {
 type AttemptExtra = { usage?: Usage; model?: string; cost?: number | null; log: string };
 type Attempt =
   | (AttemptExtra & { kind: "completed"; outcome: string; outputs: { type: ArtifactType; content: string }[]; quotaRejected?: { resetAt?: number } | null })
-  | (AttemptExtra & { kind: "failed"; reason: FailureReason })
+  | (AttemptExtra & { kind: "question"; pending: AgentQuestion; quotaRejected: { resetAt?: number } | null })
+  | (AttemptExtra & { kind: "failed"; reason: FailureReason; retry?: false })
   | (AttemptExtra & { kind: "waiting"; reason: "network" | "quota" | "rate_limit" | "auth"; resetAt?: number });
+
+type AgentProfile = Extract<ProfileChoice, { kind: "profile" }>;
+type QuestionSubject = AgentQuestion & {
+  attemptId: string;
+  nodeRunId: string;
+  node: string;
+  contentState: string;
+  questionTree: string;
+  git: GitRecord;
+  profile: AgentProfile;
+  osUser: string;
+  connector: string;
+  retries: number;
+};
+type QueueItem = Omit<Extract<NewEvent, { type: "queue.added" }>["payload"], "itemId">;
 
 function localDay(now = new Date()): string {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -462,7 +480,7 @@ export class JobExecutor {
     const confirmed = await ensureConfirmed(this.ctx.db, parent.id, join(this.ctx.dir, "nodes"), node);
     if (!confirmed.confirmed) return null;
     const env: Record<string, string> = {};
-    for (const a of this.toolAccounts(node.credentials)) Object.assign(env, await forgeEnv(a));
+    for (const a of toolAccounts(node.credentials, this.ctx.project.repo?.account, this.ctx.forgeAccount)) Object.assign(env, await forgeEnv(a));
     const result = await runMergedCheck({
       node,
       nodeDir: join(this.ctx.dir, "nodes"),
@@ -497,6 +515,31 @@ export class JobExecutor {
     return true;
   }
 
+  private waitForHuman(job: JobRow, run: NodeRunRow, item: QueueItem, body: string, events: NewEvent[] = []): void {
+    const itemId: string = ulid();
+    assertTransition(this.job(job.id).state, "waiting", { archived: job.archived === 1 });
+    this.ctx.db.append([
+      ...events,
+      { jobId: job.id, type: "queue.added", payload: { itemId, ...item } },
+      { jobId: job.id, type: "node_run.state_changed", payload: { nodeRunId: run.id, state: "waiting", waitingReason: "human", queueItemId: itemId } },
+      { jobId: job.id, type: "job.state_changed", payload: { state: "waiting", reason: "human" } },
+    ]);
+    this.ctx.changed(job.id);
+    this.ctx.notify({ kind: "needs-user", title: job.title, body, jobId: job.id });
+  }
+
+  private agentQuestion(jobId: string, runId: string): { subject: QuestionSubject; answer: string | null } | null {
+    const row = this.ctx.db.db.prepare(
+      `SELECT q.subject, q.note FROM human_queue q JOIN attempts asked ON asked.id = json_extract(q.subject, '$.attemptId')
+       WHERE q.job_id = ? AND asked.node_run_id = ? AND q.kind = 'agent-question'
+         AND (q.state = 'open' OR (q.state = 'resolved' AND q.choice = 'answer'))
+         AND NOT EXISTS (SELECT 1 FROM attempts later WHERE later.node_run_id = asked.node_run_id
+           AND later.rowid > asked.rowid AND later.end_reason NOT IN ('quota', 'rate_limit', 'auth'))
+       ORDER BY asked.rowid DESC LIMIT 1`,
+    ).get(jobId, runId) as { subject: string; note: string | null } | undefined;
+    return row ? { subject: JSON.parse(row.subject) as QuestionSubject, answer: row.note } : null;
+  }
+
   private async runNode(job: JobRow, recipe: Recipe, run: NodeRunRow): Promise<boolean> {
     const node = this.nodeFor(recipe, run.node);
     const recipeNode = recipe.nodes[run.node]!;
@@ -513,7 +556,9 @@ export class JobExecutor {
       }
     }
 
-    const before = await contentState(this.ctx.user, wd);
+    const question = node.kind === "agent" ? this.agentQuestion(job.id, run.id) : null;
+    const continuation: (QuestionSubject & AgentContinuation) | null = question?.answer != null ? { ...question.subject, answer: question.answer } : null;
+    const before: string = continuation?.contentState ?? await contentState(this.ctx.user, wd);
     if (recipeNode.requires.length > 0 && !this.requiresMet(job.id, recipe, run.node, before)) {
       this.complete(job.id, run.id, "stale", before, before, []);
       return true;
@@ -521,13 +566,7 @@ export class JobExecutor {
 
     if (node.kind === "human") {
       const item = humanItem(run.id, run.node, node, [...this.latest(job.id).values()], before);
-      const itemId = ulid();
-      this.ctx.db.append([
-        { jobId: job.id, type: "queue.added", payload: { itemId, ...item } },
-        { jobId: job.id, type: "node_run.state_changed", payload: { nodeRunId: run.id, state: "waiting", waitingReason: "human", queueItemId: itemId } },
-      ]);
-      this.setState(job.id, "waiting", "human");
-      this.ctx.notify({ kind: "needs-user", title: job.title, body: `${run.node} waits for your review`, jobId: job.id });
+      this.waitForHuman(job, run, item, `${run.node} waits for your review`);
       return false;
     }
     if (node.kind === "source") throw new Error("source nodes cannot run in a recipe");
@@ -564,7 +603,7 @@ export class JobExecutor {
       if (this.job(job.id).state === "waiting") this.setState(job.id, "running", null);
     }
 
-    const tools = node.kind === "command" ? this.toolAccounts(node.credentials) : [];
+    const tools: ForgeAccount[] = node.kind === "command" ? toolAccounts(node.credentials, this.ctx.project.repo?.account, this.ctx.forgeAccount) : [];
     const toolEnv: Record<string, string> = {};
     try {
       for (const a of tools) Object.assign(toolEnv, await forgeEnv(a));
@@ -574,13 +613,14 @@ export class JobExecutor {
       return false;
     }
 
-    let profile: Extract<ProfileChoice, { kind: "profile" }> | null = null;
+    let profile: AgentProfile | null = null;
     let pools = poolsFor(this.ctx.id);
     if (node.kind === "agent") {
       const agents = this.ctx.agents;
       if (!agents) throw new Error("agents are not configured");
       const g = this.ctx.global();
-      const choice = pickProfile({
+      const cooling = continuation && agents.cooling(continuation.profile.account);
+      const choice: ProfileChoice = continuation ? (cooling ? { kind: "wait", reason: cooling.kind, until: cooling.until } : continuation.profile) : pickProfile({
         candidates: candidateProfiles(node, recipeNode.agent, g.tiers),
         profiles: g.profiles,
         providerOf: (acc) => agents.account(acc)?.provider,
@@ -618,10 +658,12 @@ export class JobExecutor {
       return false;
     }
     try {
-      const attempts = node.retry + 1;
+      const attempts: number = (continuation?.retries ?? node.retry) + 1;
       for (let attempt = 0; attempt < attempts; attempt++) {
-        const git = await recordGit(this.ctx.user, wd, job.id);
-        this.ctx.db.append([{ jobId: job.id, type: "node_run.git_recorded", payload: { nodeRunId: run.id, ...git } }]);
+        const resumed: (QuestionSubject & AgentContinuation) | null = attempt === 0 ? continuation : null;
+        const attemptGit: GitRecord = await recordGit(this.ctx.user, wd, job.id);
+        const git: GitRecord = resumed?.git ?? attemptGit;
+        this.ctx.db.append([{ jobId: job.id, type: "node_run.git_recorded", payload: { nodeRunId: run.id, ...attemptGit } }]);
         this.setRun(job.id, run.id, "running", null, { osUser: this.ctx.user });
         const attemptId = ulid();
         const logPath = join("logs", `${attemptId}.jsonl.zst`);
@@ -662,28 +704,44 @@ export class JobExecutor {
                 onStart,
                 effect: effectRecorder(this.ctx.db, job.id, run.id, run.node),
               })
-            : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, sessionGroup, { wd, context, inputs, log, onStart, env: servicesEnv });
+            : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, sessionGroup, { wd, context, inputs, log, onStart, env: servicesEnv, continuation: resumed });
         this.running.delete(job.id);
         if (result.log) log.write({ dir: "cmd", text: result.log, at: Date.now() });
         await log.close();
         if (this.closing) return false;
-        const end = (reason: string) =>
-          this.ctx.db.append([
-            {
-              jobId: job.id,
-              type: "attempt.ended",
-              payload: { attemptId, endReason: reason, model: result.model ?? profile?.model ?? null, account: profile?.account ?? null, tokens: result.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, cost: result.cost ?? null, day: localDay() },
-            },
-          ]);
+        const ended = (reason: string): NewEvent => ({
+          jobId: job.id,
+          type: "attempt.ended",
+          payload: { attemptId, endReason: reason, model: result.model ?? profile?.model ?? null, account: profile?.account ?? null, tokens: result.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, cost: result.cost ?? null, day: localDay() },
+        });
+        const end = (reason: string): void => { this.ctx.db.append([ended(reason)]); };
 
         if (this.stopRequested.has(job.id)) {
           end("interrupted");
           await this.interrupt(job.id, run.id, git, before);
           return false;
         }
+        if (result.kind === "question") {
+          const subject: QuestionSubject = {
+            ...result.pending,
+            attemptId,
+            nodeRunId: run.id,
+            node: run.node,
+            contentState: before,
+            questionTree: await contentState(this.ctx.user, wd),
+            git,
+            profile: profile!,
+            osUser: this.ctx.user,
+            connector: this.ctx.agents!.account(profile!.account)!.connector,
+            retries: attempts - attempt - 1,
+          };
+          if (result.quotaRejected) this.ctx.agents!.coolDown(profile!.account, "quota", result.quotaRejected.resetAt);
+          this.waitForHuman(job, run, { kind: "agent-question", subject, subjectHash: subjectHash(subject), choices: ["answer"] }, `${run.node} has a question`, [ended("human")]);
+          return false;
+        }
         if (result.kind === "waiting") {
           end(result.reason);
-          await undoInterrupted(this.ctx.user, wd, job.id, git, before);
+          await undoInterrupted(this.ctx.user, wd, job.id, attemptGit, resumed?.questionTree ?? before);
           if (result.reason === "network") {
             const expired = (await Promise.all(tools.map(async (a) => ((await identityOk(a)) ? null : a.id)))).find((id) => id !== null);
             if (expired) this.waitAuth(job, run.id, expired);
@@ -707,7 +765,7 @@ export class JobExecutor {
         if (result.kind === "failed") {
           end(result.reason);
           await undoInterrupted(this.ctx.user, wd, job.id, git, before);
-          if (attempt + 1 < attempts && result.reason !== "INVALID_OUTPUT") continue;
+          if (attempt + 1 < attempts && result.reason !== "INVALID_OUTPUT" && !("retry" in result && result.retry === false)) continue;
           await this.saveArtifact(job.id, runDir, "check-log", result.log, before);
           this.fail(job, run.id, result.reason);
           return false;
@@ -759,15 +817,6 @@ export class JobExecutor {
       ticketId: (await read<{ id: string | null }>(latest.get("ticket")))?.id ?? null,
       project: { repoDir: join(this.ctx.dir, "repo.git"), repoUrl: this.ctx.project.repo?.url ?? null, baseBranch: this.ctx.project.baseBranch },
     };
-  }
-
-  private toolAccounts(credentials: string[]): ForgeAccount[] {
-    return credentials.map((name) => {
-      const id = name === "project.account" ? this.ctx.project.repo?.account : name;
-      const account = id === undefined ? undefined : this.ctx.forgeAccount(id);
-      if (!account) throw new Error(`forge account ${id ?? name} not found`);
-      return account;
-    });
   }
 
   private backoff(nodeRunId: string): number {
@@ -861,14 +910,17 @@ export class JobExecutor {
     run: NodeRunRow,
     node: AgentNode,
     recipeNode: Recipe["nodes"][string],
-    profile: Extract<ProfileChoice, { kind: "profile" }>,
+    profile: AgentProfile,
     attemptId: string,
     sessionGroup: string | null,
-    x: { wd: string; context: CommandRun["context"]; inputs: CommandRun["inputs"]; log: LogWriter; onStart: (pgid: number, user: string) => void; env: Record<string, string> },
+    x: { wd: string; context: CommandRun["context"]; inputs: CommandRun["inputs"]; log: LogWriter; onStart: (pgid: number, user: string) => void; env: Record<string, string>; continuation: (QuestionSubject & AgentContinuation) | null },
   ): Promise<Attempt> {
     const agents = this.ctx.agents!;
     const account = agents.account(profile.account);
     if (!account) return { kind: "failed", reason: "HARNESS_ERROR", log: `account ${profile.account} not found` };
+    if (x.continuation && (x.continuation.osUser !== this.ctx.user || x.continuation.connector !== account.connector)) {
+      return { kind: "failed", reason: "HARNESS_ERROR", retry: false, log: "the project user or connector changed while the question was open" };
+    }
     let connector;
     try {
       connector = await agents.resolve(account.connector);
@@ -893,6 +945,7 @@ export class JobExecutor {
       model: profile.model,
       effort: profile.effort,
       resumeId,
+      continuation: x.continuation ?? undefined,
       timeoutMs: node.timeoutSec * 1000,
       onStart: (pgid) => x.onStart(pgid, this.ctx.user),
       onSession: (sessionId, resumed) => this.ctx.db.append([{ jobId: job.id, type: "attempt.session_started", payload: { attemptId, sessionId, resumed } }]),
@@ -907,6 +960,7 @@ export class JobExecutor {
     const usage = r.usage;
     const common = { usage, ...(r.model ? { model: r.model } : {}), cost: r.costUsd ?? null, log: `${r.kind === "completed" ? "" : `${"detail" in r ? r.detail : ""}\n`}${r.text}` };
     if (r.kind === "completed") return { ...common, kind: "completed", outcome: r.outcome, outputs: r.outputs, quotaRejected: r.quotaRejected };
+    if (r.kind === "question") return { ...common, kind: "question", pending: r.pending, quotaRejected: r.quotaRejected };
     if (r.kind === "waiting") return { ...common, kind: "waiting", reason: r.reason, ...(r.resetAt !== undefined ? { resetAt: r.resetAt } : {}) };
     return { ...common, kind: "failed", reason: r.reason };
   }
@@ -944,6 +998,11 @@ export class JobExecutor {
     if (!item) throw new Error(`queue item ${itemId} not found`);
     if (item.state !== "open" || item.subject_hash !== hash) throw new Error("the item changed or was resolved");
     if (!(JSON.parse(item.choices) as string[]).includes(choice)) throw new Error(`${choice} is not a choice of this item`);
+    if (item.kind === "ticket") {
+      const { orderId } = JSON.parse(item.subject) as { orderId: string };
+      resolveTicketOrder(this.ctx, itemId, orderId, choice, note);
+      return;
+    }
     if (item.kind === "engine-node" || item.kind === "source-node") {
       this.ctx.db.append([{ jobId: null, type: "queue.resolved", payload: { itemId, state: "resolved", choice, note } }]);
       if (choice === "confirm") recordConfirmation(this.ctx.db, JSON.parse(item.subject) as ConfirmSubject);
@@ -959,6 +1018,20 @@ export class JobExecutor {
     const jobId = item.job_id;
     await this.exclusive(jobId, async () => {
       const job = this.job(jobId);
+      if (item.kind === "agent-question") {
+        if (!note?.trim()) throw new Error("an answer is required");
+        const { nodeRunId } = JSON.parse(item.subject) as QuestionSubject;
+        const pending: boolean = this.runs(jobId).some((run) => run.id === nodeRunId && run.state === "waiting" && run.waiting_reason === "human" && run.queue_item_id === itemId);
+        if (!pending) throw new Error("the question changed or was resolved");
+        const events: NewEvent[] = [
+          { jobId, type: "queue.resolved", payload: { itemId, state: "resolved", choice, note } },
+          { jobId, type: "node_run.state_changed", payload: { nodeRunId, state: "waiting", waitingReason: "concurrency" } },
+        ];
+        if (job.state === "waiting") events.push({ jobId, type: "job.state_changed", payload: { state: "running", reason: null } });
+        this.ctx.db.append(events);
+        this.ctx.changed(jobId);
+        return;
+      }
       this.ctx.db.append([{ jobId, type: "queue.resolved", payload: { itemId, state: "resolved", choice, note } }]);
       if (item.kind === "budget") {
         if (job.state !== "waiting") return;
@@ -1032,7 +1105,11 @@ export class JobExecutor {
       this.timers.delete(jobId);
       const job = this.job(jobId);
       if (isFinal(job.state)) return;
-      for (const r of this.runs(jobId)) if (r.state === "pending" || r.state === "waiting") this.setRun(jobId, r.id, "interrupted", null);
+      for (const r of this.runs(jobId)) {
+        if (r.state !== "pending" && r.state !== "waiting") continue;
+        const question = this.agentQuestion(jobId, r.id);
+        await this.interrupt(jobId, r.id, question?.subject.git ?? null, question?.subject.contentState ?? null);
+      }
       const open = this.ctx.db.db.prepare("SELECT id FROM human_queue WHERE job_id = ? AND state = 'open'").all(jobId) as { id: string }[];
       for (const { id } of open) this.ctx.db.append([{ jobId, type: "queue.resolved", payload: { itemId: id, state: "cancelled", choice: null, note: null } }]);
       this.setState(jobId, "stopped", null);
@@ -1059,6 +1136,14 @@ export class JobExecutor {
       for (const r of open) {
         if (r.pgid !== null && r.os_user !== null) await signalGroup(r.os_user, r.pgid, "KILL");
         const git = r.git_before ? (JSON.parse(r.git_before) as GitRecord) : null;
+        const question = this.agentQuestion(job.id, r.id);
+        if (question?.answer != null && git) {
+          await undoInterrupted(this.ctx.user, workdirOf(this.ctx.dir, job.id), job.id, git, question.subject.questionTree).then(
+            () => this.setRun(job.id, r.id, "waiting", "concurrency"),
+            () => this.setRun(job.id, r.id, "interrupted", null),
+          );
+          continue;
+        }
         const before = r.content_before;
         await this.interrupt(job.id, r.id, git, before).catch(() => this.setRun(job.id, r.id, "interrupted", null));
       }

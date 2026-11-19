@@ -22,14 +22,21 @@ export type CreateJob = {
   recipe?: string;
   baseBranch?: string;
   parentJobId?: string | null;
+  orderId?: string;
+  orderKey?: string;
 };
 
-export async function createJob(ctx: ProjectContext, req: CreateJob): Promise<string> {
-  const recipeName = req.recipe ?? ctx.project.defaultRecipe;
+export function recipeForJob(ctx: ProjectContext, recipeName: string): Recipe {
   const recipe = ctx.defs.recipes.get(recipeName);
   if (!recipe) throw new JobCreateError(`recipe ${recipeName} not found in project ${ctx.id}`);
   const issues = checkRecipe(recipe, ctx.defs.nodes);
   if (issues.length) throw new JobCreateError(`recipe ${recipeName} is not valid: ${issues.map((i) => `${i.path}: ${i.message}`).join("; ")}`);
+  return recipe;
+}
+
+export async function createJob(ctx: ProjectContext, req: CreateJob): Promise<string> {
+  if ((req.orderId === undefined) !== (req.orderKey === undefined)) throw new JobCreateError("orderId and orderKey must be set together");
+  const recipe: Recipe = recipeForJob(ctx, req.recipe ?? ctx.project.defaultRecipe);
   const parent = req.parentJobId ? (ctx.db.db.prepare("SELECT * FROM jobs WHERE id = ?").get(req.parentJobId) as JobRow | undefined) : null;
   if (parent === undefined) throw new JobCreateError(`parent job ${req.parentJobId} not found`);
   let baseBranch = req.baseBranch ?? ctx.project.baseBranch;
@@ -59,7 +66,7 @@ export async function createJob(ctx: ProjectContext, req: CreateJob): Promise<st
     {
       jobId: id,
       type: "job.created",
-      payload: { title: req.title, recipe, ticket, parentJobId: parent?.id ?? null, baseBranch, base, target, branch: jobBranch(id) },
+      payload: { title: req.title, recipe, ticket, parentJobId: parent?.id ?? null, baseBranch, base, target, branch: jobBranch(id), orderId: req.orderId, orderKey: req.orderKey },
     },
     ...(reason ? [{ jobId: id, type: "job.state_changed" as const, payload: { state: "queued" as const, reason } }] : []),
   ]);

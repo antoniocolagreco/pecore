@@ -10,6 +10,19 @@ export class ToolAuthError extends Error {
   }
 }
 
+export function toolAccounts(
+  credentials: string[],
+  projectAccount: string | undefined,
+  forgeAccount: (id: string) => ForgeAccount | undefined,
+): ForgeAccount[] {
+  return credentials.map((name) => {
+    const id: string | undefined = name === "project.account" ? projectAccount : name;
+    const account: ForgeAccount | undefined = id === undefined ? undefined : forgeAccount(id);
+    if (!account) throw new Error(`forge account ${id ?? name} not found`);
+    return account;
+  });
+}
+
 async function token(a: ForgeAccount): Promise<string> {
   if (a.tool === "gh") return (await execFileP("gh", ["auth", "token", "--user", a.user, "--hostname", a.host], { timeout: 20_000 })).stdout.trim();
   if (a.tool === "glab") return (await execFileP("glab", ["config", "get", "token", "--host", a.host], { timeout: 20_000 })).stdout.trim();

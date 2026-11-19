@@ -4,6 +4,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { Connector, Name, Node, Project, Recipe } from "@pecore/schemas";
 import type { DefinitionEntry } from "@pecore/schemas";
 import { ensureConfirmed, needsConfirmation, runFiles } from "../../definitions/confirm";
+import { sourceScope } from "../../sources/run";
 import { instantiateNode, instantiateRecipe } from "../../definitions/instantiate";
 import { zodErrors } from "../../definitions/load";
 import type { DefinitionError } from "../../definitions/load";
@@ -106,7 +107,7 @@ async function confirmNodes(engine: Engine, id: string, nodesDir: string, affect
   const itemIds: string[] = [];
   for (const node of ctx.defs.nodes.values()) {
     if (!needsConfirmation(node) || !affects(node)) continue;
-    const result = await ensureConfirmed(ctx.db, null, nodesDir, node);
+    const result = await ensureConfirmed(ctx.db, null, nodesDir, node, node.kind === "source" ? sourceScope(ctx, node.name) : undefined);
     if (!result.confirmed) itemIds.push(result.itemId);
   }
   return itemIds;

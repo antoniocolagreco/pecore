@@ -45,9 +45,10 @@ export function queueHandlers(engine: Engine) {
     },
     answerQueue: async ({ params, body }) => {
       const { ctx, executor } = engine.findQueueItem(params.id);
-      const item = ctx.db.db.prepare("SELECT state, subject_hash, choices FROM human_queue WHERE id = ?").get(params.id) as Pick<QueueDbRow, "state" | "subject_hash" | "choices">;
+      const item = ctx.db.db.prepare("SELECT state, subject_hash, choices, kind FROM human_queue WHERE id = ?").get(params.id) as Pick<QueueDbRow, "state" | "subject_hash" | "choices" | "kind">;
       if (item.state !== "open" || item.subject_hash !== body.hash) throw new HttpError("conflict", "the item changed, was resolved or was cancelled since it was shown");
       if (!(JSON.parse(item.choices) as string[]).includes(body.choice)) throw new HttpError("bad_request", `${body.choice} is not a choice of this item`);
+      if (item.kind === "agent-question" && !body.note?.trim()) throw new HttpError("bad_request", "an answer is required");
       await executor.answer(params.id, body.choice, body.note, body.hash);
       return { ok: true };
     },

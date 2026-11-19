@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import type { ArtifactType, CommandNode, FailureReason, OutcomeRule, OutputRule } from "@pecore/schemas";
@@ -13,8 +13,10 @@ import type { ProbeResult } from "./probe";
 
 export type CommandInput = { type: ArtifactType; path: string };
 
-export type CommandRun = {
-  node: CommandNode;
+export type CommandRun<Output extends string = ArtifactType> = {
+  node: Pick<CommandNode, "name" | "runsAs" | "cleanCheckout" | "timeoutSec" | "command" | "script" | "probe" | "probeRules" | "mergedCheck" | "mergedCheckRules" | "outcomeRules"> & {
+    outputRules: Partial<Record<Output, OutputRule>>;
+  };
   nodeDir: string;
   params: Record<string, unknown>;
   user: string;
@@ -22,14 +24,15 @@ export type CommandRun = {
   context: Omit<PlaceholderContext, "inputs" | "params" | "workdir">;
   inputs: CommandInput[];
   cleanTree: string | null;
+  comment?: string;
   extraEnv?: Record<string, string>;
   scripts?: Record<string, string>;
   onStart?: (pgid: number, user: string) => void;
   effect?: { requested(hash: string): void; done(ok: boolean, result: unknown): void };
 };
 
-export type CommandOutcome =
-  | { kind: "completed"; outcome: string; outputs: { type: ArtifactType; content: string }[]; log: string; fromProbe: boolean }
+export type CommandOutcome<Output extends string = ArtifactType> =
+  | { kind: "completed"; outcome: string; outputs: { type: Output; content: string }[]; log: string; fromProbe: boolean }
   | { kind: "failed"; reason: FailureReason; log: string }
   | { kind: "waiting"; reason: "network"; log: string };
 
@@ -90,18 +93,23 @@ export async function runMergedCheck(c: Pick<CommandRun, "node" | "nodeDir" | "p
   }
 }
 
-export async function runCommandNode(c: CommandRun): Promise<CommandOutcome> {
+export async function runCommandNode<Output extends string = ArtifactType>(c: CommandRun<Output>): Promise<CommandOutcome<Output>> {
   const engine = c.node.runsAs === "engine";
   const user = engine ? appUser : c.user;
   const temp: string[] = [];
   let cleanDir: string | null = null;
+  let commentPath: string | undefined;
   let cwd = c.workdir;
   try {
     if (engine) {
       cwd = await mkdtemp(join(tmpdir(), "pecore-engine-"));
       temp.push(cwd);
+      if (c.comment !== undefined) {
+        commentPath = join(cwd, "comment.txt");
+        await writeFile(commentPath, c.comment, { mode: 0o600 });
+      }
     } else if (c.node.cleanCheckout && c.cleanTree) {
-      cleanDir = join(c.workdir, "..", `.clean-${c.context.job.id}`);
+      cleanDir = join(c.workdir, "..", `.clean-${c.context.job!.id}`);
       await removeCleanCheckout(c.user, c.workdir, cleanDir);
       await createCleanCheckout(c.user, c.workdir, c.cleanTree, cleanDir);
       cwd = cleanDir;
@@ -116,7 +124,7 @@ export async function runCommandNode(c: CommandRun): Promise<CommandOutcome> {
       await writeFileAs(c.user, cwd, rel, await readFile(i.path));
       inputs[i.type] = join(cwd, rel);
     }
-    const values = placeholderValues({ ...c.context, params: c.params, workdir: cwd, inputs });
+    const values = placeholderValues({ ...c.context, params: c.params, workdir: cwd, inputs, commentPath });
     const env = { ...(await baseEnv(user)), ...placeholderEnv(values), ...c.extraEnv };
     const timeoutMs = c.node.timeoutSec * 1000;
     let log = "";
@@ -131,7 +139,7 @@ export async function runCommandNode(c: CommandRun): Promise<CommandOutcome> {
         const outcome = pickOutcome(c.node.outcomeRules, { code: 0, stdout: p.stdout });
         if (outcome === null) return { kind: "failed", reason: "HARNESS_ERROR", log: log + "no outcome rule matched the probe output\n" };
         const outputs = [];
-        for (const [type, rule] of Object.entries(c.node.outputRules) as [ArtifactType, OutputRule][]) {
+        for (const [type, rule] of Object.entries(c.node.outputRules) as [Output, OutputRule][]) {
           if ("file" in rule) continue;
           outputs.push({ type, content: await readOutput(rule, p.stdout, async () => "") });
         }
@@ -159,7 +167,7 @@ export async function runCommandNode(c: CommandRun): Promise<CommandOutcome> {
     if (outcome === null && engine) return { kind: "waiting", reason: "network", log: log + "no outcome rule matched\n" };
     if (outcome === null) return { kind: "failed", reason: "HARNESS_ERROR", log: log + "no outcome rule matched\n" };
     const outputs = [];
-    for (const [type, rule] of Object.entries(c.node.outputRules) as [ArtifactType, OutputRule][]) {
+    for (const [type, rule] of Object.entries(c.node.outputRules) as [Output, OutputRule][]) {
       try {
         outputs.push({ type, content: await readOutput(rule, r.stdout, (rel) => (engine ? readFile(join(cwd, rel), "utf8") : readFileAs(c.user, cwd, rel))) });
       } catch (e) {
