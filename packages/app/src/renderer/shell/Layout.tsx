@@ -6,15 +6,14 @@ import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { Button, IconButton } from "../ds/button";
 import { Alert, Count } from "../ds/feedback";
-import { BookIcon, ChartIcon, FactoryIcon, FolderIcon, GearIcon, InboxIcon, ListIcon, PauseIcon, PlayIcon, SidebarIcon, SparkIcon } from "../ds/icons";
+import { BellIcon, BookIcon, ChartIcon, FactoryIcon, FolderIcon, GearIcon, ListIcon, PauseIcon, PlayIcon, SidebarIcon, SparkIcon } from "../ds/icons";
 import { ChatPanel } from "../screens/Orchestrator";
 import { CommandPalette } from "./CommandPalette";
-import { Notifications } from "./Notifications";
 import { SetupBanner } from "./SetupBanner";
 import { SidebarSlot } from "./sidebar";
 import s from "./Layout.module.css";
 
-type Badge = "inbox";
+type Badge = "notifications";
 
 const menuKey = "pecore.menu";
 
@@ -31,7 +30,7 @@ const nav: { group: string | null; items: { to: string; label: string; icon: Rea
   {
     group: null,
     items: [
-      { to: "/inbox", label: "Inbox", icon: <InboxIcon />, badge: "inbox" },
+      { to: "/notifications", label: "Notifications", icon: <BellIcon />, badge: "notifications" },
       { to: "/", label: "Factory", icon: <FactoryIcon /> },
       { to: "/jobs", label: "Jobs", icon: <ListIcon /> },
       { to: "/projects", label: "Projects", icon: <FolderIcon /> },
@@ -57,12 +56,12 @@ export function Layout() {
       return;
     }
   };
-  const status = useData(() => call("getStatus"), [], (m) => m.type === "queue.updated" || m.type === "job.updated");
+  const status = useData(() => call("getStatus"), [], (m) => m.type === "queue.updated" || m.type === "job.updated" || m.type === "notify");
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
   const pause = useAction(() => (status.data?.globalPause ? call("playAll") : call("pauseAll")).then(status.reload));
   const st = status.data;
   const counts: Record<Badge, { value: number; label: string }> = {
-    inbox: { value: st?.inbox ?? 0, label: `${st?.inbox ?? 0} waiting` },
+    notifications: { value: st?.notifications ?? 0, label: `${st?.notifications ?? 0} new` },
   };
 
   return (
@@ -100,7 +99,6 @@ export function Layout() {
             onClick={() => void pause.run()}
             disabled={!connected || pause.busy}
           />
-          <Notifications />
         </header>
         <div className={s.alerts}>
           {!connected && <Alert tone="danger" title="Disconnected from the engine">Reconnecting… Controls are disabled and data may be stale.</Alert>}

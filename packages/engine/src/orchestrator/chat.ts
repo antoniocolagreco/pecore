@@ -5,8 +5,7 @@ import { monotonicFactory } from "ulid";
 import { probeImageSupport, startSession } from "@pecore/agents";
 import type { McpServer, PromptContent, Session, Spawn, SpawnedProcess } from "@pecore/agents";
 import { chatAttachmentMaxBytes, chatCompactCommand, roleProfile } from "@pecore/schemas";
-import type { Role } from "@pecore/schemas";
-import type { ChatAttachmentView, ChatDetail, ChatImageMime, ChatMessageView, ChatReference, ChatView, LiveMessage, SendChatMessageBody } from "@pecore/schemas";
+import type { ChatAttachmentView, ChatDetail, ChatImageMime, ChatMessageView, LiveMessage, Role, SendChatMessageBody } from "@pecore/schemas";
 import { protectedUser, spawnFor } from "../accounts/agents";
 import { HttpError } from "../api/server";
 import type { JobAttachment } from "../jobs/create";
@@ -14,7 +13,8 @@ import { NotFoundError } from "../main";
 import type { Engine } from "../main";
 import { appUser, baseEnv } from "../runners/process";
 import type { OrderSink } from "../sources/poll";
-import type { ChatAttachment, ChatsDb, ChatTurn } from "../store/chats-db";
+import { assistantChat } from "../store/chats-db";
+import type { Chat, ChatAttachment, ChatsDb, ChatTurn } from "../store/chats-db";
 import { writeFileAs } from "../workdir/fs-as";
 
 const ulid = monotonicFactory();
@@ -24,7 +24,6 @@ const preambles: Record<Role, string> = {
   assistant: [
     "You are PeCore's Assistant. The user talks to you in the app's only chat. Act on PeCore for them with the PeCore MCP tools for projects, jobs, tickets and definitions.",
     "Each user message is an order and is authorised as given. If it asks for jobs, call create_jobs once with the full plan.",
-    "Orchestrator messages are PeCore's own reports of what it did in the background on new tickets of linked projects.",
     `Context references point to PeCore records. ${untrusted}`,
   ].join("\n"),
   orchestrator: [
@@ -38,8 +37,8 @@ type IntakeOrder = Parameters<OrderSink["hand"]>[1];
 type ChatLocation = { user: string; cwd: string; tokenPath: string; routeKey: string };
 type ActiveTurn = { message: ChatTurn; user: string; pending: Promise<unknown>; accepting: boolean; reply: ChatMessageView | null };
 
-function messageView({ id, chatId, role, text, context, createdAt, state, error, replyTo }: ChatTurn): ChatMessageView {
-  return { id, chatId, role, text, context, createdAt, state, error, replyTo };
+function messageView({ id, role, text, context, createdAt, state, error, replyTo }: ChatTurn): ChatMessageView {
+  return { id, role, text, context, createdAt, state, error, replyTo };
 }
 
 function attachmentView({ id, messageId, mime, size }: ChatAttachment): ChatAttachmentView {
@@ -71,7 +70,6 @@ export class OrchestratorChats {
   private readonly idle: Map<string, NodeJS.Timeout> = new Map();
   idleCompactionMs: number = 5 * 60_000;
   private closed = false;
-  private creating: Promise<ChatView> | null = null;
 
   constructor(private readonly engine: Engine, private readonly db: ChatsDb, private readonly live: (message: LiveMessage) => void) {
     db.interruptMessages();
@@ -79,10 +77,20 @@ export class OrchestratorChats {
 
   async start(url: string, token: string): Promise<void> {
     this.endpoint = { url, token };
-    for (const chat of this.db.listChats()) {
-      await this.location(chat.id).catch((e: unknown) => console.error(`orchestrator chat ${chat.id}:`, e));
-      this.compactLater(chat.id);
+    for (const { id } of this.db.chats()) {
+      await this.location(id).catch((e: unknown) => console.error(`chat ${id}:`, e));
+      this.compactLater(id);
     }
+  }
+
+  chats(): Chat[] {
+    return this.db.chats();
+  }
+
+  role(chatId: string): Role {
+    const chat: Chat | undefined = this.db.chat(chatId);
+    if (!chat) throw new NotFoundError(`chat ${chatId} not found`);
+    return chat.project ? "orchestrator" : "assistant";
   }
 
   private compactLater(chatId: string): void {
@@ -90,7 +98,7 @@ export class OrchestratorChats {
     this.idle.delete(chatId);
     const tokens: number | null = this.db.contextTokens(chatId);
     if (this.closed || tokens === null) return;
-    const { auto, max } = this.engine.global().settings.compaction;
+    const { auto, max } = this.engine.global().settings[this.role(chatId)].compaction;
     if (tokens >= max) return this.compact(chatId);
     if (tokens < auto) return;
     const timer: NodeJS.Timeout = setTimeout(() => {
@@ -103,7 +111,8 @@ export class OrchestratorChats {
 
   private compact(chatId: string): void {
     if (this.db.queued(chatId, chatCompactCommand)) return;
-    this.changed(this.db.addMessage(chatId, "user", chatCompactCommand, []));
+    this.db.addMessage(chatId, "user", chatCompactCommand, []);
+    this.changed(chatId);
     this.schedule(chatId);
   }
 
@@ -116,7 +125,7 @@ export class OrchestratorChats {
     const old = this.locations.get(id);
     if (old?.user === user) return old.pending;
     const endpoint = this.endpoint;
-    if (!endpoint || this.closed) throw new HttpError("conflict", "the orchestrator is unavailable");
+    if (!endpoint || this.closed) throw new HttpError("conflict", "the chat is unavailable");
     const prepare = async (): Promise<ChatLocation> => {
       if (old) {
         const previous: ChatLocation | undefined = await old.pending.catch(() => undefined);
@@ -148,56 +157,26 @@ export class OrchestratorChats {
 
   async inTurn<T>(chatId: string, run: (message: ChatTurn) => Promise<T>): Promise<T> {
     const active: ActiveTurn | undefined = this.active.get(chatId);
-    if (this.closed || !active?.accepting || active.user !== this.user()) throw new HttpError("conflict", "no orchestrator turn is running");
+    if (this.closed || !active?.accepting || active.user !== this.user()) throw new HttpError("conflict", "no chat turn is running");
     const result: Promise<T> = active.pending.then(() => {
-      if (this.closed || active.user !== this.user()) throw new HttpError("conflict", "the orchestrator turn was interrupted");
+      if (this.closed || active.user !== this.user()) throw new HttpError("conflict", "the chat turn was interrupted");
       return run(active.message);
     });
     active.pending = result.catch(() => undefined);
     return result;
   }
 
-  private chat(id: string): ChatView {
-    const chat: ChatView | undefined = this.db.chat(id);
-    if (!chat) throw new NotFoundError(`chat ${id} not found`);
-    return chat;
-  }
-
-  list(): ChatView[] {
-    return this.db.listChats();
-  }
-
-  async assistant(): Promise<ChatView> {
-    const id: string | undefined = this.db.assistantChat();
-    if (id) return this.chat(id);
-    this.creating ??= this.create("Assistant").finally(() => { this.creating = null; });
-    return this.creating;
-  }
-
-  private async create(title: string, projectId: string | null = null): Promise<ChatView> {
-    const id: string = ulid();
-    await this.location(id);
-    if (this.closed) throw new HttpError("conflict", "the orchestrator is shutting down");
-    const chat: ChatView = this.db.createChat(id, title, projectId);
-    this.live({ type: "chat.updated", chatId: id });
-    return chat;
-  }
-
-  async detail(id: string): Promise<ChatDetail> {
-    const configuration = this.configuration(this.role(id));
-    const supportsImages: boolean | null = configuration ? await this.supportsImages(id, configuration).catch(() => null) : false;
+  async detail(): Promise<ChatDetail> {
+    const configuration = this.configuration("assistant");
+    const supportsImages: boolean | null = configuration ? await this.supportsImages(configuration).catch(() => null) : false;
     return {
-      chat: this.chat(id),
-      messages: this.db.messages(id).map(messageView),
-      streamingReply: this.active.get(id)?.reply ?? null,
-      attachments: this.db.attachments(id).map(attachmentView),
-      actions: this.db.actions(id),
+      unread: this.db.unread(assistantChat),
+      messages: this.db.messages(assistantChat).map(messageView),
+      streamingReply: this.active.get(assistantChat)?.reply ?? null,
+      attachments: this.db.attachments(assistantChat).map(attachmentView),
+      actions: this.db.actions(assistantChat),
       supportsImages,
     };
-  }
-
-  role(chatId: string): Role {
-    return this.chat(chatId).projectId ? "orchestrator" : "assistant";
   }
 
   private configuration(role: Role) {
@@ -215,18 +194,18 @@ export class OrchestratorChats {
   private requiredConfiguration(role: Role): NonNullable<ReturnType<OrchestratorChats["configuration"]>> {
     const configuration = this.configuration(role);
     if (!configuration) throw new HttpError("conflict", `choose a model for the ${role === "assistant" ? "Assistant" : "Orchestrator"} in Settings`);
-    if (this.closed) throw new HttpError("conflict", "the orchestrator is shutting down");
+    if (this.closed) throw new HttpError("conflict", "the chat is shutting down");
     return configuration;
   }
 
   private spawn(user: string): Spawn {
     const spawn: Spawn = spawnFor(user);
     return async (params) => {
-      if (this.closed) throw new Error("the orchestrator is shutting down");
+      if (this.closed) throw new Error("the chat is shutting down");
       const proc: SpawnedProcess = await spawn(params);
       if (this.closed) {
         await proc.stop();
-        throw new Error("the orchestrator is shutting down");
+        throw new Error("the chat is shutting down");
       }
       this.procs.add(proc);
       void proc.exited.then(() => this.procs.delete(proc));
@@ -234,11 +213,11 @@ export class OrchestratorChats {
     };
   }
 
-  private async supportsImages(id: string, { agents, account, user, key }: ReturnType<OrchestratorChats["requiredConfiguration"]>): Promise<boolean> {
+  private async supportsImages({ agents, account, user, key }: ReturnType<OrchestratorChats["requiredConfiguration"]>): Promise<boolean> {
     const cached: boolean | undefined = this.imageSupport.get(key);
     if (cached !== undefined) return cached;
     const probe = async (): Promise<boolean> => {
-      const { cwd } = await this.location(id);
+      const { cwd } = await this.location(assistantChat);
       const connector = await agents.resolve(account.connector);
       const login = await agents.login(account.id);
       const result: boolean = await probeImageSupport({ connector, login, spawn: this.spawn(user), cwd });
@@ -250,15 +229,14 @@ export class OrchestratorChats {
     return pending;
   }
 
-  private async checkImages(id: string): Promise<void> {
-    if (!(await this.supportsImages(id, this.requiredConfiguration(this.role(id))))) throw new HttpError("bad_request", "the Assistant's model does not support images");
+  private async checkImages(): Promise<void> {
+    if (!(await this.supportsImages(this.requiredConfiguration("assistant")))) throw new HttpError("bad_request", "the Assistant's model does not support images");
   }
 
-  async upload(id: string, mime: ChatImageMime, data: string): Promise<ChatAttachmentView> {
-    this.chat(id);
+  async upload(mime: ChatImageMime, data: string): Promise<ChatAttachmentView> {
     const bytes: Buffer = Buffer.from(data, "base64");
     if (bytes.length > chatAttachmentMaxBytes || !matchesMime(bytes, mime)) throw new HttpError("bad_request", "invalid image or image exceeds 10 MB");
-    await this.checkImages(id);
+    await this.checkImages();
     const attachmentId: string = ulid();
     const directory: string = join(this.engine.opts.home, "chat-attachments");
     const path: string = join(directory, `${attachmentId}.${extensions[mime]}`);
@@ -266,69 +244,60 @@ export class OrchestratorChats {
     await mkdir(directory, { recursive: true, mode: 0o700 });
     await writeFile(path, bytes, { mode: 0o600, flag: "wx" });
     try {
-      if (this.closed) throw new HttpError("conflict", "the orchestrator is shutting down");
-      this.db.addAttachment(id, attachment);
+      if (this.closed) throw new HttpError("conflict", "the chat is shutting down");
+      this.db.addAttachment(assistantChat, attachment);
     } catch (e) {
       await rm(path, { force: true });
       throw e;
     }
-    this.live({ type: "chat.updated", chatId: id });
+    this.changed(assistantChat);
     return attachmentView(attachment);
   }
 
-  async send(id: string, { text, context, attachmentIds }: SendChatMessageBody): Promise<ChatMessageView> {
-    if (this.chat(id).projectId) throw new HttpError("bad_request", "send manual orders in a chat outside intake");
+  async send({ text, context, attachmentIds }: SendChatMessageBody): Promise<ChatMessageView> {
     this.requiredConfiguration("assistant");
-    if (attachmentIds.length) await this.checkImages(id);
-    if (this.closed) throw new HttpError("conflict", "the orchestrator is shutting down");
+    if (attachmentIds.length) await this.checkImages();
+    if (this.closed) throw new HttpError("conflict", "the chat is shutting down");
     const message: ChatTurn = this.db.db.transaction(() => {
-      const message: ChatTurn = this.db.addMessage(id, "user", text, context);
+      const message: ChatTurn = this.db.addMessage(assistantChat, "user", text, context);
       for (const attachmentId of new Set(attachmentIds)) {
-        if (!this.db.linkAttachment(attachmentId, id, message.id)) throw new HttpError("bad_request", `attachment ${attachmentId} is unavailable in this chat`);
+        if (!this.db.linkAttachment(attachmentId, assistantChat, message.id)) throw new HttpError("bad_request", `attachment ${attachmentId} is unavailable`);
       }
       return message;
     })();
-    this.changed(message);
-    this.schedule(id);
+    this.changed(assistantChat);
+    this.schedule(assistantChat);
     return messageView(message);
   }
 
-  retry(id: string, messageId: string): ChatMessageView {
-    this.requiredConfiguration(this.role(id));
-    const message: ChatTurn | undefined = this.db.message(id, messageId);
+  retry(messageId: string): ChatMessageView {
+    this.requiredConfiguration("assistant");
+    const message: ChatTurn | undefined = this.db.message(assistantChat, messageId);
     if (!message) throw new NotFoundError(`message ${messageId} not found`);
-    if (message.state !== "interrupted" || message.orderId !== message.id) throw new HttpError("conflict", "only interrupted manual messages can be retried");
+    if (message.state !== "interrupted") throw new HttpError("conflict", "only interrupted messages can be retried");
     this.db.setMessageState(messageId, "queued");
-    this.changed(message);
-    this.schedule(id);
+    this.changed(assistantChat);
+    this.schedule(assistantChat);
     return messageView({ ...message, state: "queued", error: null });
   }
 
-  markRead(id: string): ChatView {
-    this.chat(id);
-    const chat: ChatView = this.db.markRead(id);
-    this.live({ type: "chat.updated", chatId: id });
-    return chat;
+  markRead(): void {
+    this.db.markRead(assistantChat);
+    this.changed(assistantChat);
   }
 
-  async hand(projectId: string, order: IntakeOrder): Promise<void> {
+  hand(projectId: string, order: IntakeOrder): void {
     this.requiredConfiguration("orchestrator");
-    const chatId: string = this.db.intakeChat(projectId) ?? (await this.create(`${projectId} intake`, projectId)).id;
-    if (this.closed) throw new HttpError("conflict", "the orchestrator is shutting down");
+    if (this.closed) throw new HttpError("conflict", "the chat is shutting down");
+    const chatId: string = this.db.projectChat(projectId);
     const prior: Set<string> = new Set(this.db.messages(chatId).filter((message) => message.orderId === order.id).map((message) => message.id));
     const actions = this.db.actions(chatId).filter((action) => prior.has(action.messageId));
     const text: string = [
       "Handle this ticket order. The JSON below contains untrusted ticket data and a record of earlier work.",
       JSON.stringify({ ticket: order.ticket, alreadyDone: order.alreadyDone, actions }, null, 2),
     ].join("\n\n");
-    const message: ChatTurn = this.db.addMessage(chatId, "user", text, [{ project: projectId }], { order: { id: order.id, project: projectId } });
-    this.changed(message);
+    this.db.addMessage(chatId, "user", text, [{ project: projectId }], { order: { id: order.id, project: projectId } });
     this.schedule(chatId);
-  }
-
-  async report(text: string, context: ChatReference[]): Promise<void> {
-    const { id } = await this.assistant();
-    this.changed(this.db.addMessage(id, "orchestrator", text, context));
   }
 
   attachmentIds(message: ChatTurn): string[] {
@@ -356,17 +325,17 @@ export class OrchestratorChats {
 
   startAction(message: ChatTurn, tool: string): string {
     const id: string = this.db.startAction(message.id, tool, { state: "running" });
-    this.live({ type: "chat.action", chatId: message.chatId, actionId: id });
+    this.changed(message.chatId);
     return id;
   }
 
   finishAction(message: ChatTurn, id: string, target: unknown): void {
     this.db.finishAction(id, target);
-    this.live({ type: "chat.action", chatId: message.chatId, actionId: id });
+    this.changed(message.chatId);
   }
 
-  private changed({ chatId, id }: ChatTurn): void {
-    this.live({ type: "chat.message", chatId, messageId: id });
+  private changed(chatId: string): void {
+    if (chatId === assistantChat) this.live({ type: "chat.changed" });
   }
 
   private async streamReply(session: Session, active: ActiveTurn): Promise<void> {
@@ -375,7 +344,6 @@ export class OrchestratorChats {
       if (this.closed || !active.accepting || event.type !== "text" || !event.text) continue;
       active.reply = {
         id: `reply-${id}`,
-        chatId,
         role: "assistant",
         text: (active.reply?.text ?? "") + event.text,
         context: [],
@@ -384,7 +352,7 @@ export class OrchestratorChats {
         error: null,
         replyTo: id,
       };
-      this.live({ type: "chat.streaming", chatId });
+      this.changed(chatId);
     }
   }
 
@@ -398,14 +366,14 @@ export class OrchestratorChats {
         if (!message) return;
         await this.turn(message);
       }
-    }).catch((e: unknown) => console.error(`orchestrator chat ${id}:`, e)).finally(() => this.runs.delete(id));
+    }).catch((e: unknown) => console.error(`chat ${id}:`, e)).finally(() => this.runs.delete(id));
     this.runs.set(id, task);
   }
 
   private async turn(message: ChatTurn): Promise<void> {
     const { id, chatId } = message;
     this.db.setMessageState(id, "running");
-    this.changed(message);
+    this.changed(chatId);
     let session: Session | undefined;
     let drains: Promise<void>[] = [];
     const active: ActiveTurn = { message, user: this.user(), pending: Promise.resolve(), accepting: false, reply: null };
@@ -419,14 +387,14 @@ export class OrchestratorChats {
       const mcpServers: McpServer[] = [{ name: "pecore", command: connector.nodePath, args: [join(connector.adaptersDir, "orchestrator-mcp.mjs"), tokenPath], env: [] }];
       session = await startSession({
         connector, login, spawn: this.spawn(user), cwd, model: profile.model, effort: profile.effort, mcpServers,
-        ...(saved.sessionId && (saved.sessionKey === sessionKey || saved.sessionKey === null) ? { resumeId: saved.sessionId } : {}),
+        ...(saved.sessionId && saved.sessionKey === sessionKey ? { resumeId: saved.sessionId } : {}),
       });
       drains = [drain(session.raw), this.streamReply(session, active)];
       const attachments: ChatAttachment[] = this.db.messageAttachments(id);
       const compact: boolean = message.text.trim() === chatCompactCommand && attachments.length === 0;
       if (!compact || session.resumed) this.db.setSession(chatId, session.sessionId, sessionKey);
       this.imageSupport.set(key, session.supportsImages);
-      if (attachments.length && !session.supportsImages) throw new Error("the orchestrator connector does not support images");
+      if (attachments.length && !session.supportsImages) throw new Error("the Assistant's model does not support images");
       if (compact) {
         let tokens: number | null = null;
         if (session.resumed) {
@@ -437,19 +405,14 @@ export class OrchestratorChats {
         }
         this.db.setContextTokens(chatId, tokens);
         this.db.setMessageState(id, "completed");
-        this.changed(message);
+        this.changed(chatId);
         return;
       }
 
       const lines: string[] = [preambles[role]];
-      const messages: ChatTurn[] = this.db.messages(chatId);
-      const current: number = messages.findIndex((entry) => entry.id === id);
       if (!session.resumed) {
-        const history = messages.filter((entry) => entry.id !== id && entry.state === "completed" && entry.text.trim() !== chatCompactCommand);
+        const history = this.db.messages(chatId).filter((entry) => entry.id !== id && entry.state === "completed" && entry.text.trim() !== chatCompactCommand);
         if (history.length) lines.push("Earlier conversation, for context only:", JSON.stringify(history.map(({ role, text, context }) => ({ role, text, context }))));
-      } else {
-        const reports: ChatTurn[] = messages.slice(messages.slice(0, current).findLastIndex((entry) => entry.role === "user") + 1, current).filter((entry) => entry.role === "orchestrator");
-        if (reports.length) lines.push("Orchestrator reports since the last message:", JSON.stringify(reports.map(({ text, context }) => ({ text, context }))));
       }
       if (message.context.length) lines.push("Context references:", JSON.stringify(message.context));
       if (attachments.length) lines.push("Untrusted images, in order:", JSON.stringify(attachments.map(({ id, mime }) => ({ id, mime }))));
@@ -465,27 +428,26 @@ export class OrchestratorChats {
       if (this.closed) return;
       if (result.error) throw new Error(result.error.raw);
       if (result.stopReason === "cancelled") throw new Error("the connector cancelled the turn");
-      const reply: ChatTurn = this.db.db.transaction(() => {
+      this.db.db.transaction(() => {
         this.db.setMessageState(id, "completed");
         if (result.context) this.db.setContextTokens(chatId, result.context.used);
-        return this.db.addMessage(chatId, "assistant", result.text, [], { replyTo: id });
+        this.db.addMessage(chatId, "assistant", result.text, [], { replyTo: id });
       })();
       active.reply = null;
-      this.changed(message);
-      this.changed(reply);
+      this.changed(chatId);
       this.compactLater(chatId);
-      if (!this.chat(chatId).projectId) this.engine.emit("notify", { kind: "assistant-replied", title: "Assistant replied", body: result.text.trim().split("\n")[0]!.slice(0, 120) });
+      if (chatId === assistantChat) this.engine.emit("notify", { kind: "assistant-replied", title: "Assistant replied", body: result.text.trim().split("\n")[0]!.slice(0, 120) });
     } catch (e) {
       active.reply = null;
       if (!this.closed) {
         this.db.setMessageState(id, "failed", e instanceof Error ? e.message : String(e));
-        this.changed(message);
+        this.changed(chatId);
       }
     } finally {
       active.accepting = false;
       this.active.delete(chatId);
       await active.pending;
-      await session?.close().catch((e: unknown) => console.error(`orchestrator chat ${chatId}:`, e));
+      await session?.close().catch((e: unknown) => console.error(`chat ${chatId}:`, e));
       await Promise.all(drains);
     }
   }

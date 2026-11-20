@@ -1,30 +1,28 @@
 import Database from "better-sqlite3";
 import { monotonicFactory } from "ulid";
-import type { ChatActionView, ChatAttachmentView, ChatMessageView, ChatReference, ChatView } from "@pecore/schemas";
+import type { ChatActionView, ChatAttachmentView, ChatMessageView, ChatReference } from "@pecore/schemas";
 import { migrate } from "./migrate";
 
 const ulid = monotonicFactory();
 
+export const assistantChat = "assistant";
 export const notificationsKept = 500;
 
-export type Notification = { id: string; kind: string; title: string; body: string; target: string | null; createdAt: number };
+export type Notification = { id: string; kind: string; title: string; body: string; target: string | null; seen: boolean; createdAt: number };
 
-export type ChatSession = { id: string; sessionId: string | null; sessionKey: string | null };
-export type ChatTurn = ChatMessageView & { orderId: string; orderProject: string | null };
+export type Chat = { id: string; project: string | null };
+export type ChatSession = { sessionId: string | null; sessionKey: string | null };
+export type ChatTurn = ChatMessageView & { chatId: string; orderId: string; orderProject: string | null };
 export type ChatAttachment = ChatAttachmentView & { path: string };
-type MessageRow = Omit<ChatTurn, "context"> & { context: string | null };
+type MessageRow = Omit<ChatTurn, "context"> & { context: string };
 type ActionRow = Omit<ChatActionView, "target"> & { target: string };
 
-const chatColumns = `c.id, c.title, c.intake_project AS projectId, c.created_at AS createdAt, c.last_read_at AS lastReadAt,
-  (SELECT COUNT(*) FROM messages m WHERE m.chat_id = c.id AND m.role IN ('assistant', 'orchestrator')
-    AND (CASE WHEN c.last_read_message_id IS NULL THEN m.created_at > COALESCE(c.last_read_at, -1)
-      ELSE m.rowid > COALESCE((SELECT rowid FROM messages WHERE id = c.last_read_message_id), 0) END)) AS unread`;
 const messageColumns = `id, chat_id AS chatId, role, text, context, created_at AS createdAt, state, error, reply_to AS replyTo,
   COALESCE(order_id, id) AS orderId, order_project AS orderProject`;
 const attachmentColumns = "id, message_id AS messageId, mime, size, path";
 
 function messageView(row: MessageRow): ChatTurn {
-  return { ...row, context: row.context ? JSON.parse(row.context) as ChatReference[] : [] };
+  return { ...row, context: JSON.parse(row.context) as ChatReference[] };
 }
 
 export class ChatsDb {
@@ -46,31 +44,33 @@ export class ChatsDb {
     return (this.db.prepare("SELECT version FROM schema_version").get() as { version: number }).version;
   }
 
-  listChats(): ChatView[] {
-    return this.db.prepare(`SELECT ${chatColumns} FROM chats c ORDER BY
-      COALESCE((SELECT MAX(created_at) FROM messages WHERE chat_id = c.id), c.created_at) DESC, c.id DESC`).all() as ChatView[];
+  chats(): Chat[] {
+    return this.db.prepare("SELECT id, project FROM chats ORDER BY id").all() as Chat[];
   }
 
-  chat(id: string): ChatView | undefined {
-    return this.db.prepare(`SELECT ${chatColumns} FROM chats c WHERE id = ?`).get(id) as ChatView | undefined;
+  chat(id: string): Chat | undefined {
+    return this.db.prepare("SELECT id, project FROM chats WHERE id = ?").get(id) as Chat | undefined;
   }
 
-  assistantChat(): string | undefined {
-    return (this.db.prepare(`SELECT id FROM chats c WHERE intake_project IS NULL ORDER BY
-      COALESCE((SELECT MAX(created_at) FROM messages WHERE chat_id = c.id), c.created_at) DESC, c.id DESC LIMIT 1`).get() as { id: string } | undefined)?.id;
+  projectChat(project: string): string {
+    const existing = this.db.prepare("SELECT id FROM chats WHERE project = ?").get(project) as { id: string } | undefined;
+    if (existing) return existing.id;
+    const id: string = ulid();
+    this.db.prepare("INSERT INTO chats (id, project) VALUES (?, ?)").run(id, project);
+    return id;
   }
 
-  intakeChat(projectId: string): string | undefined {
-    return (this.db.prepare("SELECT id FROM chats WHERE intake_project = ?").get(projectId) as { id: string } | undefined)?.id;
+  unread(id: string): number {
+    return (this.db.prepare(`SELECT COUNT(*) AS n FROM messages m WHERE m.chat_id = ? AND m.role = 'assistant'
+      AND m.rowid > COALESCE((SELECT rowid FROM messages WHERE id = (SELECT last_read_message_id FROM chats WHERE id = m.chat_id)), 0)`).get(id) as { n: number }).n;
   }
 
-  createChat(id: string, title: string, projectId: string | null): ChatView {
-    this.db.prepare("INSERT INTO chats (id, title, intake_project, created_at) VALUES (?, ?, ?, ?)").run(id, title, projectId, Date.now());
-    return this.chat(id)!;
+  markRead(id: string): void {
+    this.db.prepare("UPDATE chats SET last_read_message_id = (SELECT id FROM messages WHERE chat_id = chats.id ORDER BY rowid DESC LIMIT 1) WHERE id = ?").run(id);
   }
 
   session(id: string): ChatSession {
-    return this.db.prepare("SELECT id, session_id AS sessionId, session_key AS sessionKey FROM chats WHERE id = ?").get(id) as ChatSession;
+    return this.db.prepare("SELECT session_id AS sessionId, session_key AS sessionKey FROM chats WHERE id = ?").get(id) as ChatSession;
   }
 
   setSession(id: string, sessionId: string, sessionKey: string): void {
@@ -129,12 +129,6 @@ export class ChatsDb {
     })();
   }
 
-  markRead(id: string): ChatView {
-    this.db.prepare(`UPDATE chats SET last_read_at = ?, last_read_message_id =
-      COALESCE((SELECT id FROM messages WHERE chat_id = chats.id ORDER BY rowid DESC LIMIT 1), '') WHERE id = ?`).run(Date.now(), id);
-    return this.chat(id)!;
-  }
-
   attachments(chatId: string): ChatAttachment[] {
     return this.db.prepare(`SELECT ${attachmentColumns} FROM attachments WHERE chat_id = ? ORDER BY id`).all(chatId) as ChatAttachment[];
   }
@@ -179,13 +173,15 @@ export class ChatsDb {
   }
 
   notifications(): Notification[] {
-    return (this.db.prepare("SELECT * FROM notifications ORDER BY id DESC").all() as { id: string; kind: string; title: string; body: string; target: string | null; created_at: number }[]).map((r) => ({
-      id: r.id,
-      kind: r.kind,
-      title: r.title,
-      body: r.body,
-      target: r.target,
-      createdAt: r.created_at,
-    }));
+    return (this.db.prepare("SELECT id, kind, title, body, target, seen, created_at AS createdAt FROM notifications ORDER BY id DESC").all() as (Omit<Notification, "seen"> & { seen: number })[])
+      .map((n) => ({ ...n, seen: n.seen === 1 }));
+  }
+
+  unseenNotifications(): number {
+    return (this.db.prepare("SELECT COUNT(*) AS n FROM notifications WHERE seen = 0").get() as { n: number }).n;
+  }
+
+  markNotificationsSeen(): void {
+    this.db.prepare("UPDATE notifications SET seen = 1 WHERE seen = 0").run();
   }
 }

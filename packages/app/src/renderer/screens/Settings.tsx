@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { ApiError, forgeHost, roleProfile, Settings as SettingsSchema } from "@pecore/schemas";
+import { ApiError, forgeHost, Settings as SettingsSchema } from "@pecore/schemas";
 import type { Account, BuiltInHarness, ForgeAccount, LiveMessage, Role, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
@@ -429,18 +429,23 @@ export function Settings() {
     const profile = profiles.data?.value.profiles.find((entry) => entry.id === id);
     return profile ? { account: profile.account, model: profile.model, effort: profile.effort } : null;
   };
-  const current: Record<Role, ModelChoice | null> = {
-    assistant: settings.current ? profileChoice(roleProfile(settings.current, "assistant")) : null,
-    orchestrator: settings.current?.assistant && settings.current.orchestrator ? profileChoice(settings.current.orchestrator.profile) : null,
-  };
-  const shown = (role: Role): ModelChoice | null => role in choices ? choices[role] ?? null : current[role];
+  const shown = (role: Role): ModelChoice | null => role in choices ? choices[role] ?? null : profileChoice(settings.current?.[role].profile);
   const choose = (role: Role, choice: ModelChoice | null): void => {
     if (!value) return;
     setChoices((old) => ({ ...old, [role]: choice }));
-    const assistant: SettingsValue["assistant"] = role === "assistant" ? { profile: roleProfiles.assistant } : value.assistant ?? value.orchestrator;
-    const orchestrator: SettingsValue["orchestrator"] = role === "orchestrator" ? choice && { profile: roleProfiles.orchestrator } : value.assistant ? value.orchestrator : null;
-    update({ ...value, assistant, orchestrator });
+    update({ ...value, [role]: { ...value[role], profile: choice && roleProfiles[role] } });
   };
+  const roleSection = (role: Role, description: string): ReactNode => value &&
+    <Section id={role} title={roleTitles[role]} description={description}>
+      <ModelPicker accounts={(accounts.current?.accounts ?? []).filter(({ kind }) => kind === "model")} disabled={!connected || !profiles.data}
+        same={role === "orchestrator"} choice={shown(role)} onChoice={(choice) => choose(role, choice)} />
+      <div className={s.grid}>
+        <NumberField label="Compact when idle above" unit="tokens" value={value[role].compaction.auto} min={1} step={1000}
+          onValueChange={(auto) => update({ ...value, [role]: { ...value[role], compaction: { ...value[role].compaction, auto: auto ?? 0 } } })} description="After 5 minutes without messages." />
+        <NumberField label="Compact at once above" unit="tokens" value={value[role].compaction.max} min={1} step={1000}
+          onValueChange={(max) => update({ ...value, [role]: { ...value[role], compaction: { ...value[role].compaction, max: max ?? 0 } } })} />
+      </div>
+    </Section>;
   const saveAll = useAction(async () => {
     if (!value) return;
     const written = (Object.entries(choices) as [Role, ModelChoice | null][]).flatMap(([role, choice]) => choice ? [{ role, choice }] : []);
@@ -500,21 +505,8 @@ export function Settings() {
 
         {settings.feedback}
         {value && <>
-          <Section id="assistant" title="Assistant" description="The model you talk with in the chat.">
-            <ModelPicker accounts={(accounts.current?.accounts ?? []).filter(({ kind }) => kind === "model")} disabled={!connected || !profiles.data}
-              choice={shown("assistant")} onChoice={(choice) => choose("assistant", choice)} />
-            <div className={s.grid} id="compaction">
-              <NumberField label="Compact when idle above" unit="tokens" value={value.compaction.auto} min={1} step={1000}
-                onValueChange={(auto) => update({ ...value, compaction: { ...value.compaction, auto: auto ?? 0 } })} description="After 5 minutes without messages." />
-              <NumberField label="Compact at once above" unit="tokens" value={value.compaction.max} min={1} step={1000}
-                onValueChange={(max) => update({ ...value, compaction: { ...value.compaction, max: max ?? 0 } })} />
-            </div>
-          </Section>
-
-          <Section id="orchestrator" title="Orchestrator" description="The model that plans jobs for new tickets in the background.">
-            <ModelPicker accounts={(accounts.current?.accounts ?? []).filter(({ kind }) => kind === "model")} disabled={!connected || !profiles.data}
-              same choice={shown("orchestrator")} onChoice={(choice) => choose("orchestrator", choice)} />
-          </Section>
+          {roleSection("assistant", "The model you talk with in the chat.")}
+          {roleSection("orchestrator", "The model that plans jobs for new tickets in the background.")}
 
           <Section id="limits" title="Limits" description="How much PeCore runs at the same time.">
             <div className={s.grid}>

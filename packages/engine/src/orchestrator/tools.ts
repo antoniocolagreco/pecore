@@ -138,8 +138,11 @@ export function orchestratorTools(engine: Engine): {
       }
       if (order && !alreadyPlanned && value.accepted) {
         const titles: string[] = value.plan.map(({ title }) => title);
-        await chats.report(`${ctx.project.name}, ticket ${order.ticket_id}: created ${titles.length === 1 ? "the job" : "the jobs"} ${titles.join(", ")}.`,
-          Object.values(value.jobIds).map((jobId) => ({ project: ctx.id, jobId })));
+        engine.notify({
+          kind: "orchestrator", title: `${ctx.project.name}, ticket ${order.ticket_id}`,
+          body: `The Orchestrator created ${titles.length === 1 ? "the job" : "the jobs"} ${titles.join(", ")}.`,
+          target: { project: ctx.id, job: Object.values(value.jobIds)[0] ?? null, item: null },
+        });
       }
       return { value, target: { project: ctx.id, jobIds: value.jobIds }, isError: !value.accepted };
     }),
@@ -213,7 +216,10 @@ export function orchestratorTools(engine: Engine): {
       if (events.some((event) => event.type === "order.planned" || event.type === "order.done")) throw new Error("this order already has a plan");
       if (chats.role(message.chatId) === "orchestrator") {
         const itemId: string = stageOutbound(ctx, { project, ticketId, orderId: message.orderId, text });
-        await chats.report(`${ctx.project.name}, ticket ${ticketId}: wants to post a question on the ticket. Approve it in Inbox.`, [{ project }]);
+        engine.notify({
+          kind: "orchestrator", title: `${ctx.project.name}, ticket ${ticketId}`,
+          body: "The Orchestrator wants to post a question on the ticket.", target: { project, job: null, item: itemId },
+        });
         return { value: { waitingForApproval: true, itemId }, target: { project, ticketId, queueItemIds: [itemId] } };
       }
       const commentAt: number = Date.now();

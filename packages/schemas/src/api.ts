@@ -108,10 +108,7 @@ export const LiveMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("definition.changed"), path: z.string(), sha256: z.string().nullable() }),
   z.object({ type: z.literal("log.line"), attemptId: z.string(), event: LogEvent }),
   z.object({ type: z.literal("login.progress"), loginId: z.string(), text: z.string(), url: z.string().nullable(), done: z.boolean() }),
-  z.object({ type: z.literal("chat.message"), chatId: z.string(), messageId: z.string() }),
-  z.object({ type: z.literal("chat.streaming"), chatId: z.string() }),
-  z.object({ type: z.literal("chat.action"), chatId: z.string(), actionId: z.string() }),
-  z.object({ type: z.literal("chat.updated"), chatId: z.string() }),
+  z.object({ type: z.literal("chat.changed") }),
   z.object({ type: z.literal("notify"), kind: z.string(), title: z.string(), body: z.string() }),
 ]);
 export type LiveMessage = z.infer<typeof LiveMessage>;
@@ -151,19 +148,9 @@ export const ChatReference = z.strictObject({
   template: Name.optional(),
 }).refine((reference) => Object.keys(reference).length > 0, "a context reference is required");
 export type ChatReference = z.infer<typeof ChatReference>;
-export const ChatView = z.object({
-  id: z.string(),
-  title: z.string(),
-  projectId: ProjectId.nullable(),
-  createdAt: z.number(),
-  lastReadAt: z.number().nullable(),
-  unread: z.number().int().nonnegative(),
-});
-export type ChatView = z.infer<typeof ChatView>;
 export const ChatMessageView = z.object({
   id: z.string(),
-  chatId: z.string(),
-  role: z.enum(["user", "assistant", "orchestrator"]),
+  role: z.enum(["user", "assistant"]),
   text: z.string(),
   context: z.array(ChatReference),
   createdAt: z.number(),
@@ -188,7 +175,7 @@ export const ChatActionView = z.object({
 });
 export type ChatActionView = z.infer<typeof ChatActionView>;
 export const ChatDetail = z.object({
-  chat: ChatView,
+  unread: z.number().int().nonnegative(),
   messages: z.array(ChatMessageView),
   streamingReply: ChatMessageView.nullable().optional(),
   actions: z.array(ChatActionView),
@@ -311,17 +298,20 @@ export const StatusView = z.object({
   version: z.string(),
   globalPause: z.boolean(),
   interrupted: z.number().int(),
-  inbox: z.number().int(),
+  notifications: z.number().int(),
   homeFindings: z.array(z.object({ path: z.string(), fix: z.array(z.string()) })),
 });
 export type StatusView = z.infer<typeof StatusView>;
 
+export const NotificationTarget = z.object({ project: z.string().nullable(), job: z.string().nullable(), item: z.string().nullable() });
+export type NotificationTarget = z.infer<typeof NotificationTarget>;
 export const NotificationView = z.object({
   id: z.string(),
   kind: z.string(),
   title: z.string(),
   body: z.string(),
-  target: z.object({ project: z.string().nullable(), job: z.string().nullable() }).nullable(),
+  target: NotificationTarget.nullable(),
+  seen: z.boolean(),
   createdAt: z.number(),
 });
 export type NotificationView = z.infer<typeof NotificationView>;
@@ -476,24 +466,18 @@ export const routes = {
   answerQueue: { method: "POST", path: "/queue/:id", params: IdParams, body: QueueChoiceBody, response: Ok },
   getStatus: { method: "GET", path: "/status", response: StatusView },
   listNotifications: { method: "GET", path: "/notifications", response: z.array(NotificationView) },
-  getAssistantChat: { method: "GET", path: "/chat", response: ChatView },
-  getChat: { method: "GET", path: "/chats/:id", params: IdParams, response: ChatDetail },
-  sendChatMessage: { method: "POST", path: "/chats/:id/messages", params: IdParams, body: SendChatMessageBody, response: ChatMessageView },
+  markNotificationsSeen: { method: "POST", path: "/notifications/seen", response: Ok },
+  getChat: { method: "GET", path: "/chat", response: ChatDetail },
+  sendChatMessage: { method: "POST", path: "/chat/messages", body: SendChatMessageBody, response: ChatMessageView },
   uploadChatAttachment: {
     method: "POST",
-    path: "/chats/:id/attachments",
-    params: IdParams,
+    path: "/chat/attachments",
     body: z.strictObject({ mime: ChatImageMime, data: z.base64().max(chatAttachmentMaxBase64) }),
     bodyLimit: chatAttachmentMaxBase64 + 1024,
     response: ChatAttachmentView,
   },
-  retryChatMessage: {
-    method: "POST",
-    path: "/chats/:id/messages/:messageId/retry",
-    params: IdParams.extend({ messageId: z.string().min(1) }),
-    response: ChatMessageView,
-  },
-  markChatRead: { method: "POST", path: "/chats/:id/read", params: IdParams, response: ChatView },
+  retryChatMessage: { method: "POST", path: "/chat/messages/:id/retry", params: IdParams, response: ChatMessageView },
+  markChatRead: { method: "POST", path: "/chat/read", response: Ok },
   listDefinitions: { method: "GET", path: "/definitions", query: z.object({ dir: z.string().min(1) }), response: z.array(DefinitionEntry) },
   getDefinition: { method: "GET", path: "/definitions/*path", params: PathParams, response: DefinitionFile },
   saveDefinition: { method: "PUT", path: "/definitions/*path", params: PathParams, body: SaveDefinitionBody, response: SaveDefinitionResult },

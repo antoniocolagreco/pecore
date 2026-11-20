@@ -57,6 +57,13 @@ Format: decision. **Why:** Antonio's reason. **Replaces:** what it changes, if a
 
 41. With the menu hidden, pointing at the menu button shows the menu over the page, and moving away hides it; clicking the button keeps it open in its column. **Why:** "quando si fa hover sopra l'icona, la barra deve comparire sopra il contenuto della pagina. Come in claude web. Se si clicca sull'icona, la barra diventa fissa."
 
+42. During development, stored data is not kept across changes: the code stays clean, with no migration or fallback for old data. The old conversations are deleted; `chats.db` is rebuilt with the Assistant chat only. **Why:** "le conversazioni vecchie eliminale. Agisci senza considerare i dati, puoi cambiare eventi tabelle TUTTO. Mi interessa codice pulito."
+43. The Orchestrator has its own compaction thresholds in Settings, like the Assistant (default 128,000 and 256,000). **Why:** "Aggiungi le impostazioni per l'agente dell'orchestrator anche." **Replaces:** one pair of thresholds for every chat (decision 37).
+44. What the Orchestrator does arrives as a notification, not as a message in the Assistant's chat. **Why:** "per le notifiche dell'orchestrator, è meglio mandare una notifica appunto invece di scrivere nella chat dell'assistente." **Replaces:** the Orchestrator's reports in the chat (decision 38).
+45. Notifications and the Inbox are one page, Notifications, in the menu: first what waits for a decision, then the notification log. The bell in the top bar is removed. **Why:** "Fai scrivere in Inbox. Rinomina Inbox, chiamalo Messages o altro di più intuitivo"; Notifications chosen over Messages, which is confused with the chat. **Replaces:** the Inbox page and the notification popover (IA3).
+46. Saving a recipe or node in an editor counts as the user's approval (decision 40); only changes written by an agent wait for approval. **Why:** chosen option "Save vale come approvazione".
+47. Fetching tickets will become a recipe run on a schedule, so the ticket source needs no separate confirmation. Planned for later. **Why:** "Gestiamo il reperimento di tickets con un sistema di scheduling. Dunque creeremo una recipe e la mettiamo in scheduling. Dopo."
+
 ## Open
 
 - Shipped nodes default to "Automatic" with an optional explicit model (A, recommended), or always need an explicit model (B).

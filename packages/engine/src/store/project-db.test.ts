@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { tempDir } from "../../test/tmp";
-import { ChatsDb, notificationsKept } from "./chats-db";
+import { ChatsDb, assistantChat, notificationsKept } from "./chats-db";
 import { ProjectDb } from "./project-db";
 
 const job = "01JOB";
@@ -94,7 +94,7 @@ describe("pecore.db", () => {
 describe("chats.db", () => {
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.version()).toBe(5);
+    expect(db.version()).toBe(6);
     for (let i = 0; i < notificationsKept + 3; i++) db.addNotification({ kind: "job", title: `n${i}`, body: "" }, 1000 + i);
     const kept = db.notifications();
     expect(kept).toHaveLength(notificationsKept);
@@ -102,31 +102,41 @@ describe("chats.db", () => {
     db.close();
   });
 
-  it("removes the chat reply notifications an older version stored and keeps the others", async () => {
+  it("starts with the Assistant chat only, and replaces a database of an older version", async () => {
     const file = join(await tempDir(), "chats.db");
     const old = new ChatsDb(file);
-    old.addNotification({ kind: "orchestrator-replied", title: "Orchestrator replied", body: "Orders", target: { chatId: "c1", messageId: "m1" } }, 1000);
-    old.addNotification({ kind: "job-finished", title: "Fix login", body: "done" }, 1001);
-    old.db.exec("ALTER TABLE messages DROP COLUMN reply_to; ALTER TABLE chats DROP COLUMN context_tokens; UPDATE schema_version SET version = 2;");
+    expect(old.chats()).toEqual([{ id: assistantChat, project: null }]);
+    old.addMessage(assistantChat, "user", "hello", []);
+    old.db.exec("UPDATE schema_version SET version = 5");
     old.close();
     const db = new ChatsDb(file);
-    expect(db.version()).toBe(5);
-    expect(db.notifications().map(({ kind }) => kind)).toEqual(["job-finished"]);
+    expect(db.version()).toBe(6);
+    expect(db.messages(assistantChat)).toEqual([]);
     db.close();
   });
 
-  it("uses the manual chat with the latest message as the Assistant chat, never an intake chat", async () => {
+  it("keeps one Orchestrator chat per project and counts unread Assistant replies", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.assistantChat()).toBeUndefined();
-    db.createChat("c1", "Older", null);
-    db.createChat("c2", "Newer", null);
-    db.createChat("c3", "demo intake", "demo");
-    expect(db.assistantChat()).toBe("c2");
-    db.db.exec("UPDATE chats SET created_at = 1000");
-    db.addMessage("c1", "user", "hello", []);
-    db.addMessage("c3", "user", "ticket", []);
-    db.db.exec("UPDATE messages SET created_at = CASE chat_id WHEN 'c1' THEN 2000 ELSE 3000 END");
-    expect(db.assistantChat()).toBe("c1");
+    const demo: string = db.projectChat("demo");
+    expect(db.projectChat("demo")).toBe(demo);
+    expect(db.projectChat("shop")).not.toBe(demo);
+    db.addMessage(assistantChat, "user", "hi", []);
+    db.addMessage(assistantChat, "assistant", "hello", []);
+    expect(db.unread(assistantChat)).toBe(1);
+    db.markRead(assistantChat);
+    expect(db.unread(assistantChat)).toBe(0);
+    db.addMessage(assistantChat, "assistant", "more", []);
+    expect(db.unread(assistantChat)).toBe(1);
+    db.close();
+  });
+
+  it("marks notifications seen", async () => {
+    const db = new ChatsDb(join(await tempDir(), "chats.db"));
+    db.addNotification({ kind: "job-finished", title: "Fix login", body: "done" });
+    expect(db.unseenNotifications()).toBe(1);
+    db.markNotificationsSeen();
+    expect(db.unseenNotifications()).toBe(0);
+    expect(db.notifications()).toMatchObject([{ title: "Fix login", seen: true }]);
     db.close();
   });
 });

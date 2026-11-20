@@ -44,7 +44,7 @@ export function Factory() {
     jobs.reload();
   });
   const counters: { label: string; value: string | number | undefined; to: string }[] = [
-    { label: "Inbox items", value: status.data?.inbox, to: "/inbox" },
+    { label: "Notifications", value: status.data?.notifications, to: "/notifications" },
     ...labels.map((label) => ({ label, value: jobs.data && !jobs.loading ? visible.filter((job) => jobState(job).label === label).length : undefined, to: `/jobs?${new URLSearchParams({ label })}` })),
     { label: "Tokens today", value: totals?.tokens.toLocaleString(), to: "/usage" },
     { label: "Cost today", value: totals ? usd.format(totals.cost) : undefined, to: "/usage" },
@@ -57,7 +57,7 @@ export function Factory() {
             key={label}
             value={value ?? "—"}
             label={label}
-            tone={label === "Failed" && Number(value) > 0 ? "danger" : (label === "Needs you" || label === "Inbox items") && Number(value) > 0 ? "attention" : undefined}
+            tone={label === "Failed" && Number(value) > 0 ? "danger" : (label === "Needs you" || label === "Notifications") && Number(value) > 0 ? "attention" : undefined}
             onClick={connected ? () => void navigate(to) : undefined}
           />
         ))}

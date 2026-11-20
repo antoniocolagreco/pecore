@@ -56,7 +56,7 @@ function actionLinks(target: Record<string, unknown>): ActionLink[] {
   const paths: Set<string> = new Set([string(target.path), ...strings(target.paths)]);
   const links: ActionLink[] = [
     ...[...jobs].map((id) => ({ to: `/jobs/${encodeURIComponent(id)}`, label: `Job ${id}` })),
-    ...[...items].map((id) => ({ to: `/inbox/${encodeURIComponent(id)}`, label: `Inbox item ${id}` })),
+    ...[...items].map((id) => ({ to: `/notifications/${encodeURIComponent(id)}`, label: `Notification ${id}` })),
   ];
   for (const path of paths) {
     const section: string | undefined = /^(?:library|projects\/[^/]+)\/(nodes|recipes|knowledge)\/.+/.exec(path)?.[1];
@@ -122,18 +122,17 @@ function Message({ message, attachments, actions, connected, reload }: {
   reload(): void;
 }) {
   const retry = useAction(async () => {
-    await call("retryChatMessage", { params: { id: message.chatId, messageId: message.id } });
+    await call("retryChatMessage", { params: { id: message.id } });
     reload();
   });
   const user: boolean = message.role === "user";
-  const jobs: string[] = message.role === "orchestrator" ? message.context.flatMap(({ jobId }) => jobId ? [jobId] : []) : [];
   const state: StateInfo | null = messageStates[message.state];
   return (
     <article className={`${s.message} ${user ? s.user : s.assistant}`}>
       {!user && <span className={s.avatar} aria-hidden><SparkIcon size={14} /></span>}
       <div className={s.body}>
         <div className={s.meta}>
-          <span className={s.author}>{authors[message.role]}</span>
+          <span className={s.author}>{user ? "You" : "Assistant"}</span>
           <time dateTime={new Date(message.createdAt).toISOString()} title={dateTime(message.createdAt)}>{time(message.createdAt)}</time>
           {state && <StateLabel info={state} />}
         </div>
@@ -151,15 +150,10 @@ function Message({ message, attachments, actions, connected, reload }: {
         {message.state === "interrupted" && <div><Button size="sm" disabled={!connected || retry.busy} loading={retry.busy} onClick={() => void retry.run()}>Retry</Button></div>}
         <ErrorText error={retry.error} />
         <Actions actions={actions} connected={connected} />
-        {jobs.length > 0 && <ul className={s.links}>
-          {jobs.map((id) => <li key={id}>{connected ? <Link to={`/jobs/${encodeURIComponent(id)}`}>Job {id}</Link> : <span>Job {id}</span>}</li>)}
-        </ul>}
       </div>
     </article>
   );
 }
-
-const authors: Record<ChatMessageView["role"], string> = { user: "You", assistant: "Assistant", orchestrator: "Orchestrator" };
 
 function isCompaction(message: ChatMessageView): boolean {
   return message.role === "user" && message.text.trim() === chatCompactCommand;
@@ -191,8 +185,7 @@ function Activity({ actions, connected, working }: { actions: ChatActionView[]; 
   );
 }
 
-function Composer({ id: chatId, supportsImages, connected, ready, reload, autoFocus }: {
-  id: string;
+function Composer({ supportsImages, connected, ready, reload, autoFocus }: {
   supportsImages: ChatDetail["supportsImages"];
   connected: boolean;
   ready: boolean;
@@ -211,13 +204,13 @@ function Composer({ id: chatId, supportsImages, connected, ready, reload, autoFo
       let attachmentId: string | undefined = image.attachmentId;
       if (!attachmentId) {
         const data: string = await base64(image.file);
-        const attachment: ChatAttachmentView = await call("uploadChatAttachment", { params: { id: chatId }, body: { mime: image.mime, data } });
+        const attachment: ChatAttachmentView = await call("uploadChatAttachment", { body: { mime: image.mime, data } });
         attachmentId = attachment.id;
         setImages((pending) => pending.map((entry) => entry.key === image.key ? { ...entry, attachmentId: attachment.id } : entry));
       }
       attachmentIds.push(attachmentId);
     }
-    await call("sendChatMessage", { params: { id: chatId }, body: { text: message, attachmentIds } });
+    await call("sendChatMessage", { body: { text: message, attachmentIds } });
     setMessage("");
     setImages([]);
     setImageError(null);
@@ -306,9 +299,11 @@ function DefinitionPreview({ path, onClose }: { path: string; onClose(): void })
   );
 }
 
-function Conversation({ id, connected, ready }: { id: string; connected: boolean; ready: boolean | null }) {
-  const detail = useData(() => call("getChat", { params: { id } }), [id], (event) =>
-    (event.type === "chat.message" || event.type === "chat.streaming" || event.type === "chat.action" || event.type === "chat.updated") && event.chatId === id);
+export function ChatPanel() {
+  const connected: boolean = useConnected();
+  const settings = useData(() => call("getSettings"), [], (event) => event.type === "definition.changed" && event.path === "settings.json");
+  const ready: boolean | null = settings.data ? roleProfile(settings.data.value, "assistant") !== null : null;
+  const detail = useData(() => call("getChat"), [], (event) => event.type === "chat.changed");
   const [query, setQuery] = useSearchParams();
   const definition: string | null = query.get("definition");
   const [active, setActive] = useState<boolean>(() => document.visibilityState === "visible" && document.hasFocus());
@@ -318,11 +313,11 @@ function Conversation({ id, connected, ready }: { id: string; connected: boolean
   const chat: ChatDetail | undefined = detail.data;
   const lastReply: string = chat?.messages.findLast((message) => message.role === "assistant")?.id ?? "";
   const markRead = useAction(async () => {
-    await call("markChatRead", { params: { id } });
+    await call("markChatRead");
     detail.reload();
   });
   const compact = useAction(async () => {
-    await call("sendChatMessage", { params: { id }, body: { text: chatCompactCommand, attachmentIds: [] } });
+    await call("sendChatMessage", { body: { text: chatCompactCommand, attachmentIds: [] } });
     detail.reload();
   });
   const last: ChatMessageView | undefined = chat?.messages.at(-1);
@@ -346,7 +341,7 @@ function Conversation({ id, connected, ready }: { id: string; connected: boolean
 
   useEffect(() => {
     if (!active || !connected || !chat || detail.error || markRead.busy) return;
-    if (marked.current !== null && (!chat.chat.unread || marked.current === lastReply)) return;
+    if (marked.current !== null && (!chat.unread || marked.current === lastReply)) return;
     marked.current = lastReply;
     void markRead.run();
   }, [active, connected, chat, detail.error, lastReply, markRead.busy]);
@@ -370,7 +365,7 @@ function Conversation({ id, connected, ready }: { id: string; connected: boolean
   }
   const pendingActions: ChatActionView[] = pending ? actions.get(pending.id) ?? [] : [];
   return (
-    <section className={s.pane}>
+    <aside className={s.panel} aria-label="Assistant"><section className={s.pane}>
       <header className={s.paneHeader}>
         <Button size="sm" className={s.headerAction} disabled={!canCompact} loading={compact.busy}
           title="Summarize the conversation so far, so the Assistant keeps its context short" onClick={() => void compact.run()}>Compact</Button>
@@ -406,21 +401,8 @@ function Conversation({ id, connected, ready }: { id: string; connected: boolean
           </Alert>
         </div>
       )}
-      {chat && <Composer id={id} connected={connected} ready={ready === true} supportsImages={chat.supportsImages} reload={detail.reload} autoFocus />}
+      {chat && <Composer connected={connected} ready={ready === true} supportsImages={chat.supportsImages} reload={detail.reload} autoFocus />}
       {definition && <DefinitionPreview key={definition} path={definition} onClose={() => setQuery({}, { replace: true })} />}
-    </section>
-  );
-}
-
-export function ChatPanel() {
-  const connected: boolean = useConnected();
-  const chat = useData(() => call("getAssistantChat"), []);
-  const settings = useData(() => call("getSettings"), [], (event) => event.type === "definition.changed" && event.path === "settings.json");
-  const ready: boolean | null = settings.data ? roleProfile(settings.data.value, "assistant") !== null : null;
-  return (
-    <aside className={s.panel} aria-label="Assistant">
-      <ErrorText error={chat.error} />
-      {chat.data && <Conversation key={chat.data.id} id={chat.data.id} connected={connected} ready={ready} />}
-    </aside>
+    </section></aside>
   );
 }

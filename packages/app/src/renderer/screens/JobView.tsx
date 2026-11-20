@@ -21,7 +21,7 @@ type HistoryEntry = { run: NodeRunView; attempt: AttemptView | null; index: numb
 const historyPageSize: number = 40;
 
 function reasonTarget(reason: WhyReason, detail: JobDetail): string | null {
-  if (reason.queueItemId) return `/inbox/${encodeURIComponent(reason.queueItemId)}`;
+  if (reason.queueItemId) return `/notifications/${encodeURIComponent(reason.queueItemId)}`;
   if (reason.account || reason.reason === "auth") {
     const waitingRun: NodeRunView | undefined = detail.nodeRuns.find((run) => run.id === reason.nodeRunId);
     const section: string = waitingRun?.auth?.kind === "harness" && waitingRun.auth.osUser === "pecore-agent" ? "protectedMode" : "accounts";

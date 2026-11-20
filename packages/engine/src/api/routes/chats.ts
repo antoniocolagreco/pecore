@@ -4,11 +4,13 @@ import type { Handlers } from "../server";
 export function chatHandlers(engine: Engine) {
   const chats = engine.orchestrator;
   return {
-    getAssistantChat: async () => chats.assistant(),
-    getChat: async ({ params }) => chats.detail(params.id),
-    sendChatMessage: async ({ params, body }) => chats.send(params.id, body),
-    uploadChatAttachment: async ({ params, body }) => chats.upload(params.id, body.mime, body.data),
-    retryChatMessage: async ({ params }) => chats.retry(params.id, params.messageId),
-    markChatRead: async ({ params }) => chats.markRead(params.id),
+    getChat: async () => chats.detail(),
+    sendChatMessage: async ({ body }) => chats.send(body),
+    uploadChatAttachment: async ({ body }) => chats.upload(body.mime, body.data),
+    retryChatMessage: async ({ params }) => chats.retry(params.id),
+    markChatRead: async () => {
+      chats.markRead();
+      return { ok: true as const };
+    },
   } satisfies Partial<Handlers>;
 }

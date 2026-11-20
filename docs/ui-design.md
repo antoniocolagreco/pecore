@@ -32,7 +32,7 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 ## Terms
 
 *   **Factory:** the home screen, a summary dashboard.
-*   **Inbox:** the screen, and the set of open `human_queue` rows it lists, except `agent-question` items (answered in the chat). The Inbox counter counts the same set. In design.md, the kinds `engine-node`, `source-node`, `recipe-change`, `import`, `ticket` and `services` are also called the confirmation queue.
+*   **Notifications:** the screen that lists the items to decide (open `human_queue` rows, except `agent-question` items, answered in the chat) and the notification log (decision 45). Its counter counts the items to decide plus the notifications not seen yet. In design.md, the kinds `engine-node`, `source-node`, `recipe-change`, `import`, `ticket` and `services` are also called the confirmation queue.
 *   **Engine:** the background process that runs jobs (design.md section 1). **Engine node:** a node with `runsAs: engine`. **Engine state:** a job or node run state of design.md 4.1 and 4.3.
 *   **Normal mode and protected mode:** design.md's project user (section 8). In normal mode, the default, agents and the orchestrator run as the user, with the user's own harness logins, like Claude Code or Codex run by hand. In protected mode they run as `pecore-agent`, which cannot read the user's files and logins; it needs one login per harness account. The mode is global, not per project.
 *   **Check node:** a recipe node named in some node's `requires` (design.md 4.4).
@@ -55,8 +55,8 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 | Id | Element | Source |
 |---|---|---|
 | IA1 | Global pause and play | G17 |
-| IA2 | Inbox counter | 4.3, 8 |
-| IA3 | Notifications: job finished, needs the user, budget reached, login expired, parent failed, job started from a ticket, auto-setup changes. Orchestrator replies only as a system notification (decisions 25, 27) | 6, 7, 9 |
+| IA2 | Notifications counter | 4.3, 8 |
+| IA3 | Notifications: job finished, needs the user, budget reached, login expired, parent failed, auto-setup changes, what the Orchestrator did on a ticket (jobs created, question waiting for approval). Assistant replies only as a system notification (decisions 25, 27, 44) | 6, 7, 9 |
 | IA4 | Withdrawn: engine status line (decision 35); only the disconnected banner stays | 1, "Fixed implementation choices" |
 | IA5 | Withdrawn: project filter (decision 30) | 3.5 |
 | IA6 | Tray icon | "Engine and main process messages" |
@@ -74,7 +74,7 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 | IB5 | Unread marker | 6, 7 |
 | IB6 | Answers to agent questions (`agent-question` items) | 6 |
 | IB8 | Automatic compaction at two token thresholds (decision 37) | added by decisions.md |
-| IB9 | Short reports from the Orchestrator about work that did not come from the user (decision 38) | added by decisions.md |
+| IB9 | Withdrawn: Orchestrator reports in the chat; they are notifications (decision 44) | added by decisions.md |
 
 ### C. Jobs
 
@@ -91,7 +91,7 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 | IC9 | Base change notice | 4.2 |
 | IC10 | Withdrawn: New job form; jobs start from the orchestrator chat (decision 31) | "Local API", "Job creation" |
 
-### D. Inbox items
+### D. items to decide
 
 | Id | Element | `human_queue.kind` | Source |
 |---|---|---|---|
@@ -136,7 +136,7 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 | IG3 | Global limits, services runtime, disk threshold, merge check interval, prices, project paths | 4.7, 4.9, "Risks & Limits" |
 | IG4 | Usage: tokens and cost per account, project, day (a top-level page) | 4.7 |
 | IG5 | First run | G14 |
-| IG6 | Assistant: provider, model, effort, automatic and maximum compaction thresholds. Orchestrator: provider, model, effort (decisions 7, 37, 38) | 6 |
+| IG6 | Assistant and Orchestrator, each: provider, model, effort, automatic and maximum compaction thresholds (decisions 7, 37, 38, 43) | 6 |
 | IG7 | Connector files, auto-update | 5, "Fixed implementation choices" |
 | IG8 | Notifications and quiet hours | 9, `src/settings.ts` |
 | IG9 | Appearance: theme, reduced motion | UI4, UI6 |
@@ -148,8 +148,8 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 | Factory | centre | IA2, IC1 |
 | Jobs | centre | IC1-IC4 |
 | Job view | detail page | IC3-IC9 |
-| Inbox | centre | ID1-ID9 |
-| Assistant chat | right panel, on every screen | IB2-IB9 |
+| Notifications | centre | ID1-ID9 |
+| Assistant chat | right panel, on every screen | IB2-IB8 |
 | Projects, project page, wizards | centre, detail page, full page | IF1-IF7 |
 | Recipe editor, node editor | detail page | IE1-IE3, IE5 |
 | Library | centre | IE4 |
@@ -159,27 +159,26 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 
 ## Proposed Design
 
-The prototype is normative only for: the Everforest palette and gradients, the Inbox as a list plus a detail pane, the node inspector as key/value rows, the engine status at the bottom of the navigation, the first run as a step checklist. Nothing else in it is normative.
+The prototype is normative only for: the Everforest palette and gradients, Notifications as a list plus a detail pane, the node inspector as key/value rows, the engine status at the bottom of the navigation, the first run as a step checklist. Nothing else in it is normative.
 
 ### Navigation (left)
 
 *   Window: menu on the left, the page in the centre, the Assistant chat on the right (decision 32). The chat takes 30% of the width, between 300 and 380 px.
 *   The menu hides and shows with a button at the top left of the page (decision 34). The choice is remembered; the first time, the menu starts hidden below 1280 px of width. With the menu hidden, pointing at the button shows the menu over the page until the pointer leaves it; clicking keeps it open in its column (decision 41).
-*   One list, no group titles (decision 14): Inbox (counter, IA2), Factory, Jobs, Projects, Library, Usage, Settings.
+*   One list, no group titles (decision 14): Notifications (counter, IA2), Factory, Jobs, Projects, Library, Usage, Settings.
 *   Under the list, the open page's own sub-navigation (decision 13): Settings sections.
 *   Note: a project's recipes, nodes and settings are reached through Projects; the node editor and the job view are detail pages, not menu items.
 *   Page content is centred, with a maximum width (decision 15).
 
 ### Top bar
 
-*   Command palette button, global pause and play (IA1), notifications (IA3).
+*   Command palette button, global pause and play (IA1). No notification bell: notifications are a page of the menu (decision 45).
 *   While the global pause is on, a banner says so, with Play.
-*   The notification list shows the notification log (`GET /notifications`), so notifications that arrived while the user was away survive a restart. Orchestrator replies are not in it (decision 27).
 *   A system notification is shown only when the PeCore window is not focused (decision 25).
 
 ### Tray (IA6)
 
-*   Icon with the number of running jobs and Inbox items; menu with "Open PeCore" and "Quit". Closing the window keeps the app and its jobs running here (UI15).
+*   Icon with the number of running jobs and items to decide; menu with "Open PeCore" and "Quit". Closing the window keeps the app and its jobs running here (UI15).
 
 ### Command palette (IA7)
 
@@ -187,7 +186,7 @@ The prototype is normative only for: the Everforest palette and gradients, the I
 
 ### Factory
 
-*   Counters, each opening a filtered view: Inbox items (opens the Inbox; global), Needs you, Failed, Working, Waiting (open Jobs filtered by that label), cost today (API key accounts) and tokens today (open Usage).
+*   Counters, each opening a filtered view: items to decide (opens Notifications; global), Needs you, Failed, Working, Waiting (open Jobs filtered by that label), cost today (API key accounts) and tokens today (open Usage).
 *   After a restart with jobs paused by the quit: "Play interrupted jobs" (UI15).
 *   Rows of jobs not in a final state, compact, so 15 or more rows fit in a 1080 px tall window: project, title, current node, state, waiting reason with time ("Quota until 15:40"). Stacked jobs indented under their parent. Hover actions follow the controls table.
 *   A Needs you row opens its target (see "Job states shown").
@@ -229,9 +228,11 @@ The prototype is normative only for: the Everforest palette and gradients, the I
 | Archive | final states | Hides the job from default lists. |
 | Delete | final states, no children outside a final state | Asks for confirmation, listing what is removed: workdir, local branch, artifacts, logs, history. Nothing on the forge is touched. |
 
-### Inbox
+### Notifications
 
-*   List: one row per item with a kind label ("Human review", "Engine node", ...), project, the job when the item has one, age. Oldest first. All projects.
+*   One list, all projects (decision 45). First the items to decide, oldest first, each marked with a dot: kind label ("Human review", "Engine node", ...), project, the job when the item has one, age. Then the notification log (`GET /notifications`), newest first: title, text, age; a row opens its job or item to decide. Opening the page marks the notifications seen.
+*   The detail pane appears only when an item to decide is open.
+*   Empty: "Nothing new".
 *   Every detail renders the item's `subject` snapshot, never a file read at decision time, and shows its sha256. The decision is sent with that hash. Items never change: a definition edited while its item is open cancels the item and creates a new one (design.md `confirm.ts`). If `queue.updated` reports the open item resolved or cancelled (for example a review cancelled by a base change), the detail locks with a banner and a button that opens the new item, if any.
 *   Inline confirmations (UI17: wizard, import, node editor, Library) use the same component on the same queue item, with the same snapshot and hash.
 *   Detail by kind:
@@ -248,15 +249,15 @@ The prototype is normative only for: the Everforest palette and gradients, the I
 ### Assistant chat (right panel)
 
 *   One chat for the whole app, always on the right of every screen (decisions 32, 36). No conversation list, no page of its own. Its header has only the Compact button.
-*   The user talks only to the Assistant. The Orchestrator, which works in the background on new issues of linked projects, never chats; it posts a short report in this chat when it does something, signed "Orchestrator", for example "Shop, ticket 42: created the job Fix login.", with a link to each job (decision 38, IB9). Reports count as unread like replies.
+*   The user talks only to the Assistant. The Orchestrator, which works in the background on new issues of linked projects, never chats and never writes in this chat: what it does arrives as a notification, for example "Shop, ticket 42: The Orchestrator created the job Fix login." (decisions 38, 44).
 *   The reply appears while it is written (decision 20). Until it starts, animated dots under the user's message show the Assistant is working (decision 23).
 *   After sending, the cursor stays in the message box (decision 22).
 *   Compaction (decision 24): the Compact button, or `/compact` typed as a message, sends the harness's own compaction command to the chat's session. The chat shows a divider ("Compacting the conversation…", then "Conversation compacted"), no reply.
-*   Automatic compaction (decision 37): above the maximum threshold (default 256,000 tokens) the chat compacts at once; above the automatic threshold (default 128,000) it compacts after 5 minutes without use. Both thresholds are in Settings > Assistant. The size comes from what the harness reports after each reply.
+*   Automatic compaction (decision 37): above the maximum threshold (default 256,000 tokens) the chat compacts at once; above the automatic threshold (default 128,000) it compacts after 5 minutes without use. Both thresholds are in Settings > Assistant; the Orchestrator's sessions have their own pair in Settings > Orchestrator (decision 43). The size comes from what the harness reports after each reply.
 *   An order the user gives in the chat is authorised as given (decision 39): if the user asks to comment on an issue, the Assistant posts it.
 *   "Ask the AI" (IE5) puts the cursor in the chat with the current screen's object as context.
 *   Context chip: one at a time, a reference with its scope (for example "Job: Fix login timeout", "Recipe feature (project progetto-1)", "Template recipe feature"). It shows the object of the current screen and changes on navigation; pinning keeps it; removing it sends the next message with no context.
-*   What the Assistant did (IB4) appears under its reply, never under the user's message (decision 28). Actions that change something (create jobs, answer a job's question, add a node or recipe to a project, comment on a ticket) get a card that links to the job, definition or Inbox item. Reads (projects, recipes, ticket, ticket replies, job status, job output, library templates, definition check) become one grey line: "Read: projects, job status".
+*   What the Assistant did (IB4) appears under its reply, never under the user's message (decision 28). Actions that change something (create jobs, answer a job's question, add a node or recipe to a project, comment on a ticket) get a card that links to the job, definition or item to decide. Reads (projects, recipes, ticket, ticket replies, job status, job output, library templates, definition check) become one grey line: "Read: projects, job status".
 *   Agent questions (IB6) appear in the conversation with an answer field.
 *   A system notification for a reply or a report is shown only when the PeCore window is not focused; they never go to the notification list (decisions 25, 27).
 
@@ -276,7 +277,7 @@ Pages: Inputs, Create, Confirm. Create runs the tasks of design.md "Project crea
 
 1.  **Inputs:** id (`^[a-z][a-z0-9-]{0,23}$`), name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, base branch, starting recipes (the shipped ones, with delivery nodes for the project's forge; each can be unchecked).
 2.  **Create:** the tasks of "Project creation" (validation, project directory, clone or repo creation, `repo.git` setup and home check, access for `pecore-agent` in protected mode, commit), each with its state. The repo creation node's confirmation is shown inside its task (UI17). A failed task undoes the tasks before it, says why, and returns to Inputs with the values kept. A repo created on the forge is never deleted by the undo: the page lists it as left on the forge.
-3.  **Confirm:** the engine nodes of the starting recipes and the project's `source` node, if any, on one screen, so the first job does not wait with reason `confirmation`. Can be skipped: the items stay in the Inbox.
+3.  **Confirm:** the engine nodes of the starting recipes and the project's `source` node, if any, on one screen, so the first job does not wait with reason `confirmation`. Can be skipped: the items stay in Notifications.
 4.  No logins page: logins belong to the user, not to the project (Settings > Accounts).
 
 Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done; Cancel on Confirm leaves the project created.
@@ -332,7 +333,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
     *   AI tools: every installed harness appears by itself (decision 4). A row shows the tool, the account, its state, a Check button that looks clickable, and Log in only when needed (decision 8). OpenCode is Ready when it lists at least one model; with none, the row says to set up a model provider in OpenCode (decision 12).
     *   Git hosting: an "Add account" button for a public service or the user's own server (decisions 9, 11). Texts never name a hosting service. Forge tool logins (`gh`, `glab`) run in the GUI like harness logins: the device code or URL is shown, then the account is rechecked (design.md `accounts/login.ts`). A private Git server account uses the user's own Git credentials and has no Log in button.
 *   Assistant: Provider, Model and Effort selects, filled from what the harness reports (decision 7), and the automatic and maximum compaction thresholds in tokens (default 128,000 and 256,000, decision 37).
-*   Orchestrator: Provider, Model and Effort selects; by default the same as the Assistant (decision 38).
+*   Orchestrator: Provider, Model and Effort selects, by default "Same as the Assistant" (decision 38), and its own pair of compaction thresholds with the same defaults (decision 43).
 *   Protected mode (IF6): one switch with a short explanation (agents cannot read your files and logins; one login per harness account for `pecore-agent`; agents can read all `pecore-agent` logins). Turning it on opens the admin prompt; if it cannot (no polkit agent), the page shows the exact script with a Copy button and "I ran it, recheck". Then the page lists each model account with a Login button for `pecore-agent`, showing the URL or code. Turning it off asks whether to also remove `pecore-agent`.
 *   "Recheck prerequisites", with a link to the setting each failed check points to.
 
@@ -350,7 +351,7 @@ Goal: minimum friction. The user opens PeCore and it works, with no setting to f
 
 ### Empty, loading and disconnected states
 
-*   Empty lists say what fills them, with the action: "No projects: New project", "Inbox empty: nothing waits for you".
+*   Empty lists say what fills them, with the action: "No projects: New project", "Notifications: Nothing new".
 *   Loading: lists keep their layout with placeholder rows; no spinners over the whole screen. A field whose options are loading shows a spinner and a "Reading…" text and never looks disabled (decision 19).
 
 ### Controls
@@ -389,11 +390,11 @@ Goal: minimum friction. The user opens PeCore and it works, with no setting to f
 
 Clicking a job labelled Needs you opens:
 
-*   `human`, `confirmation`, `round_limit`, `budget`: the Inbox item recorded on the node run (`queue_item_id`); an `agent-question` opens its conversation.
+*   `human`, `confirmation`, `round_limit`, `budget`: the item to decide recorded on the node run (`queue_item_id`); an `agent-question` opens its conversation.
 *   `auth`: the account recorded on the node run; a harness login opens Settings > Accounts (in protected mode, Settings > Protected mode), a tool login opens Settings > Accounts.
 *   `parent_failed`: the parent job.
 
-The Inbox counter counts Inbox items, not jobs: several jobs can wait on one item.
+The Notifications counter counts items to decide, not jobs: several jobs can wait on one item.
 
 ## Node run states shown
 
@@ -425,7 +426,7 @@ Color is never the only signal: every state also has an icon and its label.
 | `status-running` | light blue: running |
 | `status-success` | green: success, success outcomes |
 | `status-failed` | red: failed, fail outcomes, validation errors |
-| `status-warning` | yellow: needs you, waiting, queued, Inbox items |
+| `status-warning` | yellow: needs you, waiting, queued, items to decide |
 | `status-inactive` | grey: paused, stopped, not delivered, pending, skipped, disabled controls |
 
 Status tokens need at least 3:1 contrast against `surface` in every theme.
@@ -455,8 +456,8 @@ Status tokens need at least 3:1 contrast against `surface` in every theme.
 | UI15c | After a restart, Factory shows "Play interrupted jobs" for jobs paused with reason `quit`. |
 | UI15d | Every job control has a tooltip that says what it does (Job controls table). |
 | UI16 | Status colors keep fixed meanings in every theme: green success, red failure, yellow warning, grey inactive, light blue running. A theme may change their shades. All other colors, the accent included, are free for the theme. |
-| UI17 | A confirmation that blocks a flow the user is in (wizard, editor, Library instantiation) is shown inside that flow, as well as in the Inbox. |
-| UI18 | A decision on an Inbox item approves the snapshot the user saw, identified by its hash; a changed item cannot be approved. |
+| UI17 | A confirmation that blocks a flow the user is in (wizard, editor, Library instantiation) is shown inside that flow, as well as in Notifications. |
+| UI18 | A decision on an item to decide approves the snapshot the user saw, identified by its hash; a changed item cannot be approved. |
 | UI19 | Delete of a job or project is local only and asks for confirmation; Stop needs none. |
 
 ## Alternatives Considered
@@ -469,7 +470,7 @@ Status tokens need at least 3:1 contrast against `surface` in every theme.
 | A separate graph of stacked jobs (UI9) | Rejected (author) | A job has at most one parent, so stacks are trees; indented rows show them without a second graph view | A visual map of large stacks |
 | Recipe change as a text diff (UI10) | Rejected | A graph change is hard to read as JSON | Nothing |
 | Automatic layout only for recipes | Rejected (author) | Nodes are placed and connected by hand; positions must stay where the user put them | Nothing in the engine: `layout` is ignored by it |
-| Inbox only for confirmations (UI17) | Rejected | The wizard and editors would stop on an item the user must find elsewhere | Nothing |
+| Notifications only for confirmations (UI17) | Rejected | The wizard and editors would stop on an item the user must find elsewhere | Nothing |
 | Tool logins (`gh`, `glab`) run by the user in a terminal | Rejected | design.md G16 allows only one terminal step (manual creation of the protected user) | Nothing |
 | Delete runs a cleanup on the forge | Rejected (author) | Delete must not act on remote resources | Remote branches and PRs stay until closed on the forge |
 | Progress percentages for agent nodes (UI6) | Rejected | No harness reports progress; a percentage would be invented | A progress bar |
@@ -478,11 +479,11 @@ Status tokens need at least 3:1 contrast against `surface` in every theme.
 
 | Risk | Impact | Mitigation | Where |
 |---|---|---|---|
-| A prompt-injected orchestrator changes a node while its confirmation is open | an unseen command runs as the app user | snapshot and hash on every Inbox decision | UI18, Inbox |
-| Untrusted text (tickets, agent output, logs) rendered in the GUI | script injection in the renderer | Markdown rendered without raw HTML; logs as text; no `dangerouslySetInnerHTML` | Job view, Inbox |
+| A prompt-injected orchestrator changes a node while its confirmation is open | an unseen command runs as the app user | snapshot and hash on every Notifications decision | UI18, Notifications |
+| Untrusted text (tickets, agent output, logs) rendered in the GUI | script injection in the renderer | Markdown rendered without raw HTML; logs as text; no `dangerouslySetInnerHTML` | Job view, Notifications |
 | Engine crash or WebSocket drop | stale states look live | disconnected banner, controls disabled, refetch on reconnect | Cross-cutting behaviour |
 | Many running agents streaming logs | renderer overload | log streaming only for the open attempt; updates once per frame; virtual lists | Job view, Updates |
-| Very large diffs (thousands of lines) | slow diff view | files rendered 30 at a time, each collapsible, risky hunks first | Inbox ID1, artifact viewer |
+| Very large diffs (thousands of lines) | slow diff view | files rendered 30 at a time, each collapsible, risky hunks first | Notifications ID1, artifact viewer |
 | Editor and orchestrator write the same file | one change silently lost | save with the file hash; changed-elsewhere banner | Concurrent edits |
 | User theme file with bad values | unreadable UI | schema validation, fallback tokens, contrast rules | UI4, Color tokens |
 | Normal mode: agents run as the app user | agents read the user's files and logins | Settings shows the mode and offers protected mode in one step | Settings |

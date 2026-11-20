@@ -12,6 +12,14 @@ const Price = z
 
 const Time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 
+const Compaction = z
+  .object({ auto: z.number().int().positive().default(128_000), max: z.number().int().positive().default(256_000) })
+  .strict();
+const Agent = z
+  .object({ profile: z.string().min(1).nullable().default(null), compaction: Compaction.default({ auto: 128_000, max: 256_000 }) })
+  .strict()
+  .default({ profile: null, compaction: { auto: 128_000, max: 256_000 } });
+
 export const Settings = z
   .object({
     $schema: SchemaRef,
@@ -30,12 +38,8 @@ export const Settings = z
     prices: z.record(z.string(), Price).default({}),
     programPaths: z.record(z.string(), z.string().regex(/^\//, "absolute path")).default({}),
     quietHours: z.object({ from: Time, to: Time }).strict().nullable().default(null),
-    assistant: z.object({ profile: z.string().min(1) }).strict().nullable().default(null),
-    orchestrator: z.object({ profile: z.string().min(1) }).strict().nullable().default(null),
-    compaction: z
-      .object({ auto: z.number().int().positive().default(128_000), max: z.number().int().positive().default(256_000) })
-      .strict()
-      .default({ auto: 128_000, max: 256_000 }),
+    assistant: Agent,
+    orchestrator: Agent,
     protectedMode: z.boolean().default(false),
     ui: z.record(z.string(), z.unknown()).default({}),
   })
@@ -44,9 +48,8 @@ export type Settings = z.infer<typeof Settings>;
 
 export type Role = "assistant" | "orchestrator";
 
-export function roleProfile(settings: Pick<Settings, "assistant" | "orchestrator">, role: Role): string | null {
-  const assistant: string | null = settings.assistant?.profile ?? settings.orchestrator?.profile ?? null;
-  return role === "assistant" ? assistant : settings.orchestrator?.profile ?? assistant;
+export function roleProfile(settings: Pick<Settings, Role>, role: Role): string | null {
+  return role === "orchestrator" ? settings.orchestrator.profile ?? settings.assistant.profile : settings.assistant.profile;
 }
 
 export function defaultJobLimit(cpuCount: number): number {

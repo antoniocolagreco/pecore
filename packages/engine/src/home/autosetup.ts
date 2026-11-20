@@ -196,8 +196,7 @@ export async function autoSetup(home: string, agents: AgentServices): Promise<Se
   const refreshedProfiles: Map<number, Profile> = new Map();
   const additions: Record<TierName, string[]> = { frontier: [], strong: [], standard: [], cheap: [] };
   const titles: Set<string> = new Set();
-  let assistant: Global["settings"]["assistant"] = settings.assistant;
-  const unset: boolean = settings.assistant === null && settings.orchestrator === null;
+  let assistant: string | null = settings.assistant.profile;
   for (const { harness, title, account, provider, offer } of eligible) {
     const name: BuiltInHarness = harness.connector;
     const id: string = account?.id ?? name;
@@ -224,11 +223,11 @@ export async function autoSetup(home: string, agents: AgentServices): Promise<Se
         titles.add(title);
       }
     }
-    if (unset && assistant === null) {
+    if (assistant === null) {
       const frontier: Profile | undefined = [...newProfiles, ...profiles.profiles].find((profile) => profile.account === id && profile.id === `${name}-frontier`)
         ?? tiers.tiers.frontier.map((profileId) => profiles.profiles.find((profile) => profile.id === profileId)).find((profile) => profile?.account === id);
       if (frontier) {
-        assistant = { profile: frontier.id };
+        assistant = frontier.id;
         titles.add(title);
       }
     }
@@ -249,9 +248,9 @@ export async function autoSetup(home: string, agents: AgentServices): Promise<Se
     for (const tier of TierName.options) if (additions[tier].length) entries[tier] = [...tiers.tiers[tier], ...additions[tier]];
     changes.push(["tiers", tierFile, { ...tierFile.value, tiers: entries }]);
   }
-  if (assistant !== settings.assistant) {
+  if (assistant !== settings.assistant.profile) {
     const file: File = files.get("settings")!;
-    const value: Record<string, unknown> = { ...file.value, assistant };
+    const value: Record<string, unknown> = { ...file.value, assistant: { ...file.value.assistant as Record<string, unknown> | undefined, profile: assistant } };
     delete value.firstRunDone;
     changes.push(["settings", file, value]);
   }

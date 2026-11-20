@@ -13,7 +13,7 @@ import s from "./CommandPalette.module.css";
 import layout from "./Layout.module.css";
 
 const screens: { name: string; path: string }[] = [
-  { name: "Factory", path: "/" }, { name: "Jobs", path: "/jobs" }, { name: "Inbox", path: "/inbox" },
+  { name: "Factory", path: "/" }, { name: "Jobs", path: "/jobs" }, { name: "Notifications", path: "/notifications" },
   { name: "Projects", path: "/projects" }, { name: "New project", path: "/projects/new" }, { name: "Library", path: "/library" },
   { name: "Usage", path: "/usage" }, { name: "Settings", path: "/settings" },
 ];

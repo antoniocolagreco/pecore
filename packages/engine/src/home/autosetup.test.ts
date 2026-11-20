@@ -123,8 +123,8 @@ describe("auto-setup", () => {
       },
     });
     expect(await s.json("settings.json")).toEqual({ assistant: { profile: "claude-code-frontier" } });
-    expect(app.engine.global().settings.assistant).toEqual({ profile: "claude-code-frontier" });
-    expect(app.engine.global().settings.orchestrator).toBeNull();
+    expect(app.engine.global().settings.assistant.profile).toBe("claude-code-frontier");
+    expect(app.engine.global().settings.orchestrator.profile).toBeNull();
     expect(app.engine.global().profiles.profiles).toHaveLength(12);
     expect(await s.head()).toMatch(/ auto-setup: Set up Claude Code, Codex, and OpenCode: 12 profiles added$/);
     expect(s.notices).toEqual([{ kind: "auto-setup", title: "PeCore setup", body: "Set up Claude Code, Codex, and OpenCode: 12 profiles added" }]);
@@ -235,13 +235,13 @@ describe("auto-setup", () => {
     await app.close();
   });
 
-  it("uses the account and orchestrator the user already has; with no ranked model every tier uses the harness default", async () => {
+  it("uses the account and Assistant model the user already has; with no ranked model every tier uses the harness default", async () => {
     const s = await setup();
     await s.harnesses.set("codex", { ...codex, variants: false, models: { "gpt-9": ["low", "medium", "high"], "gpt-9-codex": ["medium"] } });
     await mkdir(s.home, { recursive: true });
     await writeFile(join(s.home, "accounts.json"), JSON.stringify({ accounts: [{ id: "work", kind: "model", provider: "openai", connector: "codex", login: "subscription" }] }));
     await writeFile(join(s.home, "profiles.json"), JSON.stringify({ profiles: [{ id: "mine", account: "work", model: "gpt-9" }] }));
-    await writeFile(join(s.home, "settings.json"), JSON.stringify({ orchestrator: { profile: "mine" } }));
+    await writeFile(join(s.home, "settings.json"), JSON.stringify({ assistant: { profile: "mine" } }));
     const app = await s.start();
 
     expect(await s.json("accounts.json")).toEqual({ accounts: [{ id: "work", kind: "model", provider: "openai", connector: "codex", login: "subscription" }] });
@@ -254,7 +254,7 @@ describe("auto-setup", () => {
         { id: "codex-cheap", account: "work", model: "gpt-9", effort: "low" },
       ],
     });
-    expect(await s.json("settings.json")).toEqual({ orchestrator: { profile: "mine" } });
+    expect(await s.json("settings.json")).toEqual({ assistant: { profile: "mine" } });
     expect(await s.head()).toMatch(/ auto-setup: Set up Codex: 4 profiles added$/);
     await app.close();
   });

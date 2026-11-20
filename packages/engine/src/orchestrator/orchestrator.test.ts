@@ -85,7 +85,7 @@ async function until<T>(fn: () => T | undefined | false | Promise<T | undefined 
   }
 }
 
-async function setup(build: (root: string) => object[][], extra: { source?: boolean; orchestrator?: (root: string) => object[][] } = {}) {
+async function setup(build: (root: string) => object[][], extra: { source?: boolean; orchestrator?: (root: string) => object[][]; compaction?: object } = {}) {
   const root = await tempDir();
   const scripts: object[][] = build(root);
   const orchestratorScripts: object[][] = extra.orchestrator?.(root) ?? [];
@@ -122,11 +122,11 @@ async function setup(build: (root: string) => object[][], extra: { source?: bool
       { id: "background", kind: "model", provider: "fakeco", connector: "fake-background", login: "subscription" },
     ] }));
     await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p1", account: "fake", model: "m1" }, { id: "p2", account: "background", model: "m2" }] }));
-    await writeFile(join(home, "settings.json"), JSON.stringify({ assistant: { profile: "p1" }, orchestrator: { profile: "p2" } }));
+    await writeFile(join(home, "settings.json"), JSON.stringify({ assistant: { profile: "p1" }, orchestrator: { profile: "p2", ...extra.compaction && { compaction: extra.compaction } } }));
   } else {
     await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [{ id: "fake", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" }] }));
     await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p1", account: "fake", model: "m1" }] }));
-    await writeFile(join(home, "settings.json"), JSON.stringify({ orchestrator: { profile: "p1" } }));
+    await writeFile(join(home, "settings.json"), JSON.stringify({ assistant: { profile: "p1" } }));
   }
   await writeFile(join(home, "tiers.json"), JSON.stringify({ tiers: { strong: ["p1"] } }));
   const agents = { connectorsDir: connectors, adaptersDir: join(root, "adapters"), adapters: {} };
@@ -160,6 +160,7 @@ function mcp(tokenFile: string) {
 }
 
 const tokenFileOf = (chatId: string) => join(process.env.HOME!, ".pecore-chats", chatId, "mcp-token");
+const intakeChat = (t: { engine: Engine }) => t.engine.orchestrator.chats().find(({ project }) => project === "demo")!.id;
 const plan = [
   { key: "api", title: "API", ticketText: "add the endpoint", dependsOn: [] },
   { key: "ui", title: "UI", ticketText: "add the screen", dependsOn: ["api"] },
@@ -186,13 +187,14 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       const system: { kind: string; title: string; body: string }[] = [];
       t.engine.on("live", (event: LiveMessage) => events.push(event));
       t.engine.on("notify", (n: { kind: string; title: string; body: string }) => system.push(n));
-      const chat: ChatDetail["chat"] = await t.call("getAssistantChat");
-      expect(await t.call("getAssistantChat")).toEqual(chat);
-      const detail = (): Promise<ChatDetail> => t.call("getChat", { params: { id: chat.id } });
-      const sent = await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Say two things" } });
+      const detail = (): Promise<ChatDetail> => t.call("getChat");
+      const sent = await t.call("sendChatMessage", { body: { text: "Say two things" } });
 
-      await until(() => events.some((event) => event.type === "chat.streaming" && event.chatId === chat.id));
-      const first: ChatDetail = await detail();
+      const first: ChatDetail = await until(async () => {
+        const snapshot: ChatDetail = await detail();
+        return !!snapshot.streamingReply && snapshot;
+      });
+      expect(events.some(({ type }) => type === "chat.changed")).toBe(true);
       expect(first.streamingReply).toMatchObject({ role: "assistant", state: "running", text: "First", replyTo: sent.id });
       expect(first.messages.map(({ state }) => state)).toEqual(["running"]);
 
@@ -224,22 +226,21 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "after.json") }, ...replyWith("Still here.")],
     ]);
     try {
-      const chat: ChatDetail["chat"] = await t.call("getAssistantChat");
-      const detail = (): Promise<ChatDetail> => t.call("getChat", { params: { id: chat.id } });
+      const detail = (): Promise<ChatDetail> => t.call("getChat");
       expect((await detail()).supportsImages).toBe(false);
       const settled = (count: number) => until(async () => {
         const snapshot: ChatDetail = await detail();
         return snapshot.messages.length === count && snapshot.messages.every(({ state }) => state === "completed") && snapshot;
       });
-      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Hi" } });
+      await t.call("sendChatMessage", { body: { text: "Hi" } });
       await settled(2);
-      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "/compact" } });
+      await t.call("sendChatMessage", { body: { text: "/compact" } });
       const compacted: ChatDetail = await settled(3);
       expect(compacted.messages.map(({ role, text }) => [role, text])).toEqual([["user", "Hi"], ["assistant", "Hello."], ["user", "/compact"]]);
       expect(compacted.streamingReply).toBeNull();
       expect((JSON.parse(await readFile(join(t.root, "compact.json"), "utf8")) as { params: { prompt: unknown } }).params.prompt).toEqual([{ type: "text", text: "/compact" }]);
 
-      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Next order" } });
+      await t.call("sendChatMessage", { body: { text: "Next order" } });
       await settled(5);
       const after: string = await readFile(join(t.root, "after.json"), "utf8");
       expect(after).toContain("Next order");
@@ -257,11 +258,10 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "compact.json") }, usage(20_000), ...replyWith("")],
     ]);
     try {
-      const chat: ChatDetail["chat"] = await t.call("getAssistantChat");
-      expect((await t.call("getChat", { params: { id: chat.id } })).supportsImages).toBe(false);
-      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Hi" } });
+      expect((await t.call("getChat")).supportsImages).toBe(false);
+      await t.call("sendChatMessage", { body: { text: "Hi" } });
       const compacted: ChatDetail = await until(async () => {
-        const snapshot: ChatDetail = await t.call("getChat", { params: { id: chat.id } });
+        const snapshot: ChatDetail = await t.call("getChat");
         return snapshot.messages.length === 3 && snapshot.messages.every(({ state }) => state === "completed") && snapshot;
       });
       expect(compacted.messages.map(({ role, text }) => [role, text])).toEqual([["user", "Hi"], ["assistant", "Long answer."], ["user", "/compact"]]);
@@ -281,17 +281,16 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     ]);
     try {
       t.engine.orchestrator.idleCompactionMs = 300;
-      const chat: ChatDetail["chat"] = await t.call("getAssistantChat");
-      expect((await t.call("getChat", { params: { id: chat.id } })).supportsImages).toBe(false);
+      expect((await t.call("getChat")).supportsImages).toBe(false);
       const settled = (count: number) => until(async () => {
-        const snapshot: ChatDetail = await t.call("getChat", { params: { id: chat.id } });
+        const snapshot: ChatDetail = await t.call("getChat");
         return snapshot.messages.length === count && snapshot.messages.every(({ state }) => state === "completed") && snapshot;
       });
-      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Hi" } });
+      await t.call("sendChatMessage", { body: { text: "Hi" } });
       await settled(2);
       await new Promise((r) => setTimeout(r, 600));
-      expect((await t.call("getChat", { params: { id: chat.id } })).messages).toHaveLength(2);
-      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "More" } });
+      expect((await t.call("getChat")).messages).toHaveLength(2);
+      await t.call("sendChatMessage", { body: { text: "More" } });
       const started: number = Date.now();
       const compacted: ChatDetail = await settled(5);
       expect(Date.now() - started).toBeGreaterThanOrEqual(300);
@@ -311,14 +310,13 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     ]);
     try {
       t.engine.orchestrator.idleCompactionMs = 800;
-      const chat: ChatDetail["chat"] = await t.call("getAssistantChat");
-      expect((await t.call("getChat", { params: { id: chat.id } })).supportsImages).toBe(false);
-      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Hi" } });
-      await until(async () => (await t.call("getChat", { params: { id: chat.id } })).messages.length === 2);
-      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Again" } });
-      await until(async () => (await t.call("getChat", { params: { id: chat.id } })).messages.at(-1)?.state === "failed");
+      expect((await t.call("getChat")).supportsImages).toBe(false);
+      await t.call("sendChatMessage", { body: { text: "Hi" } });
+      await until(async () => (await t.call("getChat")).messages.length === 2);
+      await t.call("sendChatMessage", { body: { text: "Again" } });
+      await until(async () => (await t.call("getChat")).messages.at(-1)?.state === "failed");
       await new Promise((r) => setTimeout(r, 1500));
-      expect((await t.call("getChat", { params: { id: chat.id } })).messages.map(({ text }) => text)).toEqual(["Hi", "Long.", "Again"]);
+      expect((await t.call("getChat")).messages.map(({ text }) => text)).toEqual(["Hi", "Long.", "Again"]);
     } finally {
       await t.close();
     }
@@ -332,22 +330,21 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "compact.json") }, ...replyWith("")],
     ]);
     const settings: string = join(t.root, "home", "settings.json");
-    await writeFile(settings, JSON.stringify({ orchestrator: { profile: "p1" }, compaction: { auto: 270_000, max: 280_000 } }));
+    await writeFile(settings, JSON.stringify({ assistant: { profile: "p1", compaction: { auto: 270_000, max: 280_000 } } }));
     await t.close();
     const first = await t.open();
-    const chat: ChatDetail["chat"] = await first.call("getAssistantChat");
-    expect((await first.call("getChat", { params: { id: chat.id } })).supportsImages).toBe(false);
-    await first.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Hi" } });
-    await until(async () => (await first.call("getChat", { params: { id: chat.id } })).messages.length === 2);
+    expect((await first.call("getChat")).supportsImages).toBe(false);
+    await first.call("sendChatMessage", { body: { text: "Hi" } });
+    await until(async () => (await first.call("getChat")).messages.length === 2);
     await new Promise((r) => setTimeout(r, 300));
     expect(existsSync(join(t.root, "compact.json"))).toBe(false);
     await first.close();
-    await writeFile(settings, JSON.stringify({ orchestrator: { profile: "p1" } }));
+    await writeFile(settings, JSON.stringify({ assistant: { profile: "p1" } }));
     const again = await t.open();
     try {
       await until(() => existsSync(join(t.root, "compact.json")));
       await until(async () => {
-        const snapshot: ChatDetail = await again.call("getChat", { params: { id: chat.id } });
+        const snapshot: ChatDetail = await again.call("getChat");
         return snapshot.messages.at(-1)?.text === "/compact" && snapshot.messages.at(-1)?.state === "completed";
       });
       expect(existsSync(join(t.root, "compact.json"))).toBe(true);
@@ -366,17 +363,16 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
         { expect: "session/prompt" }, ...replyWith("Still here.")],
     ]);
     try {
-      const chat: ChatDetail["chat"] = await t.call("getAssistantChat");
-      expect((await t.call("getChat", { params: { id: chat.id } })).supportsImages).toBe(false);
+      expect((await t.call("getChat")).supportsImages).toBe(false);
       const settled = (count: number) => until(async () => {
-        const snapshot: ChatDetail = await t.call("getChat", { params: { id: chat.id } });
+        const snapshot: ChatDetail = await t.call("getChat");
         return snapshot.messages.length === count && snapshot.messages.every(({ state }) => state === "completed") && snapshot;
       });
-      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Hi" } });
+      await t.call("sendChatMessage", { body: { text: "Hi" } });
       await settled(2);
-      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "/compact" } });
+      await t.call("sendChatMessage", { body: { text: "/compact" } });
       await settled(3);
-      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Next order" } });
+      await t.call("sendChatMessage", { body: { text: "Next order" } });
       await settled(5);
       expect((JSON.parse(await readFile(join(t.root, "resume.json"), "utf8")) as { params: { sessionId: string } }).params.sessionId).toBe("S1");
     } finally {
@@ -399,13 +395,12 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     await until(() => ctx.db.db.prepare("SELECT state FROM jobs WHERE id = ? AND state = 'succeeded'").get(bigJob));
     const bigRun = (ctx.db.db.prepare("SELECT id FROM node_runs WHERE job_id = ?").get(bigJob) as { id: string }).id;
 
-    const chat = await t.call("getAssistantChat");
-    const message = await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Add an API and a UI job to demo" } });
+    const message = await t.call("sendChatMessage", { body: { text: "Add an API and a UI job to demo" } });
     await until(() => existsSync(join(t.root, "session-new.json")));
     const servers = (JSON.parse(await readFile(join(t.root, "session-new.json"), "utf8")) as { params: { mcpServers: { args: string[] }[] } }).params.mcpServers;
     expect(servers).toHaveLength(1);
     const tokenFile = servers[0]!.args.at(-1)!;
-    expect(tokenFile).toBe(tokenFileOf(chat.id));
+    expect(tokenFile).toBe(tokenFileOf("assistant"));
     expect((await stat(tokenFile)).mode & 0o777).toBe(0o600);
     const credentials = JSON.parse(await readFile(tokenFile, "utf8")) as { url: string; token: string };
     expect(JSON.stringify(servers)).not.toContain(credentials.token);
@@ -442,7 +437,7 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
 
     await writeFile(join(t.root, "done"), "");
     const detail = await until(async () => {
-      const d = await t.call("getChat", { params: { id: chat.id } });
+      const d = await t.call("getChat");
       return d.messages.some((x) => x.role === "assistant" && x.text.includes("Two jobs created.")) && d;
     });
     expect(detail.messages.find((x) => x.id === message.id)?.state).toBe("completed");
@@ -454,48 +449,37 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       [...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "first.json") }, { sleep: 60000 }],
       [...init(), { expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }, { expect: "session/prompt" }, { dump: join(root, "retried.json") }, { waitFile: join(root, "done") }, ...replyWith("Retried.")],
     ]);
-    const chat = await t.call("getAssistantChat");
-    const message = await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Add an API and a UI job to demo" } });
+    const message = await t.call("sendChatMessage", { body: { text: "Add an API and a UI job to demo" } });
     await until(() => existsSync(join(t.root, "first.json")));
-    expect((await t.call("getChat", { params: { id: chat.id } })).messages.find((x) => x.id === message.id)?.state).toBe("running");
+    expect((await t.call("getChat")).messages.find((x) => x.id === message.id)?.state).toBe("running");
     await t.close();
 
     const again = await t.open();
-    const interrupted = await again.call("getChat", { params: { id: chat.id } });
+    const interrupted = await again.call("getChat");
     expect(interrupted.messages.find((x) => x.id === message.id)?.state).toBe("interrupted");
-    await again.call("retryChatMessage", { params: { id: chat.id, messageId: message.id } });
+    await again.call("retryChatMessage", { params: { id: message.id } });
     await until(() => existsSync(join(t.root, "retried.json")));
-    const m = mcp(tokenFileOf(chat.id));
+    const m = mcp(tokenFileOf("assistant"));
     await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
     expect((await m.tool("create_jobs", { project: "demo", plan })).error).toBeUndefined();
     m.close();
     const { ctx } = again.engine.project("demo");
     expect(ctx.db.db.prepare("SELECT count(*) AS n FROM jobs WHERE order_id = ?").get(message.id)).toEqual({ n: 2 });
     await writeFile(join(t.root, "done"), "");
-    await until(async () => (await again.call("getChat", { params: { id: chat.id } })).messages.some((x) => x.role === "assistant" && x.text.includes("Retried.")));
+    await until(async () => (await again.call("getChat")).messages.some((x) => x.role === "assistant" && x.text.includes("Retried.")));
     await again.close();
   }, 60000);
 
-  it("runs the Orchestrator on its own model with limited tools, and reports the jobs it creates in the Assistant chat", async () => {
-    const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
-    const t = await setup((root) => [
-      init(),
-      [...init(), ...newSession, { expect: "session/prompt" }, ...replyWith("Hello.")],
-      [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "assistant.json") }, ...replyWith("Done.")],
-    ], { source: true, orchestrator: (root) => [[...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "intake.json") }, { waitFile: join(root, "done") }, ...replyWith("Planned.")]] });
+  it("runs the Orchestrator on its own model with limited tools, and notifies the jobs it creates", async () => {
+    const t = await setup(() => [init()], { source: true, orchestrator: (root) => [[...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "intake.json") }, { waitFile: join(root, "done") }, ...replyWith("Planned.")]] });
     try {
-      const assistant: ChatDetail["chat"] = await t.call("getAssistantChat");
-      const detail = (): Promise<ChatDetail> => t.call("getChat", { params: { id: assistant.id } });
-      expect((await detail()).supportsImages).toBe(false);
-      await t.call("sendChatMessage", { params: { id: assistant.id }, body: { text: "Hi" } });
-      await until(async () => (await detail()).messages.length === 2);
-
+      const system: { kind: string; title: string; body: string }[] = [];
+      t.engine.on("notify", (n: { kind: string; title: string; body: string }) => system.push(n));
       const { ctx, executor } = t.engine.project("demo");
       const sourceItem = await until(() => ctx.db.db.prepare("SELECT id, subject_hash FROM human_queue WHERE state = 'open' AND kind = 'source-node'").get() as { id: string; subject_hash: string } | undefined);
       await executor.answer(sourceItem.id, "confirm", null, sourceItem.subject_hash);
       await until(() => existsSync(join(t.root, "intake.json")));
-      const intake = t.engine.orchestrator.list().find((c) => c.projectId === "demo")!;
-      const m = mcp(tokenFileOf(intake.id));
+      const m = mcp(tokenFileOf(intakeChat(t)));
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       expect((await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name).sort())
         .toEqual(["comment_ticket", "create_jobs", "job_status", "list_projects", "list_recipes", "read_artifact", "read_replies", "read_ticket"]);
@@ -505,18 +489,39 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       await m.tool("create_jobs", { project: "demo", plan: fix });
       m.close();
       const jobId: string = (ctx.db.db.prepare("SELECT id FROM jobs WHERE order_key = 'fix'").get() as { id: string }).id;
-      const reports = (await detail()).messages.filter(({ role }) => role === "orchestrator");
-      expect(reports).toMatchObject([{ text: "Demo, ticket 7: created the job Fix login.", context: [{ project: "demo", jobId }], state: "completed" }]);
-      expect((await detail()).chat.unread).toBeGreaterThan(0);
-
-      await t.call("sendChatMessage", { params: { id: assistant.id }, body: { text: "What happened?" } });
-      await until(() => existsSync(join(t.root, "assistant.json")));
-      const prompt: string = await readFile(join(t.root, "assistant.json"), "utf8");
-      expect(prompt).toContain("Orchestrator reports since the last message");
-      expect(prompt).toContain("created the job Fix login");
-      expect(prompt).toContain("PeCore's Assistant");
+      const reports = (await t.call("listNotifications")).filter(({ kind }) => kind === "orchestrator");
+      expect(reports).toMatchObject([{ title: "Demo, ticket 7", body: "The Orchestrator created the job Fix login.", target: { project: "demo", job: jobId, item: null }, seen: false }]);
+      expect(system).toContainEqual({ kind: "orchestrator", title: "Demo, ticket 7", body: "The Orchestrator created the job Fix login." });
+      expect((await t.call("getChat")).messages).toEqual([]);
+      const open = (): number => (ctx.db.db.prepare("SELECT COUNT(*) AS n FROM human_queue WHERE state = 'open' AND kind != 'agent-question'").get() as { n: number }).n;
+      expect((await t.call("getStatus")).notifications).toBeGreaterThan(open());
+      await t.call("markNotificationsSeen");
+      expect((await t.call("listNotifications")).every(({ seen }) => seen)).toBe(true);
+      expect((await t.call("getStatus")).notifications).toBe(open());
       expect(await readFile(join(t.root, "intake.json"), "utf8")).toContain("PeCore's Orchestrator");
       await writeFile(join(t.root, "done"), "");
+    } finally {
+      await t.close();
+    }
+  }, 60000);
+
+  it("compacts an Orchestrator chat with the Orchestrator's own thresholds", async () => {
+    const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
+    const t = await setup(() => [init()], {
+      source: true,
+      compaction: { auto: 500, max: 1000 },
+      orchestrator: (root) => [
+        [...init(), ...newSession, { expect: "session/prompt" }, usage(1000), ...replyWith("Planned.")],
+        [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "compact.json") }, ...replyWith("")],
+      ],
+    });
+    try {
+      const { ctx, executor } = t.engine.project("demo");
+      const sourceItem = await until(() => ctx.db.db.prepare("SELECT id, subject_hash FROM human_queue WHERE state = 'open' AND kind = 'source-node'").get() as { id: string; subject_hash: string } | undefined);
+      await executor.answer(sourceItem.id, "confirm", null, sourceItem.subject_hash);
+      await until(() => existsSync(join(t.root, "compact.json")));
+      expect((JSON.parse(await readFile(join(t.root, "compact.json"), "utf8")) as { params: { prompt: unknown } }).params.prompt).toEqual([{ type: "text", text: "/compact" }]);
+      expect(t.engine.global().settings.assistant.compaction.max).toBe(256_000);
     } finally {
       await t.close();
     }
@@ -534,8 +539,7 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       const sourceItem = await until(() => ctx.db.db.prepare("SELECT id, subject_hash FROM human_queue WHERE state = 'open' AND kind = 'source-node'").get() as { id: string; subject_hash: string } | undefined);
       await executor.answer(sourceItem.id, "confirm", null, sourceItem.subject_hash);
       await until(() => existsSync(join(t.root, "intake.json")));
-      const intake = t.engine.orchestrator.list().find((c) => c.projectId === "demo")!;
-      const m = mcp(tokenFileOf(intake.id));
+      const m = mcp(tokenFileOf(intakeChat(t)));
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       const ask = async (text: string) => {
         const result = await m.tool("comment_ticket", { project: "demo", ticketId: "7", text });
@@ -560,12 +564,12 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       m.close();
       await writeFile(join(t.root, "done"), "");
 
-      const assistant: ChatDetail["chat"] = await t.call("getAssistantChat");
-      const messages = (await t.call("getChat", { params: { id: assistant.id } })).messages;
-      expect(messages.filter(({ role }) => role === "orchestrator").map(({ text }) => text)).toEqual(Array(3).fill("Demo, ticket 7: wants to post a question on the ticket. Approve it in Inbox."));
-      await t.call("sendChatMessage", { params: { id: assistant.id }, body: { text: "Ask on ticket 7 which page it is" } });
+      const reports = (await t.call("listNotifications")).filter(({ kind }) => kind === "orchestrator");
+      expect(reports.map(({ body, target }) => [body, target?.item])).toEqual([third, second, first].map((id) => ["The Orchestrator wants to post a question on the ticket.", id]));
+      expect((await t.call("getChat")).supportsImages).toBe(false);
+      await t.call("sendChatMessage", { body: { text: "Ask on ticket 7 which page it is" } });
       await until(() => existsSync(join(t.root, "assistant.json")));
-      const own = mcp(tokenFileOf(assistant.id));
+      const own = mcp(tokenFileOf("assistant"));
       await own.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       expect((await own.tool("comment_ticket", { project: "demo", ticketId: "7", text: "Which page?" })).result!.isError).not.toBe(true);
       own.close();
@@ -587,9 +591,7 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     expect(promptText).toContain("the login button does nothing");
     expect(promptText.toLowerCase()).toContain("untrusted");
     const orderId = (ctx.db.db.prepare("SELECT order_id FROM tickets_seen WHERE ticket_id = '7'").get() as { order_id: string }).order_id;
-    const intake = t.engine.orchestrator.list().find((c) => c.projectId === "demo")!;
-    expect((await t.call("getAssistantChat")).id).not.toBe(intake.id);
-    const m = mcp(tokenFileOf(intake.id));
+    const m = mcp(tokenFileOf(intakeChat(t)));
     await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
     expect((await m.tool("create_jobs", { project: "demo", plan: [{ key: "fix", title: "Fix login", ticketText: "fix the login button", dependsOn: [] }] })).error).toBeUndefined();
     m.close();
@@ -604,9 +606,8 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       [...init(true)],
       [...init(true), ...newSession, { expect: "session/prompt" }, { dump: join(root, "prompt.json") }, ...replyWith("Seen.")],
     ]);
-    const chat = await t.call("getAssistantChat");
-    const attachment = await t.call("uploadChatAttachment", { params: { id: chat.id }, body: { mime: "image/png", data: png } });
-    await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "This is the bug", attachmentIds: [attachment.id] } });
+    const attachment = await t.call("uploadChatAttachment", { body: { mime: "image/png", data: png } });
+    await t.call("sendChatMessage", { body: { text: "This is the bug", attachmentIds: [attachment.id] } });
     await until(() => existsSync(join(t.root, "prompt.json")));
     const prompt = (JSON.parse(await readFile(join(t.root, "prompt.json"), "utf8")) as { params: { prompt: { type: string; mimeType?: string; data?: string }[] } }).params.prompt;
     expect(prompt).toContainEqual(expect.objectContaining({ type: "image", mimeType: "image/png", data: png }));
@@ -615,10 +616,9 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
 
   it("refuses an image when the connector does not support images", async () => {
     const t = await setup(() => [[...init(false)], [...init(false)], [...init(false)]]);
-    const chat = await t.call("getAssistantChat");
     const refused = async () => {
-      const attachment = await t.call("uploadChatAttachment", { params: { id: chat.id }, body: { mime: "image/png", data: png } });
-      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "This is the bug", attachmentIds: [attachment.id] } });
+      const attachment = await t.call("uploadChatAttachment", { body: { mime: "image/png", data: png } });
+      await t.call("sendChatMessage", { body: { text: "This is the bug", attachmentIds: [attachment.id] } });
     };
     await expect(refused()).rejects.toMatchObject({ status: expect.any(Number) });
     await t.close();

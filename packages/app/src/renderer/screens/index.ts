@@ -1,7 +1,7 @@
 export { Factory } from "./Factory";
 export { Jobs } from "./Jobs";
 export { JobView } from "./JobView";
-export { Inbox } from "./Inbox";
+export { Notifications } from "./Notifications";
 export { ChatPanel } from "./Orchestrator";
 export { Projects } from "./Projects";
 export { ProjectPage } from "./ProjectPage";

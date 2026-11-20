@@ -125,7 +125,7 @@ async function updateTray(): Promise<void> {
   const [status, jobs] = await Promise.all([call("getStatus"), call("listJobs", { query: { archived: "false" } })]).catch(() => [null, null] as const);
   if (!status || !jobs) return;
   const running = jobs.filter((j) => j.state === "running").length;
-  tray.setToolTip(`PeCore: ${running} running, ${status.inbox} in the Inbox`);
+  tray.setToolTip(`PeCore: ${running} running, ${status.notifications} notifications`);
 }
 
 async function quit(): Promise<void> {

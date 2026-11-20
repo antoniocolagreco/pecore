@@ -74,7 +74,7 @@ function Row({ row, factory, collapsed, toggle, now }: { row: JobRow; factory: b
       else {
         const { reasons } = await call("whyJob", { params: { id: job.id } });
         const item: string | null | undefined = reasons.find((reason) => reason.queueItemId)?.queueItemId;
-        if (item) to = `/inbox/${encodeURIComponent(item)}`;
+        if (item) to = `/notifications/${encodeURIComponent(item)}`;
       }
     }
     await navigate(to);

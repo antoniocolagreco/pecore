@@ -8,7 +8,7 @@ import { removeAs } from "./workdir/fs-as";
 import { BuiltInHarness, defaultJobLimit, roleProfile, withForgeHosts } from "@pecore/schemas";
 import { listOptions, satisfies } from "@pecore/agents";
 import type { LoginState } from "@pecore/agents";
-import type { Account, Accounts, ForgeAccount, JobState, LiveMessage, LoginView, Profiles, ProjectInput, Settings, SetupView, Tiers, WhyView } from "@pecore/schemas";
+import type { Account, Accounts, ForgeAccount, JobState, LiveMessage, LoginView, NotificationTarget, Profiles, ProjectInput, Settings, SetupView, Tiers, WhyView } from "@pecore/schemas";
 import type { ExportProjectBody, ExportProjectResult, ImportProjectBody, ImportProjectResult } from "@pecore/schemas";
 import { AgentServices, protectedUser, spawnFor } from "./accounts/agents";
 import type { AgentPaths, LoginInfo } from "./accounts/agents";
@@ -171,10 +171,7 @@ export class Engine extends EventEmitter {
       this.setupHarnesses = harnesses;
       if (!changes) return;
       await this.reloadGlobal();
-      const notification: Pick<Notification, "kind" | "title" | "body"> = { kind: "auto-setup", title: "PeCore setup", body: changes.message };
-      this.chats.addNotification(notification);
-      this.emit("notify", notification);
-      this.live({ type: "notify", ...notification });
+      this.notify({ kind: "auto-setup", title: "PeCore setup", body: changes.message });
       for (const [kind, content] of Object.entries(changes.files)) {
         this.definitionChanged(`${kind}.json`, createHash("sha256").update(content).digest("hex"));
       }
@@ -394,10 +391,7 @@ export class Engine extends EventEmitter {
       user: this.settings.protectedMode ? protectedUser : appUser,
       settings: this.settings,
       pools: this.pools,
-      notify: (n) => {
-        this.chats.addNotification({ kind: n.kind, title: n.title, body: n.body, target: { project: id, job: n.jobId } });
-        this.emit("notify", { ...n, projectId: id });
-      },
+      notify: (n) => this.notify({ kind: n.kind, title: n.title, body: n.body, target: { project: id, job: n.jobId, item: null } }),
       changed: (jobId) => {
         this.emit("job", { projectId: id, jobId });
         this.live({ type: "job.updated", projectId: id, jobId });
@@ -491,12 +485,24 @@ export class Engine extends EventEmitter {
     return [...this.projects.values()].reduce((n, { executor }) => n + executor.jobs().filter((j) => j.state === "paused" && j.waiting_reason === "quit").length, 0);
   }
 
-  inboxCount(): number {
-    return [...this.projects.values()].reduce((n, { ctx }) => n + (ctx.db.db.prepare("SELECT COUNT(*) AS n FROM human_queue WHERE state = 'open' AND kind != 'agent-question'").get() as { n: number }).n, 0);
+  notificationCount(): number {
+    const open: number = [...this.projects.values()].reduce((n, { ctx }) => n + (ctx.db.db.prepare("SELECT COUNT(*) AS n FROM human_queue WHERE state = 'open' AND kind != 'agent-question'").get() as { n: number }).n, 0);
+    return open + this.chats.unseenNotifications();
   }
 
   notifications(): Notification[] {
     return this.chats.notifications();
+  }
+
+  notify(n: { kind: string; title: string; body: string; target?: NotificationTarget }): void {
+    this.chats.addNotification(n);
+    this.emit("notify", { kind: n.kind, title: n.title, body: n.body });
+    this.live({ type: "notify", kind: n.kind, title: n.title, body: n.body });
+  }
+
+  markNotificationsSeen(): void {
+    this.chats.markNotificationsSeen();
+    this.live({ type: "notify", kind: "seen", title: "", body: "" });
   }
 
   private kick(): void {
@@ -559,7 +565,7 @@ export class Engine extends EventEmitter {
       this.setCreating(id, null);
       for (const f of findings) {
         const body = `${f.path} can be read by other users; run: ${f.fix.join(" ")}`;
-        this.chats.addNotification({ kind: "home-check", title: "Login files are readable", body, target: { project: id, job: null } });
+        this.notify({ kind: "home-check", title: "Login files are readable", body, target: { project: id, job: null, item: null } });
       }
     } catch (e) {
       this.setCreating(id, { step: creation.step, error: (e as Error).message });

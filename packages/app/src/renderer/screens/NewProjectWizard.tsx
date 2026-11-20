@@ -56,7 +56,7 @@ function ConfirmProject({ id }: { id: string }) {
         <Button disabled={!connected} onClick={finish}>Skip</Button>
         <Button kind="primary" disabled={!connected || !queue.data || !!queue.error || items.length > 0} onClick={finish}>Finish</Button>
       </div>
-      {items.length > 0 && <p className={ui.muted}>Skip leaves open confirmations in the Inbox.</p>}
+      {items.length > 0 && <p className={ui.muted}>Skip leaves open confirmations in Notifications.</p>}
     </Page>
   );
 }

@@ -181,7 +181,7 @@ function ItemDetail({ item, replacement, reload, onDone }: {
       {locked && (
         <Alert
           tone={item.state === "cancelled" ? "neutral" : "success"}
-          actions={replacement && connected && <Link to={`/inbox/${replacement.id}`}>Open newest item</Link>}
+          actions={replacement && connected && <Link to={`/notifications/${replacement.id}`}>Open newest item</Link>}
         >
           {item.state === "cancelled" ? "Item cancelled." : `Item resolved${item.choice ?? submitted ? ` (${item.choice ?? submitted})` : ""}.`}
           {item.note && <div>{item.note}</div>}

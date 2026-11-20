@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { NotificationTarget } from "@pecore/schemas";
 import type { Engine } from "../../main";
 import { NotFoundError } from "../../main";
 import { logEvents } from "../../observability/log-events";
@@ -14,11 +15,15 @@ export function statusHandlers(engine: Engine, version: string) {
       version,
       globalPause: engine.globalPause,
       interrupted: engine.interrupted(),
-      inbox: engine.inboxCount(),
+      notifications: engine.notificationCount(),
       homeFindings: (await checkHome().catch(() => [])).map((f) => ({ path: f.path, fix: f.fix })),
     }),
     listNotifications: async () =>
-      engine.notifications().map((n) => ({ id: n.id, kind: n.kind, title: n.title, body: n.body, createdAt: n.createdAt, target: n.target === null ? null : (JSON.parse(n.target) as { project: string | null; job: string | null }) })),
+      engine.notifications().map((n) => ({ ...n, target: n.target === null ? null : NotificationTarget.parse(JSON.parse(n.target)) })),
+    markNotificationsSeen: async () => {
+      engine.markNotificationsSeen();
+      return { ok: true as const };
+    },
     getLog: async ({ params, query }) => {
       for (const { ctx } of engine.projects.values()) {
         const row = ctx.db.db.prepare("SELECT log_path FROM attempts WHERE id = ?").get(params.id) as { log_path: string } | undefined;
