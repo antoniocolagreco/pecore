@@ -41,6 +41,9 @@ Format: decision. **Why:** Antonio's reason. **Replaces:** what it changes, if a
 30. The project filter in the top bar is removed. **Why:** it shows on every page and works on three; "L'app sembra una accozzaglia di slop". **Replaces:** IA5, UI13, the top bar filter.
 31. The New job button and its form are removed; jobs start from the orchestrator chat. **Why:** same as 30; it duplicated the chat with internal concepts (recipe, base branch, parent job). **Replaces:** IC10, New job modal.
 
+32. Layout: menu on the left, orchestrator chat always on screen on the right. The Orchestrator page goes away. **Why:** "la pagina orchestrator è inutile effettivamente. Voglio la chat dell'orchestratore sempre on screen." **Replaces:** the Orchestrator page and the mini chat closed by default (ui-design.md UI2b).
+33. The app must work in a 1024×720 window. **Why:** "Altrimenti nel MacBook NEO non entra." **Replaces:** no minimum size was set (the window could shrink to 960×600 with no layout rules).
+
 ## Open
 
 - Shipped nodes default to "Automatic" with an optional explicit model (A, recommended), or always need an explicit model (B).
