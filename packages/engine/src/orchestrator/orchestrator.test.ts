@@ -433,7 +433,13 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
 
     const m = mcp(tokenFile);
     expect((await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } })).result).toBeDefined();
-    expect((await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name)).toEqual(expect.arrayContaining(["create_jobs", "list_projects", "read_artifact", "answer_question", "write_instance"]));
+    expect((await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name)).toEqual(expect.arrayContaining(["create_jobs", "create_project", "list_projects", "read_artifact", "answer_question", "write_instance"]));
+    const newProject: Rpc = await m.tool("create_project", { id: "mock-one", name: "Mock One" });
+    expect(newProject.result).toEqual({ content: [{ type: "text", text: JSON.stringify({ id: "mock-one", name: "Mock One" }) }] });
+    expect((await t.call("getProject", { params: { id: "mock-one" } }))).toMatchObject({
+      creating: null, errors: [], project: { name: "Mock One", repo: null, defaultRecipe: "local-only" },
+    });
+    expect((await m.tool("create_project", { id: "mock-one", name: "Duplicate" })).result?.isError).toBe(true);
     const created = await m.tool("create_jobs", { project: "demo", plan });
     expect(created.error).toBeUndefined();
     expect(created.result!.isError).not.toBe(true);
@@ -507,6 +513,7 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       expect((await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name).sort())
         .toEqual(["comment_ticket", "create_jobs", "job_status", "list_projects", "list_recipes", "read_artifact", "read_replies", "read_ticket"]);
       expect((await m.tool("write_instance", { path: "projects/demo/recipes/reviewed.json", content: "{}" })).result!.isError).toBe(true);
+      expect((await m.tool("create_project", { id: "blocked", name: "Blocked" })).result?.isError).toBe(true);
       const fix = [{ key: "fix", title: "Fix login", ticketText: "fix the login button", dependsOn: [] }];
       expect((await m.tool("create_jobs", { project: "demo", plan: fix })).result!.isError).not.toBe(true);
       await m.tool("create_jobs", { project: "demo", plan: fix });

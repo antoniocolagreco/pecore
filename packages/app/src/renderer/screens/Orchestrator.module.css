@@ -31,6 +31,7 @@
   overflow-y: auto;
   outline: 0;
   scroll-behavior: smooth;
+  mask-image: linear-gradient(to bottom, transparent, black 16px);
 }
 
 .thread {
@@ -65,7 +66,7 @@
   height: 28px;
   border-radius: 8px;
   background: linear-gradient(145deg, color-mix(in srgb, var(--accent-fill) 70%, white), var(--accent-fill));
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .body {
@@ -74,6 +75,7 @@
   gap: 6px;
   min-width: 0;
   max-width: min(620px, 85%);
+  overflow-wrap: anywhere;
 }
 
 .user .body {
@@ -82,8 +84,9 @@
 
 .meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 3px 8px;
   font-size: var(--text-size-xs);
   color: var(--text-3);
 }
@@ -140,6 +143,7 @@
   flex-direction: column;
   align-items: center;
   gap: 4px;
+  overflow-wrap: anywhere;
   font-size: var(--text-size-xs);
   color: var(--text-3);
 }
@@ -215,12 +219,15 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
+  max-width: 100%;
   min-height: var(--mini-h);
   padding: 0 4px 0 9px;
   border-radius: 7px;
   background: var(--fill);
   font-size: var(--text-size-sm);
   color: var(--text-2);
+  overflow-wrap: anywhere;
   animation: chip-in var(--spring-time) var(--spring);
 }
 
@@ -237,10 +244,11 @@
 
 .action {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 260px;
-  padding: 10px 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+  padding: 6px 10px;
   border-radius: 10px;
   background: var(--surface);
   box-shadow: 0 0 0 0.5px var(--separator), 0 1px 3px rgb(0 0 0 / 0.05);
@@ -248,13 +256,22 @@
 
 .actionHead {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: var(--text-size-sm);
 }
 
 .actionHead svg {
+  flex: none;
   color: var(--accent);
+}
+
+.action > [role="alert"] {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
 }
 
 .tool {
@@ -268,11 +285,18 @@
 
 .links {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+  min-width: 0;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.links li {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .links a,
@@ -281,10 +305,10 @@
   align-items: center;
   gap: 6px;
   padding: 3px 6px;
-  margin: 0 -6px;
   border-radius: 6px;
   font-family: var(--mono);
   font-size: var(--text-size-xs);
+  overflow-wrap: anywhere;
 }
 
 .links a:hover {
@@ -345,6 +369,8 @@
 
 .composerHint {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: var(--text-size-xs);
   color: var(--text-3);
 }

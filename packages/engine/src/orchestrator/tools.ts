@@ -107,6 +107,13 @@ export function orchestratorTools(engine: Engine): {
         baseBranch: ctx.project.baseBranch, defaultRecipe: ctx.project.defaultRecipe,
       })),
     })),
+    create_project: tool("Create one local-only PeCore project with the default local recipe. For multiple projects, call once per project with a distinct ID. An existing ID is rejected.", z.strictObject({
+      id: ProjectId,
+      name: z.string().trim().min(1),
+    }), async ({ id, name }) => {
+      await engine.createProject({ id, name, repo: null, defaultRecipe: "local-only" }, ["local-only"]);
+      return { value: { id, name }, target: { project: id } };
+    }),
     list_recipes: tool("List the confirmed recipe instances in a project.", project, ({ project }) => ({
       value: [...projectContext(engine, project).defs.recipes.values()], target: { project },
     })),

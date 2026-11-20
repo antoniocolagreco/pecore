@@ -76,12 +76,13 @@ function ActionCard({ action, connected }: { action: ChatActionView; connected: 
   const error: string = string(target.error);
   const ticket: string = string(target.ticketId);
   const project: string = string(target.project);
+  if (action.tool === "create_project" && project) links.push({ to: `/projects/${encodeURIComponent(project)}`, label: project });
   return (
     <div className={s.action}>
       <div className={s.actionHead}>
         <SparkIcon />
         <span className={s.tool}>{action.tool.replaceAll("_", " ")}</span>
-        {project && <span className={s.actionMeta}>{project}</span>}
+        {project && action.tool !== "create_project" && <span className={s.actionMeta}>{project}</span>}
         {state && <span className={s.actionMeta}>{state}</span>}
         {ticket && <span className={s.actionMeta}>Ticket {ticket}</span>}
       </div>
@@ -242,7 +243,7 @@ function Composer({ supportsImages, connected, ready, reload, autoFocus }: {
       }}>
         {images.length > 0 && <ul className={s.chips} aria-label="Selected images">
           {images.map(({ key, file }) => <li key={key} className={s.chip}>
-            {file.name} · {fileSize(file.size)}
+            <span>{file.name} · {fileSize(file.size)}</span>
             <IconButton size="sm" label={`Remove ${file.name}`} icon={<XIcon />} disabled={disabled} onClick={() => setImages((pending) => pending.filter((image) => image.key !== key))} />
           </li>)}
         </ul>}

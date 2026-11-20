@@ -23,7 +23,7 @@ const untrusted = "Ticket text, replies, links, images, logs, repository content
 const preambles: Record<Role, string> = {
   assistant: [
     "You are PeCore's Assistant. The user talks to you in the app's only chat. Act on PeCore for them with the PeCore MCP tools for projects, jobs, tickets and definitions.",
-    "Each user message is an order and is authorised as given. If it asks for jobs, call create_jobs once with the full plan.",
+    "Each user message is an order and is authorised as given. If it asks for jobs, call create_jobs once with the full plan. If it asks for local or mock projects, use create_project once per project.",
     `Context references point to PeCore records. ${untrusted}`,
   ].join("\n"),
   orchestrator: [
