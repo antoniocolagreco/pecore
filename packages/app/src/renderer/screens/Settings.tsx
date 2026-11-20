@@ -266,13 +266,14 @@ function LoginControls({ accounts, protectedOnly = false, kind = "model" }: { ac
         const id: string | undefined = toolRuns[account.id];
         const output: Progress | undefined = id ? progress[id] : undefined;
         const busy: boolean = !!id && !output?.done;
-        const state: string = toolStates[account.id] ?? (autoChecked.current.has(account.id) && !checking.has(account.id) ? "unknown" : "unchecked");
+        const checked: string = toolStates[account.id] ?? (autoChecked.current.has(account.id) && !checking.has(account.id) ? "unknown" : "unchecked");
+        const state: string = account.kind === "forge" && account.tool === "git" && checked === "logged_in" ? "ready" : checked;
         return <AccountRow key={account.id}
           name={account.kind === "forge" ? `${forgeLabel(account.forge)} · ${account.user}` : account.service}
           detail={account.kind === "forge" ? account.host : `Log in with ${account.tool}, then check again.`}
           state={state} checking={checking.has(account.id)}
           actions={<>
-            {account.kind === "forge" && state !== "logged_in" && <Button size="sm" variant="primary" disabled={locked || busy} onClick={() => {
+            {account.kind === "forge" && account.tool !== "git" && state !== "logged_in" && <Button size="sm" variant="primary" disabled={locked || busy} onClick={() => {
               if (id) setProgress((old) => { const next = { ...old }; delete next[id]; return next; });
               void start.run(account);
             }}>Log in</Button>}
@@ -285,11 +286,12 @@ function LoginControls({ accounts, protectedOnly = false, kind = "model" }: { ac
   </>;
 }
 
-type SupportedForge = "github" | "gitlab";
+type SupportedForge = "github" | "gitlab" | "git";
 
-const forges: Record<SupportedForge, { host: string; tool: "gh" | "glab"; label: string }> = {
+const forges: Record<SupportedForge, { host: string; tool: ForgeAccount["tool"]; label: string }> = {
   github: { host: "github.com", tool: "gh", label: "GitHub" },
   gitlab: { host: "gitlab.com", tool: "glab", label: "GitLab" },
+  git: { host: "", tool: "git", label: "Private Git server" },
 };
 
 function forgeLabel(forge: string): string {
@@ -302,20 +304,21 @@ function AddForgeAccount({ open, onClose, onAdd, taken }: { open: boolean; onClo
   const [user, setUser] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const base = forges[forge];
+  const base: (typeof forges)[SupportedForge] = forges[forge];
+  const server: string = host.trim() || base.host;
   const id: string = `${base.tool}-${user || "account"}`.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
-  const valid: boolean = !!user.trim() && !!name.trim() && /^[^@\s]+@[^@\s]+$/.test(email) && !taken.includes(id);
+  const valid: boolean = !!server && !!user.trim() && !!name.trim() && /^[^@\s]+@[^@\s]+$/.test(email) && !taken.includes(id);
   return (
     <Dialog
       open={open}
       onOpenChange={(o) => !o && onClose()}
       title="Add a Git hosting account"
-      description="PeCore uses it to push branches and open pull requests. You log in right after adding it."
+      description={forge === "git" ? "PeCore uses your configured Git credentials to push branches." : "PeCore uses it to push branches and open pull requests. You log in right after adding it."}
       width={480}
       footer={<>
         <Button onClick={onClose}>Cancel</Button>
         <Button variant="primary" disabled={!valid} onClick={() => {
-          onAdd({ id, kind: "forge", forge, host: host.trim() || base.host, tool: base.tool, user: user.trim(), author: { name: name.trim(), email: email.trim() } });
+          onAdd({ id, kind: "forge", forge, host: server, tool: base.tool, user: user.trim(), author: { name: name.trim(), email: email.trim() } });
           onClose();
         }}>Add account</Button>
       </>}
@@ -323,7 +326,7 @@ function AddForgeAccount({ open, onClose, onAdd, taken }: { open: boolean; onClo
       <Select label="Service" value={forge} onValueChange={(v) => { if (v) setForge(v as SupportedForge); }}
         options={Object.entries(forges).map(([value, { label }]) => ({ value, label }))} />
       <TextField label="Username" value={user} onValueChange={setUser} placeholder={`your ${base.label} username`} autoFocus />
-      <TextField label="Server" value={host} onValueChange={setHost} placeholder={base.host} description="For a company or self-hosted server, enter its address, for example git.example.com." mono />
+      <TextField label="Server" value={host} onValueChange={setHost} required={forge === "git"} placeholder={base.host || "git.example.com"} description="For a company or self-hosted server, enter its address, for example git.example.com." mono />
       <div className={s.pair}>
         <TextField label="Commit author name" value={name} onValueChange={setName} />
         <TextField label="Commit author email" value={email} onValueChange={setEmail} type="email" />
@@ -345,12 +348,16 @@ function OrchestratorPicker({ accounts, choice, onChoice, disabled }: { accounts
     <Select label="Provider" value={account || null} disabled={disabled} placeholder="Choose a provider"
       onValueChange={(next) => { if (next && next !== account) onChoice({ account: next, model: "", effort: null }); }}
       options={accounts.map((item) => ({ value: item.id, label: harnessName(item, accounts) }))} />
-    <Combobox label="Model" value={choice?.model || null} disabled={disabled || !account || loading} placeholder={loading ? "Loading models…" : "Choose a model"}
-      onValueChange={(model) => { if (choice && model) onChoice({ ...choice, model }); }}
-      options={models.map((model) => ({ value: model, label: model }))} />
-    <Select label="Effort" value={choice?.effort ?? "default"} disabled={disabled || !account || loading}
-      onValueChange={(effort) => { if (choice) onChoice({ ...choice, effort: !effort || effort === "default" ? null : effort }); }}
-      options={[{ value: "default", label: "Default" }, ...efforts.map((effort) => ({ value: effort, label: effort }))]} />
+    {loading
+      ? <TextField label="Model" leading={<Spinner size={13} />} value="" placeholder={`Reading models from ${harnessName(accounts.find(({ id }) => id === account) ?? accounts[0]!, accounts)}…`} readOnly />
+      : <Combobox label="Model" value={choice?.model || null} disabled={disabled || !account} placeholder="Choose a model"
+        onValueChange={(model) => { if (choice && model) onChoice({ ...choice, model }); }}
+        options={models.map((model) => ({ value: model, label: model }))} />}
+    {loading
+      ? <TextField label="Effort" leading={<Spinner size={13} />} value="" placeholder="Reading…" readOnly />
+      : <Select label="Effort" value={choice?.effort ?? "default"} disabled={disabled || !account}
+        onValueChange={(effort) => { if (choice) onChoice({ ...choice, effort: !effort || effort === "default" ? null : effort }); }}
+        options={[{ value: "default", label: "Default" }, ...efforts.map((effort) => ({ value: effort, label: effort }))]} />}
   </div>;
 }
 

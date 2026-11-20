@@ -28,6 +28,29 @@ describe("PECORE_HOME layout", () => {
     expect(await readFile(join(homePaths(home).schemas, "node.json"), "utf8")).not.toBe("{}");
   });
 
+  it("adds library files a newer app ships to an existing home in one commit, without touching files the user changed", async () => {
+    const root = await tempDir();
+    const home = join(root, "home");
+    const shipped = join(root, "shipped");
+    await mkdir(join(shipped, "nodes"), { recursive: true });
+    await mkdir(join(shipped, "forges"), { recursive: true });
+    await writeFile(join(shipped, "nodes", "a.json"), "shipped a\n");
+    await initHome(home, { library: shipped });
+    await writeFile(join(homePaths(home).library, "nodes", "a.json"), "edited a\n");
+    await git(home, ["commit", "-q", "-am", "node a: edited"]);
+    await writeFile(join(shipped, "nodes", "a.json"), "shipped a v2\n");
+    await writeFile(join(shipped, "nodes", "b.sh"), "echo b\n");
+    await writeFile(join(shipped, "forges", "git.json"), "{}\n");
+    expect(await initHome(home, { library: shipped })).toEqual({ created: false });
+    expect(await readFile(join(homePaths(home).library, "nodes", "a.json"), "utf8")).toBe("edited a\n");
+    expect(await readFile(join(homePaths(home).library, "nodes", "b.sh"), "utf8")).toBe("echo b\n");
+    expect(await readFile(join(homePaths(home).library, "forges", "git.json"), "utf8")).toBe("{}\n");
+    expect((await git(home, ["log", "--format=%s"])).trim().split("\n")).toEqual(["library: add 2 shipped files", "node a: edited", "home: created"]);
+    expect(await git(home, ["status", "--porcelain"])).toBe("");
+    await initHome(home, { library: shipped });
+    expect((await git(home, ["log", "--format=%s"])).trim().split("\n")).toHaveLength(3);
+  });
+
   it("ignores databases and work directories in git", async () => {
     const home = join(await tempDir(), "home");
     await initHome(home, { library: shippedLibrary });

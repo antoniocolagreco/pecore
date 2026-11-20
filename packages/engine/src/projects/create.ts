@@ -96,6 +96,9 @@ export async function beginProject(home: string, input: ProjectInput, recipes: s
   try {
     for (const d of [p.nodes, p.recipes, p.knowledge, p.work, p.artifacts, p.logs]) await mkdir(d, { recursive: true });
     const defaults = await projectDefaults(library, project.repo, account?.forge ?? null, recipes.filter((r): r is DefaultRecipe => ["feature", "bugfix", "local-only"].includes(r)));
+    if (project.createRepo !== null && defaults.forge?.createRepo === null) {
+      throw new ProjectCreateError(1, "This forge requires an existing repository.");
+    }
     for (const name of recipes) check(3, await instantiateRecipe(library, dir, name, defaults.rename));
     if (project.createRepo !== null) check(3, await instantiateNode(library, dir, project.createRepo));
     await writeFile(p.project, JSON.stringify(project, null, 2) + "\n");

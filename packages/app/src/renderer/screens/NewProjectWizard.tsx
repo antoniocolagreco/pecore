@@ -108,6 +108,8 @@ export function NewProjectWizard() {
   const forgeAccounts: ForgeAccount[] = (accounts.data?.value.accounts ?? []).filter((account) => account.kind === "forge");
   const available: ForgeAccount[] = forgeAccounts.filter((account) => inputs.mode !== "new" || account.forge === "github" || account.forge === "gitlab");
   const account: ForgeAccount | undefined = available.find((entry) => entry.id === inputs.account);
+  const privateGit: boolean = account?.forge === "git";
+  const newRepoUnavailable: boolean = privateGit || (forgeAccounts.length > 0 && forgeAccounts.every((entry) => entry.forge === "git"));
   const createRepo: string | null = inputs.mode === "new" && account ? `${account.forge}-create-repo` : null;
   const defaultRecipe: string | undefined = inputs.recipes[0];
   const valid: boolean = ProjectId.safeParse(inputs.id).success && !!inputs.name.trim() && !!inputs.baseBranch.trim() && !!defaultRecipe &&
@@ -215,14 +217,14 @@ export function NewProjectWizard() {
             onValueChange={(mode) => update({ mode: mode as RepoMode })}
             options={[
               { value: "local", label: "Local only", detail: "PeCore keeps the repository on this computer." },
-              { value: "existing", label: "Existing repository", detail: "Jobs push branches and open pull requests there." },
-              { value: "new", label: "New repository", detail: "PeCore creates it on GitHub or GitLab." },
+              { value: "existing", label: "Existing repository", detail: privateGit ? "Jobs push branches to your Git server." : "Jobs push branches and open pull requests there." },
+              { value: "new", label: "New repository", disabled: newRepoUnavailable, detail: newRepoUnavailable ? "Private Git servers require an existing repository." : "PeCore creates it on GitHub or GitLab." },
             ]}
           />
           {inputs.mode !== "local" && (
             <div className={w.indent}>
               <TextField label={inputs.mode === "new" ? "New repository URL" : "Repository URL"} required mono disabled={!connected} value={inputs.url}
-                placeholder="https://github.com/owner/name.git" onValueChange={(url) => update({ url })} />
+                placeholder={privateGit ? `https://${account!.host}/team/app.git` : "https://github.com/owner/name.git"} onValueChange={(url) => update({ url })} />
               <Select
                 label="Forge account"
                 disabled={!connected || available.length === 0}

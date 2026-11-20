@@ -9,11 +9,11 @@ import type { DefinitionError } from "../definitions/load";
 const forgeDefaults = z.strictObject({
   forge: Name,
   tool: Name,
-  credentialHelper: z.string().min(1),
+  credentialHelper: z.string().min(1).nullable(),
   delivery: Name,
   comment: Name,
-  createRepo: Name,
-  source: Name,
+  createRepo: Name.nullable(),
+  source: Name.nullable(),
 });
 
 const defaultRecipes = ["feature", "bugfix", "local-only"] as const;
@@ -51,7 +51,9 @@ export async function projectDefaults(
       const name = basename(file, ".json");
       const defaults = name === forge.forge ? forge : await loadForgeDefaults(libraryDir, name);
       for (const role of ["delivery", "comment", "createRepo", "source"] as const) {
-        rename[defaults[role]] = forge[role];
+        const from: string | null = defaults[role];
+        const to: string | null = forge[role];
+        if (from !== null && to !== null) rename[from] = to;
       }
     }
   }
@@ -64,9 +66,7 @@ export async function projectDefaults(
       nodes.add(replacement ?? node.use);
     }
   }
-  if (forge !== null) {
-    nodes.add(forge.createRepo);
-    nodes.add(forge.source);
-  }
+  if (forge?.createRepo) nodes.add(forge.createRepo);
+  if (forge?.source) nodes.add(forge.source);
   return { recipes, nodes: [...nodes], forge, rename };
 }

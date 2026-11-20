@@ -1,0 +1,23 @@
+{
+  "$schema": "../../schemas/node.json",
+  "name": "git-delivery",
+  "description": "Report the pushed job branch as the delivery.",
+  "kind": "command",
+  "runsAs": "engine",
+  "credentials": ["project.account"],
+  "inputs": ["commit", "spec"],
+  "outputs": ["delivery"],
+  "outcomes": ["opened", "failed"],
+  "failOutcomes": ["failed"],
+  "changesFiles": false,
+  "script": "git-delivery.sh",
+  "probe": { "script": "git-delivery.sh" },
+  "mergedCheck": { "script": "git-delivery-merged.sh" },
+  "mergedCheckRules": { "stdoutJson": "state", "done": ["merged"], "notDone": ["unmerged"] },
+  "outcomeRules": [
+    { "exitCode": 0, "outcome": "opened" },
+    { "exitCode": "other", "outcome": "failed" }
+  ],
+  "outputRules": { "delivery": { "stdoutLastLine": "ref" } },
+  "timeoutSec": 120
+}

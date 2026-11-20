@@ -1,0 +1,9 @@
+{
+  "forge": "git",
+  "tool": "git",
+  "credentialHelper": null,
+  "delivery": "git-delivery",
+  "comment": "git-no-comment",
+  "createRepo": null,
+  "source": null
+}

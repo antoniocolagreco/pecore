@@ -1,7 +1,7 @@
 import { chmod, cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { jsonSchemas } from "@pecore/schemas";
-import { git } from "./git-commit";
+import { commitDefinition, git } from "./git-commit";
 
 export const homeGitignore = [
   "*.db",
@@ -65,6 +65,20 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+async function addShippedLibraryFiles(shipped: string, library: string): Promise<string[]> {
+  const added: string[] = [];
+  for (const entry of await readdir(shipped, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const path: string = relative(shipped, join(entry.parentPath, entry.name));
+    const target: string = join(library, path);
+    if (await exists(target)) continue;
+    await mkdir(dirname(target), { recursive: true });
+    await cp(join(shipped, path), target);
+    added.push(target);
+  }
+  return added;
+}
+
 export async function initHome(home: string, opts: { library: string }): Promise<{ created: boolean }> {
   const p = homePaths(home);
   const created = !(await exists(join(home, ".git")));
@@ -72,7 +86,11 @@ export async function initHome(home: string, opts: { library: string }): Promise
   await mkdir(p.run, { recursive: true, mode: 0o700 });
   for (const dir of [p.libraryNodes, p.libraryRecipes, p.projects, p.connectors, p.themes]) await mkdir(dir, { recursive: true });
   await writeSchemas(home);
-  if (!created) return { created };
+  if (!created) {
+    const added: string[] = await addShippedLibraryFiles(opts.library, p.library);
+    if (added.length) await commitDefinition(home, added, `library: add ${added.length} shipped ${added.length === 1 ? "file" : "files"}`);
+    return { created };
+  }
   await git(home, ["init", "-q", "-b", "main"]).catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") throw new Error("Install Git to create PECORE_HOME, then reopen PeCore.");
     throw error;

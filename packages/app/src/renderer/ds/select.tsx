@@ -107,7 +107,7 @@ const comboItems = {
 };
 
 export function Combobox({
-  label, description, error, disabled, className, options, value, defaultValue, onValueChange, placeholder, empty = "No results",
+  label, description, error, disabled, className, options, value, defaultValue, onValueChange, placeholder, empty = "No results", clearable = false,
 }: FieldProps & {
   options: Option[];
   value?: string | null;
@@ -115,6 +115,7 @@ export function Combobox({
   onValueChange?: (value: string | null) => void;
   placeholder?: string;
   empty?: ReactNode;
+  clearable?: boolean;
 }) {
   const find = (v: string | null | undefined): Option | null | undefined => (v === undefined ? undefined : (options.find((o) => o.value === v) ?? null));
   return (
@@ -131,11 +132,11 @@ export function Combobox({
         <BaseCombobox.InputGroup className={f.shell}>
           <BaseCombobox.Input render={<Field.Control />} className={f.input} placeholder={placeholder} spellCheck={false} />
           <span className={f.trailing}>
-            <BaseCombobox.Clear className={`${f.iconButton} ${f.clear}`} aria-label="Clear">
+            {clearable && <BaseCombobox.Clear className={`${f.iconButton} ${f.clear}`} aria-label="Clear">
               <XIcon size={10} strokeWidth={2.4} />
-            </BaseCombobox.Clear>
-            <BaseCombobox.Trigger className={f.iconButton} aria-label="Show options">
-              <ChevronDownIcon size={14} />
+            </BaseCombobox.Clear>}
+            <BaseCombobox.Trigger className={s.chevron} aria-label="Show options">
+              <ChevronUpDownIcon size={12} strokeWidth={2} />
             </BaseCombobox.Trigger>
           </span>
         </BaseCombobox.InputGroup>

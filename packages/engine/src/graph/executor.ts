@@ -3,7 +3,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, join, matchesGlob, relative } from "node:path";
 import { monotonicFactory } from "ulid";
 import type { RawLine, Usage } from "@pecore/agents";
-import type { AgentNode, Artifact, ArtifactType, FailureReason, ForgeAccount, JobState, Node, Profiles, Project, Settings, Tiers, WaitingReason } from "@pecore/schemas";
+import type { AgentNode, Artifact, ArtifactType, DeliveryArtifact, FailureReason, ForgeAccount, JobState, Node, Profiles, Project, Settings, Tiers, WaitingReason } from "@pecore/schemas";
 import { Recipe, SpecArtifact } from "@pecore/schemas";
 import { spawnFor } from "../accounts/agents";
 import type { AgentServices } from "../accounts/agents";
@@ -506,13 +506,13 @@ export class JobExecutor {
     const job = this.job(jobId);
     if (job.merged_at !== null) return true;
     if (blockingImportItem(this.ctx.db) !== null) return false;
-    const url = await this.mergedUrl(job);
-    if (url === null) return false;
-    await this.deliveryMerged(job, url);
+    const delivery: string | null = await this.mergedDelivery(job);
+    if (delivery === null) return false;
+    await this.deliveryMerged(job, delivery);
     return true;
   }
 
-  private async mergedUrl(parent: JobRow): Promise<string | null> {
+  private async mergedDelivery(parent: JobRow): Promise<string | null> {
     const events = this.ctx.db.events(parent.id);
     const delivery = latestArtifact(events, "delivery");
     if (!delivery) return null;
@@ -535,11 +535,12 @@ export class JobExecutor {
       scripts: confirmed.scripts,
     });
     if (result !== "done") return null;
-    return (JSON.parse(await readFile(join(this.ctx.dir, delivery.path), "utf8")) as { url: string }).url;
+    const artifact: DeliveryArtifact = JSON.parse(await readFile(join(this.ctx.dir, delivery.path), "utf8")) as DeliveryArtifact;
+    return artifact.url ?? artifact.ref ?? null;
   }
 
-  private async deliveryMerged(parent: JobRow, url: string): Promise<void> {
-    this.ctx.db.append([{ jobId: parent.id, type: "job.delivery_merged", payload: { url } }]);
+  private async deliveryMerged(parent: JobRow, delivery: string): Promise<void> {
+    this.ctx.db.append([{ jobId: parent.id, type: "job.delivery_merged", payload: { url: delivery } }]);
     this.ctx.changed(parent.id);
     for (const child of this.children(parent.id)) {
       this.ctx.notify({ kind: "job-finished", title: child.title, body: `its parent's delivery was merged into ${parent.target}`, jobId: child.id });

@@ -42,6 +42,10 @@ export async function identityOk(a: ForgeAccount): Promise<boolean> {
 export async function forgeEnv(a: Account): Promise<Record<string, string>> {
   if (a.kind !== "forge") return {};
   const env: Record<string, string> = { GIT_AUTHOR_NAME: a.author.name, GIT_AUTHOR_EMAIL: a.author.email, GIT_COMMITTER_NAME: a.author.name, GIT_COMMITTER_EMAIL: a.author.email };
+  if (a.tool === "git") {
+    if (process.env.SSH_AUTH_SOCK) env.SSH_AUTH_SOCK = process.env.SSH_AUTH_SOCK;
+    if (process.env.XDG_CONFIG_HOME) env.XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME;
+  }
   try {
     if (a.tool === "gh") Object.assign(env, { GH_TOKEN: await token(a), GH_HOST: a.host });
     if (a.tool === "glab") Object.assign(env, { GITLAB_TOKEN: await token(a), GITLAB_HOST: a.host });
