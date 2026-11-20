@@ -41,6 +41,7 @@ export const defaultTheme = "builtin:default";
 const palettes: Record<string, string> = {
   autumn: "Autumn",
   spring: "Spring",
+  woodlands: "Woodlands",
   summer: "Summer",
   winter: "Winter",
   monochrome: "Monochrome",

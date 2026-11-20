@@ -307,6 +307,10 @@
 }
 
 :global(:root:is([data-palette="summer-light"], [data-palette="summer-dark"])) .main {
+  --content-glow: #ff8a3d;
+}
+
+:global(:root:is([data-palette="woodlands-light"], [data-palette="woodlands-dark"])) .main {
   --content-glow: #ffc861;
 }
 
