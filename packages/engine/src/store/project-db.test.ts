@@ -94,11 +94,24 @@ describe("pecore.db", () => {
 describe("chats.db", () => {
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.version()).toBe(2);
+    expect(db.version()).toBe(3);
     for (let i = 0; i < notificationsKept + 3; i++) db.addNotification({ kind: "job", title: `n${i}`, body: "" }, 1000 + i);
     const kept = db.notifications();
     expect(kept).toHaveLength(notificationsKept);
     expect(kept[0]!.title).toBe(`n${notificationsKept + 2}`);
+    db.close();
+  });
+
+  it("removes the chat reply notifications an older version stored and keeps the others", async () => {
+    const file = join(await tempDir(), "chats.db");
+    const old = new ChatsDb(file);
+    old.addNotification({ kind: "orchestrator-replied", title: "Orchestrator replied", body: "Orders", target: { chatId: "c1", messageId: "m1" } }, 1000);
+    old.addNotification({ kind: "job-finished", title: "Fix login", body: "done" }, 1001);
+    old.db.prepare("UPDATE schema_version SET version = 2").run();
+    old.close();
+    const db = new ChatsDb(file);
+    expect(db.version()).toBe(3);
+    expect(db.notifications().map(({ kind }) => kind)).toEqual(["job-finished"]);
     db.close();
   });
 });

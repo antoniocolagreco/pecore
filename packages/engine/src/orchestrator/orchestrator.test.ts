@@ -163,7 +163,9 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     ]]);
     try {
       const events: LiveMessage[] = [];
+      const system: { kind: string; title: string; body: string }[] = [];
       t.engine.on("live", (event: LiveMessage) => events.push(event));
+      t.engine.on("notify", (n: { kind: string; title: string; body: string }) => system.push(n));
       const chat: ChatDetail["chat"] = await t.call("createChat", { body: { title: "Streaming" } });
       const detail = (): Promise<ChatDetail> => t.call("getChat", { params: { id: chat.id } });
       await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Say two things" } });
@@ -183,6 +185,9 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       expect(completed.streamingReply).toBeNull();
       expect(completed.messages.filter(({ role }) => role === "assistant"))
         .toMatchObject([{ state: "completed", text: "First and second." }]);
+      expect(system).toEqual([{ kind: "orchestrator-replied", title: "Orchestrator replied", body: "Streaming" }]);
+      expect(events.some((event) => event.type === "notify")).toBe(false);
+      expect((await t.call("listNotifications")).filter(({ kind }) => kind === "orchestrator-replied")).toEqual([]);
     } finally {
       await t.close();
     }

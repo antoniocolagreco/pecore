@@ -402,20 +402,14 @@ export class OrchestratorChats {
       if (this.closed) return;
       if (result.error) throw new Error(result.error.raw);
       if (result.stopReason === "cancelled") throw new Error("the connector cancelled the turn");
-      const title = "Orchestrator replied";
-      const body: string = this.chat(chatId).title;
-      const kind = "orchestrator-replied";
       const reply: ChatTurn = this.db.db.transaction(() => {
         this.db.setMessageState(id, "completed");
-        const reply: ChatTurn = this.db.addMessage(chatId, "assistant", result.text, []);
-        this.db.addNotification({ kind, title, body, target: { chatId, messageId: reply.id } });
-        return reply;
+        return this.db.addMessage(chatId, "assistant", result.text, []);
       })();
       active.reply = null;
       this.changed(message);
       this.changed(reply);
-      this.live({ type: "notify", kind, title, body });
-      this.engine.emit("notify", { kind, title, body });
+      this.engine.emit("notify", { kind: "orchestrator-replied", title: "Orchestrator replied", body: this.chat(chatId).title });
     } catch (e) {
       active.reply = null;
       if (!this.closed) {
