@@ -21,6 +21,7 @@ const ProjectDefinition = z
       })
       .strict()
       .nullable(),
+    folder: z.string().min(1).nullable().default(null),
     baseBranch: z.string().min(1).default("main"),
     createRepo: Name.nullable().default(null),
     defaultRecipe: Name.nullable().default(null),

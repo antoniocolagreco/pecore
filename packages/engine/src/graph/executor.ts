@@ -30,7 +30,7 @@ import type { NewEvent, ProjectDb } from "../store/project-db";
 import { resolveTicketOrder } from "../sources/poll";
 import { contentState, deleteScratch, recordGit, restoreState, undoInterrupted } from "../workdir/content-state";
 import type { GitRecord } from "../workdir/content-state";
-import { gitWork } from "../workdir/git-as";
+import { gitAppResult, gitWork } from "../workdir/git-as";
 import { writeFileAs } from "../workdir/fs-as";
 import { setupJobId } from "../projects/create";
 import { JobServices, recordServicesConfirmation } from "../services/job-services";
@@ -356,7 +356,13 @@ export class JobExecutor {
 
   private async freshBase(job: JobRow): Promise<string | null> {
     const repo = this.ctx.project.repo;
-    if (repo === null || job.id === setupJobId || job.target.startsWith(jobBranch(""))) return job.base;
+    if (job.id === setupJobId || job.target.startsWith(jobBranch(""))) return job.base;
+    if (repo === null) {
+      if (this.ctx.project.folder === null) return job.base;
+      const local: string = await fetchBase(this.ctx, job.target).catch(() => job.base);
+      if (local !== job.base) this.ctx.db.append([{ jobId: job.id, type: "job.base_changed", payload: { cause: "fetched", base: local, oldBase: local, target: job.target } }]);
+      return local;
+    }
     if ((job.waiting_reason === "network" || job.waiting_reason === "auth") && this.timers.has(job.id)) return null;
     let head: string;
     try {
@@ -385,9 +391,19 @@ export class JobExecutor {
 
   private async finish(job: JobRow, state: "succeeded" | "not_delivered" | "failed", reason: string | null): Promise<void> {
     if (state !== "failed") await removeWorktree(this.ctx.user, this.ctx.dir, workdirOf(this.ctx.dir, job.id));
+    if (state !== "failed") await this.copyToFolder(job);
     this.setState(job.id, state, reason);
     this.ctx.notify({ kind: "job-finished", title: job.title, body: `${state}${reason ? `: ${reason}` : ""}`, jobId: job.id });
     this.ended(job.id);
+  }
+
+  private async copyToFolder(job: JobRow): Promise<void> {
+    const folder: string | null = this.ctx.project.folder;
+    const repo: string = join(this.ctx.dir, "repo.git");
+    const branch: string = jobBranch(job.id);
+    if (folder === null || job.id === setupJobId || !(await branchHead(repo, branch))) return;
+    const pushed = await gitAppResult(repo, ["push", "-q", "--force", "--no-verify", folder, `refs/heads/${branch}:refs/heads/${branch}`]);
+    if (pushed.code !== 0) this.ctx.notify({ kind: "folder", title: job.title, body: `${branch} was not copied to ${folder}: ${pushed.stderr.trim()}`, jobId: job.id });
   }
 
   private children(parentId: string): JobRow[] {

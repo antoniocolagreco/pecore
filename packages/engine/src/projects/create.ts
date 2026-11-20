@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import { mkdirSync } from "node:fs";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { Project } from "@pecore/schemas";
 import type { Accounts, ForgeAccount, ProjectInput } from "@pecore/schemas";
@@ -17,7 +18,7 @@ import { projectAccessScript } from "../osuser/script";
 import { forgeEnv } from "../runners/forge-env";
 import { appUser } from "../runners/process";
 import { ProjectDb } from "../store/project-db";
-import { gitApp } from "../workdir/git-as";
+import { gitApp, gitAppIn } from "../workdir/git-as";
 import { cloneRepo, createLocalRepo, deleteBranch, jobBranch } from "../workdir/repo";
 import { loadForgeDefaults } from "./defaults";
 
@@ -74,6 +75,50 @@ export function forgeAccountOf(project: Project, accounts: Accounts): ForgeAccou
   return account;
 }
 
+async function folderEmpty(folder: string): Promise<boolean> {
+  const entries: string[] = await readdir(folder).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  });
+  return entries.length === 0;
+}
+
+async function checkFolder(input: string | null, project: Project): Promise<string | null> {
+  if (input === null) return null;
+  const expanded: string = input === "~" || input.startsWith("~/") ? join(homedir(), input.slice(1)) : input;
+  if (!isAbsolute(expanded)) throw new ProjectCreateError(1, `the folder ${input} is not an absolute path`);
+  const folder: string = resolve(expanded);
+  const empty: boolean = await folderEmpty(folder).catch(() => {
+    throw new ProjectCreateError(1, `${folder} is not a folder`);
+  });
+  if (empty) return folder;
+  const top: string = (await gitAppIn(folder, ["rev-parse", "--show-toplevel"], { allowFail: true })).trim();
+  if (top !== (await realpath(folder))) throw new ProjectCreateError(1, `the folder ${folder} is not empty and is not a Git repository`);
+  if (project.repo === null || project.createRepo !== null) {
+    const head: string = await gitAppIn(folder, ["rev-parse", "-q", "--verify", `refs/heads/${project.baseBranch}^{commit}`], { allowFail: true });
+    if (!head.trim()) throw new ProjectCreateError(1, `the folder ${folder} has no branch ${project.baseBranch}`);
+  }
+  return folder;
+}
+
+async function setupFolder(repo: string, project: Project): Promise<void> {
+  const folder: string | null = project.folder;
+  if (folder === null) return;
+  if (await folderEmpty(folder)) {
+    await mkdir(folder, { recursive: true });
+    await gitAppIn(folder, ["clone", "-q", "--no-hardlinks", "-b", project.baseBranch, "--", repo, "."]);
+    if (project.repo === null) await gitAppIn(folder, ["remote", "remove", "origin"]);
+    else await gitAppIn(folder, ["remote", "set-url", "origin", project.repo.url]);
+  } else if (project.repo !== null && !(await gitAppIn(folder, ["remote"])).split("\n").includes("origin")) {
+    await gitAppIn(folder, ["remote", "add", "origin", project.repo.url]);
+  }
+  if (project.repo === null) {
+    await gitApp(repo, ["remote", "remove", "origin"], { allowFail: true });
+    await gitApp(repo, ["remote", "add", "origin", folder]);
+    await gitApp(repo, ["config", "--replace-all", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"]);
+  }
+}
+
 function check<T>(step: number, r: { errors: { file: string; path: string; message: string }[] } & T): T {
   if (r.errors.length) throw new ProjectCreateError(step, r.errors.map((e) => `${e.file} ${e.path}: ${e.message}`).join("; "));
   return r;
@@ -82,7 +127,7 @@ function check<T>(step: number, r: { errors: { file: string; path: string; messa
 export async function beginProject(home: string, input: ProjectInput, opts: CreateOptions, bundledLibrary: string): Promise<Project> {
   const parsed = Project.safeParse({ $schema: "../../schemas/project.json", ...input });
   if (!parsed.success) throw new ProjectCreateError(1, parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
-  const project = parsed.data;
+  const project: Project = { ...parsed.data, folder: await checkFolder(parsed.data.folder, parsed.data) };
   const account = forgeAccountOf(project, opts.accounts);
   const dir = join(homePaths(home).projects, project.id);
   try {
@@ -131,7 +176,10 @@ export async function prepareRepo(home: string, dir: string, project: Project, o
   const repo = projectPaths(dir).repo;
   try {
     if (project.repo === null || project.createRepo !== null) {
-      if (!(await exists(repo))) await createLocalRepo(repo, project.baseBranch);
+      if (!(await exists(repo))) {
+        if (project.folder !== null && !(await folderEmpty(project.folder))) await cloneRepo(repo, project.folder, null, {});
+        else await createLocalRepo(repo, project.baseBranch);
+      }
       if (project.repo !== null) return "setup";
     } else {
       const account = forgeAccountOf(project, opts.accounts)!;
@@ -139,6 +187,7 @@ export async function prepareRepo(home: string, dir: string, project: Project, o
       await rm(repo, { recursive: true, force: true });
       await cloneRepo(repo, project.repo.url, defaults.credentialHelper, await forgeEnv(account));
     }
+    await setupFolder(repo, project);
   } catch (e) {
     if (e instanceof ProjectCreateError) throw e;
     throw new ProjectCreateError(4, (e as Error).message);
@@ -153,6 +202,7 @@ export async function repoCreated(dir: string, project: Project): Promise<void> 
   await gitApp(repo, ["remote", "add", "origin", project.repo!.url]);
   await gitApp(repo, ["config", "--replace-all", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"]);
   await deleteBranch(repo, jobBranch(setupJobId));
+  await setupFolder(repo, project);
   await writeCreation(dir, 4);
 }
 

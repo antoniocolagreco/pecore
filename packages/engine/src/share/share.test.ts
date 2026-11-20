@@ -352,6 +352,8 @@ describe("project import (share/, CUJ 7)", () => {
     const dir = f.engine.projectDir("shop");
     const pr = JSON.parse(await readFile(join(dir, "nodes", "github-pr.json"), "utf8")) as Record<string, unknown>;
     await writeFile(join(dir, "nodes", "pr-explicit.json"), JSON.stringify({ ...pr, name: "pr-explicit", credentials: [forgeAccount.id] }));
+    const projectFile = join(dir, "project.json");
+    await writeFile(projectFile, JSON.stringify({ ...JSON.parse(await readFile(projectFile, "utf8")), folder: "/home/someone/shop" }, null, 2) + "\n");
     const out = join(await tempDir(), "shop.tar.zst");
     expect(await f.engine.exportProject("shop", { path: out, history: false, logs: false, acceptFindings: [] })).toEqual({ state: "written", path: out });
     await f.engine.shutdown();
@@ -363,9 +365,10 @@ describe("project import (share/, CUJ 7)", () => {
 
     expect(await b.call("importProject", { body: { path: out, accounts: { [forgeAccount.id]: "gh-mine" } } })).toMatchObject({ state: "imported", id: "shop" });
     const nd = b.engine.projectDir("shop");
-    const project = JSON.parse(await readFile(join(nd, "project.json"), "utf8")) as { repo: { url: string; account: string }; createRepo: string | null };
+    const project = JSON.parse(await readFile(join(nd, "project.json"), "utf8")) as { repo: { url: string; account: string }; createRepo: string | null; folder: string | null };
     expect(project.repo).toMatchObject({ url: "https://github.com/acme/shop.git", account: "gh-mine" });
     expect(project.createRepo).toBeNull();
+    expect(project.folder).toBeNull();
     expect((JSON.parse(await readFile(join(nd, "nodes", "pr-explicit.json"), "utf8")) as { credentials: string[] }).credentials).toEqual(["gh-mine"]);
     expect((JSON.parse(await readFile(join(nd, "nodes", "github-pr.json"), "utf8")) as { credentials: string[] }).credentials).toEqual(["project.account"]);
     const subject = JSON.parse(items(b.engine, "shop")[0]!.subject) as { project: { repo: { account: string } }; nodes: { path: string; definition: { credentials: string[] } }[] };

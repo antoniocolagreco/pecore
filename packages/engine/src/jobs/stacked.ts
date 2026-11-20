@@ -40,6 +40,8 @@ export async function fetchBase(
     if (!account) throw new Error(`forge account ${ctx.project.repo.account} not found`);
     const defaults = await loadForgeDefaults(ctx.library, account.forge);
     await fetchBranch(repoGit, branch, defaults.credentialHelper, await forgeEnv(account));
+  } else if (ctx.project.folder !== null) {
+    await fetchBranch(repoGit, branch, null, {}).catch(() => undefined);
   }
   const head = await branchHead(repoGit, branch);
   if (!head) throw new Error(`branch ${branch} not found`);

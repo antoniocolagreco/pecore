@@ -18,8 +18,11 @@ export const ProjectCreation = z.strictObject({
     z.strictObject({ mode: z.literal("existing"), ...remote }),
     z.strictObject({ mode: z.literal("new"), ...remote }),
   ]),
+  folder: requiredText.optional(),
   baseBranch: requiredText,
 });
+
+const defaultFolder = (id: string): string => `~/Projects/${id}`;
 
 type Settings = z.infer<typeof ProjectCreation>;
 
@@ -70,7 +73,7 @@ export async function validateProjectCreation(engine: Engine, { name, repository
   return { name, repo, createRepo, baseBranch };
 }
 
-export function projectCreationRows({ name, repository, baseBranch }: Settings): { label: string; value: string }[] {
+export function projectCreationRows({ name, repository, folder, baseBranch }: Settings): { label: string; value: string }[] {
   return [
     { label: "Name", value: name },
     { label: "Repository", value: { local: "Local only", existing: "Existing repository", new: "New repository" }[repository.mode] },
@@ -79,6 +82,7 @@ export function projectCreationRows({ name, repository, baseBranch }: Settings):
       { label: "Forge account", value: repository.account },
     ]),
     ...(repository.mode === "new" ? [{ label: "Remote setup", value: `Create a private repository if needed and push ${baseBranch}` }] : []),
+    { label: "Folder", value: folder ?? defaultFolder(projectIdCandidate(name, 1)) },
     { label: "Base branch", value: baseBranch },
   ];
 }
@@ -88,7 +92,7 @@ export async function createApprovedProject(engine: Engine, settings: Settings):
   for (let index: number = 1; ; index++) {
     const id: string = projectIdCandidate(name, index);
     try {
-      await engine.createProject({ id, name, repo, createRepo, baseBranch });
+      await engine.createProject({ id, name, repo, createRepo, baseBranch, folder: settings.folder ?? defaultFolder(id) });
     } catch (error) {
       if (error instanceof ProjectCreateError && error.message === `step 1: project ${id} already exists`) continue;
       if (engine.creating.has(id)) return { project: id, creating: true, error: error instanceof Error ? error.message : String(error) };

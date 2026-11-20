@@ -128,6 +128,7 @@ export async function beginImport(home: string, input: ImportProjectBody, option
     forgeAccountOf(project, options.accounts);
     project.id = id;
     project.createRepo = null;
+    project.folder = null;
     await writeFile(join(original, "project.json"), JSON.stringify(project, null, 2) + "\n");
     for (const node of loaded.nodes.values()) {
       if (node.kind === "command" || node.kind === "source") {

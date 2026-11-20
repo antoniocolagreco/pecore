@@ -1,7 +1,7 @@
-import { cp, readdir, writeFile } from "node:fs/promises";
+import { cp, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { gitApp } from "../../src/workdir/git-as";
+import { gitApp, gitAppIn } from "../../src/workdir/git-as";
 import { Engine } from "../../src/main";
 import { createProjectWithRecipes } from "../project";
 import { shippedLibrary, tempDir } from "../tmp";
@@ -67,6 +67,14 @@ const recipes: Record<string, object> = {
       { from: "human", on: "changes", to: "write" },
       { from: "commit", on: "stale", to: "check" },
     ],
+  },
+  "write-commit": {
+    name: "write-commit",
+    description: "write and commit",
+    start: "write",
+    successOutcomes: ["commit:done"],
+    nodes: { write: { use: "touch-file" }, commit: { use: "git-commit" } },
+    edges: [{ from: "write", on: "done", to: "commit" }],
   },
   sneaky: {
     name: "sneaky",
@@ -172,4 +180,38 @@ describe("phase 2 gate: command-only recipe on a local-only project, app user as
     await p.executor.stop(id);
     await again.shutdown();
   }, 40000);
+});
+
+describe("project folder (decision 75)", () => {
+  async function withFolder() {
+    const home = join(await tempDir(), "home");
+    const folder = join(await tempDir(), "demo");
+    const engine = await Engine.start({ home, library: await library() });
+    await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, folder, defaultRecipe: "write-commit" }, ["write-commit"]);
+    return { engine, folder, project: engine.project("demo") };
+  }
+
+  it("a job starts from the folder's base branch and its branch is copied to the folder", async () => {
+    const { engine, folder, project } = await withFolder();
+    await writeFile(join(folder, "mine.txt"), "mine\n");
+    await gitAppIn(folder, ["add", "mine.txt"]);
+    await gitAppIn(folder, ["commit", "-q", "-m", "Mine"]);
+    const mine = (await gitAppIn(folder, ["rev-parse", "HEAD"])).trim();
+    const id = await engine.createJob("demo", { title: "Add hello", ticket: { text: "add hello" } });
+    expect(project.executor.job(id).base).toBe(mine);
+    await until(() => project.executor.job(id).state === "succeeded");
+    expect((await gitAppIn(folder, ["show", `factory/${id}:hello.txt`])).trim()).toBe("hello");
+    expect((await gitAppIn(folder, ["show", `factory/${id}:mine.txt`])).trim()).toBe("mine");
+    await engine.shutdown();
+  });
+
+  it("a job still runs when the folder is gone, and a notification says its branch was not copied", async () => {
+    const { engine, folder, project } = await withFolder();
+    await rm(folder, { recursive: true, force: true });
+    const id = await engine.createJob("demo", { title: "Add hello", ticket: { text: "add hello" } });
+    await until(() => project.executor.job(id).state === "succeeded");
+    expect((await gitApp(join(project.ctx.dir, "repo.git"), ["show", `factory/${id}:hello.txt`])).trim()).toBe("hello");
+    expect(engine.notifications()).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "folder", title: "Add hello", body: expect.stringContaining(`factory/${id} was not copied to ${folder}`) })]));
+    await engine.shutdown();
+  });
 });

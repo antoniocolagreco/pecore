@@ -10,7 +10,7 @@ import { Button as DsButton } from "../ds/button";
 import { Tabs } from "../ds/data";
 import { Alert, Card, Spinner } from "../ds/feedback";
 import { TextField } from "../ds/field";
-import { LinkIcon } from "../ds/icons";
+import { FolderIcon, LinkIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
 import s from "./ProjectPage.module.css";
@@ -25,11 +25,12 @@ function projectText(content: string, editable?: string): string {
     const fields: Record<string, unknown> = { ...original };
     delete fields.id;
     delete fields.repo;
+    delete fields.folder;
     return JSON.stringify(fields, null, 2);
   }
   const fields: unknown = JSON.parse(editable);
   if (!fields || typeof fields !== "object" || Array.isArray(fields)) throw new Error("Enter a JSON object");
-  return JSON.stringify({ ...fields, id: original.id, repo: original.repo }, null, 2) + "\n";
+  return JSON.stringify({ ...fields, id: original.id, repo: original.repo, folder: original.folder }, null, 2) + "\n";
 }
 
 function FileEditor({ file, path, project, onSaved }: {
@@ -305,6 +306,7 @@ function ProjectDetails({ id }: { id: string }) {
         <div className={s.meta}>
           <span className={s.metaItem}><LinkIcon />{project.repo?.url ?? "Local only"}</span>
           {project.repo && <span className={s.metaItem}>Account {project.repo.account}</span>}
+          {project.folder && <span className={s.metaItem}><FolderIcon /><code>{project.folder}</code></span>}
           <span className={s.metaItem}>ID <code>{id}</code></span>
         </div>
       )}

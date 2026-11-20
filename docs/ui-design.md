@@ -268,7 +268,7 @@ The prototype is normative only for: the gradients, Notifications as a list plus
 *   Buttons: "New project", "Import project".
 *   With no projects, "New project" appears only in the empty state, not in the page header (decision 74).
 *   Project page, configuration only, in sections:
-    *   General: name, base branch, default recipe (editable); id, repo, forge account (read-only after creation).
+    *   General: name, base branch, default recipe (editable); id, repo, forge account, folder (read-only after creation).
     *   Recipes (recipe editor), Nodes (node editor), Knowledge (IF4), Services, Ticket source (`label`, `pollSec`, trusted users), Export.
     *   Danger zone: Delete project (IF7).
 *   A link "Jobs of this project" opens Jobs with this project selected.
@@ -277,7 +277,7 @@ The prototype is normative only for: the gradients, Notifications as a list plus
 
 Pages: Inputs, Create, Confirm. Create runs the tasks of design.md "Project creation" in order; the project exists when Create ends.
 
-1.  **Inputs:** name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, base branch. No recipes: the user adds them afterwards from the Library or the project page, and a recipe that pushes or opens a PR cannot be added to a project without a remote repo (decision 72). The id comes from the name (decision 70).
+1.  **Inputs:** name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, folder, base branch. Folder is the user's copy of the code: typed by hand or picked with "Choose…" (system folder dialog); it starts as `~/Projects/<id>` and follows the name until the user edits it (decision 75). No recipes: the user adds them afterwards from the Library or the project page, and a recipe that pushes or opens a PR cannot be added to a project without a remote repo (decision 72). The id comes from the name (decision 70).
 2.  **Create:** the tasks of "Project creation" (validation, project directory, clone or repo creation, `repo.git` setup and home check, access for `pecore-agent` in protected mode, commit), each with its state. The creation request approves the shipped GitHub or GitLab repo setup node. Custom and modified nodes ask for confirmation inside the task (UI17). A failed task undoes the tasks before it, says why, and returns to Inputs with the values kept. A repo created on the forge is never deleted by the undo: the page lists it as left on the forge.
 3.  **Confirm:** the project's engine nodes and its `source` node, if any, on one screen, so the first job does not wait with reason `confirmation`. Can be skipped: the items stay in Notifications.
 4.  No logins page: logins belong to the user, not to the project (Settings > Accounts).

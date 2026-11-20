@@ -111,6 +111,7 @@ export function orchestratorTools(engine: Engine): {
           ? [{ id: account.id, host: account.host, forge: account.forge, user: account.user, canCreateRepository: account.forge === "github" || account.forge === "gitlab" }]
           : []),
         defaultBaseBranch: "main",
+        defaultFolder: "~/Projects/<project id>",
       },
     })),
     create_project: tool("Validate and propose a project for confirmation in chat. This tool never creates the project. The user must approve the displayed settings in the confirmation card.", ProjectCreation, async (settings) => {

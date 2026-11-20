@@ -16,9 +16,10 @@ import { Select } from "../ds/select";
 import w from "./NewProjectWizard.module.css";
 
 type RepoMode = "existing" | "new" | "local";
-type Inputs = { name: string; mode: RepoMode; url: string; account: string; baseBranch: string };
+type Inputs = { name: string; mode: RepoMode; url: string; account: string; folder: string | null; baseBranch: string };
 
-const initialInputs: Inputs = { name: "", mode: "local", url: "", account: "", baseBranch: "main" };
+const initialInputs: Inputs = { name: "", mode: "local", url: "", account: "", folder: null, baseBranch: "main" };
+const defaultFolder = (id: string): string => `~/Projects/${id}`;
 const tasks: string[] = [
   "Validate project inputs",
   "Check project user",
@@ -108,7 +109,8 @@ export function NewProjectWizard() {
   const privateGit: boolean = account?.forge === "git";
   const newRepoUnavailable: boolean = privateGit || (forgeAccounts.length > 0 && forgeAccounts.every((entry) => entry.forge === "git"));
   const createRepo: string | null = inputs.mode === "new" && account ? `${account.forge}-create-repo` : null;
-  const valid: boolean = !!inputs.name.trim() && !!inputs.baseBranch.trim() &&
+  const folder: string = inputs.folder ?? defaultFolder(projectIdCandidate(inputs.name.trim(), 1));
+  const valid: boolean = !!inputs.name.trim() && !!inputs.baseBranch.trim() && !!folder.trim() &&
     (inputs.mode === "local" || (!!account && !!inputs.url.trim()));
   const update = (changes: Partial<Inputs>) => setInputs((current) => ({ ...current, ...changes }));
   const create = useAction(async () => {
@@ -120,6 +122,7 @@ export function NewProjectWizard() {
         id: projectIdCandidate(name, 1),
         name,
         repo: inputs.mode === "local" ? null : { url: inputs.url.trim(), account: inputs.account },
+        folder: null,
         baseBranch: inputs.baseBranch.trim(),
         createRepo,
         defaultRecipe: null,
@@ -131,6 +134,7 @@ export function NewProjectWizard() {
       const candidate: string = projectIdCandidate(name, index);
       if (taken.has(candidate)) continue;
       body.project.id = candidate;
+      body.project.folder = inputs.folder?.trim() ?? defaultFolder(candidate);
       try {
         const { id } = await call("createProject", { body });
         setCreationId(id);
@@ -162,6 +166,7 @@ export function NewProjectWizard() {
         mode: project.repo === null ? "local" : project.createRepo ? "new" : "existing",
         url: project.repo?.url ?? "",
         account: project.repo?.account ?? "",
+        folder: project.folder,
         baseBranch: project.baseBranch,
       });
       setRestoring(false);
@@ -234,6 +239,11 @@ export function NewProjectWizard() {
               {createRepo && <span className={ui.muted}>Repository creation node <code>{createRepo}</code></span>}
             </div>
           )}
+          <div className={w.folder}>
+            <TextField label="Folder" required mono disabled={!connected} value={folder} description="Your copy of the code. Each job's branch is copied here."
+              onValueChange={(value) => update({ folder: value })} />
+            <Button disabled={!connected} onClick={() => void window.pecore.pickFolder().then((picked) => picked && update({ folder: picked }))}>Choose…</Button>
+          </div>
           <TextField label="Base branch" required mono disabled={!connected} value={inputs.baseBranch} onValueChange={(baseBranch) => update({ baseBranch })} />
           <ErrorText error={create.error} />
           <div className={w.actions}>

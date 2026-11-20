@@ -182,6 +182,12 @@ async function main(): Promise<void> {
   }
   const api = { port: engine.port, token: engine.token };
   ipcMain.handle("pecore:api", () => api);
+  ipcMain.handle("pecore:pick-folder", async (event) => {
+    const options: Electron.OpenDialogOptions = { properties: ["openDirectory", "createDirectory"] };
+    const owner: BrowserWindow | null = BrowserWindow.fromWebContents(event.sender);
+    const picked: Electron.OpenDialogReturnValue = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options);
+    return picked.canceled ? null : picked.filePaths[0] ?? null;
+  });
   serveRenderer(engine.port);
   tray = new Tray(nativeImage.createFromPath(iconPath()).resize({ width: 22, height: 22 }));
   tray.setContextMenu(Menu.buildFromTemplate([{ label: "Open PeCore", click: () => showWindow() }, { label: "Quit", click: () => void quit() }]));
