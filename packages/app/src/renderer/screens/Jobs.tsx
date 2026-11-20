@@ -12,7 +12,6 @@ import { SearchField } from "../ds/field";
 import { ChevronDownIcon } from "../ds/icons";
 import { Select } from "../ds/select";
 import { Segmented } from "../ds/values";
-import { useProjectFilter } from "../shell/filter";
 import s from "./Jobs.module.css";
 
 const labels: string[] = ["Working", "Needs you", "Waiting", "Queued", "Paused", "Success", "Not delivered", "Failed", "Stopped"];
@@ -20,8 +19,7 @@ const pageSize: number = 30;
 type ArchiveFilter = "false" | "true" | "all";
 type JobRow = { job: JobView; depth: number; hasChildren: boolean };
 
-export function useJobs(archived: ArchiveFilter) {
-  const { project } = useProjectFilter();
+export function useJobs(archived: ArchiveFilter, project: string | null) {
   return useData(
     () => call("listJobs", { query: { project: project ?? undefined, archived: archived === "all" ? undefined : archived } }),
     [archived, project],
@@ -149,12 +147,19 @@ export function JobTable({ jobs, factory = false, loading }: { jobs: JobView[]; 
 
 export function Jobs() {
   const connected: boolean = useConnected();
-  const { project } = useProjectFilter();
   const [query, setQuery] = useSearchParams();
   const label: string = query.get("label") ?? "";
+  const project: string | null = query.get("project");
   const [archived, setArchived] = useState<ArchiveFilter>("false");
   const [search, setSearch] = useState<string>("");
-  const jobs = useJobs(archived);
+  const jobs = useJobs(archived, project);
+  const projects = useData(() => call("listProjects"), [], (m) => m.type === "project.updated");
+  const setFilter = (name: string, value: string | null): void => {
+    const next = new URLSearchParams(query);
+    if (value && value !== "all") next.set(name, value);
+    else next.delete(name);
+    void setQuery(next, { replace: true });
+  };
   const visible: JobView[] = (jobs.data ?? []).filter((job) => (!project || job.projectId === project) &&
     (archived === "all" || job.archived === (archived === "true")) &&
     (!label || jobState(job).label === label) && job.title.toLowerCase().includes(search.trim().toLowerCase()));
@@ -164,15 +169,18 @@ export function Jobs() {
         <SearchField className={s.search} placeholder="Search job titles" value={search} disabled={!connected} onValueChange={setSearch} />
         <Select
           className={s.stateFilter}
+          ariaLabel="Project"
+          disabled={!connected}
+          value={project ?? "all"}
+          onValueChange={(value) => setFilter("project", value)}
+          options={[{ value: "all", label: "All projects" }, ...(projects.data ?? []).map((p) => ({ value: p.id, label: p.project?.name ?? p.id }))]}
+        />
+        <Select
+          className={s.stateFilter}
           ariaLabel="State"
           disabled={!connected}
           value={label || "all"}
-          onValueChange={(value) => {
-            const next = new URLSearchParams(query);
-            if (value && value !== "all") next.set("label", value);
-            else next.delete("label");
-            void setQuery(next, { replace: true });
-          }}
+          onValueChange={(value) => setFilter("label", value)}
           options={[{ value: "all", label: "All states" }, ...labels.map((item) => ({ value: item, label: item }))]}
         />
         <Segmented

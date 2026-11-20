@@ -9,7 +9,6 @@ import { jobState } from "../components/states";
 import { Button, ErrorText, Page } from "../components/ui";
 import { Stat, Stats } from "../ds/data";
 import { Alert } from "../ds/feedback";
-import { useProjectFilter } from "../shell/filter";
 import { JobTable, useJobs } from "./Jobs";
 
 const labels: string[] = ["Needs you", "Failed", "Working", "Waiting"];
@@ -23,7 +22,6 @@ function localDay(): string {
 export function Factory() {
   const connected: boolean = useConnected();
   const navigate: ReturnType<typeof useNavigate> = useNavigate();
-  const { project } = useProjectFilter();
   const [day, setDay] = useState<string>(localDay);
   useEffect(() => {
     const timer: ReturnType<typeof setInterval> = setInterval(() => setDay(localDay()), 30_000);
@@ -31,10 +29,10 @@ export function Factory() {
   }, []);
   const status = useData(() => call("getStatus"), [], (m) => m.type === "queue.updated" || m.type === "job.updated");
   const usage = useData(() => call("getUsage", { query: { from: day, to: day } }), [day], (m) => m.type === "node_run.updated" || m.type === "job.updated");
-  const jobs = useJobs("false");
-  const visible: JobView[] = (jobs.data ?? []).filter((job) => !project || job.projectId === project);
+  const jobs = useJobs("false", null);
+  const visible: JobView[] = jobs.data ?? [];
   const totals = usage.data?.days.reduce((total, row: UsageView["days"][number]) => {
-    if (row.day === day && (!project || row.project === project)) {
+    if (row.day === day) {
       total.tokens += row.tokens.input + row.tokens.output + row.tokens.cacheWrite;
       total.cost += row.cost;
     }
@@ -73,7 +71,7 @@ export function Factory() {
           <ErrorText error={play.error} />
         </Alert>
       )}
-      <JobTable key={project ?? ""} jobs={visible.filter((job) => !isFinal(job))} factory loading={jobs.loading} />
+      <JobTable jobs={visible.filter((job) => !isFinal(job))} factory loading={jobs.loading} />
     </Page>
   );
 }

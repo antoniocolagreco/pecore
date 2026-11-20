@@ -8,7 +8,6 @@ import { ConfirmItem, queueKindLabel } from "../components/ConfirmItem";
 import { Button, ErrorText, Page, duration } from "../components/ui";
 import { Card, EmptyState, Skeleton } from "../ds/feedback";
 import { InboxIcon } from "../ds/icons";
-import { useProjectFilter } from "../shell/filter";
 import s from "./Inbox.module.css";
 
 const pageSize: number = 100;
@@ -16,14 +15,13 @@ const pageSize: number = 100;
 export function Inbox() {
   const { id } = useParams();
   const connected: boolean = useConnected();
-  const { project } = useProjectFilter();
   const [page, setPage] = useState<number>(0);
   const queue = useData(() => call("listQueue", { query: { state: "open" } }), [], (m) => m.type === "queue.updated");
   const projects = useData(() => call("listProjects"), [], (m) => m.type === "project.updated" || m.type === "definition.changed");
   const jobs = useData(() => call("listJobs", { query: {} }), [], (m) => m.type === "job.updated" || m.type === "project.updated");
   const names: Map<string, string> = new Map(projects.data?.map((entry) => [entry.id, entry.project?.name ?? entry.id]));
   const titles: Map<string, string> = new Map(jobs.data?.map((job) => [job.id, job.title]));
-  const items: QueueItemView[] = (queue.data ?? []).filter((item) => item.kind !== "agent-question" && (!project || item.projectId === project))
+  const items: QueueItemView[] = (queue.data ?? []).filter((item) => item.kind !== "agent-question")
     .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   const currentPage: number = Math.min(page, Math.max(0, Math.ceil(items.length / pageSize) - 1));
   const start: number = currentPage * pageSize;

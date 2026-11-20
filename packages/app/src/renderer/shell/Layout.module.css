@@ -247,10 +247,6 @@
   backdrop-filter: var(--blur);
 }
 
-.filter {
-  width: 200px;
-}
-
 .spacer {
   flex: 1;
 }

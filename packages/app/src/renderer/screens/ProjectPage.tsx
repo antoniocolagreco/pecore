@@ -14,7 +14,6 @@ import { LinkIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
 import { NumberField } from "../ds/values";
-import { useProjectFilter } from "../shell/filter";
 import s from "./ProjectPage.module.css";
 
 const pageSize: number = 100;
@@ -302,7 +301,6 @@ function ProjectSettings({ id, onSaved }: { id: string; onSaved(): void }) {
 function ProjectDetails({ id }: { id: string }) {
   const connected: boolean = useConnected();
   const navigate = useNavigate();
-  const { setProject } = useProjectFilter();
   const [deleting, setDeleting] = useState<boolean>(false);
   const data = useData(() => call("getProject", { params: { id } }), [id], (m) =>
     (m.type === "project.updated" && m.projectId === id) || (m.type === "definition.changed" && m.path.startsWith(`projects/${id}/`)),
@@ -315,7 +313,7 @@ function ProjectDetails({ id }: { id: string }) {
   });
   const view: ProjectView | undefined = data.data;
   const project: ProjectView["project"] | undefined = view?.project;
-  const jobsLink = <Button disabled={!connected} onClick={() => { setProject(id); void navigate("/jobs"); }}>Jobs of this project</Button>;
+  const jobsLink = <Button disabled={!connected} onClick={() => void navigate(`/jobs?project=${encodeURIComponent(id)}`)}>Jobs of this project</Button>;
   return (
     <Page title={project?.name ?? id} actions={jobsLink}>
       {project && (

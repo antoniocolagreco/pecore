@@ -1,16 +1,13 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
+import { NavLink, Outlet, useLocation } from "react-router";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
-import { NewJobModal } from "../components/NewJobModal";
 import { Button, IconButton } from "../ds/button";
 import { Alert, Count } from "../ds/feedback";
-import { BookIcon, ChartIcon, ChatIcon, FactoryIcon, FolderIcon, GearIcon, InboxIcon, ListIcon, PauseIcon, PlayIcon, PlusIcon, SparkIcon } from "../ds/icons";
-import { Select } from "../ds/select";
+import { BookIcon, ChartIcon, ChatIcon, FactoryIcon, FolderIcon, GearIcon, InboxIcon, ListIcon, PauseIcon, PlayIcon, SparkIcon } from "../ds/icons";
 import { CommandPalette } from "./CommandPalette";
-import { useProjectFilter } from "./filter";
 import { Notifications } from "./Notifications";
 import { SetupBanner } from "./SetupBanner";
 import { SidebarSlot } from "./sidebar";
@@ -36,7 +33,6 @@ const nav: { group: string | null; items: { to: string; label: string; icon: Rea
 
 export function Layout() {
   const connected = useConnected();
-  const navigate = useNavigate();
   const { pathname } = useLocation();
   const [visited, setVisited] = useState<Record<string, string>>({});
   const inSection = (to: string): boolean => pathname === to || pathname.startsWith(`${to}/`);
@@ -44,12 +40,9 @@ export function Layout() {
     const item = nav.flatMap((g) => g.items).find((i) => i.remember && inSection(i.to));
     if (item) setVisited((v) => (v[item.to] === pathname ? v : { ...v, [item.to]: pathname }));
   }, [pathname]);
-  const { project, setProject } = useProjectFilter();
   const status = useData(() => call("getStatus"), [], (m) => m.type === "queue.updated" || m.type === "job.updated");
   const chats = useData(() => call("listChats"), [], (m) => m.type === "chat.message" || m.type === "chat.updated");
   const unread: number = chats.data?.reduce((total, chat) => total + chat.unread, 0) ?? 0;
-  const projects = useData(() => call("listProjects"), [], (m) => m.type === "project.updated");
-  const [newJob, setNewJob] = useState(false);
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
   const pause = useAction(() => (status.data?.globalPause ? call("playAll") : call("pauseAll")).then(status.reload));
   const st = status.data;
@@ -88,13 +81,6 @@ export function Layout() {
       </nav>
       <div className={s.main}>
         <header className={s.toolbar}>
-          <Select
-            className={s.filter}
-            ariaLabel="Project filter"
-            value={project ?? "all"}
-            onValueChange={(v) => setProject(v === "all" || v === null ? null : v)}
-            options={[{ value: "all", label: "All projects" }, ...(projects.data ?? []).map((p) => ({ value: p.id, label: p.project?.name ?? p.id }))]}
-          />
           <div className={s.spacer} />
           <CommandPalette />
           <IconButton
@@ -105,9 +91,6 @@ export function Layout() {
             disabled={!connected || pause.busy}
           />
           <Notifications />
-          <Button variant="primary" icon={<PlusIcon />} onClick={() => setNewJob(true)} disabled={!connected}>
-            New job
-          </Button>
         </header>
         <div className={s.alerts}>
           {!connected && <Alert tone="danger" title="Disconnected from the engine">Reconnecting… Controls are disabled and data may be stale.</Alert>}
@@ -131,7 +114,6 @@ export function Layout() {
           </SidebarSlot.Provider>
         </main>
       </div>
-      <NewJobModal open={newJob} onClose={() => setNewJob(false)} onCreated={(id) => navigate(`/jobs/${id}`)} />
     </div>
   );
 }

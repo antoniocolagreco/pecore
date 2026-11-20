@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import { createHashRouter, Navigate, RouterProvider } from "react-router";
 import { startLive } from "./api/live";
 import { Layout } from "./shell/Layout";
-import { FilterProvider } from "./shell/filter";
 import { ThemeLoader } from "./theme/ThemeLoader";
 import * as screens from "./screens";
 import { ToastProvider, TooltipProvider } from "./ds/overlay";
@@ -39,10 +38,8 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <TooltipProvider>
       <ToastProvider>
-        <FilterProvider>
-          <ThemeLoader />
-          <RouterProvider router={router} />
-        </FilterProvider>
+        <ThemeLoader />
+        <RouterProvider router={router} />
       </ToastProvider>
     </TooltipProvider>
   </StrictMode>,
