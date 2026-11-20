@@ -29,9 +29,9 @@ describe.skipIf(!real)("phase 6 gate: Codex and opencode connectors with the use
     const views = await engine.loginViews();
     console.log(JSON.stringify(views.map((v) => ({ account: v.account, state: v.state, plan: v.plan, hasEmail: v.email !== null }))));
     expect(views.find((v) => v.account === "codex")).toMatchObject({ state: "logged_in", email: expect.any(String) });
-    expect(views.find((v) => v.account === "opencode")?.state).toBe("unknown");
+    expect(views.find((v) => v.account === "opencode")).toMatchObject({ state: "logged_in", email: null });
     expect((await engine.accountOptions("codex"))?.models).toContain("gpt-6.2-sol");
-    expect(await engine.accountOptions("opencode")).toBeNull();
+    expect((await engine.accountOptions("opencode"))?.models).toContain("opencode/deepseek-v4.1-flash-free");
     await engine.shutdown();
   }, 300_000);
 

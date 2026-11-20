@@ -261,10 +261,17 @@ describe("auto-setup", () => {
   it("shows OpenCode as logged in when it lists models, since it reports no account, and as unknown when it lists none", async () => {
     const s = await setup();
     await s.harnesses.set("opencode", opencode);
+    const first = await s.start();
+    await vi.waitFor(async () => expect((await first.call("listLogins")).find((item) => item.connector === "opencode")).toMatchObject({ account: "opencode", state: "logged_in", email: null }), { timeout: 15_000 });
+    await first.close();
     const app = await s.start();
     const login = async () => (await app.call("listLogins")).find((item) => item.connector === "opencode");
-    await vi.waitFor(async () => expect((await login())?.account).toBe("opencode"), { timeout: 15_000 });
+    await vi.waitFor(async () => expect(await login()).toMatchObject({ state: "logged_in", email: null }), { timeout: 15_000 });
     expect(await app.call("recheckLogin", { params: { id: (await login())!.id } })).toMatchObject({ state: "logged_in", email: null, plan: null });
+    expect(await app.call("accountOptions", { params: { id: "opencode" } })).toEqual({
+      models: ["openrouter/qwen/qwen3-max", "opencode/big-pickle", "openrouter/deepseek/deepseek-v4-flash"],
+      efforts: ["low", "high"],
+    });
     await s.harnesses.set("opencode", { ...opencode, cliModels: undefined });
     expect(await app.call("recheckLogin", { params: { id: (await login())!.id } })).toMatchObject({ state: "unknown", email: null });
     await app.close();

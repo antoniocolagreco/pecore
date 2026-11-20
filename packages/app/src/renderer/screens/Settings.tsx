@@ -13,7 +13,7 @@ import { Alert, Badge, Card, Spinner } from "../ds/feedback";
 import { TextArea, TextField } from "../ds/field";
 import { CheckCircleIcon, AlertIcon, PlusIcon, RefreshIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
-import { Select } from "../ds/select";
+import { Combobox, Select } from "../ds/select";
 import { NumberField, Segmented } from "../ds/values";
 import { install } from "../shell/SetupBanner";
 import { SidebarItem, SidebarSection } from "../shell/sidebar";
@@ -24,6 +24,8 @@ import s from "./Settings.module.css";
 type Snapshot<T> = { value: T; sha256: string };
 type LoginProgress = Extract<LiveMessage, { type: "login.progress" }>;
 type Progress = { lines: string[]; url: string | null; done: boolean };
+
+const orchestratorProfile = "orchestrator";
 
 const sections: { id: string; title: string }[] = [
   { id: "accounts", title: "Accounts" },
@@ -331,6 +333,27 @@ function AddForgeAccount({ open, onClose, onAdd, taken }: { open: boolean; onClo
   );
 }
 
+type ModelChoice = { account: string; model: string; effort: string | null };
+
+function OrchestratorPicker({ accounts, choice, onChoice, disabled }: { accounts: Account[]; choice: ModelChoice | null; onChoice(choice: ModelChoice): void; disabled: boolean }) {
+  const account: string = choice?.account ?? "";
+  const options = useData(() => account ? call("accountOptions", { params: { id: account } }) : Promise.resolve(null), [account]);
+  const models: string[] = [...new Set([...(options.data?.models ?? []), ...(choice?.model ? [choice.model] : [])])];
+  const efforts: string[] = [...new Set([...(options.data?.efforts ?? []).filter((effort) => effort !== "default"), ...(choice?.effort ? [choice.effort] : [])])];
+  const loading: boolean = !!account && options.loading;
+  return <div className={s.grid}>
+    <Select label="Provider" value={account || null} disabled={disabled} placeholder="Choose a provider"
+      onValueChange={(next) => { if (next && next !== account) onChoice({ account: next, model: "", effort: null }); }}
+      options={accounts.map((item) => ({ value: item.id, label: harnessName(item, accounts) }))} />
+    <Combobox label="Model" value={choice?.model || null} disabled={disabled || !account || loading} placeholder={loading ? "Loading models…" : "Choose a model"}
+      onValueChange={(model) => { if (choice && model) onChoice({ ...choice, model }); }}
+      options={models.map((model) => ({ value: model, label: model }))} />
+    <Select label="Effort" value={choice?.effort ?? "default"} disabled={disabled || !account || loading}
+      onValueChange={(effort) => { if (choice) onChoice({ ...choice, effort: !effort || effort === "default" ? null : effort }); }}
+      options={[{ value: "default", label: "Default" }, ...efforts.map((effort) => ({ value: effort, label: effort }))]} />
+  </div>;
+}
+
 function ConnectorFile({ path, close }: { path: string; close(): void }) {
   const file = useDefinitionDraft(path);
   const warn = useUnsaved(file.dirty);
@@ -388,7 +411,20 @@ export function Settings() {
   const settingsResult = SettingsSchema.safeParse(settings.value);
   const value: SettingsValue | undefined = settings.value;
   const update = settings.update;
-  const profileIds: string[] = (profiles.data?.value.profiles ?? []).map(({ id }) => id);
+  const [orchestrator, setOrchestrator] = useState<ModelChoice>();
+  const current = profiles.data?.value.profiles.find(({ id }) => id === settings.current?.orchestrator?.profile);
+  const currentOrchestrator: ModelChoice | null = current ? { account: current.account, model: current.model, effort: current.effort } : null;
+  const saveAll = useAction(async () => {
+    if (!value) return;
+    if (orchestrator) {
+      if (!orchestrator.model) throw new Error("Choose a model for the orchestrator.");
+      const file = await call("getProfiles");
+      const others = file.value.profiles.filter(({ id }) => id !== orchestratorProfile);
+      await call("putProfiles", { body: { value: { ...file.value, profiles: [...others, { id: orchestratorProfile, ...orchestrator }] }, baseSha256: file.sha256 } });
+      profiles.reload();
+    }
+    if (await settings.commit(value)) setOrchestrator(undefined);
+  });
   const markJson = (key: string, invalid: boolean): void => {
     if (invalid && settings.value) settings.update(settings.value);
     setInvalidJson((old) => invalid ? [...new Set([...old, key])] : old.filter((item) => item !== key));
@@ -435,9 +471,12 @@ export function Settings() {
         {settings.feedback}
         {value && <>
           <Section id="orchestrator" title="Orchestrator" description="The model that talks with you and plans the jobs.">
-            <Select label="Profile" value={value.orchestrator?.profile ?? "none"} disabled={!connected}
-              onValueChange={(profile) => update({ ...value, orchestrator: profile && profile !== "none" ? { profile } : null })}
-              options={[{ value: "none", label: "None" }, ...[...new Set([...profileIds, ...(value.orchestrator ? [value.orchestrator.profile] : [])])].map((id) => ({ value: id, label: id }))]} />
+            <OrchestratorPicker accounts={(accounts.current?.accounts ?? []).filter(({ kind }) => kind === "model")} disabled={!connected || !profiles.data}
+              choice={orchestrator ?? currentOrchestrator}
+              onChoice={(choice) => {
+                setOrchestrator(choice);
+                update({ ...value, orchestrator: { profile: orchestratorProfile } });
+              }} />
           </Section>
 
           <Section id="limits" title="Limits" description="How much PeCore runs at the same time.">
@@ -534,8 +573,10 @@ export function Settings() {
       {!!invalidJson.length && <ErrorText error="Fix invalid JSON before saving." />}
       <Issues issues={settingsResult.error?.issues} />
       <span className={s.spacer} />
-      <Button onClick={settings.discard}>Discard</Button>
-      {settings.button("Save settings", !settingsResult.success || !!invalidJson.length || protect.busy)}
+      <ErrorText error={saveAll.error} />
+      <Button onClick={() => { setOrchestrator(undefined); saveAll.clear(); settings.discard(); }}>Discard</Button>
+      <Button variant="primary" loading={saveAll.busy || settings.saving} disabled={!connected || !settingsResult.success || !!invalidJson.length || protect.busy || (!!orchestrator && !orchestrator.model)}
+        onClick={() => void saveAll.run()}>Save settings</Button>
     </div>}
   </Page>;
 }

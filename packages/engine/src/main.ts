@@ -142,7 +142,7 @@ export class Engine extends EventEmitter {
         for (const { executor } of this.projects.values()) await executor.checkMerges();
       },
     );
-    if (this.agents && this.opts.checkLogins !== false) void this.agents.checkAll().then(() => this.emit("logins")).catch((error: unknown) => console.error("login check:", error));
+    if (this.agents && this.opts.checkLogins !== false) void this.checkAllLogins().then(() => this.emit("logins")).catch((error: unknown) => console.error("login check:", error));
     if (this.opts.orders) {
       for (const [project, resumed] of resumedOrders) project.sourcePolling = startSourcePolling(project.ctx, this.opts.orders, resumed);
     }
@@ -284,12 +284,20 @@ export class Engine extends EventEmitter {
 
   private async checkLoginInfo(l: LoginInfo): Promise<LoginState> {
     const state = await this.agents!.check(l);
-    if (state.state === "unknown" && l.connector === "opencode") {
-      const connector = await this.agents!.resolve(l.connector);
-      this.openCodeReady.set(l.id, (await openCodeModels(connector, l).catch(() => null)) !== null);
-    }
+    await this.checkOpenCode(l, state);
     if (state.state !== "logged_out") await this.releaseAuth(l.account, l.osUser);
     return state;
+  }
+
+  private async checkOpenCode(l: LoginInfo, state: LoginState): Promise<void> {
+    if (state.state !== "unknown" || l.connector !== "opencode") return;
+    const connector = await this.agents!.resolve(l.connector);
+    this.openCodeReady.set(l.id, (await openCodeModels(connector, l).catch(() => null)) !== null);
+  }
+
+  private async checkAllLogins(): Promise<void> {
+    await this.agents!.checkAll();
+    for (const l of await this.agents!.logins()) await this.checkOpenCode(l, l.state.state === "unchecked" ? { state: "unknown" } : l.state);
   }
 
   async startLogin(account: string, osUser: string): Promise<string> {
@@ -355,8 +363,10 @@ export class Engine extends EventEmitter {
     this.account(id);
     for (const l of ((await this.agents?.logins()) ?? []).filter((x) => x.account === id)) {
       const connector = await this.agents!.resolve(l.connector);
-      const options = await listOptions({ connector, login: l, spawn: spawnFor(l.osUser) }).catch(() => null);
-      if (options) return { models: options.models, efforts: options.efforts };
+      await this.agents!.ensureProbeDir(l);
+      const options = await listOptions({ connector, login: l, spawn: spawnFor(l.osUser), allowUnknownIdentity: true }).catch(() => null);
+      const cli = l.connector === "opencode" ? await openCodeModels(connector, l).catch(() => null) : null;
+      if (options || cli) return { models: cli?.models ?? options?.models ?? [], efforts: options?.efforts ?? [] };
     }
     return null;
   }
