@@ -269,7 +269,7 @@ describe("auto-setup", () => {
     const login = async () => (await app.call("listLogins")).find((item) => item.connector === "opencode");
     await vi.waitFor(async () => expect(await login()).toMatchObject({ state: "logged_in", email: null }), { timeout: 15_000 });
     expect(await app.call("recheckLogin", { params: { id: (await login())!.id } })).toMatchObject({ state: "logged_in", email: null, plan: null });
-    expect(await app.call("accountOptions", { params: { id: "opencode" } })).toEqual({
+    expect(await app.call("accountOptions", { params: { id: "opencode" }, query: {} })).toEqual({
       models: ["openrouter/qwen/qwen3-max", "opencode/big-pickle", "openrouter/deepseek/deepseek-v4-flash"],
       efforts: ["low", "high"],
     });
@@ -283,12 +283,29 @@ describe("auto-setup", () => {
     await s.harnesses.set("opencode", opencode);
     const app = await s.start();
     const first = { models: ["openrouter/qwen/qwen3-max", "opencode/big-pickle", "openrouter/deepseek/deepseek-v4-flash"], efforts: ["low", "high"] };
-    expect(await app.call("accountOptions", { params: { id: "opencode" } })).toEqual(first);
+    expect(await app.call("accountOptions", { params: { id: "opencode" }, query: {} })).toEqual(first);
     await s.harnesses.set("opencode", { ...opencode, cliModels: ["opencode/big-pickle"] });
-    expect(await app.call("accountOptions", { params: { id: "opencode" } })).toEqual(first);
+    expect(await app.call("accountOptions", { params: { id: "opencode" }, query: {} })).toEqual(first);
     const refreshed = { models: ["opencode/big-pickle"], efforts: ["low", "high"] };
     expect(await app.call("refreshAccountOptions", { params: { id: "opencode" } })).toEqual(refreshed);
-    expect(await app.call("accountOptions", { params: { id: "opencode" } })).toEqual(refreshed);
+    expect(await app.call("accountOptions", { params: { id: "opencode" }, query: {} })).toEqual(refreshed);
+    await app.close();
+  });
+
+  it("offers the efforts of the chosen model, none for a model without efforts, read once until refresh", async () => {
+    const s = await setup();
+    const models = { "opencode/big-pickle": ["low", "high"], "openrouter/qwen/qwen3-max": ["low", "medium", "high"], "opencode/hy4-flash-free": [] };
+    await s.harnesses.set("opencode", { ...opencode, cliModels: Object.keys(models), models });
+    const app = await s.start();
+    const options = (model: string) => app.call("accountOptions", { params: { id: "opencode" }, query: { model } });
+    const listed: string[] = ["opencode/big-pickle", "openrouter/qwen/qwen3-max", "opencode/hy4-flash-free"];
+    expect(await options("openrouter/qwen/qwen3-max")).toEqual({ models: listed, efforts: ["low", "medium", "high"] });
+    expect(await options("opencode/hy4-flash-free")).toEqual({ models: listed, efforts: [] });
+    expect(await options("opencode/big-pickle")).toEqual({ models: listed, efforts: ["low", "high"] });
+    await s.harnesses.set("opencode", { ...opencode, cliModels: Object.keys(models), models: { ...models, "openrouter/qwen/qwen3-max": ["high"] } });
+    expect(await options("openrouter/qwen/qwen3-max")).toEqual({ models: listed, efforts: ["low", "medium", "high"] });
+    await app.call("refreshAccountOptions", { params: { id: "opencode" } });
+    expect(await options("openrouter/qwen/qwen3-max")).toEqual({ models: listed, efforts: ["high"] });
     await app.close();
   });
 

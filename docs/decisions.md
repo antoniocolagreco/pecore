@@ -67,6 +67,7 @@ Format: decision. **Why:** Antonio's reason. **Replaces:** what it changes, if a
 49. Settings save by themselves as soon as a value changes; there is no save bar, Save or Discard button. A value that is not valid is not saved and the problem is shown. A provider with no model yet is not saved. **Why:** "Il salvataggio deve essere continuo, non deve esserci questo pannello con 'save settings'". **Replaces:** the Save settings bar.
 50. The models of each AI tool are read once when the app starts, not every time Settings opens. A small refresh button next to Model reads them again. **Why:** "La ricerca dei modelli deve avvenire solo all'avvio, non ogni volta che torno in settings. Aggiungi un piccolo pulsante invece per rifare il check forzato, refresh."
 51. Every working account shows "Logged in", OpenCode and a private Git server included. **Why:** "metti 'logged in' per tutti". **Replaces:** "Ready" for OpenCode (decision 12) and for a private Git server.
+52. Effort lists only what the chosen model offers; a model with no effort levels offers only Default. Choosing another model resets Effort to Default. **Why:** "questo modello, ha solo default" (Effort showed the levels of the tool's default model). **Replaces:** one effort list per AI tool.
 
 ## Open
 

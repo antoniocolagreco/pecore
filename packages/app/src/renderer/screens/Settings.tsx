@@ -372,14 +372,18 @@ type ModelChoice = { account: string; model: string; effort: string | null };
 
 function ModelPicker({ accounts, choice, onChoice, disabled, same = false }: { accounts: Account[]; choice: ModelChoice | null; onChoice(choice: ModelChoice | null): void; disabled: boolean; same?: boolean }) {
   const account: string = choice?.account ?? "";
-  const options = useData(() => account ? call("accountOptions", { params: { id: account } }) : Promise.resolve(null), [account]);
+  const model: string = choice?.model ?? "";
+  const options = useData(() => account ? call("accountOptions", { params: { id: account }, query: {} }) : Promise.resolve(null), [account]);
+  const offered = useData(() => account && model ? call("accountOptions", { params: { id: account }, query: { model } }) : Promise.resolve(null), [account, model]);
   const refresh = useAction(async () => {
     await call("refreshAccountOptions", { params: { id: account } });
     options.reload();
+    offered.reload();
   });
-  const models: string[] = [...new Set([...(options.data?.models ?? []), ...(choice?.model ? [choice.model] : [])])];
-  const efforts: string[] = [...new Set([...(options.data?.efforts ?? []).filter((effort) => effort !== "default"), ...(choice?.effort ? [choice.effort] : [])])];
+  const models: string[] = [...new Set([...(options.data?.models ?? []), ...(model ? [model] : [])])];
+  const efforts: string[] = [...new Set([...(offered.data?.efforts ?? []).filter((effort) => effort !== "default"), ...(choice?.effort ? [choice.effort] : [])])];
   const loading: boolean = !!account && (options.loading || refresh.busy);
+  const readingEfforts: boolean = !!model && (offered.loading || refresh.busy);
   const current: Account | undefined = accounts.find(({ id }) => id === account);
   return <div className={s.grid}>
     <Select label="Provider" value={account || (same ? sameValue : null)} disabled={disabled} placeholder="Choose a provider"
@@ -392,11 +396,11 @@ function ModelPicker({ accounts, choice, onChoice, disabled, same = false }: { a
       {loading
         ? <TextField label="Model" leading={<Spinner size={13} />} value="" placeholder={`Reading models from ${current ? harnessName(current, accounts) : account}…`} readOnly />
         : <Combobox label="Model" value={choice?.model || null} disabled={disabled || !account} placeholder="Choose a model"
-          onValueChange={(model) => { if (choice && model) onChoice({ ...choice, model }); }}
+          onValueChange={(next) => { if (choice && next && next !== model) onChoice({ ...choice, model: next, effort: null }); }}
           options={models.map((model) => ({ value: model, label: model }))} />}
       <IconButton label="Read the models again" icon={<RefreshIcon />} disabled={disabled || !account || loading} onClick={() => void refresh.run()} />
     </div>
-    {loading
+    {loading || readingEfforts
       ? <TextField label="Effort" leading={<Spinner size={13} />} value="" placeholder="Reading…" readOnly />
       : <Select label="Effort" value={choice?.effort ?? "default"} disabled={disabled || !choice?.model}
         onValueChange={(effort) => { if (choice) onChoice({ ...choice, effort: !effort || effort === "default" ? null : effort }); }}

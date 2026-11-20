@@ -1002,8 +1002,8 @@ Recorded ACP traffic for tests lives in `packages/agents/fixtures/<connector>/<c
 | `GET /logins`, `POST /logins` | harness logins (account and OS user, 3.4) with their state; start one (`{account, osUser}`); progress and the URL over WebSocket |
 | `POST /logins/:id/code`, `POST /logins/:id/recheck` | send the code the login command reads on stdin (5.9); re-run `checkLogin` and release runs waiting with `auth` on that login |
 | `POST /accounts/:id/login` | start a forge or service tool login; progress over WebSocket |
-| `GET /accounts/:id/options` | the models and efforts the account's connector offers (`listOptions` through any logged-in login of the account), for the profile editor; read once per account after the login check at start and kept in memory (a `null` result is not kept) |
-| `POST /accounts/:id/options/refresh` | reads the models and efforts again and replaces the kept ones (decisions.md 50) |
+| `GET /accounts/:id/options` | the models and efforts the account's connector offers (`listOptions` through any logged-in login of the account), for the profile editor; with `?model=`, the efforts of that model (`listOptions` with `model`, decisions.md 52). Each answer is read once and kept in memory (a `null` result is not kept); after the login check at start the engine reads every model account and the models of the Assistant and Orchestrator profiles |
+| `POST /accounts/:id/options/refresh` | forgets what is kept for the account and reads its models again (decisions.md 50) |
 | `GET/POST /chats`, `POST /chats/:id/messages` | orchestrator chat; a message has text, attachments and an optional `context` of references (section 6) |
 | `GET /artifacts/:job/:run/:name`, `GET /logs/:attempt?view=events\|raw` | files; `events` returns the normalised events of the attempt (the shape of `log.line`), `raw` the JSONL lines; 410 when retention removed the log |
 

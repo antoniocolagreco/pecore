@@ -78,6 +78,7 @@ export class Engine extends EventEmitter {
   private shuttingDown: boolean = false;
   private readonly openCodeReady = new Map<string, boolean>();
   private readonly options = new Map<string, Promise<AccountOptions | null>>();
+  private startupReads: Promise<void> = Promise.resolve();
   private setupHarnesses: SetupView["harnesses"] = BuiltInHarness.options.map((connector) => ({ connector, installed: false, version: null, loggedIn: false }));
   globalPause = false;
   private readonly loginRunner = new LoginRunner((p) => this.live({ type: "login.progress", ...p }));
@@ -144,8 +145,16 @@ export class Engine extends EventEmitter {
       },
     );
     if (this.agents && this.opts.checkLogins !== false) {
-      void this.checkAllLogins().then(() => this.emit("logins")).catch((error: unknown) => console.error("login check:", error))
-        .then(() => { for (const { id, kind } of this.accounts.accounts) if (kind === "model") void this.accountOptions(id).catch(() => null); });
+      this.startupReads = this.checkAllLogins().then(() => this.emit("logins")).catch((error: unknown) => console.error("login check:", error))
+        .then(async () => {
+          if (this.shuttingDown) return;
+          const reads: Promise<unknown>[] = this.accounts.accounts.filter(({ kind }) => kind === "model").map(({ id }) => this.accountOptions(id));
+          for (const role of ["assistant", "orchestrator"] as const) {
+            const profile: Profiles["profiles"][number] | undefined = this.profiles.profiles.find(({ id }) => id === roleProfile(this.settings, role));
+            if (profile) reads.push(this.accountOptions(profile.account, profile.model));
+          }
+          await Promise.allSettled(reads);
+        });
     }
     if (this.opts.orders) {
       for (const [project, resumed] of resumedOrders) project.sourcePolling = startSourcePolling(project.ctx, this.opts.orders, resumed);
@@ -360,15 +369,25 @@ export class Engine extends EventEmitter {
     return loginId;
   }
 
-  accountOptions(id: string, refresh: boolean = false): Promise<AccountOptions | null> {
+  async accountOptions(id: string, model: string | null = null, refresh: boolean = false): Promise<AccountOptions | null> {
     this.account(id);
-    const cached: Promise<AccountOptions | null> | undefined = this.options.get(id);
-    if (cached && !refresh) return cached;
-    const read: Promise<AccountOptions | null> = this.readAccountOptions(id);
-    this.options.set(id, read);
-    const forget = (): void => { if (this.options.get(id) === read) this.options.delete(id); };
-    read.then((options) => { if (!options) forget(); }, forget);
-    return read;
+    if (refresh) for (const key of [...this.options.keys()]) if (key === id || key.startsWith(id + "\n")) this.options.delete(key);
+    const account: AccountOptions | null = await this.keptOptions(id, () => this.readAccountOptions(id));
+    if (!account || model === null) return account;
+    return this.keptOptions(id + "\n" + model, async () => {
+      const efforts: string[] | null = await this.readModelEfforts(id, model);
+      return efforts && { models: account.models, efforts };
+    });
+  }
+
+  private keptOptions(key: string, read: () => Promise<AccountOptions | null>): Promise<AccountOptions | null> {
+    const kept: Promise<AccountOptions | null> | undefined = this.options.get(key);
+    if (kept) return kept;
+    const reading: Promise<AccountOptions | null> = read();
+    this.options.set(key, reading);
+    const forget = (): void => { if (this.options.get(key) === reading) this.options.delete(key); };
+    reading.then((options) => { if (!options) forget(); }, forget);
+    return reading;
   }
 
   private async readAccountOptions(id: string): Promise<AccountOptions | null> {
@@ -378,6 +397,16 @@ export class Engine extends EventEmitter {
       const options = await listOptions({ connector, login: l, spawn: spawnFor(l.osUser), allowUnknownIdentity: true }).catch(() => null);
       const cli = l.connector === "opencode" ? await openCodeModels(connector, l).catch(() => null) : null;
       if (options || cli) return { models: cli?.models ?? options?.models ?? [], efforts: options?.efforts ?? [] };
+    }
+    return null;
+  }
+
+  private async readModelEfforts(id: string, model: string): Promise<string[] | null> {
+    for (const l of ((await this.agents?.logins()) ?? []).filter((x) => x.account === id)) {
+      const connector = await this.agents!.resolve(l.connector);
+      await this.agents!.ensureProbeDir(l);
+      const options = await listOptions({ connector, login: l, spawn: spawnFor(l.osUser), model, allowUnknownIdentity: true }).catch(() => null);
+      if (options) return options.efforts;
     }
     return null;
   }
@@ -692,6 +721,8 @@ export class Engine extends EventEmitter {
     await Promise.all([...this.projects.values()].map(({ sourcePolling }) => sourcePolling?.close()));
     await chats;
     await this.loginRunner.stopAll();
+    await this.startupReads;
+    await Promise.allSettled(this.options.values());
     await this.globalFilesPending;
     await Promise.all([...this.projects.values()].map(({ executor }) => executor.close()));
     for (const { ctx } of this.projects.values()) ctx.db.close();
