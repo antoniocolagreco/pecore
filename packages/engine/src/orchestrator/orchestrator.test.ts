@@ -188,6 +188,68 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     }
   });
 
+  it("sends /compact to the resumed session on its own and stores no reply for it", async () => {
+    const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
+    const t = await setup((root) => [
+      init(),
+      [...init(), ...newSession, { expect: "session/prompt" }, ...replyWith("Hello.")],
+      [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "compact.json") }, ...replyWith("Summary of the chat")],
+      [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "after.json") }, ...replyWith("Still here.")],
+    ]);
+    try {
+      const chat: ChatDetail["chat"] = await t.call("createChat", { body: { title: "Compaction" } });
+      const detail = (): Promise<ChatDetail> => t.call("getChat", { params: { id: chat.id } });
+      expect((await detail()).supportsImages).toBe(false);
+      const settled = (count: number) => until(async () => {
+        const snapshot: ChatDetail = await detail();
+        return snapshot.messages.length === count && snapshot.messages.every(({ state }) => state === "completed") && snapshot;
+      });
+      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Hi" } });
+      await settled(2);
+      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "/compact" } });
+      const compacted: ChatDetail = await settled(3);
+      expect(compacted.messages.map(({ role, text }) => [role, text])).toEqual([["user", "Hi"], ["assistant", "Hello."], ["user", "/compact"]]);
+      expect(compacted.streamingReply).toBeNull();
+      expect((JSON.parse(await readFile(join(t.root, "compact.json"), "utf8")) as { params: { prompt: unknown } }).params.prompt).toEqual([{ type: "text", text: "/compact" }]);
+
+      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Next order" } });
+      await settled(5);
+      const after: string = await readFile(join(t.root, "after.json"), "utf8");
+      expect(after).toContain("Next order");
+      expect(after).not.toContain("Earlier conversation");
+    } finally {
+      await t.close();
+    }
+  });
+
+  it("keeps the saved session when /compact cannot resume it, so the next order still resumes the conversation", async () => {
+    const t = await setup((root) => [
+      init(),
+      [...init(), ...newSession, { expect: "session/prompt" }, ...replyWith("Hello.")],
+      [...init(), { expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", error: { code: -32602, message: "no such session" } } },
+        { expect: "session/new" }, { send: { jsonrpc: "2.0", id: "$id", result: { sessionId: "S2" } } }],
+      [...init(), { expect: "session/resume" }, { dump: join(root, "resume.json") }, { send: { jsonrpc: "2.0", id: "$id", result: {} } },
+        { expect: "session/prompt" }, ...replyWith("Still here.")],
+    ]);
+    try {
+      const chat: ChatDetail["chat"] = await t.call("createChat", { body: { title: "Compaction" } });
+      expect((await t.call("getChat", { params: { id: chat.id } })).supportsImages).toBe(false);
+      const settled = (count: number) => until(async () => {
+        const snapshot: ChatDetail = await t.call("getChat", { params: { id: chat.id } });
+        return snapshot.messages.length === count && snapshot.messages.every(({ state }) => state === "completed") && snapshot;
+      });
+      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Hi" } });
+      await settled(2);
+      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "/compact" } });
+      await settled(3);
+      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Next order" } });
+      await settled(5);
+      expect((JSON.parse(await readFile(join(t.root, "resume.json"), "utf8")) as { params: { sessionId: string } }).params.sessionId).toBe("S1");
+    } finally {
+      await t.close();
+    }
+  });
+
   it("passes no token on the command line, binds create_jobs to the message order, stages recipe changes, caps read_artifact, and stores the reply", async () => {
     const t = await setup((root) => [[
       ...init(),

@@ -1,4 +1,4 @@
-import { ChatImageMime, chatAttachmentMaxBytes } from "@pecore/schemas";
+import { ChatImageMime, chatAttachmentMaxBytes, chatCompactCommand } from "@pecore/schemas";
 import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatMessageView, ChatView } from "@pecore/schemas";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -141,6 +141,35 @@ function Message({ message, attachments, actions, connected, manual, reload }: {
   );
 }
 
+function isCompaction(message: ChatMessageView): boolean {
+  return message.role === "user" && message.text.trim() === chatCompactCommand;
+}
+
+function Compaction({ message }: { message: ChatMessageView }) {
+  const pending: boolean = message.state === "queued" || message.state === "running";
+  const label: string = pending ? "Compacting the conversation…"
+    : message.state === "completed" ? "Conversation compacted"
+      : message.state === "failed" ? "Compaction failed" : "Compaction interrupted";
+  return (
+    <div className={s.compaction} role="status">
+      <span className={s.compactionLabel}>{pending && <Spinner size={12} />}{label}</span>
+      <ErrorText error={message.error} />
+    </div>
+  );
+}
+
+function Thinking() {
+  return (
+    <article className={`${s.message} ${s.assistant}`}>
+      <span className={s.avatar} aria-hidden><SparkIcon size={14} /></span>
+      <div className={s.body}>
+        <div className={s.meta}><span className={s.author}>Orchestrator</span></div>
+        <div className={s.thinking} role="status" aria-label="The orchestrator is working on a reply"><span /><span /><span /></div>
+      </div>
+    </article>
+  );
+}
+
 function Composer({ id, supportsImages, connected, ready = true, reload, autoFocus }: {
   id: string | null;
   supportsImages: ChatDetail["supportsImages"];
@@ -155,6 +184,7 @@ function Composer({ id, supportsImages, connected, ready = true, reload, autoFoc
   const nextKey = useRef<number>(0);
   const draftChat = useRef<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
   const send = useAction(async () => {
     const title: string = message.trim().split("\n")[0]!.slice(0, 60) || "New conversation";
     const chatId: string = id ?? draftChat.current ?? (await call("createChat", { body: { title } })).id;
@@ -174,6 +204,7 @@ function Composer({ id, supportsImages, connected, ready = true, reload, autoFoc
     setMessage("");
     setImages([]);
     setImageError(null);
+    input.current?.focus();
     reload(chatId);
   });
   const disabled: boolean = !connected || send.busy;
@@ -207,12 +238,14 @@ function Composer({ id, supportsImages, connected, ready = true, reload, autoFoc
           </li>)}
         </ul>}
         <textarea
+          ref={input}
           aria-label="Message"
           placeholder={id === null ? "Describe what you want built, in your own words…" : "Reply to the orchestrator…"}
           rows={1}
           autoFocus={autoFocus}
           value={message}
-          disabled={disabled}
+          disabled={!connected}
+          readOnly={send.busy}
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -272,6 +305,14 @@ function Conversation({ id, connected }: { id: string; connected: boolean }) {
     await call("markChatRead", { params: { id } });
     detail.reload();
   });
+  const compact = useAction(async () => {
+    await call("sendChatMessage", { params: { id }, body: { text: chatCompactCommand, attachmentIds: [] } });
+    detail.reload();
+  });
+  const last: ChatMessageView | undefined = chat?.messages.at(-1);
+  const turnPending: boolean = last?.role === "user" && (last.state === "queued" || last.state === "running");
+  const thinking: boolean = turnPending && !isCompaction(last!) && !chat?.streamingReply;
+  const canCompact: boolean = connected && !compact.busy && !turnPending && !!chat?.messages.some((message) => message.state === "completed" && !isCompaction(message));
 
   useEffect(() => {
     const update = (): void => setActive(document.visibilityState === "visible" && document.hasFocus());
@@ -316,8 +357,11 @@ function Conversation({ id, connected }: { id: string; connected: boolean }) {
       <header className={s.paneHeader}>
         <h2 className={s.paneTitle}>{chat?.chat.title ?? ""}</h2>
         {chat && !manual && <span className={s.actionMeta}>Ticket intake · read only</span>}
+        {chat && manual && <Button size="sm" className={s.headerAction} disabled={!canCompact} loading={compact.busy}
+          title="Summarize the conversation so far, so the orchestrator keeps its context short" onClick={() => void compact.run()}>Compact</Button>}
       </header>
       {detail.error && <div className={s.footnote}><ErrorText error={detail.error} /></div>}
+      {compact.error && <div className={s.footnote}><ErrorText error={compact.error} /></div>}
       {markRead.error && <div className={s.footnote}><Alert tone="danger" actions={<Button size="sm" disabled={!connected || markRead.busy} onClick={() => void markRead.run()}>Mark as read</Button>}>{markRead.error}</Alert></div>}
       <div ref={history} className={s.history} role="log" aria-label="Conversation messages" tabIndex={0} onScroll={(event) => {
         const pane: HTMLDivElement = event.currentTarget;
@@ -326,13 +370,15 @@ function Conversation({ id, connected }: { id: string; connected: boolean }) {
         <div className={s.thread}>
           {detail.loading && !chat && <Spinner />}
           {chat?.messages.length === 0 && <EmptyState icon={<ChatIcon size={18} />} title="No messages yet">Tell the orchestrator what you want: it plans the work and creates the jobs.</EmptyState>}
-          {chat?.messages.map((message) => <Message key={message.id} message={message} connected={connected} manual={manual}
-            actions={actions.get(message.id) ?? []} attachments={attachments.get(message.id) ?? []} reload={detail.reload} />)}
+          {chat?.messages.map((message) => isCompaction(message) ? <Compaction key={message.id} message={message} />
+            : <Message key={message.id} message={message} connected={connected} manual={manual}
+              actions={actions.get(message.id) ?? []} attachments={attachments.get(message.id) ?? []} reload={detail.reload} />)}
           {chat?.streamingReply && <Message message={chat.streamingReply} connected={connected} manual={manual}
             actions={[]} attachments={[]} reload={detail.reload} />}
+          {thinking && <Thinking />}
         </div>
       </div>
-      {chat && manual && <Composer id={id} connected={connected} supportsImages={chat.supportsImages} reload={detail.reload} />}
+      {chat && manual && <Composer id={id} connected={connected} supportsImages={chat.supportsImages} reload={detail.reload} autoFocus />}
       {definition && <DefinitionPreview key={definition} path={definition} onClose={() => setQuery({}, { replace: true })} />}
     </section>
   );

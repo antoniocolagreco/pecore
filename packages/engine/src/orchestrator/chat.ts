@@ -4,7 +4,7 @@ import { basename, join } from "node:path";
 import { monotonicFactory } from "ulid";
 import { probeImageSupport, startSession } from "@pecore/agents";
 import type { McpServer, PromptContent, Session, Spawn, SpawnedProcess } from "@pecore/agents";
-import { chatAttachmentMaxBytes } from "@pecore/schemas";
+import { chatAttachmentMaxBytes, chatCompactCommand } from "@pecore/schemas";
 import type { ChatAttachmentView, ChatDetail, ChatImageMime, ChatMessageView, ChatView, LiveMessage, SendChatMessageBody } from "@pecore/schemas";
 import { protectedUser, spawnFor } from "../accounts/agents";
 import { HttpError } from "../api/server";
@@ -367,14 +367,25 @@ export class OrchestratorChats {
         ...(saved.sessionId && (saved.sessionKey === sessionKey || saved.sessionKey === null) ? { resumeId: saved.sessionId } : {}),
       });
       drains = [drain(session.raw), this.streamReply(session, active)];
-      this.db.setSession(chatId, session.sessionId, sessionKey);
-      this.imageSupport.set(key, session.supportsImages);
       const attachments: ChatAttachment[] = this.db.messageAttachments(id);
+      const compact: boolean = message.text.trim() === chatCompactCommand && attachments.length === 0;
+      if (!compact || session.resumed) this.db.setSession(chatId, session.sessionId, sessionKey);
+      this.imageSupport.set(key, session.supportsImages);
       if (attachments.length && !session.supportsImages) throw new Error("the orchestrator connector does not support images");
+      if (compact) {
+        if (session.resumed) {
+          const result = await session.prompt(chatCompactCommand);
+          if (this.closed) return;
+          if (result.error) throw new Error(result.error.raw);
+        }
+        this.db.setMessageState(id, "completed");
+        this.changed(message);
+        return;
+      }
 
       const lines: string[] = [preamble];
       if (!session.resumed) {
-        const history = this.db.messages(chatId).filter((entry) => entry.id !== id && entry.state === "completed");
+        const history = this.db.messages(chatId).filter((entry) => entry.id !== id && entry.state === "completed" && entry.text.trim() !== chatCompactCommand);
         if (history.length) lines.push("Earlier conversation, for context only:", JSON.stringify(history.map(({ role, text, context }) => ({ role, text, context }))));
       }
       if (message.context.length) lines.push("Context references:", JSON.stringify(message.context));

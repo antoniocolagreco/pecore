@@ -138,6 +138,7 @@ const IdParams = z.object({ id: z.string().min(1) });
 export const DefinitionErrorView = z.object({ file: z.string(), path: z.string(), message: z.string() });
 
 export const chatAttachmentMaxBytes = 10_000_000;
+export const chatCompactCommand = "/compact";
 const chatAttachmentMaxBase64 = 4 * Math.ceil(chatAttachmentMaxBytes / 3);
 export const ChatImageMime = z.enum(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 export type ChatImageMime = z.infer<typeof ChatImageMime>;
