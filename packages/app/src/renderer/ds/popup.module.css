@@ -274,8 +274,10 @@
   height: 22px;
   padding: 0 4px;
   border: 0;
+  border-radius: 0;
   outline: 0;
   background: transparent;
+  box-shadow: none;
   font-size: var(--text-size);
 }
 
