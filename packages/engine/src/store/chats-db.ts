@@ -16,7 +16,7 @@ type MessageRow = Omit<ChatTurn, "context"> & { context: string | null };
 type ActionRow = Omit<ChatActionView, "target"> & { target: string };
 
 const chatColumns = `c.id, c.title, c.intake_project AS projectId, c.created_at AS createdAt, c.last_read_at AS lastReadAt,
-  (SELECT COUNT(*) FROM messages m WHERE m.chat_id = c.id AND m.role = 'assistant'
+  (SELECT COUNT(*) FROM messages m WHERE m.chat_id = c.id AND m.role IN ('assistant', 'orchestrator')
     AND (CASE WHEN c.last_read_message_id IS NULL THEN m.created_at > COALESCE(c.last_read_at, -1)
       ELSE m.rowid > COALESCE((SELECT rowid FROM messages WHERE id = c.last_read_message_id), 0) END)) AS unread`;
 const messageColumns = `id, chat_id AS chatId, role, text, context, created_at AS createdAt, state, error, reply_to AS replyTo,

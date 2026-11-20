@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { ApiError, forgeHost, Settings as SettingsSchema } from "@pecore/schemas";
-import type { Account, BuiltInHarness, ForgeAccount, LiveMessage, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
+import { ApiError, forgeHost, roleProfile, Settings as SettingsSchema } from "@pecore/schemas";
+import type { Account, BuiltInHarness, ForgeAccount, LiveMessage, Role, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
@@ -25,10 +25,13 @@ type Snapshot<T> = { value: T; sha256: string };
 type LoginProgress = Extract<LiveMessage, { type: "login.progress" }>;
 type Progress = { lines: string[]; url: string | null; done: boolean };
 
-const orchestratorProfile = "orchestrator";
+const roleProfiles: Record<Role, string> = { assistant: "assistant", orchestrator: "background" };
+const roleTitles: Record<Role, string> = { assistant: "Assistant", orchestrator: "Orchestrator" };
+const sameValue = "same";
 
 const sections: { id: string; title: string }[] = [
   { id: "accounts", title: "Accounts" },
+  { id: "assistant", title: "Assistant" },
   { id: "orchestrator", title: "Orchestrator" },
   { id: "limits", title: "Limits" },
   { id: "protectedMode", title: "Protected mode" },
@@ -338,16 +341,19 @@ function AddForgeAccount({ open, onClose, onAdd, taken }: { open: boolean; onClo
 
 type ModelChoice = { account: string; model: string; effort: string | null };
 
-function OrchestratorPicker({ accounts, choice, onChoice, disabled }: { accounts: Account[]; choice: ModelChoice | null; onChoice(choice: ModelChoice): void; disabled: boolean }) {
+function ModelPicker({ accounts, choice, onChoice, disabled, same = false }: { accounts: Account[]; choice: ModelChoice | null; onChoice(choice: ModelChoice | null): void; disabled: boolean; same?: boolean }) {
   const account: string = choice?.account ?? "";
   const options = useData(() => account ? call("accountOptions", { params: { id: account } }) : Promise.resolve(null), [account]);
   const models: string[] = [...new Set([...(options.data?.models ?? []), ...(choice?.model ? [choice.model] : [])])];
   const efforts: string[] = [...new Set([...(options.data?.efforts ?? []).filter((effort) => effort !== "default"), ...(choice?.effort ? [choice.effort] : [])])];
   const loading: boolean = !!account && options.loading;
   return <div className={s.grid}>
-    <Select label="Provider" value={account || null} disabled={disabled} placeholder="Choose a provider"
-      onValueChange={(next) => { if (next && next !== account) onChoice({ account: next, model: "", effort: null }); }}
-      options={accounts.map((item) => ({ value: item.id, label: harnessName(item, accounts) }))} />
+    <Select label="Provider" value={account || (same ? sameValue : null)} disabled={disabled} placeholder="Choose a provider"
+      onValueChange={(next) => {
+        if (next === sameValue) onChoice(null);
+        else if (next && next !== account) onChoice({ account: next, model: "", effort: null });
+      }}
+      options={[...same ? [{ value: sameValue, label: "Same as the Assistant" }] : [], ...accounts.map((item) => ({ value: item.id, label: harnessName(item, accounts) }))]} />
     {loading
       ? <TextField label="Model" leading={<Spinner size={13} />} value="" placeholder={`Reading models from ${harnessName(accounts.find(({ id }) => id === account) ?? accounts[0]!, accounts)}…`} readOnly />
       : <Combobox label="Model" value={choice?.model || null} disabled={disabled || !account} placeholder="Choose a model"
@@ -418,19 +424,36 @@ export function Settings() {
   const settingsResult = SettingsSchema.safeParse(settings.value);
   const value: SettingsValue | undefined = settings.value;
   const update = settings.update;
-  const [orchestrator, setOrchestrator] = useState<ModelChoice>();
-  const current = profiles.data?.value.profiles.find(({ id }) => id === settings.current?.orchestrator?.profile);
-  const currentOrchestrator: ModelChoice | null = current ? { account: current.account, model: current.model, effort: current.effort } : null;
+  const [choices, setChoices] = useState<Partial<Record<Role, ModelChoice | null>>>({});
+  const profileChoice = (id: string | null | undefined): ModelChoice | null => {
+    const profile = profiles.data?.value.profiles.find((entry) => entry.id === id);
+    return profile ? { account: profile.account, model: profile.model, effort: profile.effort } : null;
+  };
+  const current: Record<Role, ModelChoice | null> = {
+    assistant: settings.current ? profileChoice(roleProfile(settings.current, "assistant")) : null,
+    orchestrator: settings.current?.assistant && settings.current.orchestrator ? profileChoice(settings.current.orchestrator.profile) : null,
+  };
+  const shown = (role: Role): ModelChoice | null => role in choices ? choices[role] ?? null : current[role];
+  const choose = (role: Role, choice: ModelChoice | null): void => {
+    if (!value) return;
+    setChoices((old) => ({ ...old, [role]: choice }));
+    const assistant: SettingsValue["assistant"] = role === "assistant" ? { profile: roleProfiles.assistant } : value.assistant ?? value.orchestrator;
+    const orchestrator: SettingsValue["orchestrator"] = role === "orchestrator" ? choice && { profile: roleProfiles.orchestrator } : value.assistant ? value.orchestrator : null;
+    update({ ...value, assistant, orchestrator });
+  };
   const saveAll = useAction(async () => {
     if (!value) return;
-    if (orchestrator) {
-      if (!orchestrator.model) throw new Error("Choose a model for the orchestrator.");
+    const written = (Object.entries(choices) as [Role, ModelChoice | null][]).flatMap(([role, choice]) => choice ? [{ role, choice }] : []);
+    const missing = written.find(({ choice }) => !choice.model);
+    if (missing) throw new Error(`Choose a model for the ${roleTitles[missing.role]}.`);
+    if (written.length) {
       const file = await call("getProfiles");
-      const others = file.value.profiles.filter(({ id }) => id !== orchestratorProfile);
-      await call("putProfiles", { body: { value: { ...file.value, profiles: [...others, { id: orchestratorProfile, ...orchestrator }] }, baseSha256: file.sha256 } });
+      const ids: Set<string> = new Set(written.map(({ role }) => roleProfiles[role]));
+      const others = file.value.profiles.filter(({ id }) => !ids.has(id));
+      await call("putProfiles", { body: { value: { ...file.value, profiles: [...others, ...written.map(({ role, choice }) => ({ id: roleProfiles[role], ...choice }))] }, baseSha256: file.sha256 } });
       profiles.reload();
     }
-    if (await settings.commit(value)) setOrchestrator(undefined);
+    if (await settings.commit(value)) setChoices({});
   });
   const markJson = (key: string, invalid: boolean): void => {
     if (invalid && settings.value) settings.update(settings.value);
@@ -477,19 +500,20 @@ export function Settings() {
 
         {settings.feedback}
         {value && <>
-          <Section id="orchestrator" title="Orchestrator" description="The model that talks with you and plans the jobs.">
-            <OrchestratorPicker accounts={(accounts.current?.accounts ?? []).filter(({ kind }) => kind === "model")} disabled={!connected || !profiles.data}
-              choice={orchestrator ?? currentOrchestrator}
-              onChoice={(choice) => {
-                setOrchestrator(choice);
-                update({ ...value, orchestrator: { profile: orchestratorProfile } });
-              }} />
+          <Section id="assistant" title="Assistant" description="The model you talk with in the chat.">
+            <ModelPicker accounts={(accounts.current?.accounts ?? []).filter(({ kind }) => kind === "model")} disabled={!connected || !profiles.data}
+              choice={shown("assistant")} onChoice={(choice) => choose("assistant", choice)} />
             <div className={s.grid} id="compaction">
               <NumberField label="Compact when idle above" unit="tokens" value={value.compaction.auto} min={1} step={1000}
                 onValueChange={(auto) => update({ ...value, compaction: { ...value.compaction, auto: auto ?? 0 } })} description="After 5 minutes without messages." />
               <NumberField label="Compact at once above" unit="tokens" value={value.compaction.max} min={1} step={1000}
                 onValueChange={(max) => update({ ...value, compaction: { ...value.compaction, max: max ?? 0 } })} />
             </div>
+          </Section>
+
+          <Section id="orchestrator" title="Orchestrator" description="The model that plans jobs for new tickets in the background.">
+            <ModelPicker accounts={(accounts.current?.accounts ?? []).filter(({ kind }) => kind === "model")} disabled={!connected || !profiles.data}
+              same choice={shown("orchestrator")} onChoice={(choice) => choose("orchestrator", choice)} />
           </Section>
 
           <Section id="limits" title="Limits" description="How much PeCore runs at the same time.">
@@ -587,8 +611,8 @@ export function Settings() {
       <Issues issues={settingsResult.error?.issues} />
       <span className={s.spacer} />
       <ErrorText error={saveAll.error} />
-      <Button onClick={() => { setOrchestrator(undefined); saveAll.clear(); settings.discard(); }}>Discard</Button>
-      <Button variant="primary" loading={saveAll.busy || settings.saving} disabled={!connected || !settingsResult.success || !!invalidJson.length || protect.busy || (!!orchestrator && !orchestrator.model)}
+      <Button onClick={() => { setChoices({}); saveAll.clear(); settings.discard(); }}>Discard</Button>
+      <Button variant="primary" loading={saveAll.busy || settings.saving} disabled={!connected || !settingsResult.success || !!invalidJson.length || protect.busy || Object.values(choices).some((choice) => choice && !choice.model)}
         onClick={() => void saveAll.run()}>Save settings</Button>
     </div>}
   </Page>;

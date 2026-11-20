@@ -30,6 +30,7 @@ export const Settings = z
     prices: z.record(z.string(), Price).default({}),
     programPaths: z.record(z.string(), z.string().regex(/^\//, "absolute path")).default({}),
     quietHours: z.object({ from: Time, to: Time }).strict().nullable().default(null),
+    assistant: z.object({ profile: z.string().min(1) }).strict().nullable().default(null),
     orchestrator: z.object({ profile: z.string().min(1) }).strict().nullable().default(null),
     compaction: z
       .object({ auto: z.number().int().positive().default(128_000), max: z.number().int().positive().default(256_000) })
@@ -40,6 +41,13 @@ export const Settings = z
   })
   .strict();
 export type Settings = z.infer<typeof Settings>;
+
+export type Role = "assistant" | "orchestrator";
+
+export function roleProfile(settings: Pick<Settings, "assistant" | "orchestrator">, role: Role): string | null {
+  const assistant: string | null = settings.assistant?.profile ?? settings.orchestrator?.profile ?? null;
+  return role === "assistant" ? assistant : settings.orchestrator?.profile ?? assistant;
+}
 
 export function defaultJobLimit(cpuCount: number): number {
   return Math.max(1, Math.floor(cpuCount / 2));

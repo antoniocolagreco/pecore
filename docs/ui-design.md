@@ -248,7 +248,7 @@ The prototype is normative only for: the Everforest palette and gradients, the I
 ### Assistant chat (right panel)
 
 *   One chat for the whole app, always on the right of every screen (decisions 32, 36). No conversation list, no page of its own. Its header has only the Compact button.
-*   The user talks only to the Assistant. The Orchestrator, which works in the background on new issues of linked projects, never chats; it posts a short report in this chat when it does something, for example "Issue #42 on shop: created the job Fix login", with a link to the job (decision 38, IB9).
+*   The user talks only to the Assistant. The Orchestrator, which works in the background on new issues of linked projects, never chats; it posts a short report in this chat when it does something, signed "Orchestrator", for example "Shop, ticket 42: created the job Fix login.", with a link to each job (decision 38, IB9). Reports count as unread like replies.
 *   The reply appears while it is written (decision 20). Until it starts, animated dots under the user's message show the Assistant is working (decision 23).
 *   After sending, the cursor stays in the message box (decision 22).
 *   Compaction (decision 24): the Compact button, or `/compact` typed as a message, sends the harness's own compaction command to the chat's session. The chat shows a divider ("Compacting the conversation…", then "Conversation compacted"), no reply.

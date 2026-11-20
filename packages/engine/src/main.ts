@@ -5,7 +5,7 @@ import { applyTraverseAcls } from "./osuser/acl";
 import { cpus } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { removeAs } from "./workdir/fs-as";
-import { BuiltInHarness, defaultJobLimit, withForgeHosts } from "@pecore/schemas";
+import { BuiltInHarness, defaultJobLimit, roleProfile, withForgeHosts } from "@pecore/schemas";
 import { listOptions, satisfies } from "@pecore/agents";
 import type { LoginState } from "@pecore/agents";
 import type { Account, Accounts, ForgeAccount, JobState, LiveMessage, LoginView, Profiles, ProjectInput, Settings, SetupView, Tiers, WhyView } from "@pecore/schemas";
@@ -194,7 +194,7 @@ export class Engine extends EventEmitter {
   }
 
   private orderSink(): OrderSink | null {
-    return this.opts.orders ?? (this.settings.orchestrator ? this.intake : null);
+    return this.opts.orders ?? (roleProfile(this.settings, "orchestrator") ? this.intake : null);
   }
 
   async startOrchestrator(url: string, token: string): Promise<void> {

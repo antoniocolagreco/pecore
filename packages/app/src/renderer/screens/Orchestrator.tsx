@@ -1,4 +1,4 @@
-import { ChatImageMime, chatAttachmentMaxBytes, chatCompactCommand } from "@pecore/schemas";
+import { ChatImageMime, chatAttachmentMaxBytes, chatCompactCommand, roleProfile } from "@pecore/schemas";
 import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatMessageView } from "@pecore/schemas";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -126,13 +126,14 @@ function Message({ message, attachments, actions, connected, reload }: {
     reload();
   });
   const user: boolean = message.role === "user";
+  const jobs: string[] = message.role === "orchestrator" ? message.context.flatMap(({ jobId }) => jobId ? [jobId] : []) : [];
   const state: StateInfo | null = messageStates[message.state];
   return (
     <article className={`${s.message} ${user ? s.user : s.assistant}`}>
       {!user && <span className={s.avatar} aria-hidden><SparkIcon size={14} /></span>}
       <div className={s.body}>
         <div className={s.meta}>
-          <span className={s.author}>{user ? "You" : "Assistant"}</span>
+          <span className={s.author}>{authors[message.role]}</span>
           <time dateTime={new Date(message.createdAt).toISOString()} title={dateTime(message.createdAt)}>{time(message.createdAt)}</time>
           {state && <StateLabel info={state} />}
         </div>
@@ -150,10 +151,15 @@ function Message({ message, attachments, actions, connected, reload }: {
         {message.state === "interrupted" && <div><Button size="sm" disabled={!connected || retry.busy} loading={retry.busy} onClick={() => void retry.run()}>Retry</Button></div>}
         <ErrorText error={retry.error} />
         <Actions actions={actions} connected={connected} />
+        {jobs.length > 0 && <ul className={s.links}>
+          {jobs.map((id) => <li key={id}>{connected ? <Link to={`/jobs/${encodeURIComponent(id)}`}>Job {id}</Link> : <span>Job {id}</span>}</li>)}
+        </ul>}
       </div>
     </article>
   );
 }
+
+const authors: Record<ChatMessageView["role"], string> = { user: "You", assistant: "Assistant", orchestrator: "Orchestrator" };
 
 function isCompaction(message: ChatMessageView): boolean {
   return message.role === "user" && message.text.trim() === chatCompactCommand;
@@ -395,7 +401,7 @@ function Conversation({ id, connected, ready }: { id: string; connected: boolean
       </div>
       {ready === false && connected && (
         <div className={s.footnote}>
-          <Alert tone="warning" title="No Assistant yet" actions={<Link to={settingUrl("orchestrator")}>Choose one in Settings</Link>}>
+          <Alert tone="warning" title="No Assistant yet" actions={<Link to={settingUrl("assistant")}>Choose one in Settings</Link>}>
             Log in to Claude Code, Codex or OpenCode and PeCore picks one for you.
           </Alert>
         </div>
@@ -410,7 +416,7 @@ export function ChatPanel() {
   const connected: boolean = useConnected();
   const chat = useData(() => call("getAssistantChat"), []);
   const settings = useData(() => call("getSettings"), [], (event) => event.type === "definition.changed" && event.path === "settings.json");
-  const ready: boolean | null = settings.data ? settings.data.value.orchestrator !== null : null;
+  const ready: boolean | null = settings.data ? roleProfile(settings.data.value, "assistant") !== null : null;
   return (
     <aside className={s.panel} aria-label="Assistant">
       <ErrorText error={chat.error} />

@@ -2,7 +2,7 @@ import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { InstantiateBody, OrderPlan, ProjectId, TicketReply, TicketSnapshot } from "@pecore/schemas";
-import type { StoredEvent } from "@pecore/schemas";
+import type { Role, StoredEvent } from "@pecore/schemas";
 import { definitionOperations } from "../api/routes/definitions";
 import { jobHandlers } from "../api/routes/jobs";
 import { queueHandlers } from "../api/routes/queue";
@@ -83,8 +83,10 @@ function definitionPath(path: string, scope: "template" | "instance" | "knowledg
   throw new Error(`definition path is outside the allowed directories: ${path}`);
 }
 
+const orchestratorToolNames: Set<string> = new Set(["list_projects", "list_recipes", "read_ticket", "create_jobs", "job_status", "read_artifact", "comment_ticket", "read_replies"]);
+
 export function orchestratorTools(engine: Engine): {
-  list(): { name: string; description: string; inputSchema: ToolInputSchema }[];
+  list(role: Role): { name: string; description: string; inputSchema: ToolInputSchema }[];
   call(name: string, input: unknown, message: ChatTurn): Promise<ToolResult>;
 } {
   const chats = engine.orchestrator;
@@ -132,6 +134,11 @@ export function orchestratorTools(engine: Engine): {
       } catch (error) {
         if (!intake && !ctx.db.orderEvents(message.orderId).some((event) => event.type === "order.planned")) chats.setOrderProject(message, null);
         throw error;
+      }
+      if (order && !alreadyPlanned && value.accepted) {
+        const titles: string[] = value.plan.map(({ title }) => title);
+        await chats.report(`${ctx.project.name}, ticket ${order.ticket_id}: created ${titles.length === 1 ? "the job" : "the jobs"} ${titles.join(", ")}.`,
+          Object.values(value.jobIds).map((jobId) => ({ project: ctx.id, jobId })));
       }
       return { value, target: { project: ctx.id, jobIds: value.jobIds }, isError: !value.accepted };
     }),
@@ -213,12 +220,13 @@ export function orchestratorTools(engine: Engine): {
       target: { project, ticketId },
     })),
   };
+  const allowed = (role: Role, name: string): boolean => Object.hasOwn(tools, name) && (role === "assistant" || orchestratorToolNames.has(name));
   return {
-    list: () => Object.entries(tools).map(([name, { description, inputSchema }]) => ({ name, description, inputSchema })),
+    list: (role) => Object.entries(tools).filter(([name]) => allowed(role, name)).map(([name, { description, inputSchema }]) => ({ name, description, inputSchema })),
     async call(name, input, message) {
       const actionId: string = chats.startAction(message, name);
       try {
-        if (!Object.hasOwn(tools, name)) throw new Error(`unknown tool ${name}`);
+        if (!allowed(chats.role(message.chatId), name)) throw new Error(`unknown tool ${name}`);
         const output: ToolOutput = await tools[name]!.run(input ?? {}, message);
         chats.finishAction(message, actionId, output.target ?? { state: output.isError ? "failed" : "completed" });
         return textResult(output.value, output.isError);

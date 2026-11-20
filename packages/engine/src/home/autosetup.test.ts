@@ -122,8 +122,9 @@ describe("auto-setup", () => {
         cheap: ["claude-code-cheap", "codex-cheap", "opencode-cheap"],
       },
     });
-    expect(await s.json("settings.json")).toEqual({ orchestrator: { profile: "claude-code-frontier" } });
-    expect(app.engine.global().settings.orchestrator).toEqual({ profile: "claude-code-frontier" });
+    expect(await s.json("settings.json")).toEqual({ assistant: { profile: "claude-code-frontier" } });
+    expect(app.engine.global().settings.assistant).toEqual({ profile: "claude-code-frontier" });
+    expect(app.engine.global().settings.orchestrator).toBeNull();
     expect(app.engine.global().profiles.profiles).toHaveLength(12);
     expect(await s.head()).toMatch(/ auto-setup: Set up Claude Code, Codex, and OpenCode: 12 profiles added$/);
     expect(s.notices).toEqual([{ kind: "auto-setup", title: "PeCore setup", body: "Set up Claude Code, Codex, and OpenCode: 12 profiles added" }]);

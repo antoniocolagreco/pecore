@@ -163,7 +163,7 @@ export type ChatView = z.infer<typeof ChatView>;
 export const ChatMessageView = z.object({
   id: z.string(),
   chatId: z.string(),
-  role: z.enum(["user", "assistant"]),
+  role: z.enum(["user", "assistant", "orchestrator"]),
   text: z.string(),
   context: z.array(ChatReference),
   createdAt: z.number(),

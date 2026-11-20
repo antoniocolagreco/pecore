@@ -85,9 +85,10 @@ async function until<T>(fn: () => T | undefined | false | Promise<T | undefined 
   }
 }
 
-async function setup(build: (root: string) => object[][], extra: { source?: boolean } = {}) {
+async function setup(build: (root: string) => object[][], extra: { source?: boolean; orchestrator?: (root: string) => object[][] } = {}) {
   const root = await tempDir();
   const scripts: object[][] = build(root);
+  const orchestratorScripts: object[][] = extra.orchestrator?.(root) ?? [];
   process.env.HOME = join(root, "user");
   await mkdir(process.env.HOME);
   const home = join(root, "home");
@@ -105,12 +106,29 @@ async function setup(build: (root: string) => object[][], extra: { source?: bool
   }
   const connectors = join(root, "connectors");
   await mkdir(connectors);
-  await writeFile(join(connectors, "fake.json"), JSON.stringify({ name: "fake", title: "Fake", kind: "native", harness: { program: "node", versionArgs: ["--version"], versionRange: ">=18.0.0" }, command: ["{harnessPath}", fakeAgent], env: { FAKE_AGENT_SCRIPT: files.join(",") }, reader: "claude-code" }));
+  const orchestratorFiles: string[] = [];
+  for (const [i, s] of orchestratorScripts.entries()) {
+    const f = join(root, `orchestrator-${i}.jsonl`);
+    await writeFile(f, s.map((x) => JSON.stringify(x)).join("\n") + "\n");
+    orchestratorFiles.push(f);
+  }
+  const connector = (name: string, scriptFiles: string[]) => JSON.stringify({ name, title: "Fake", kind: "native", harness: { program: "node", versionArgs: ["--version"], versionRange: ">=18.0.0" }, command: ["{harnessPath}", fakeAgent], env: { FAKE_AGENT_SCRIPT: scriptFiles.join(",") }, reader: "claude-code" });
+  await writeFile(join(connectors, "fake.json"), connector("fake", files));
   await mkdir(home, { recursive: true });
-  await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [{ id: "fake", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" }] }));
-  await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p1", account: "fake", model: "m1" }] }));
+  if (extra.orchestrator) {
+    await writeFile(join(connectors, "fake-background.json"), connector("fake-background", orchestratorFiles));
+    await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [
+      { id: "fake", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" },
+      { id: "background", kind: "model", provider: "fakeco", connector: "fake-background", login: "subscription" },
+    ] }));
+    await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p1", account: "fake", model: "m1" }, { id: "p2", account: "background", model: "m2" }] }));
+    await writeFile(join(home, "settings.json"), JSON.stringify({ assistant: { profile: "p1" }, orchestrator: { profile: "p2" } }));
+  } else {
+    await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [{ id: "fake", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" }] }));
+    await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p1", account: "fake", model: "m1" }] }));
+    await writeFile(join(home, "settings.json"), JSON.stringify({ orchestrator: { profile: "p1" } }));
+  }
   await writeFile(join(home, "tiers.json"), JSON.stringify({ tiers: { strong: ["p1"] } }));
-  await writeFile(join(home, "settings.json"), JSON.stringify({ orchestrator: { profile: "p1" } }));
   const agents = { connectorsDir: connectors, adaptersDir: join(root, "adapters"), adapters: {} };
   const open = async () => {
     const engine = await Engine.start({ home, library, agents, checkLogins: false });
@@ -327,6 +345,7 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     await writeFile(settings, JSON.stringify({ orchestrator: { profile: "p1" } }));
     const again = await t.open();
     try {
+      await until(() => existsSync(join(t.root, "compact.json")));
       await until(async () => {
         const snapshot: ChatDetail = await again.call("getChat", { params: { id: chat.id } });
         return snapshot.messages.at(-1)?.text === "/compact" && snapshot.messages.at(-1)?.state === "completed";
@@ -455,6 +474,52 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     await writeFile(join(t.root, "done"), "");
     await until(async () => (await again.call("getChat", { params: { id: chat.id } })).messages.some((x) => x.role === "assistant" && x.text.includes("Retried.")));
     await again.close();
+  }, 60000);
+
+  it("runs the Orchestrator on its own model with limited tools, and reports the jobs it creates in the Assistant chat", async () => {
+    const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
+    const t = await setup((root) => [
+      init(),
+      [...init(), ...newSession, { expect: "session/prompt" }, ...replyWith("Hello.")],
+      [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "assistant.json") }, ...replyWith("Done.")],
+    ], { source: true, orchestrator: (root) => [[...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "intake.json") }, { waitFile: join(root, "done") }, ...replyWith("Planned.")]] });
+    try {
+      const assistant: ChatDetail["chat"] = await t.call("getAssistantChat");
+      const detail = (): Promise<ChatDetail> => t.call("getChat", { params: { id: assistant.id } });
+      expect((await detail()).supportsImages).toBe(false);
+      await t.call("sendChatMessage", { params: { id: assistant.id }, body: { text: "Hi" } });
+      await until(async () => (await detail()).messages.length === 2);
+
+      const { ctx, executor } = t.engine.project("demo");
+      const sourceItem = await until(() => ctx.db.db.prepare("SELECT id, subject_hash FROM human_queue WHERE state = 'open' AND kind = 'source-node'").get() as { id: string; subject_hash: string } | undefined);
+      await executor.answer(sourceItem.id, "confirm", null, sourceItem.subject_hash);
+      await until(() => existsSync(join(t.root, "intake.json")));
+      const intake = t.engine.orchestrator.list().find((c) => c.projectId === "demo")!;
+      const m = mcp(tokenFileOf(intake.id));
+      await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+      expect((await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name).sort())
+        .toEqual(["comment_ticket", "create_jobs", "job_status", "list_projects", "list_recipes", "read_artifact", "read_replies", "read_ticket"]);
+      expect((await m.tool("write_instance", { path: "projects/demo/recipes/reviewed.json", content: "{}" })).result!.isError).toBe(true);
+      const fix = [{ key: "fix", title: "Fix login", ticketText: "fix the login button", dependsOn: [] }];
+      expect((await m.tool("create_jobs", { project: "demo", plan: fix })).result!.isError).not.toBe(true);
+      await m.tool("create_jobs", { project: "demo", plan: fix });
+      m.close();
+      const jobId: string = (ctx.db.db.prepare("SELECT id FROM jobs WHERE order_key = 'fix'").get() as { id: string }).id;
+      const reports = (await detail()).messages.filter(({ role }) => role === "orchestrator");
+      expect(reports).toMatchObject([{ text: "Demo, ticket 7: created the job Fix login.", context: [{ project: "demo", jobId }], state: "completed" }]);
+      expect((await detail()).chat.unread).toBeGreaterThan(0);
+
+      await t.call("sendChatMessage", { params: { id: assistant.id }, body: { text: "What happened?" } });
+      await until(() => existsSync(join(t.root, "assistant.json")));
+      const prompt: string = await readFile(join(t.root, "assistant.json"), "utf8");
+      expect(prompt).toContain("Orchestrator reports since the last message");
+      expect(prompt).toContain("created the job Fix login");
+      expect(prompt).toContain("PeCore's Assistant");
+      expect(await readFile(join(t.root, "intake.json"), "utf8")).toContain("PeCore's Orchestrator");
+      await writeFile(join(t.root, "done"), "");
+    } finally {
+      await t.close();
+    }
   }, 60000);
 
   it("hands a trusted ticket to the project's intake chat as untrusted data; create_jobs uses the ticket order", async () => {

@@ -196,7 +196,8 @@ export async function autoSetup(home: string, agents: AgentServices): Promise<Se
   const refreshedProfiles: Map<number, Profile> = new Map();
   const additions: Record<TierName, string[]> = { frontier: [], strong: [], standard: [], cheap: [] };
   const titles: Set<string> = new Set();
-  let orchestrator: Global["settings"]["orchestrator"] = settings.orchestrator;
+  let assistant: Global["settings"]["assistant"] = settings.assistant;
+  const unset: boolean = settings.assistant === null && settings.orchestrator === null;
   for (const { harness, title, account, provider, offer } of eligible) {
     const name: BuiltInHarness = harness.connector;
     const id: string = account?.id ?? name;
@@ -223,11 +224,11 @@ export async function autoSetup(home: string, agents: AgentServices): Promise<Se
         titles.add(title);
       }
     }
-    if (orchestrator === null) {
+    if (unset && assistant === null) {
       const frontier: Profile | undefined = [...newProfiles, ...profiles.profiles].find((profile) => profile.account === id && profile.id === `${name}-frontier`)
         ?? tiers.tiers.frontier.map((profileId) => profiles.profiles.find((profile) => profile.id === profileId)).find((profile) => profile?.account === id);
       if (frontier) {
-        orchestrator = { profile: frontier.id };
+        assistant = { profile: frontier.id };
         titles.add(title);
       }
     }
@@ -248,9 +249,9 @@ export async function autoSetup(home: string, agents: AgentServices): Promise<Se
     for (const tier of TierName.options) if (additions[tier].length) entries[tier] = [...tiers.tiers[tier], ...additions[tier]];
     changes.push(["tiers", tierFile, { ...tierFile.value, tiers: entries }]);
   }
-  if (orchestrator !== settings.orchestrator) {
+  if (assistant !== settings.assistant) {
     const file: File = files.get("settings")!;
-    const value: Record<string, unknown> = { ...file.value, orchestrator };
+    const value: Record<string, unknown> = { ...file.value, assistant };
     delete value.firstRunDone;
     changes.push(["settings", file, value]);
   }
@@ -261,7 +262,7 @@ export async function autoSetup(home: string, agents: AgentServices): Promise<Se
   const profileSummary: string[] = [];
   if (newProfiles.length) profileSummary.push(`${newProfiles.length} ${newProfiles.length === 1 ? "profile" : "profiles"} added`);
   if (refreshedProfiles.size) profileSummary.push(`${refreshedProfiles.size} ${refreshedProfiles.size === 1 ? "profile" : "profiles"} updated`);
-  const summary: string = profileSummary.length ? profileSummary.join(", ") : newAccounts.length ? `${newAccounts.length} model ${newAccounts.length === 1 ? "account" : "accounts"}` : "orchestrator profile";
+  const summary: string = profileSummary.length ? profileSummary.join(", ") : newAccounts.length ? `${newAccounts.length} model ${newAccounts.length === 1 ? "account" : "accounts"}` : "Assistant profile";
   const message: string = `Set up ${new Intl.ListFormat("en").format([...titles])}: ${summary}`;
   return { harnesses, changes: await writeChanges(root, changes, message) };
 }
