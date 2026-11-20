@@ -34,19 +34,33 @@ export function luminance(color: string): number | null {
 }
 
 export type ThemeMode = "system" | Mode;
-export type ThemePrefs = { mode: ThemeMode; light: string; dark: string };
+export type ThemePrefs = { mode: ThemeMode; theme: string };
 
 export const defaultTheme = "builtin:default";
-export const everforestTheme = "builtin:everforest";
 
-export const builtInThemes: Record<Mode, { value: string; label: string }[]> = {
-  light: [{ value: defaultTheme, label: "Default Light" }, { value: everforestTheme, label: "Everforest Light" }],
-  dark: [{ value: defaultTheme, label: "Default Dark" }, { value: everforestTheme, label: "Everforest Dark" }],
+const palettes: Record<string, string> = {
+  autumn: "Autumn",
+  spring: "Spring",
+  summer: "Summer",
+  winter: "Winter",
+  monochrome: "Monochrome",
 };
 
+export const builtInThemes: { value: string; label: string }[] = [
+  { value: defaultTheme, label: "Default" },
+  ...Object.entries(palettes).map(([value, label]) => ({ value: `builtin:${value}`, label })),
+];
+
 export function themePrefs(ui: Record<string, unknown> | undefined): ThemePrefs {
-  const pick = (value: unknown): string => typeof value === "string" ? value : defaultTheme;
-  return { mode: ui?.mode === "light" || ui?.mode === "dark" ? ui.mode : "system", light: pick(ui?.lightTheme), dark: pick(ui?.darkTheme) };
+  const pick = (value: unknown): string => {
+    if (typeof value !== "string") return defaultTheme;
+    return value.startsWith("builtin:") && !builtInThemes.some((theme) => theme.value === value) ? defaultTheme : value;
+  };
+  const mode: ThemeMode = ui?.mode === "light" || ui?.mode === "dark" ? ui.mode : "system";
+  if (typeof ui?.theme === "string") return { mode, theme: pick(ui.theme) };
+  const light: string = pick(ui?.lightTheme);
+  const dark: string = pick(ui?.darkTheme);
+  return { mode, theme: mode === "system" ? (light === defaultTheme ? dark : light) : mode === "dark" ? dark : light };
 }
 
 export function themeMode(theme: Theme | null): Mode | null {
@@ -57,7 +71,8 @@ export function themeMode(theme: Theme | null): Mode | null {
 export function applyTheme(mode: Mode, choice: string, theme: Theme | null): () => void {
   const root = document.documentElement;
   root.dataset.theme = mode;
-  if (choice === everforestTheme) root.dataset.palette = `everforest-${mode}`;
+  const palette: string | undefined = /^builtin:(.+)$/.exec(choice)?.[1];
+  if (palette && Object.hasOwn(palettes, palette)) root.dataset.palette = `${palette}-${mode}`;
   else delete root.dataset.palette;
   const set: string[] = [];
   for (const [token, value] of Object.entries(theme?.tokens ?? {})) {

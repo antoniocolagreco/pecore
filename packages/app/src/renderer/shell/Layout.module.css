@@ -128,11 +128,11 @@
 .active,
 .active:hover {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
+  color: var(--accent-ink, var(--accent));
 }
 
 .active svg {
-  color: var(--accent);
+  color: var(--accent-ink, var(--accent));
 }
 
 .linkLabel {
@@ -210,7 +210,7 @@
 .subItem.active,
 .subItem.active:hover {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
+  color: var(--accent-ink, var(--accent));
 }
 
 .subItem:focus-visible {
@@ -226,7 +226,10 @@
 }
 
 .main {
+  --content-glow: var(--accent);
   grid-column: 2;
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -240,9 +243,6 @@
   gap: 8px;
   height: calc(var(--control-h) + 16px);
   padding: 0 12px;
-  border-bottom: 1px solid var(--separator);
-  background: color-mix(in srgb, var(--bg) 80%, transparent);
-  backdrop-filter: var(--blur);
 }
 
 .search {
@@ -301,20 +301,24 @@
 
 .content {
   position: relative;
-  isolation: isolate;
   flex: 1;
   min-height: 0;
+  mask-image: linear-gradient(to bottom, transparent, black 16px);
 }
 
-.content::before {
+:global(:root:is([data-palette="summer-light"], [data-palette="summer-dark"])) .main {
+  --content-glow: #ffc861;
+}
+
+.main::before {
   position: absolute;
   z-index: -1;
   inset: 0;
   pointer-events: none;
   content: "";
   background:
-    radial-gradient(ellipse 36% 32% at 38% 64%, color-mix(in srgb, var(--accent) 11%, transparent), color-mix(in srgb, var(--accent) 5%, transparent) 48%, color-mix(in srgb, var(--accent) 1%, transparent) 78%, transparent),
-    radial-gradient(ellipse 32% 30% at 65% 40%, color-mix(in srgb, var(--accent) 7%, transparent), color-mix(in srgb, var(--accent) 3%, transparent) 48%, color-mix(in srgb, var(--accent) 0.7%, transparent) 78%, transparent);
+    radial-gradient(ellipse 36% 32% at 38% 64%, color-mix(in srgb, var(--content-glow) 11%, transparent), color-mix(in srgb, var(--content-glow) 5%, transparent) 48%, color-mix(in srgb, var(--content-glow) 1%, transparent) 78%, transparent),
+    radial-gradient(ellipse 32% 30% at 65% 40%, color-mix(in srgb, var(--content-glow) 7%, transparent), color-mix(in srgb, var(--content-glow) 3%, transparent) 48%, color-mix(in srgb, var(--content-glow) 0.7%, transparent) 78%, transparent);
   background-repeat: no-repeat;
   background-size: 135% 135%;
   background-position: 30% 65%, 65% 30%;
@@ -329,7 +333,7 @@
   }
 }
 
-:global(:root[data-theme="dark"]) .content::after {
+:global(:root[data-theme="dark"]) .main::after {
   position: absolute;
   z-index: -1;
   inset: 0;
@@ -340,7 +344,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .content::before {
+  .main::before {
     animation: none;
   }
 }

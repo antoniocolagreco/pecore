@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { call } from "../api/client";
 import { useData } from "../api/hooks";
-import { applyTheme, systemMode, themePrefs } from "./themes";
+import { applyTheme, systemMode, themeMode, themePrefs } from "./themes";
 import type { Mode, ThemePrefs } from "./themes";
 
 function useSystemMode(): Mode {
@@ -21,10 +21,12 @@ export function ThemeLoader() {
   const system = useSystemMode();
   const prefs: ThemePrefs = themePrefs(settings.data?.value.ui);
   const mode: Mode = prefs.mode === "system" ? system : prefs.mode;
-  const choice: string = prefs[mode];
+  const choice: string = prefs.theme;
   useEffect(() => {
     const file = choice.startsWith("builtin:") ? undefined : files.data?.find((f) => f.file === choice);
-    return applyTheme(mode, choice, file?.theme ?? null);
+    const theme = file?.theme ?? null;
+    const variant: Mode | null = themeMode(theme);
+    return applyTheme(mode, choice, variant === null || variant === mode ? theme : null);
   }, [mode, choice, files.data]);
   return null;
 }

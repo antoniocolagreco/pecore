@@ -158,7 +158,7 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 
 ## Proposed Design
 
-The prototype is normative only for: the Everforest palette and gradients, Notifications as a list plus a detail pane, the node inspector as key/value rows, the engine status at the bottom of the navigation, the first run as a step checklist. Nothing else in it is normative.
+The prototype is normative only for: the gradients, Notifications as a list plus a detail pane, the node inspector as key/value rows, the engine status at the bottom of the navigation, the first run as a step checklist. Nothing else in it is normative.
 
 ### Navigation (left)
 
@@ -453,7 +453,7 @@ Every size lives in `ds/tokens.css`; components use only these variables, never 
 | UI2 | Factory is a summary dashboard; every function has its own page with the full detail. |
 | UI2b | Withdrawn: the Assistant chat is always on the right of every screen, with no page of its own (decisions 32, 36). |
 | UI3 | Dark green base and translucent panels, as in the prototype. |
-| UI4 | Themes: every color is a CSS variable. Settings > Appearance has a mode (System, Light, Dark) and a theme for light and one for dark; System follows the operating system (decision 60). Shipped: Default Light, Default Dark, Everforest Light, Everforest Dark, as variable blocks in `ds/tokens.css`. The user can add a theme as a JSON file of tokens in `PECORE_HOME/themes/`, validated by a JSON Schema; missing tokens fall back to the default theme; values must be colors; the file is offered as a light or dark theme by its background. |
+| UI4 | Themes: every color is a CSS variable. Settings > Appearance has a mode (System, Light, Dark) and a theme for light and one for dark; System follows the operating system (decision 60). Shipped: Default, Autumn, Spring, Summer, Winter and Monochrome (decision 66), each in a light and a dark version, as variable blocks in `ds/tokens.css`; Summer is a summer version of Everforest (decision 65). The user can add a theme as a JSON file of tokens in `PECORE_HOME/themes/`, validated by a JSON Schema; missing tokens fall back to the default theme; values must be colors; the file is offered as a light or dark theme by its background. |
 | UI5 | No images. The background is a fixed gradient of `bg-gradient-1` and `bg-gradient-2`, with no animation. |
 | UI6 | Animation only on running state (pulse); off with `prefers-reduced-motion` or Settings > Appearance > Reduced motion. No progress percentages: an agent node shows state, duration, round and attempts. |
 | UI7 | Components: Base UI (unstyled, behaviour and accessibility); styles: CSS Modules with the theme's CSS variables. |

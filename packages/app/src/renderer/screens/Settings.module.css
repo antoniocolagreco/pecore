@@ -96,7 +96,7 @@
   height: 32px;
   border-radius: 8px;
   background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
+  color: var(--accent-ink, var(--accent));
   font-size: var(--text-size-sm);
   font-weight: 650;
 }

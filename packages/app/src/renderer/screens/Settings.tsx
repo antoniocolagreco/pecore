@@ -17,7 +17,7 @@ import { Combobox, Select } from "../ds/select";
 import { NumberField, Segmented } from "../ds/values";
 import { install } from "../shell/SetupBanner";
 import { SidebarItem, SidebarSection } from "../shell/sidebar";
-import { builtInThemes, themeMode, themePrefs } from "../theme/themes";
+import { builtInThemes, themePrefs } from "../theme/themes";
 import type { ThemePrefs } from "../theme/themes";
 import { DefinitionErrors, settingUrl } from "./NodeEditor";
 import s from "./Settings.module.css";
@@ -523,14 +523,11 @@ export function Settings() {
             <div className={ui.stack}>
               <span className={s.label}>Mode</span>
               <Segmented accent label="Mode" value={prefs.mode}
-                onValueChange={(mode) => update({ ...value, ui: { ...value.ui, mode } })}
+                onValueChange={(mode) => update({ ...value, ui: { ...value.ui, mode, theme: prefs.theme } })}
                 options={[{ value: "system", label: "System" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} />
-              <div className={s.grid}>
-                {(["light", "dark"] as const).map((mode) => <Select key={mode} label={mode === "light" ? "Light theme" : "Dark theme"} value={prefs[mode]}
-                  onValueChange={(choice) => choice && update({ ...value, ui: { ...value.ui, [mode === "light" ? "lightTheme" : "darkTheme"]: choice } })}
-                  options={[...builtInThemes[mode], ...(themes.data ?? []).filter((item) => item.theme && (themeMode(item.theme) ?? mode) === mode)
-                    .map((item) => ({ value: item.file, label: item.theme?.name ?? item.file }))]} />)}
-              </div>
+              <Select label="Theme" value={prefs.theme}
+                onValueChange={(theme) => theme && update({ ...value, ui: { ...value.ui, theme } })}
+                options={[...builtInThemes, ...(themes.data ?? []).flatMap((item) => item.theme ? [{ value: item.file, label: item.theme.name }] : [])]} />
               <ErrorText error={themes.error} />
               {themes.data?.filter((item) => item.errors.length).map((item) => <div key={item.file}><strong>{item.file}</strong><DefinitionErrors errors={item.errors} /></div>)}
             </div>

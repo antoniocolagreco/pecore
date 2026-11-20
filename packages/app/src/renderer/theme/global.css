@@ -18,7 +18,7 @@ body,
 }
 
 a {
-  color: var(--accent);
+  color: var(--accent-ink, var(--accent));
   text-decoration: none;
 }
 
@@ -109,11 +109,11 @@ svg[data-icon] * {
 ::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
   border-radius: 6px;
-  background: var(--fill-strong) padding-box;
+  background: color-mix(in srgb, var(--accent) 60%, transparent) padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-3) padding-box;
+  background: var(--accent) padding-box;
 }
 
 ::-webkit-scrollbar-track {
