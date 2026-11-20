@@ -59,6 +59,7 @@ export class OrchestratorChats {
   private readonly imageSupport: Map<string, boolean> = new Map();
   private readonly probes: Map<string, Promise<boolean>> = new Map();
   private closed = false;
+  private creating: Promise<ChatView> | null = null;
 
   constructor(private readonly engine: Engine, private readonly db: ChatsDb, private readonly live: (message: LiveMessage) => void) {
     db.interruptMessages();
@@ -131,7 +132,14 @@ export class OrchestratorChats {
     return this.db.listChats();
   }
 
-  async create(title: string, projectId: string | null = null): Promise<ChatView> {
+  async assistant(): Promise<ChatView> {
+    const id: string | undefined = this.db.assistantChat();
+    if (id) return this.chat(id);
+    this.creating ??= this.create("Assistant").finally(() => { this.creating = null; });
+    return this.creating;
+  }
+
+  private async create(title: string, projectId: string | null = null): Promise<ChatView> {
     const id: string = ulid();
     await this.location(id);
     if (this.closed) throw new HttpError("conflict", "the orchestrator is shutting down");
@@ -410,7 +418,7 @@ export class OrchestratorChats {
       active.reply = null;
       this.changed(message);
       this.changed(reply);
-      this.engine.emit("notify", { kind: "orchestrator-replied", title: "Orchestrator replied", body: this.chat(chatId).title });
+      if (!this.chat(chatId).projectId) this.engine.emit("notify", { kind: "assistant-replied", title: "Assistant replied", body: result.text.trim().split("\n")[0]!.slice(0, 120) });
     } catch (e) {
       active.reply = null;
       if (!this.closed) {

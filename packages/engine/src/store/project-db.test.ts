@@ -114,4 +114,19 @@ describe("chats.db", () => {
     expect(db.notifications().map(({ kind }) => kind)).toEqual(["job-finished"]);
     db.close();
   });
+
+  it("uses the manual chat with the latest message as the Assistant chat, never an intake chat", async () => {
+    const db = new ChatsDb(join(await tempDir(), "chats.db"));
+    expect(db.assistantChat()).toBeUndefined();
+    db.createChat("c1", "Older", null);
+    db.createChat("c2", "Newer", null);
+    db.createChat("c3", "demo intake", "demo");
+    expect(db.assistantChat()).toBe("c2");
+    db.db.exec("UPDATE chats SET created_at = 1000");
+    db.addMessage("c1", "user", "hello", []);
+    db.addMessage("c3", "user", "ticket", []);
+    db.db.exec("UPDATE messages SET created_at = CASE chat_id WHEN 'c1' THEN 2000 ELSE 3000 END");
+    expect(db.assistantChat()).toBe("c1");
+    db.close();
+  });
 });

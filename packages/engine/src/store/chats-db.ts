@@ -55,6 +55,11 @@ export class ChatsDb {
     return this.db.prepare(`SELECT ${chatColumns} FROM chats c WHERE id = ?`).get(id) as ChatView | undefined;
   }
 
+  assistantChat(): string | undefined {
+    return (this.db.prepare(`SELECT id FROM chats c WHERE intake_project IS NULL ORDER BY
+      COALESCE((SELECT MAX(created_at) FROM messages WHERE chat_id = c.id), c.created_at) DESC, c.id DESC LIMIT 1`).get() as { id: string } | undefined)?.id;
+  }
+
   intakeChat(projectId: string): string | undefined {
     return (this.db.prepare("SELECT id FROM chats WHERE intake_project = ?").get(projectId) as { id: string } | undefined)?.id;
   }

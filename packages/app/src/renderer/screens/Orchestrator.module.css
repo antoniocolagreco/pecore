@@ -26,19 +26,6 @@
   border-bottom: 1px solid var(--separator);
 }
 
-.switcher {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-}
-
-.chatSelect {
-  flex: 1;
-  min-width: 0;
-}
-
 .history {
   flex: 1;
   min-height: 0;

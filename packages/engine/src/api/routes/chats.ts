@@ -4,8 +4,7 @@ import type { Handlers } from "../server";
 export function chatHandlers(engine: Engine) {
   const chats = engine.orchestrator;
   return {
-    listChats: async () => chats.list(),
-    createChat: async ({ body }) => chats.create(body.title),
+    getAssistantChat: async () => chats.assistant(),
     getChat: async ({ params }) => chats.detail(params.id),
     sendChatMessage: async ({ params, body }) => chats.send(params.id, body),
     uploadChatAttachment: async ({ params, body }) => chats.upload(params.id, body.mime, body.data),

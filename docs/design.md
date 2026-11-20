@@ -724,7 +724,8 @@ Two agents with different roles (decisions.md 38). The mechanics below apply to 
 *   The reply streams: the engine collects the `agent_message_chunk` text of the current prompt, sends `chat.streaming` on the WebSocket, and `GET /chats/:id` returns it as `streamingReply` until the turn ends. Only one complete reply is stored. Text sent before the prompt (for example during a resume) is dropped.
 *   Each stored reply records the user message it answers (`reply_to`). Actions recorded by the MCP tools belong to the user message; the GUI shows them under the reply that answers it.
 *   Compaction: a user message that is exactly `/compact`, with no attachments, is sent to the resumed session as the bare command, with no preamble, so the harness runs its own compaction. No reply is stored. If the session cannot be resumed, nothing is sent and the saved session is kept. `/compact` messages are left out of the history replayed into a new session.
-*   A reply sends a native notification only when the PeCore window is not focused, and is not stored in the notification log; the unread counts show it (decisions.md 25, 27).
+*   A reply sends a native notification ("Assistant replied" and the reply's first line) only when the PeCore window is not focused, and is not stored in the notification log; the unread counts show it (decisions.md 25, 27).
+*   The engine keeps one Assistant chat: `GET /chat` returns the manual chat with the latest message and creates it on first use. Chats of older versions stay stored but are not shown. Intake chats are never returned.
 
 ### 7. Sources
 

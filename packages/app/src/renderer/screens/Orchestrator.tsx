@@ -1,7 +1,6 @@
 import { ChatImageMime, chatAttachmentMaxBytes, chatCompactCommand } from "@pecore/schemas";
 import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatMessageView } from "@pecore/schemas";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import { Link, useSearchParams } from "react-router";
 import { call } from "../api/client";
@@ -12,9 +11,8 @@ import type { StateInfo } from "../components/states";
 import { ErrorText, dateTime, time } from "../components/ui";
 import { Button, IconButton } from "../ds/button";
 import { Alert, Spinner } from "../ds/feedback";
-import { ArrowUpIcon, ClipIcon, PlusIcon, SparkIcon, XIcon } from "../ds/icons";
+import { ArrowUpIcon, ClipIcon, SparkIcon, XIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
-import { Select } from "../ds/select";
 import { definitionUrl, object, settingUrl, string } from "./NodeEditor";
 import s from "./Orchestrator.module.css";
 
@@ -116,12 +114,11 @@ function Actions({ actions, connected }: { actions: ChatActionView[]; connected:
   );
 }
 
-function Message({ message, attachments, actions, connected, manual, reload }: {
+function Message({ message, attachments, actions, connected, reload }: {
   message: ChatMessageView;
   attachments: ChatAttachmentView[];
   actions: ChatActionView[];
   connected: boolean;
-  manual: boolean;
   reload(): void;
 }) {
   const retry = useAction(async () => {
@@ -135,7 +132,7 @@ function Message({ message, attachments, actions, connected, manual, reload }: {
       {!user && <span className={s.avatar} aria-hidden><SparkIcon size={14} /></span>}
       <div className={s.body}>
         <div className={s.meta}>
-          <span className={s.author}>{user ? manual ? "You" : "Ticket intake" : "Orchestrator"}</span>
+          <span className={s.author}>{user ? "You" : "Assistant"}</span>
           <time dateTime={new Date(message.createdAt).toISOString()} title={dateTime(message.createdAt)}>{time(message.createdAt)}</time>
           {state && <StateLabel info={state} />}
         </div>
@@ -150,7 +147,7 @@ function Message({ message, attachments, actions, connected, manual, reload }: {
           {attachments.map(({ id, mime, size }) => <li className={s.chip} key={id} title={`${size} bytes`}>{mime} · {fileSize(size)}</li>)}
         </ul>}
         <ErrorText error={message.error} />
-        {manual && message.state === "interrupted" && <div><Button size="sm" disabled={!connected || retry.busy} loading={retry.busy} onClick={() => void retry.run()}>Retry</Button></div>}
+        {message.state === "interrupted" && <div><Button size="sm" disabled={!connected || retry.busy} loading={retry.busy} onClick={() => void retry.run()}>Retry</Button></div>}
         <ErrorText error={retry.error} />
         <Actions actions={actions} connected={connected} />
       </div>
@@ -180,33 +177,29 @@ function Activity({ actions, connected, working }: { actions: ChatActionView[]; 
     <article className={`${s.message} ${s.assistant}`}>
       <span className={s.avatar} aria-hidden><SparkIcon size={14} /></span>
       <div className={s.body}>
-        <div className={s.meta}><span className={s.author}>Orchestrator</span></div>
-        {working && <div className={s.thinking} role="status" aria-label="The orchestrator is working on a reply"><span /><span /><span /></div>}
+        <div className={s.meta}><span className={s.author}>Assistant</span></div>
+        {working && <div className={s.thinking} role="status" aria-label="The Assistant is working on a reply"><span /><span /><span /></div>}
         <Actions actions={actions} connected={connected} />
       </div>
     </article>
   );
 }
 
-function Composer({ id, supportsImages, connected, ready = true, reload, autoFocus }: {
-  id: string | null;
+function Composer({ id: chatId, supportsImages, connected, ready, reload, autoFocus }: {
+  id: string;
   supportsImages: ChatDetail["supportsImages"];
   connected: boolean;
-  ready?: boolean;
-  reload(chatId: string): void;
+  ready: boolean;
+  reload(): void;
   autoFocus?: boolean;
 }) {
   const [message, setMessage] = useState<string>("");
   const [images, setImages] = useState<SelectedImage[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
   const nextKey = useRef<number>(0);
-  const draftChat = useRef<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const send = useAction(async () => {
-    const title: string = message.trim().split("\n")[0]!.slice(0, 60) || "New conversation";
-    const chatId: string = id ?? draftChat.current ?? (await call("createChat", { body: { title } })).id;
-    if (id === null) draftChat.current = chatId;
     const attachmentIds: string[] = [];
     for (const image of images) {
       let attachmentId: string | undefined = image.attachmentId;
@@ -223,13 +216,12 @@ function Composer({ id, supportsImages, connected, ready = true, reload, autoFoc
     setImages([]);
     setImageError(null);
     input.current?.focus();
-    reload(chatId);
+    reload();
   });
   const disabled: boolean = !connected || send.busy;
   const canSend: boolean = !disabled && ready && (!!message.trim() || images.length > 0) && (images.length === 0 || supportsImages === true);
   const imageReason: string = supportsImages === true ? "Add images: PNG, JPEG, GIF or WebP, up to 10 MB each"
-    : supportsImages === false ? "The current orchestrator cannot read images"
-      : id === null ? "Images can be added after the first message" : "Checking whether the orchestrator can read images…";
+    : supportsImages === false ? "The current Assistant cannot read images" : "Checking whether the Assistant can read images…";
 
   function addImages(files: File[]): void {
     const selected: SelectedImage[] = [];
@@ -258,7 +250,7 @@ function Composer({ id, supportsImages, connected, ready = true, reload, autoFoc
         <textarea
           ref={input}
           aria-label="Message"
-          placeholder={id === null ? "Describe what you want built, in your own words…" : "Reply to the orchestrator…"}
+          placeholder="Ask the Assistant…"
           rows={1}
           autoFocus={autoFocus}
           value={message}
@@ -308,7 +300,7 @@ function DefinitionPreview({ path, onClose }: { path: string; onClose(): void })
   );
 }
 
-function Conversation({ id, connected, switcher }: { id: string; connected: boolean; switcher: ReactNode }) {
+function Conversation({ id, connected, ready }: { id: string; connected: boolean; ready: boolean | null }) {
   const detail = useData(() => call("getChat", { params: { id } }), [id], (event) =>
     (event.type === "chat.message" || event.type === "chat.streaming" || event.type === "chat.action" || event.type === "chat.updated") && event.chatId === id);
   const [query, setQuery] = useSearchParams();
@@ -371,14 +363,11 @@ function Conversation({ id, connected, switcher }: { id: string; connected: bool
     attachments.set(attachment.messageId, entries);
   }
   const pendingActions: ChatActionView[] = pending ? actions.get(pending.id) ?? [] : [];
-  const manual: boolean = chat?.chat.projectId === null;
   return (
     <section className={s.pane}>
       <header className={s.paneHeader}>
-        {switcher}
-        {chat && !manual && <span className={s.actionMeta}>Read only</span>}
-        {chat && manual && <Button size="sm" className={s.headerAction} disabled={!canCompact} loading={compact.busy}
-          title="Summarize the conversation so far, so the orchestrator keeps its context short" onClick={() => void compact.run()}>Compact</Button>}
+        <Button size="sm" className={s.headerAction} disabled={!canCompact} loading={compact.busy}
+          title="Summarize the conversation so far, so the Assistant keeps its context short" onClick={() => void compact.run()}>Compact</Button>
       </header>
       {detail.error && <div className={s.footnote}><ErrorText error={detail.error} /></div>}
       {compact.error && <div className={s.footnote}><ErrorText error={compact.error} /></div>}
@@ -394,68 +383,38 @@ function Conversation({ id, connected, switcher }: { id: string; connected: bool
             const own: ChatActionView[] = message.role === "assistant" ? message.replyTo ? actions.get(message.replyTo) ?? [] : [] : actions.get(message.id) ?? [];
             const unanswered: boolean = message.role === "user" && !replied.has(message.id) && message.state !== "running" && message.state !== "queued" && own.length > 0;
             return <Fragment key={message.id}>
-              <Message message={message} connected={connected} manual={manual}
+              <Message message={message} connected={connected}
                 actions={message.role === "assistant" ? own : []} attachments={attachments.get(message.id) ?? []} reload={detail.reload} />
               {unanswered && <Activity actions={own} connected={connected} working={false} />}
             </Fragment>;
           })}
-          {chat?.streamingReply && <Message message={chat.streamingReply} connected={connected} manual={manual}
+          {chat?.streamingReply && <Message message={chat.streamingReply} connected={connected}
             actions={pendingActions} attachments={[]} reload={detail.reload} />}
           {pending && !chat?.streamingReply && <Activity actions={pendingActions} connected={connected} working />}
         </div>
       </div>
-      {chat && manual && <Composer id={id} connected={connected} supportsImages={chat.supportsImages} reload={detail.reload} autoFocus />}
-      {definition && <DefinitionPreview key={definition} path={definition} onClose={() => setQuery({}, { replace: true })} />}
-    </section>
-  );
-}
-
-function Start({ connected, ready, onCreated, switcher }: { connected: boolean; ready: boolean | null; onCreated(chatId: string): void; switcher: ReactNode }) {
-  return (
-    <section className={s.pane}>
-      <header className={s.paneHeader}>{switcher}</header>
-      <div className={s.history} />
       {ready === false && connected && (
         <div className={s.footnote}>
-          <Alert tone="warning" title="No orchestrator yet" actions={<Link to={settingUrl("orchestrator")}>Choose one in Settings</Link>}>
+          <Alert tone="warning" title="No Assistant yet" actions={<Link to={settingUrl("orchestrator")}>Choose one in Settings</Link>}>
             Log in to Claude Code, Codex or OpenCode and PeCore picks one for you.
           </Alert>
         </div>
       )}
-      <Composer id={null} connected={connected} ready={ready === true} supportsImages={null} reload={onCreated} autoFocus />
+      {chat && <Composer id={id} connected={connected} ready={ready === true} supportsImages={chat.supportsImages} reload={detail.reload} autoFocus />}
+      {definition && <DefinitionPreview key={definition} path={definition} onClose={() => setQuery({}, { replace: true })} />}
     </section>
   );
 }
 
 export function ChatPanel() {
   const connected: boolean = useConnected();
-  const chats = useData(() => call("listChats"), [], (event) => event.type === "chat.message" || event.type === "chat.updated");
+  const chat = useData(() => call("getAssistantChat"), []);
   const settings = useData(() => call("getSettings"), [], (event) => event.type === "definition.changed" && event.path === "settings.json");
-  const [id, setId] = useState<string | null>(null);
   const ready: boolean | null = settings.data ? settings.data.value.orchestrator !== null : null;
-  const switcher: ReactNode = (
-    <div className={s.switcher}>
-      <Select
-        className={s.chatSelect}
-        ariaLabel="Conversation"
-        placeholder="New conversation"
-        value={id}
-        disabled={!connected || !chats.data?.length}
-        onValueChange={setId}
-        options={(chats.data ?? []).map((chat) => ({ value: chat.id, label: chat.title, detail: chat.unread ? `${chat.unread} new` : undefined }))}
-      />
-      <IconButton size="sm" label="New conversation" icon={<PlusIcon />} disabled={!connected || id === null} onClick={() => setId(null)} />
-    </div>
-  );
   return (
-    <aside className={s.panel} aria-label="Orchestrator">
-      <ErrorText error={chats.error} />
-      {id
-        ? <Conversation key={id} id={id} connected={connected} switcher={switcher} />
-        : <Start connected={connected} ready={ready} switcher={switcher} onCreated={(chatId) => {
-          chats.reload();
-          setId(chatId);
-        }} />}
+    <aside className={s.panel} aria-label="Assistant">
+      <ErrorText error={chat.error} />
+      {chat.data && <Conversation key={chat.data.id} id={chat.data.id} connected={connected} ready={ready} />}
     </aside>
   );
 }

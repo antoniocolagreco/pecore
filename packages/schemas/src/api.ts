@@ -476,8 +476,7 @@ export const routes = {
   answerQueue: { method: "POST", path: "/queue/:id", params: IdParams, body: QueueChoiceBody, response: Ok },
   getStatus: { method: "GET", path: "/status", response: StatusView },
   listNotifications: { method: "GET", path: "/notifications", response: z.array(NotificationView) },
-  listChats: { method: "GET", path: "/chats", response: z.array(ChatView) },
-  createChat: { method: "POST", path: "/chats", body: z.strictObject({ title: z.string().trim().min(1) }), response: ChatView },
+  getAssistantChat: { method: "GET", path: "/chat", response: ChatView },
   getChat: { method: "GET", path: "/chats/:id", params: IdParams, response: ChatDetail },
   sendChatMessage: { method: "POST", path: "/chats/:id/messages", params: IdParams, body: SendChatMessageBody, response: ChatMessageView },
   uploadChatAttachment: {
