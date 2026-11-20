@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { ApiError, Profiles as ProfilesSchema, Settings as SettingsSchema, Tiers as TiersSchema } from "@pecore/schemas";
-import type { Account, BuiltInHarness, ForgeAccount, LiveMessage, Profile, RouteResult, Settings as SettingsValue, TierName } from "@pecore/schemas";
+import { ApiError, Settings as SettingsSchema } from "@pecore/schemas";
+import type { Account, BuiltInHarness, ForgeAccount, LiveMessage, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
@@ -11,9 +11,9 @@ import { Button } from "../ds/button";
 import { Switch } from "../ds/choice";
 import { Alert, Badge, Card, Spinner } from "../ds/feedback";
 import { TextArea, TextField } from "../ds/field";
-import { CheckCircleIcon, AlertIcon, PlusIcon, RefreshIcon, TrashIcon } from "../ds/icons";
+import { CheckCircleIcon, AlertIcon, PlusIcon, RefreshIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
-import { MultiCombobox, Select } from "../ds/select";
+import { Select } from "../ds/select";
 import { NumberField, Segmented } from "../ds/values";
 import { install } from "../shell/SetupBanner";
 import { SidebarItem, SidebarSection } from "../shell/sidebar";
@@ -24,11 +24,9 @@ import s from "./Settings.module.css";
 type Snapshot<T> = { value: T; sha256: string };
 type LoginProgress = Extract<LiveMessage, { type: "login.progress" }>;
 type Progress = { lines: string[]; url: string | null; done: boolean };
-type ModelOptions = RouteResult<"accountOptions">;
 
 const sections: { id: string; title: string }[] = [
   { id: "accounts", title: "Accounts" },
-  { id: "tiers", title: "Models" },
   { id: "orchestrator", title: "Orchestrator" },
   { id: "limits", title: "Limits" },
   { id: "protectedMode", title: "Protected mode" },
@@ -333,23 +331,6 @@ function AddForgeAccount({ open, onClose, onAdd, taken }: { open: boolean; onClo
   );
 }
 
-function ProfileFields({ profile, update, remove, accounts }: { profile: Profile; update(value: Profile): void; remove(): void; accounts: Account[] }) {
-  const options = useData(() => profile.account ? call("accountOptions", { params: { id: profile.account } }) : Promise.resolve<ModelOptions>(null), [profile.account], (message) => message.type === "login.progress" && message.done);
-  const models: string[] = [...new Set([...(options.data?.models ?? []), ...(profile.model ? [profile.model] : [])])];
-  const efforts: string[] = [...new Set([...(options.data?.efforts ?? []), ...(profile.effort ? [profile.effort] : [])])];
-  return <div className={s.profile}>
-    <TextField label="Profile ID" mono value={profile.id} onValueChange={(id) => update({ ...profile, id })} size="sm" />
-    <Select label="Model account" value={profile.account || null} onValueChange={(account) => update({ ...profile, account: account ?? "" })}
-      options={[...accounts.map(({ id }) => ({ value: id, label: id })), ...(profile.account && !accounts.some(({ id }) => id === profile.account) ? [{ value: profile.account, label: profile.account }] : [])]} />
-    {models.length > 0
-      ? <Select label="Model" value={profile.model || null} onValueChange={(model) => update({ ...profile, model: model ?? "" })} options={models.map((m) => ({ value: m, label: m }))} />
-      : <TextField label="Model" mono value={profile.model} onValueChange={(model) => update({ ...profile, model })} size="sm" />}
-    <Select label="Effort" value={profile.effort ?? "default"} onValueChange={(effort) => update({ ...profile, effort: !effort || effort === "default" ? null : effort })}
-      options={[{ value: "default", label: "Default" }, ...efforts.map((e) => ({ value: e, label: e }))]} />
-    <Button variant="ghost" icon={<TrashIcon />} aria-label="Remove profile" onClick={remove} className={s.removeProfile} />
-  </div>;
-}
-
 function ConnectorFile({ path, close }: { path: string; close(): void }) {
   const file = useDefinitionDraft(path);
   const warn = useUnsaved(file.dirty);
@@ -383,21 +364,12 @@ function Connectors() {
   </div>;
 }
 
-const tiersList: TierName[] = ["frontier", "strong", "standard", "cheap"];
-const tierText: Record<TierName, string> = {
-  frontier: "The most capable model, for planning and hard problems.",
-  strong: "Everyday coding.",
-  standard: "Routine steps.",
-  cheap: "Quick checks and summaries.",
-};
-
 export function Settings() {
   const connected: boolean = useConnected();
   const { search } = useLocation();
   const settings = useGlobalFile("settings", () => call("getSettings"), (body) => call("putSettings", { body }));
   const accounts = useGlobalFile("accounts", () => call("getAccounts"), (body) => call("putAccounts", { body }));
-  const profiles = useGlobalFile("profiles", () => call("getProfiles"), (body) => call("putProfiles", { body }));
-  const tiers = useGlobalFile("tiers", () => call("getTiers"), (body) => call("putTiers", { body }));
+  const profiles = useData(() => call("getProfiles"), [], (message) => message.type === "definition.changed" && message.path === "profiles.json");
   const status = useData(() => call("getStatus"), []);
   const themes = useData(() => call("listThemes"), [], (message) => message.type === "definition.changed" && message.path.startsWith("themes/"));
   const [checks, setChecks] = useState<RouteResult<"checkPrerequisites">>();
@@ -414,12 +386,9 @@ export function Settings() {
     status.reload();
   });
   const settingsResult = SettingsSchema.safeParse(settings.value);
-  const profilesResult = ProfilesSchema.safeParse(profiles.value);
-  const tiersResult = TiersSchema.safeParse(tiers.value);
   const value: SettingsValue | undefined = settings.value;
   const update = settings.update;
-  const modelAccounts: Account[] = (accounts.current?.accounts ?? []).filter(({ kind }) => kind === "model");
-  const profileIds: string[] = (profiles.current?.profiles ?? []).map(({ id }) => id);
+  const profileIds: string[] = (profiles.data?.value.profiles ?? []).map(({ id }) => id);
   const markJson = (key: string, invalid: boolean): void => {
     if (invalid && settings.value) settings.update(settings.value);
     setInvalidJson((old) => invalid ? [...new Set([...old, key])] : old.filter((item) => item !== key));
@@ -432,7 +401,7 @@ export function Settings() {
   useEffect(() => {
     const id: string | null = new URLSearchParams(search).get("section");
     if (id) document.getElementById(id)?.scrollIntoView({ block: "start" });
-  }, [search, !!settings.value, !!accounts.value, !!tiers.value]);
+  }, [search, !!settings.value, !!accounts.value]);
 
   const go = (id: string): void => {
     setActive(id);
@@ -462,37 +431,6 @@ export function Settings() {
         </Section>
         <AddForgeAccount open={addForge} onClose={() => setAddForge(false)} taken={(accounts.value?.accounts ?? []).map(({ id }) => id)}
           onAdd={(account) => { if (accounts.value) void accounts.commit({ ...accounts.value, accounts: [...accounts.value.accounts, account] }); }} />
-
-        <Section id="tiers" title="Models" description="Profiles pair an account with a model and an effort. Recipes ask for a tier, and PeCore picks a profile from it.">
-          {profiles.feedback}
-          {profiles.value && <div className={ui.stack}>
-            {profiles.value.profiles.length === 0 && <span className={ui.muted}>No profiles yet.</span>}
-            {profiles.value.profiles.map((profile, index) => <ProfileFields key={index} profile={profile} accounts={modelAccounts}
-              update={(next) => { if (profiles.value) profiles.update({ ...profiles.value, profiles: profiles.value.profiles.map((item, at) => at === index ? next : item) }); }}
-              remove={() => { if (profiles.value) profiles.update({ ...profiles.value, profiles: profiles.value.profiles.filter((_, at) => at !== index) }); }} />)}
-            <Issues issues={profilesResult.error?.issues} />
-            <div className={s.sectionActions}>
-              <Button icon={<PlusIcon />} onClick={() => {
-                if (profiles.value) profiles.update({ ...profiles.value, profiles: [...profiles.value.profiles, { id: "", account: "", model: "", effort: null }] });
-              }}>Add profile</Button>
-              {profiles.dirty && <Button onClick={profiles.discard}>Discard</Button>}
-              {profiles.button("Save profiles", !profilesResult.success)}
-            </div>
-          </div>}
-          <div className={s.divider} />
-          {tiers.feedback}
-          {tiers.value && <div className={ui.stack}>
-            {tiersList.map((tier) => <MultiCombobox key={tier + tiers.editKey} label={tier[0]!.toUpperCase() + tier.slice(1)} description={tierText[tier]}
-              options={[...new Set([...profileIds, ...(tiers.value?.tiers[tier] ?? [])])].map((id) => ({ value: id, label: id }))}
-              value={tiers.value?.tiers[tier] ?? []} placeholder="Add profiles"
-              onValueChange={(ids) => { if (tiers.value) tiers.update({ ...tiers.value, tiers: { ...tiers.value.tiers, [tier]: ids } }); }} />)}
-            <Issues issues={tiersResult.error?.issues} />
-            <div className={s.sectionActions}>
-              {tiers.dirty && <Button onClick={tiers.discard}>Discard</Button>}
-              {tiers.button("Save tiers", !tiersResult.success)}
-            </div>
-          </div>}
-        </Section>
 
         {settings.feedback}
         {value && <>
