@@ -523,7 +523,10 @@ describe.skipIf(gui)("phase 6: orchestrator chat from the GUI (fake agent)", () 
     const scripts = [
       init(true),
       init(true),
-      [...init(true), { expect: "session/new" }, { send: { jsonrpc: "2.0", id: "$id", result: { sessionId: "S1" } } }, { expect: "session/prompt" }, { dump: join(root, "turn1.json") }, { waitFile: join(root, "done1") }, ...reply("Two jobs created.")],
+      [...init(true), { expect: "session/new" }, { send: { jsonrpc: "2.0", id: "$id", result: { sessionId: "S1" } } },
+        { expect: "session/prompt" }, { dump: join(root, "turn1.json") },
+        { waitFile: join(root, "stream1") }, reply("Two jobs")[0]!,
+        { waitFile: join(root, "done1") }, ...reply(" created.")],
       [...init(true), ...resume, { expect: "session/prompt" }, { dump: join(root, "turn2.json") }, { sleep: 600_000 }],
       init(false),
       init(false),
@@ -584,6 +587,8 @@ describe.skipIf(gui)("phase 6: orchestrator chat from the GUI (fake agent)", () 
     m.close();
     if (created.error) throw new Error(JSON.stringify(created.error));
 
+    await writeFile(join(root, "stream1"), "");
+    await visible(log.getByText("Two jobs", { exact: true }));
     await go("#/jobs");
     await writeFile(join(root, "done1"), "");
     await visible(page.getByRole("link", { name: /Orchestrator/ }).getByLabel("1 unread"), 15_000);

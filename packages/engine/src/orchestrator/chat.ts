@@ -26,7 +26,7 @@ const preamble = [
 
 type IntakeOrder = Parameters<OrderSink["hand"]>[1];
 type ChatLocation = { user: string; cwd: string; tokenPath: string; routeKey: string };
-type ActiveTurn = { message: ChatTurn; user: string; pending: Promise<unknown>; accepting: boolean };
+type ActiveTurn = { message: ChatTurn; user: string; pending: Promise<unknown>; accepting: boolean; reply: ChatMessageView | null };
 
 function messageView({ id, chatId, role, text, context, createdAt, state, error }: ChatTurn): ChatMessageView {
   return { id, chatId, role, text, context, createdAt, state, error };
@@ -147,6 +147,7 @@ export class OrchestratorChats {
     return {
       chat: this.chat(id),
       messages: this.db.messages(id).map(messageView),
+      streamingReply: this.active.get(id)?.reply ?? null,
       attachments: this.db.attachments(id).map(attachmentView),
       actions: this.db.actions(id),
       supportsImages,
@@ -317,6 +318,24 @@ export class OrchestratorChats {
     this.live({ type: "chat.message", chatId, messageId: id });
   }
 
+  private async streamReply(session: Session, active: ActiveTurn): Promise<void> {
+    const { id, chatId } = active.message;
+    for await (const event of session.events) {
+      if (this.closed || !active.accepting || event.type !== "text" || !event.text) continue;
+      active.reply = {
+        id: `reply-${id}`,
+        chatId,
+        role: "assistant",
+        text: (active.reply?.text ?? "") + event.text,
+        context: [],
+        createdAt: active.reply?.createdAt ?? Date.now(),
+        state: "running",
+        error: null,
+      };
+      this.live({ type: "chat.streaming", chatId });
+    }
+  }
+
   private schedule(id: string): void {
     if (this.closed || this.runs.has(id)) return;
     const task: Promise<void> = new Promise<void>((resolve) => setImmediate(resolve)).then(async () => {
@@ -335,7 +354,7 @@ export class OrchestratorChats {
     this.changed(message);
     let session: Session | undefined;
     let drains: Promise<void>[] = [];
-    const active: ActiveTurn = { message, user: this.user(), pending: Promise.resolve(), accepting: false };
+    const active: ActiveTurn = { message, user: this.user(), pending: Promise.resolve(), accepting: false, reply: null };
     try {
       const { agents, account, profile, user, key, sessionKey } = this.requiredConfiguration();
       const { tokenPath, cwd } = await this.location(chatId);
@@ -347,7 +366,7 @@ export class OrchestratorChats {
         connector, login, spawn: this.spawn(user), cwd, model: profile.model, effort: profile.effort, mcpServers,
         ...(saved.sessionId && (saved.sessionKey === sessionKey || saved.sessionKey === null) ? { resumeId: saved.sessionId } : {}),
       });
-      drains = [drain(session.raw), drain(session.events)];
+      drains = [drain(session.raw), this.streamReply(session, active)];
       this.db.setSession(chatId, session.sessionId, sessionKey);
       this.imageSupport.set(key, session.supportsImages);
       const attachments: ChatAttachment[] = this.db.messageAttachments(id);
@@ -381,11 +400,13 @@ export class OrchestratorChats {
         this.db.addNotification({ kind, title, body, target: { chatId, messageId: reply.id } });
         return reply;
       })();
+      active.reply = null;
       this.changed(message);
       this.changed(reply);
       this.live({ type: "notify", kind, title, body });
       this.engine.emit("notify", { kind, title, body });
     } catch (e) {
+      active.reply = null;
       if (!this.closed) {
         this.db.setMessageState(id, "failed", e instanceof Error ? e.message : String(e));
         this.changed(message);

@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { apiClient } from "@pecore/schemas";
+import type { ChatDetail, LiveMessage } from "@pecore/schemas";
 import { shippedLibrary, tempDir } from "../../test/tmp";
 import { handlers } from "../api/handlers";
 import { startApi } from "../api/server";
@@ -149,6 +150,44 @@ afterEach(() => {
 });
 
 describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3 and 4)", () => {
+  it("exposes partial replies before the prompt ends and saves one complete reply", async () => {
+    const t = await setup((root) => [[
+      ...init(),
+      ...newSession,
+      { expect: "session/prompt" },
+      replyWith("First")[0]!,
+      { waitFile: join(root, "next") },
+      replyWith(" and second.")[0]!,
+      { waitFile: join(root, "done") },
+      replyWith("")[1]!,
+    ]]);
+    try {
+      const events: LiveMessage[] = [];
+      t.engine.on("live", (event: LiveMessage) => events.push(event));
+      const chat: ChatDetail["chat"] = await t.call("createChat", { body: { title: "Streaming" } });
+      const detail = (): Promise<ChatDetail> => t.call("getChat", { params: { id: chat.id } });
+      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Say two things" } });
+
+      await until(() => events.some((event) => event.type === "chat.streaming" && event.chatId === chat.id));
+      const first: ChatDetail = await detail();
+      expect(first.streamingReply).toMatchObject({ role: "assistant", state: "running", text: "First" });
+      expect(first.messages.map(({ state }) => state)).toEqual(["running"]);
+
+      await writeFile(join(t.root, "next"), "");
+      await until(async () => (await detail()).streamingReply?.text === "First and second.");
+      await writeFile(join(t.root, "done"), "");
+      const completed: ChatDetail = await until(async () => {
+        const snapshot: ChatDetail = await detail();
+        return snapshot.messages.some(({ role }) => role === "assistant") && snapshot;
+      });
+      expect(completed.streamingReply).toBeNull();
+      expect(completed.messages.filter(({ role }) => role === "assistant"))
+        .toMatchObject([{ state: "completed", text: "First and second." }]);
+    } finally {
+      await t.close();
+    }
+  });
+
   it("passes no token on the command line, binds create_jobs to the message order, stages recipe changes, caps read_artifact, and stores the reply", async () => {
     const t = await setup((root) => [[
       ...init(),

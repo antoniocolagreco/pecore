@@ -259,7 +259,7 @@ function DefinitionPreview({ path, onClose }: { path: string; onClose(): void })
 
 function Conversation({ id, connected }: { id: string; connected: boolean }) {
   const detail = useData(() => call("getChat", { params: { id } }), [id], (event) =>
-    (event.type === "chat.message" || event.type === "chat.action" || event.type === "chat.updated") && event.chatId === id);
+    (event.type === "chat.message" || event.type === "chat.streaming" || event.type === "chat.action" || event.type === "chat.updated") && event.chatId === id);
   const [query, setQuery] = useSearchParams();
   const definition: string | null = query.get("definition");
   const [active, setActive] = useState<boolean>(() => document.visibilityState === "visible" && document.hasFocus());
@@ -328,6 +328,8 @@ function Conversation({ id, connected }: { id: string; connected: boolean }) {
           {chat?.messages.length === 0 && <EmptyState icon={<ChatIcon size={18} />} title="No messages yet">Tell the orchestrator what you want: it plans the work and creates the jobs.</EmptyState>}
           {chat?.messages.map((message) => <Message key={message.id} message={message} connected={connected} manual={manual}
             actions={actions.get(message.id) ?? []} attachments={attachments.get(message.id) ?? []} reload={detail.reload} />)}
+          {chat?.streamingReply && <Message message={chat.streamingReply} connected={connected} manual={manual}
+            actions={[]} attachments={[]} reload={detail.reload} />}
         </div>
       </div>
       {chat && manual && <Composer id={id} connected={connected} supportsImages={chat.supportsImages} reload={detail.reload} />}

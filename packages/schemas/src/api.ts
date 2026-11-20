@@ -109,6 +109,7 @@ export const LiveMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("log.line"), attemptId: z.string(), event: LogEvent }),
   z.object({ type: z.literal("login.progress"), loginId: z.string(), text: z.string(), url: z.string().nullable(), done: z.boolean() }),
   z.object({ type: z.literal("chat.message"), chatId: z.string(), messageId: z.string() }),
+  z.object({ type: z.literal("chat.streaming"), chatId: z.string() }),
   z.object({ type: z.literal("chat.action"), chatId: z.string(), actionId: z.string() }),
   z.object({ type: z.literal("chat.updated"), chatId: z.string() }),
   z.object({ type: z.literal("notify"), kind: z.string(), title: z.string(), body: z.string() }),
@@ -187,6 +188,7 @@ export type ChatActionView = z.infer<typeof ChatActionView>;
 export const ChatDetail = z.object({
   chat: ChatView,
   messages: z.array(ChatMessageView),
+  streamingReply: ChatMessageView.nullable().optional(),
   actions: z.array(ChatActionView),
   attachments: z.array(ChatAttachmentView),
   supportsImages: z.boolean().nullable(),

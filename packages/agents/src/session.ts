@@ -79,12 +79,30 @@ export async function probeImageSupport(p: Pick<StartParams, "connector" | "logi
 
 export async function startSession(p: StartParams): Promise<Session> {
   const c = p.connector;
+  const suppliedModel: ReturnType<typeof modelVariant> = c.reader === "codex" ? modelVariant(p.model) : null;
+  const vars: { model: string; effort: string | null } = { model: suppliedModel?.model ?? p.model, effort: p.effort || suppliedModel?.effort || null };
+  const modelOption: string | undefined = c.reader === "codex" ? c.sessionConfig.find(([id]) => id === "model")?.[1] : undefined;
+  const effortOption: string | undefined = c.sessionConfig.find(([id]) => id === "reasoning_effort")?.[1];
+  const model: string = modelOption ? fillSessionValue(modelOption, vars) : "";
+  const effort: string = effortOption ? fillSessionValue(effortOption, vars) : "";
+  const connector: ResolvedConnector = model ? {
+    ...c,
+    env: {
+      ...c.env,
+      CODEX_CONFIG: JSON.stringify({
+        ...JSON.parse(c.env.CODEX_CONFIG ?? "{}"),
+        model,
+        ...(effort ? { model_reasoning_effort: effort } : {}),
+      }),
+    },
+  } : c;
   const secrets = (p.mcpServers ?? []).flatMap((s) => ("headers" in s ? s.headers : s.env).map(({ value }) => value));
-  const { client, init } = await openConnection({ connector: c, login: p.login, spawn: p.spawn, cwd: p.cwd, secrets, ...(p.requestTimeoutMs !== undefined ? { requestTimeoutMs: p.requestTimeoutMs } : {}) });
+  const { client, init } = await openConnection({ connector, login: p.login, spawn: p.spawn, cwd: p.cwd, secrets, ...(p.requestTimeoutMs !== undefined ? { requestTimeoutMs: p.requestTimeoutMs } : {}) });
   const reader = readerFor(c.reader);
   const events = new AsyncQueue<AgentEvent>();
   const turn = { text: "", quota: undefined as Quota | undefined, model: undefined as string | undefined, cost: undefined as { amount: number; currency: string } | undefined };
   let dropReplay = false;
+  let prompting: boolean = false;
 
   client.handleNotifications((method, params) => {
     const r = reader.notification(method, params);
@@ -98,6 +116,7 @@ export async function startSession(p: StartParams): Promise<Session> {
     if (method !== "session/update" || dropReplay) return;
     const u = (params as { update?: Record<string, unknown> }).update ?? {};
     if (u.sessionUpdate === "agent_message_chunk") {
+      if (!prompting) return;
       const text = (u.content as { text?: string } | undefined)?.text ?? "";
       turn.text += text;
       events.push({ type: "text", text });
@@ -151,8 +170,6 @@ export async function startSession(p: StartParams): Promise<Session> {
     }
     if (!sessionId) throw new StartError("other", "no session id");
     turn.model = reader.model?.(session) ?? turn.model;
-    const suppliedModel: ReturnType<typeof modelVariant> = c.reader === "codex" ? modelVariant(p.model) : null;
-    const vars: { model: string; effort: string | null } = { model: suppliedModel?.model ?? p.model, effort: p.effort || suppliedModel?.effort || null };
     for (const [id, value] of c.sessionConfig) {
       const v = fillSessionValue(value, vars);
       if (v === "") continue;
@@ -181,11 +198,14 @@ export async function startSession(p: StartParams): Promise<Session> {
       let error: JsonRpcError | undefined;
       try {
         const prompt: readonly PromptContent[] = typeof content === "string" ? [{ type: "text", text: content }] : content;
+        prompting = true;
         result = await client.request("session/prompt", { sessionId: sid, prompt }, null);
       } catch (e) {
         if (e instanceof RpcError) error = e.error;
         else if (e instanceof ExitError || e instanceof TimeoutError) error = { code: -1, message: e.message };
         else error = { code: -1, message: String(e) };
+      } finally {
+        prompting = false;
       }
       const usage = result ? reader.usage(result) : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
       events.push({ type: "usage", usage });

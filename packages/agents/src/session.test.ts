@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { login, processSpawn, resolved } from "../test/helpers";
 import { startSession } from "./session";
 import { StartError } from "./types";
+import type { ResolvedConnector, Spawn } from "./types";
 
 const init = [{ expect: "initialize" }, { send: { jsonrpc: "2.0", id: "$id", result: { protocolVersion: 1, agentCapabilities: { loadSession: true, sessionCapabilities: { resume: {} } }, agentInfo: { version: "9.9.9" } } } }];
 const newSession = [{ expect: "session/new" }, { send: { jsonrpc: "2.0", id: "$id", result: { sessionId: "S1" } } }];
@@ -78,6 +79,43 @@ describe("ACP session with the fake agent", () => {
     const s = await start([...init, { expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }, ...option("mode", "bypassPermissions"), ...option("model", "opus"), ...option("effort", "high")], { resumeId: "OLD" });
     expect(s).toMatchObject({ sessionId: "OLD", resumed: true });
     await s.close();
+  });
+
+  it("starts Codex with the selected model before resuming and streams only prompt text", async () => {
+    const codex: ResolvedConnector = resolved({
+      reader: "codex",
+      env: { CODEX_CONFIG: '{"model":"gpt-6.2-sol","service_tier":"fast"}' },
+      sessionConfig: [["model", "{model}"], ["reasoning_effort", "{effort}"]],
+    });
+    const fake: Spawn = processSpawn({ FAKE_AGENT_SCRIPT: script([
+      ...init,
+      { expect: "session/resume" },
+      endTurn("Resume warning")[1]!,
+      { send: { jsonrpc: "2.0", id: "$id", result: {} } },
+      ...option("model", "gpt-6-luna"),
+      ...option("reasoning_effort", "low"),
+      ...endTurn("Reply"),
+    ]) });
+    const spawn: Spawn = (params) => {
+      expect(JSON.parse(params.env.CODEX_CONFIG!)).toEqual({
+        model: "gpt-6-luna",
+        model_reasoning_effort: "low",
+        service_tier: "fast",
+      });
+      return fake(params);
+    };
+    const s = await startSession({ connector: codex, login, spawn, cwd: tmpdir(), model: "gpt-6-luna[low]", resumeId: "S1" });
+    try {
+      expect(s.resumed).toBe(true);
+      expect((await s.prompt("hello")).text).toBe("Reply");
+    } finally {
+      await s.close();
+    }
+    const chunks: string[] = [];
+    for await (const event of s.events) {
+      if (event.type === "text") chunks.push(event.text);
+    }
+    expect(chunks).toEqual(["Reply"]);
   });
 
   it("falls back to a new session when resume fails", async () => {
