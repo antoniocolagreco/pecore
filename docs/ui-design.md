@@ -243,7 +243,7 @@ The prototype is normative only for: the Everforest palette and gradients, the I
     *   ID6: ticket text, author, start or discard.
     *   ID7: which cap was hit (the edge's `maxRounds` or the job's `maxNodeRuns`) and the runs used; input "allow N more" (default: the cap's value), or fail.
     *   ID8: cost or tokens used and the limit reached (per job, or per project per day); input for the new limit, saved to `project.json` (one commit; the label says it applies to future jobs too), or stop. One item per limit: every job blocked by the same limit waits on it.
-    *   ID9: where it goes (service, project, ticket), the exact text that will be posted, and who asked for it (the Orchestrator, with the ticket that led to it). Approve posts exactly that text; Reject posts nothing and tells the Orchestrator (decision 39).
+    *   ID9, "Comment to post": the project and ticket, and the exact text that will be posted, asked by the Orchestrator. Post posts exactly that text; Reject posts nothing (decision 39). The ticket stays waiting until the user acts in the chat.
 
 ### Assistant chat (right panel)
 

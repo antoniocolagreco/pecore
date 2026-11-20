@@ -139,7 +139,7 @@ async function setup(build: (root: string) => object[][], extra: { source?: bool
   await first.engine.createProject({ id: "demo", name: "Demo", repo: null, defaultRecipe: "reviewed" }, ["reviewed", "big"]);
   if (extra.source) {
     const dir = first.engine.projectDir("demo");
-    await writeFile(join(dir, "nodes", "fake-source.json"), JSON.stringify(fakeSource));
+    await writeFile(join(dir, "nodes", "fake-source.json"), JSON.stringify({ ...fakeSource, comment: { command: ["/bin/sh", "-c", `echo posted >> '${join(root, "comments")}'`] } }));
     const project = JSON.parse(await readFile(join(dir, "project.json"), "utf8")) as Record<string, unknown>;
     await writeFile(join(dir, "project.json"), JSON.stringify({ ...project, source: { node: "fake-source", params: { trusted: ["alice"] } } }));
     expect(await first.engine.reloadProject("demo")).toEqual([]);
@@ -517,6 +517,61 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       expect(prompt).toContain("PeCore's Assistant");
       expect(await readFile(join(t.root, "intake.json"), "utf8")).toContain("PeCore's Orchestrator");
       await writeFile(join(t.root, "done"), "");
+    } finally {
+      await t.close();
+    }
+  }, 60000);
+
+  it("holds a question from the Orchestrator for the user's approval; the Assistant posts the user's order at once", async () => {
+    const t = await setup((root) => [
+      init(),
+      [...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "assistant.json") }, { waitFile: join(root, "assistant-done") }, ...replyWith("Posted.")],
+    ], { source: true, orchestrator: (root) => [[...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "intake.json") }, { waitFile: join(root, "done") }, ...replyWith("Asked.")]] });
+    try {
+      const comments = join(t.root, "comments");
+      const posted = async (): Promise<number> => existsSync(comments) ? (await readFile(comments, "utf8")).trim().split("\n").length : 0;
+      const { ctx, executor } = t.engine.project("demo");
+      const sourceItem = await until(() => ctx.db.db.prepare("SELECT id, subject_hash FROM human_queue WHERE state = 'open' AND kind = 'source-node'").get() as { id: string; subject_hash: string } | undefined);
+      await executor.answer(sourceItem.id, "confirm", null, sourceItem.subject_hash);
+      await until(() => existsSync(join(t.root, "intake.json")));
+      const intake = t.engine.orchestrator.list().find((c) => c.projectId === "demo")!;
+      const m = mcp(tokenFileOf(intake.id));
+      await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+      const ask = async (text: string) => {
+        const result = await m.tool("comment_ticket", { project: "demo", ticketId: "7", text });
+        expect(result.result!.isError).not.toBe(true);
+        return (JSON.parse(result.result!.content![0]!.text) as { itemId: string }).itemId;
+      };
+      const item = (id: string) => ctx.db.db.prepare("SELECT state, choice, subject, subject_hash FROM human_queue WHERE id = ?").get(id) as { state: string; choice: string | null; subject: string; subject_hash: string };
+      const first: string = await ask("Which browser?");
+      const second: string = await ask("Which browser and version?");
+      expect(item(first).state).toBe("cancelled");
+      expect(JSON.parse(item(second).subject)).toMatchObject({ ticketId: "7", text: "Which browser and version?" });
+      await t.call("answerQueue", { params: { id: second }, body: { choice: "reject", note: null, hash: item(second).subject_hash } });
+      expect(item(second)).toMatchObject({ state: "resolved", choice: "reject" });
+      expect(await posted()).toBe(0);
+      const third: string = await ask("Which page?");
+      expect(await posted()).toBe(0);
+      await t.call("answerQueue", { params: { id: third }, body: { choice: "post", note: null, hash: item(third).subject_hash } });
+      expect(item(third)).toMatchObject({ state: "resolved", choice: "post" });
+      expect(await posted()).toBe(1);
+      const orderId = (ctx.db.db.prepare("SELECT order_id FROM tickets_seen WHERE ticket_id = '7'").get() as { order_id: string }).order_id;
+      expect(ctx.db.orderEvents(orderId).filter(({ type }) => type === "order.asked")).toHaveLength(1);
+      m.close();
+      await writeFile(join(t.root, "done"), "");
+
+      const assistant: ChatDetail["chat"] = await t.call("getAssistantChat");
+      const messages = (await t.call("getChat", { params: { id: assistant.id } })).messages;
+      expect(messages.filter(({ role }) => role === "orchestrator").map(({ text }) => text)).toEqual(Array(3).fill("Demo, ticket 7: wants to post a question on the ticket. Approve it in Inbox."));
+      await t.call("sendChatMessage", { params: { id: assistant.id }, body: { text: "Ask on ticket 7 which page it is" } });
+      await until(() => existsSync(join(t.root, "assistant.json")));
+      const own = mcp(tokenFileOf(assistant.id));
+      await own.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+      expect((await own.tool("comment_ticket", { project: "demo", ticketId: "7", text: "Which page?" })).result!.isError).not.toBe(true);
+      own.close();
+      expect(await posted()).toBe(2);
+      expect(ctx.db.db.prepare("SELECT count(*) AS n FROM human_queue WHERE kind = 'outbound' AND state = 'open'").get()).toEqual({ n: 0 });
+      await writeFile(join(t.root, "assistant-done"), "");
     } finally {
       await t.close();
     }

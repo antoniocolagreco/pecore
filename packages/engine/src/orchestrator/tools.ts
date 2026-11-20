@@ -15,6 +15,7 @@ import { readLogTail } from "../observability/logs";
 import { runSource } from "../sources/run";
 import type { SourceRequest } from "../sources/run";
 import type { ChatTurn } from "../store/chats-db";
+import { stageOutbound } from "./outbound";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: true };
 type ToolOutput = { value: unknown; target?: unknown; isError?: boolean };
@@ -203,13 +204,18 @@ export function orchestratorTools(engine: Engine): {
       const value = await definitions.handlers.validateDefinition({ params: undefined, query: undefined, body: { path, content } });
       return { value, target: { path }, isError: value.errors.length > 0 };
     }),
-    comment_ticket: tool("Post a clarification question on the ticket and record that the current order is waiting for replies.", ticket.extend({ text: z.string().trim().min(1) }), async ({ project, ticketId, text }, message) => {
+    comment_ticket: tool("Post a clarification question on the ticket and record that the current order is waiting for replies. For a new ticket, the user approves the question before PeCore posts it.", ticket.extend({ text: z.string().trim().min(1) }), async ({ project, ticketId, text }, message) => {
       const ctx: ProjectContext = projectContext(engine, project);
       const order: TicketOrder | undefined = intakeOrder(ctx, message);
       if (order && (ticketId !== order.ticket_id || order.state !== "handed")) throw new Error("only the current handed ticket can be asked");
       const plannedProject: string | null = chats.orderProject(message);
       const events: StoredEvent[] = projectContext(engine, plannedProject ?? project).db.orderEvents(message.orderId);
       if (events.some((event) => event.type === "order.planned" || event.type === "order.done")) throw new Error("this order already has a plan");
+      if (chats.role(message.chatId) === "orchestrator") {
+        const itemId: string = stageOutbound(ctx, { project, ticketId, orderId: message.orderId, text });
+        await chats.report(`${ctx.project.name}, ticket ${ticketId}: wants to post a question on the ticket. Approve it in Inbox.`, [{ project }]);
+        return { value: { waitingForApproval: true, itemId }, target: { project, ticketId, queueItemIds: [itemId] } };
+      }
       const commentAt: number = Date.now();
       await source(ctx, { command: "comment", ticketId, comment: text });
       ctx.db.append([{ jobId: null, type: "order.asked", payload: { orderId: message.orderId, commentAt } }]);

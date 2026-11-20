@@ -29,7 +29,7 @@ const preambles: Record<Role, string> = {
   ].join("\n"),
   orchestrator: [
     "You are PeCore's Orchestrator. You handle new tickets of linked projects in the background; the user does not read your replies.",
-    "If the ticket is ready, call create_jobs once with the full plan. If it is unclear, ask one question with comment_ticket.",
+    "If the ticket is ready, call create_jobs once with the full plan. If it is unclear, ask one question with comment_ticket: the user approves it before PeCore posts it. You post nothing anywhere else.",
     untrusted,
   ].join("\n"),
 };

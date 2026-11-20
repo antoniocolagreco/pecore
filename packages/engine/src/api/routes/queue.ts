@@ -2,6 +2,7 @@ import type { QueueItemView } from "@pecore/schemas";
 import type { Engine } from "../../main";
 import { HttpError } from "../server";
 import type { Handlers } from "../server";
+import { answerOutbound } from "../../orchestrator/outbound";
 import { definitionOperations } from "./definitions";
 
 type QueueDbRow = {
@@ -52,6 +53,7 @@ export function queueHandlers(engine: Engine) {
       if (!(JSON.parse(item.choices) as string[]).includes(body.choice)) throw new HttpError("bad_request", `${body.choice} is not a choice of this item`);
       if (item.kind === "agent-question" && !body.note?.trim()) throw new HttpError("bad_request", "an answer is required");
       if (item.kind === "recipe-change") await definitions.answerRecipeChange(params.id, ctx.id, body.choice, body.note, body.hash);
+      else if (item.kind === "outbound") await answerOutbound(ctx, params.id, body.choice, body.note);
       else await executor.answer(params.id, body.choice, body.note, body.hash);
       return { ok: true };
     },

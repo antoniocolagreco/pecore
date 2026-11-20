@@ -12,7 +12,7 @@ import { TextArea } from "../ds/field";
 import { Empty, ErrorText, ui } from "./ui";
 import s from "./ConfirmItem.module.css";
 
-const positive: ReadonlySet<string> = new Set(["approve", "confirm", "accept", "yes", "continue", "retry", "allow", "start"]);
+const positive: ReadonlySet<string> = new Set(["approve", "confirm", "accept", "yes", "continue", "retry", "allow", "start", "post"]);
 const negative: ReadonlySet<string> = new Set(["reject", "deny", "stop", "no", "abort", "cancel", "fail"]);
 
 export const queueKindLabel: Record<QueueItemView["kind"], string> = {
@@ -27,6 +27,7 @@ export const queueKindLabel: Record<QueueItemView["kind"], string> = {
   budget: "Budget limit",
   connector: "Connector",
   "agent-question": "Agent question",
+  outbound: "Comment to post",
 };
 
 function record(value: unknown): Record<string, unknown> {
@@ -132,6 +133,13 @@ function Subject({ item, connected }: { item: QueueItemView; connected: boolean 
         </>
       );
     }
+    case "outbound":
+      return (
+        <>
+          <div>The Orchestrator wants to post this on ticket {String(subject.ticketId)} of {item.projectId}. Nothing is posted until you choose post.</div>
+          <Snapshot value={subject.text} />
+        </>
+      );
     case "round-limit":
       return (
         <dl className={ui.kv}>

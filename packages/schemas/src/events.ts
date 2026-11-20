@@ -21,6 +21,7 @@ const QueueKind = z.enum([
   "services",
   "round-limit",
   "budget",
+  "outbound",
 ]);
 export type QueueKind = z.infer<typeof QueueKind>;
 export { QueueKind };
