@@ -48,7 +48,7 @@ describe("ACP session with the fake agent", () => {
     await expect(start([...init, ...newSession, ...option("mode", "default")])).rejects.toMatchObject({ kind: "other", raw: expect.stringContaining("config option mode") });
   });
 
-  it("answers a permission request with allow_once", async () => {
+  it.each([false, true])("answers permission requests according to denyPermissions=%s", async (denyPermissions) => {
     const steps = [
       ...init,
       ...newSession,
@@ -60,7 +60,7 @@ describe("ACP session with the fake agent", () => {
       { expect: "response" },
       { send: { jsonrpc: "2.0", id: "$id", result: { stopReason: "end_turn" } } },
     ];
-    const s = await start(steps);
+    const s = await start(steps, { denyPermissions });
     const events: unknown[] = [];
     void (async () => {
       for await (const e of s.events) events.push(e);
@@ -70,8 +70,8 @@ describe("ACP session with the fake agent", () => {
       for await (const l of s.raw) raw.push(l as never);
     })();
     await s.prompt("x");
-    expect(events).toContainEqual({ type: "permission", toolCallId: "T1", optionId: "yes" });
-    expect(raw.find((l) => l.dir === "out" && l.msg?.id === 0)?.msg?.result).toEqual({ outcome: { outcome: "selected", optionId: "yes" } });
+    expect(events).toContainEqual({ type: "permission", toolCallId: "T1", optionId: denyPermissions ? null : "yes" });
+    expect(raw.find((l) => l.dir === "out" && l.msg?.id === 0)?.msg?.result).toEqual({ outcome: denyPermissions ? { outcome: "cancelled" } : { outcome: "selected", optionId: "yes" } });
     await s.close();
   });
 

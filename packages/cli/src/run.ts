@@ -9,6 +9,7 @@ export const usage = `Usage:
   pecore project list
   pecore project export <id> [--out <file>] [--history] [--logs] [--accept-findings]
   pecore project import <file> [--id <new-id>] [--account <from>=<to> ...]
+  pecore project analyze <file>
   pecore job list [--project <id>] [--archived]
   pecore job why <job>
   pecore job stop|pause|play|resume|archive|delete <job>
@@ -79,6 +80,11 @@ async function command(call: ApiClient, home: string, args: string[], out: Out):
       return 1;
     }
     out.log(result.id);
+    return 0;
+  }
+  if (group === "project" && action === "analyze" && id && positionals.length === 3) {
+    const report = await call("analyzeArchive", { body: { path: resolve(id) } });
+    out.log(JSON.stringify(report, null, 2));
     return 0;
   }
   if (group === "job" && action === "list") {

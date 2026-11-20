@@ -1,7 +1,7 @@
 import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { InstantiateBody, OrderPlan, TicketReply, TicketSnapshot } from "@pecore/schemas";
+import { ArchiveReviewBody, InstantiateBody, OrderPlan, TicketReply, TicketSnapshot } from "@pecore/schemas";
 import type { Role, StoredEvent } from "@pecore/schemas";
 import { definitionOperations } from "../api/routes/definitions";
 import { jobHandlers } from "../api/routes/jobs";
@@ -12,6 +12,7 @@ import type { OrderPlanResult, TicketOrder } from "../jobs/plan";
 import { NotFoundError } from "../main";
 import type { Engine } from "../main";
 import { readLogTail } from "../observability/logs";
+import { analyzeProjectArchive } from "../share/review";
 import { runSource } from "../sources/run";
 import type { SourceRequest } from "../sources/run";
 import type { ChatTurn } from "../store/chats-db";
@@ -104,6 +105,27 @@ export function orchestratorTools(engine: Engine): {
         baseBranch: ctx.project.baseBranch,
       })),
     })),
+    analyze_project_archive: tool("Perform a read-only security review of a PeCore .tar.zst archive explicitly supplied by the user. Report findings and coverage to the user. This does not import the archive.", ArchiveReviewBody, async ({ path }) => {
+      const result = await analyzeProjectArchive(engine, path).catch((error: unknown) => {
+        throw new Error("The archive could not be reviewed. Check its path, PeCore format and size.", { cause: error });
+      });
+      const findings = result.files.flatMap((entry, index) => entry.findings.map((finding) => ({ ...finding, file: index + 1, path: entry.path })));
+      const summary = {
+        model: result.model,
+        textFiles: result.files.filter(({ content }) => content === "text").length,
+        historyFiles: result.files.filter(({ content }) => content === "history").length,
+        binaryFiles: result.files.filter(({ content }) => content === "binary").length,
+        modelReviewedFiles: result.files.filter(({ modelReviewed }) => modelReviewed).length,
+        totalFindings: findings.length,
+      };
+      const shown = findings.slice(0, 40);
+      return {
+        value: { ...summary, findings: shown.map(({ file, risk, line, source }) => ({ file, risk, line, source })) },
+        target: { ...summary, rows: shown.map(({ file, path, line, risk }) => ({
+          label: `File ${file}, line ${line} · ${risk.replaceAll("_", " ")}`, value: path,
+        })) },
+      };
+    }),
     project_creation_options: tool("List the configured forge accounts to present to the user when creating a project.", z.strictObject({}), () => ({
       value: {
         accounts: engine.global().accounts.accounts.flatMap((account) => account.kind === "forge"

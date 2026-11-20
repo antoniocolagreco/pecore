@@ -1,6 +1,7 @@
 import { createReadStream, lstatSync, renameSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createZstdDecompress } from "node:zlib";
 import { Unpack } from "tar";
@@ -15,17 +16,21 @@ import { migrateHistory, resetHistory } from "./history";
 
 type AccountMapping = NonNullable<ImportProjectBody["accounts"]>;
 
-async function unpack(path: string, dir: string): Promise<Set<string>> {
+type ArchiveLimits = { entries: number; bytes: number };
+
+async function unpack(path: string, dir: string, limits?: ArchiveLimits): Promise<Set<string>> {
   const entries: Set<string> = new Set();
   const roots: Set<string> = new Set();
   let invalid: InvalidArchive | undefined;
+  let bytes: number = 0;
+  const decoder = createZstdDecompress();
   const archive: Unpack = new Unpack({
     cwd: dir,
     preserveOwner: false,
     noMtime: true,
     dmode: 0o700,
     filter: (path, entry) => {
-      if (!("type" in entry)) return false;
+      if (invalid || !("type" in entry)) return false;
       const name: string | null = archivePath(path);
       const [root, ...parts]: string[] = name?.split("/") ?? [];
       const directory: boolean = entry.type === "Directory";
@@ -36,6 +41,12 @@ async function unpack(path: string, dir: string): Promise<Set<string>> {
       const nestedDefinition: boolean = (root === "nodes" || root === "recipes") && parts.length > 1 && name?.endsWith(".json") === true;
       if (name === null || !allowed || nestedDefinition || entry.linkpath || !(directory || file) || entries.has(name)) {
         invalid ??= new InvalidArchive(`invalid archive entry ${JSON.stringify(path)} (${entry.type})`);
+        return false;
+      }
+      bytes += entry.size ?? 0;
+      if (limits && (entries.size >= limits.entries || bytes > limits.bytes)) {
+        invalid = new InvalidArchive("The archive exceeds the security review size limit");
+        decoder.destroy(invalid);
         return false;
       }
       entries.add(name);
@@ -50,7 +61,17 @@ async function unpack(path: string, dir: string): Promise<Set<string>> {
   archive.on("ignoredEntry", () => {
     invalid ??= new InvalidArchive("archive contains an unsupported entry");
   });
-  await pipeline(createReadStream(path), createZstdDecompress(), archive);
+  if (limits) {
+    let decompressed: number = 0;
+    const limit = new Transform({ transform(chunk: Buffer, _encoding, callback) {
+      decompressed += chunk.length;
+      if (decompressed > limits.bytes + 8 * 1024 * 1024) callback(new InvalidArchive("The archive exceeds the security review size limit"));
+      else callback(null, chunk);
+    } });
+    await pipeline(createReadStream(path), decoder, limit, archive);
+  } else {
+    await pipeline(createReadStream(path), decoder, archive);
+  }
   if (invalid) throw invalid;
   return roots;
 }
@@ -59,19 +80,30 @@ function checkId(dir: string, id: string, knownProject: (id: string) => boolean)
   if (knownProject(id) || lstatSync(dir, { throwIfNoEntry: false })) throw new ShareConflict(`project ${id} already exists`);
 }
 
-export async function beginImport(home: string, input: ImportProjectBody, options: { accounts: Accounts; knownProject(id: string): boolean }): Promise<ImportProjectResult> {
-  const body: ImportProjectBody = ImportProjectBody.parse(input);
+export async function withProjectArchive<T>(home: string, path: string, use: (dir: string, manifest: Manifest) => Promise<T>, limits?: ArchiveLimits): Promise<T> {
   const stage: string = await mkdtemp(join(home, ".pecore-import-"));
   try {
     const dir: string = join(stage, "project");
     await mkdir(dir, { mode: 0o700 });
-    const roots: Set<string> = await unpack(body.path, dir);
+    const roots: Set<string> = await unpack(path, dir, limits);
     const manifest: Manifest = Manifest.parse(JSON.parse(await readFile(join(dir, "manifest.json"), "utf8")));
     if (manifest.history !== roots.has("pecore.db") || (!manifest.history && roots.has("artifacts")) || (!manifest.logs && roots.has("logs"))) {
       throw new InvalidArchive("archive files do not match the manifest's history and logs flags");
     }
     const original: string = join(stage, manifest.projectId);
     if (original !== dir) renameSync(dir, original);
+    return await use(original, manifest);
+  } catch (error) {
+    if (error instanceof InvalidArchive || error instanceof ShareConflict) throw error;
+    throw new InvalidArchive((error as Error).message, { cause: error });
+  } finally {
+    await rm(stage, { recursive: true, force: true });
+  }
+}
+
+export async function beginImport(home: string, input: ImportProjectBody, options: { accounts: Accounts; knownProject(id: string): boolean }): Promise<ImportProjectResult> {
+  const body: ImportProjectBody = ImportProjectBody.parse(input);
+  return withProjectArchive(home, body.path, async (original, manifest) => {
     const loaded = await loadProject(original);
     if (loaded.errors.length > 0 || !loaded.project) throw new InvalidArchive(loaded.errors.map(({ file, path, message }) => `${file.slice(original.length + 1)} ${path}: ${message}`).join("; "));
     const project: Project = loaded.project;
@@ -120,10 +152,5 @@ export async function beginImport(home: string, input: ImportProjectBody, option
     checkId(dest, id, options.knownProject);
     renameSync(original, dest);
     return { state: "imported", id };
-  } catch (error) {
-    if (error instanceof InvalidArchive || error instanceof ShareConflict) throw error;
-    throw new InvalidArchive((error as Error).message, { cause: error });
-  } finally {
-    await rm(stage, { recursive: true, force: true });
-  }
+  });
 }

@@ -109,6 +109,22 @@ function ActionCard({ action, connected }: { action: ChatActionView; connected: 
     const rows = confirmationRows.safeParse(target.rows);
     if (rows.success) return <ProjectConfirmation action={action} rows={rows.data} connected={connected} />;
   }
+  if (action.tool === "analyze_project_archive") {
+    const rows = ChatConfirmationRow.array().safeParse(target.rows);
+    if (rows.success && typeof target.totalFindings === "number" && typeof target.binaryFiles === "number") {
+      const state: string = string(target.model);
+      const model: string = state === "complete" ? "Model review complete" : state === "partial" ? "Model reviewed part of the text" : state === "failed" ? "Model review failed" : "Static review only";
+      return <section className={s.action} aria-label="Archive security review">
+        <div className={s.actionHead}><SparkIcon /><strong>Archive security review</strong></div>
+        <span>{target.totalFindings} findings · {model}</span>
+        {target.binaryFiles > 0 && <span>{target.binaryFiles} binary files could not be analyzed</span>}
+        {rows.data.length > 0 && <details>
+          <summary>{rows.data.length < target.totalFindings ? `First ${rows.data.length} findings` : "Finding locations"}</summary>
+          <ul className={s.links}>{rows.data.map(({ label, value }, index) => <li key={index}>{label} <code>{value}</code></li>)}</ul>
+        </details>}
+      </section>;
+    }
+  }
   const links: ActionLink[] = actionLinks(target);
   const state: string = string(target.state);
   const error: string = string(target.error);

@@ -281,6 +281,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 ### Import project (full page)
 
 *   Archive import is currently available through the CLI. Before import it warns that scripts and prompts may be malicious and asks the user to review all of them.
+*   To review an archive first, ask the Assistant with the archive's local path or run `pecore project analyze <file>`. The report shows findings and coverage without importing the archive.
 
 ### Export (dialog)
 

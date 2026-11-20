@@ -44,6 +44,22 @@ export const ImportProjectResult = z.discriminatedUnion("state", [
 ]);
 export type ImportProjectResult = z.infer<typeof ImportProjectResult>;
 
+export const ArchiveReviewBody = z.strictObject({ path: z.string().min(1) });
+export const ArchiveRisk = z.enum(["prompt_injection", "credential_access", "network_access", "shell_execution", "privileged_operation", "destructive_operation"]);
+export type ArchiveRisk = z.infer<typeof ArchiveRisk>;
+export const ArchiveReview = z.strictObject({
+  projectId: ProjectId,
+  model: z.enum(["complete", "partial", "unavailable", "failed"]),
+  files: z.array(z.strictObject({
+    path: z.string(),
+    bytes: z.int().nonnegative(),
+    content: z.enum(["text", "history", "binary"]),
+    modelReviewed: z.boolean(),
+    findings: z.array(z.strictObject({ risk: ArchiveRisk, line: z.int().positive(), source: z.enum(["static", "model"]) })),
+  })),
+});
+export type ArchiveReview = z.infer<typeof ArchiveReview>;
+
 export const CreateJobBody = z
   .object({
     project: ProjectId,
@@ -430,6 +446,7 @@ export const routes = {
   createProject: { method: "POST", path: "/projects", body: CreateProjectBody, response: z.object({ id: ProjectId }) },
   exportProject: { method: "POST", path: "/projects/:id/export", params: IdParams, body: ExportProjectBody, response: ExportProjectResult },
   importProject: { method: "POST", path: "/projects/import", body: ImportProjectBody, response: ImportProjectResult },
+  analyzeArchive: { method: "POST", path: "/projects/import/analysis", body: ArchiveReviewBody, response: ArchiveReview },
   getProject: { method: "GET", path: "/projects/:id", params: IdParams, response: ProjectView },
   deleteProject: { method: "DELETE", path: "/projects/:id", params: IdParams, response: Ok },
   getArtifact: {

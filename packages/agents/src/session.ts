@@ -25,6 +25,7 @@ export type StartParams = {
   resumeId?: string;
   mcpServers?: McpServer[];
   requestTimeoutMs?: number;
+  denyPermissions?: boolean;
 };
 
 export type OpenedConnection = {
@@ -129,7 +130,7 @@ export async function startSession(p: StartParams): Promise<Session> {
   client.handleRequests((method, params) => {
     if (method !== "session/request_permission") throw new RpcError({ code: -32601, message: `${method} not supported` });
     const q = params as { toolCall?: { toolCallId?: string }; options?: { optionId: string; kind: string }[] };
-    const opt = q.options?.find((o) => o.kind === "allow_once");
+    const opt = p.denyPermissions ? undefined : q.options?.find((o) => o.kind === "allow_once");
     events.push({ type: "permission", toolCallId: q.toolCall?.toolCallId ?? "", optionId: opt?.optionId ?? null });
     return { outcome: opt ? { outcome: "selected", optionId: opt.optionId } : { outcome: "cancelled" } };
   });
