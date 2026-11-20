@@ -34,6 +34,7 @@ const sections: { id: string; title: string }[] = [
   { id: "accounts", title: "Accounts" },
   { id: "assistant", title: "Assistant" },
   { id: "orchestrator", title: "Orchestrator" },
+  { id: "projects", title: "Projects" },
   { id: "limits", title: "Limits" },
   { id: "protectedMode", title: "Protected mode" },
   { id: "appearance", title: "Appearance" },
@@ -488,6 +489,13 @@ export function Settings() {
         {value && <>
           {roleSection("assistant", "The model you talk with in the chat.")}
           {roleSection("orchestrator", "The model that plans jobs for new tickets in the background.")}
+
+          <Section id="projects" title="Projects" description="Where the code of new projects goes.">
+            <TextField label="Projects folder" mono value={value.projectsFolder} disabled={!connected}
+              description="A new project's folder starts as this folder plus the project name."
+              onValueChange={(projectsFolder) => update({ ...value, projectsFolder })}
+              action={<Button disabled={!connected} onClick={() => void window.pecore.pickFolder().then((picked) => picked && update({ ...value, projectsFolder: picked }))}>Choose…</Button>} />
+          </Section>
 
           <Section id="limits" title="Limits" description="How much PeCore runs at the same time.">
             <div className={s.grid}>

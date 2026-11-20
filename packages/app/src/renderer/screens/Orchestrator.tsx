@@ -74,10 +74,9 @@ const confirmationRows = ChatConfirmationRow.array().min(1);
 const confirmationStatuses: Record<string, string> = {
   awaiting_confirmation: "Awaiting confirmation",
   creating_project: "Creating project…",
+  deleting_project: "Deleting project…",
   approved: "Confirmed",
   cancelled: "Rejected",
-  failed: "Creation failed",
-  interrupted: "Creation interrupted",
 };
 
 function ProjectConfirmation({ action, rows, connected }: { action: ChatActionView; rows: ChatConfirmationRow[]; connected: boolean }) {
@@ -85,11 +84,16 @@ function ProjectConfirmation({ action, rows, connected }: { action: ChatActionVi
   const state: string = string(target.state);
   const project: string = string(target.project);
   const id: string = encodeURIComponent(project);
+  const deleting: boolean = action.tool === "delete_project";
+  const operation: string = deleting ? "Deletion" : "Creation";
+  const status: string = state === "failed" ? `${operation} failed`
+    : state === "interrupted" ? `${operation} interrupted`
+    : deleting && state === "approved" ? "Project deleted" : confirmationStatuses[state] ?? "";
   const answer = useAction(async (decision: "approve" | "cancel") => {
-    await call("answerChatProjectCreation", { params: { id: action.id }, body: { decision } });
+    await call(deleting ? "answerChatProjectDeletion" : "answerChatProjectCreation", { params: { id: action.id }, body: { decision } });
   });
   return (
-    <ChatConfirmation title="Create project" rows={rows} status={confirmationStatuses[state] ?? ""}
+    <ChatConfirmation title={deleting ? "Delete project" : "Create project"} rows={rows} status={status} destructive={deleting}
       pending={state === "awaiting_confirmation"} disabled={!connected} busy={answer.busy}
       error={answer.error ?? (string(target.error) || null)} onDecision={(decision) => void answer.run(decision)}>
       {project && connected && <Link to={target.creating === true ? `/projects/new?resume=${id}` : `/projects/${id}`}>
@@ -101,7 +105,7 @@ function ProjectConfirmation({ action, rows, connected }: { action: ChatActionVi
 
 function ActionCard({ action, connected }: { action: ChatActionView; connected: boolean }) {
   const target: Record<string, unknown> = object(action.target);
-  if (action.tool === "create_project") {
+  if (action.tool === "create_project" || action.tool === "delete_project") {
     const rows = confirmationRows.safeParse(target.rows);
     if (rows.success) return <ProjectConfirmation action={action} rows={rows.data} connected={connected} />;
   }
@@ -114,6 +118,7 @@ function ActionCard({ action, connected }: { action: ChatActionView; connected: 
     const id: string = encodeURIComponent(project);
     links.push({ to: target.creating === true ? `/projects/new?resume=${id}` : `/projects/${id}`, label: project });
   }
+  if (action.tool === "update_project" && project) links.push({ to: `/projects/${encodeURIComponent(project)}`, label: "Open project" });
   return (
     <div className={s.action}>
       <div className={s.actionHead}>
@@ -133,6 +138,7 @@ function ActionCard({ action, connected }: { action: ChatActionView; connected: 
 
 const readTools: Record<string, string> = {
   list_projects: "projects",
+  get_project: "project settings",
   list_recipes: "recipes",
   read_ticket: "ticket",
   read_replies: "ticket replies",

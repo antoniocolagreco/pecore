@@ -115,7 +115,7 @@ async function setup(recipe: string) {
   const home = join(await tempDir(), "home");
   const lib = await library();
   const engine = await Engine.start({ home, library: lib });
-  await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, defaultRecipe: recipe }, [recipe]);
+  await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, [recipe]);
   return { home, lib, engine, project: engine.project("demo") };
 }
 
@@ -187,7 +187,7 @@ describe("project folder (decision 75)", () => {
     const home = join(await tempDir(), "home");
     const folder = join(await tempDir(), "demo");
     const engine = await Engine.start({ home, library: await library() });
-    await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, folder, defaultRecipe: "write-commit" }, ["write-commit"]);
+    await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, folder }, ["write-commit"]);
     return { engine, folder, project: engine.project("demo") };
   }
 

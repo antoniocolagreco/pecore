@@ -4,9 +4,10 @@ import { basename, join } from "node:path";
 import { monotonicFactory } from "ulid";
 import { probeImageSupport, startSession } from "@pecore/agents";
 import type { McpServer, PromptContent, Session, Spawn, SpawnedProcess } from "@pecore/agents";
-import { chatAttachmentMaxBytes, chatCompactCommand, roleProfile } from "@pecore/schemas";
+import { ChatConfirmationRow, chatAttachmentMaxBytes, chatCompactCommand, roleProfile } from "@pecore/schemas";
 import type { ChatAttachmentView, ChatDetail, ChatImageMime, ChatMessageView, LiveMessage, Role, SendChatMessageBody } from "@pecore/schemas";
 import { protectedUser, spawnFor } from "../accounts/agents";
+import { definitionOperations } from "../api/routes/definitions";
 import { HttpError } from "../api/server";
 import type { JobAttachment } from "../jobs/create";
 import { NotFoundError } from "../main";
@@ -17,6 +18,7 @@ import { assistantChat } from "../store/chats-db";
 import type { Chat, ChatAttachment, ChatsDb, ChatTurn } from "../store/chats-db";
 import { writeFileAs } from "../workdir/fs-as";
 import { createApprovedProject, ProjectCreation, projectCreationRows } from "./project-creation";
+import { ProjectDeletion, projectDeletion } from "./project-management";
 
 const ulid = monotonicFactory();
 const extensions: Record<ChatImageMime, string> = { "image/png": "png", "image/jpeg": "jpeg", "image/gif": "gif", "image/webp": "webp" };
@@ -26,6 +28,7 @@ const preambles: Record<Role, string> = {
     "You are PeCore's Assistant. The user talks to you in the app's only chat. Act on PeCore for them with the PeCore MCP tools for projects, jobs, tickets and definitions.",
     "Each user message is an order and is authorised as given. If it asks for jobs, call create_jobs once with the full plan.",
     "When asked to create a project, use PeCore tools to gather the required information and available defaults. Ask for details you cannot resolve. If the user delegates decisions, choose suitable values yourself and use validation feedback to refine them. Submit the full settings once per project with create_project, then ask the user to review and confirm in the card. A proposal does not create a project. Only the card's Confirm button authorizes creation.",
+    "For project edits and deletions, resolve the exact project ID first. Ask if the project or requested changes are unclear. Use get_project and update_project to change only the settings requested. For deletion, call delete_project to show the proposal and direct the user to the card. Only the user can authorize deletion with the card's Confirm button. Never report deletion as complete while it awaits confirmation.",
     `Context references point to PeCore records. ${untrusted}`,
   ].join("\n"),
   orchestrator: [
@@ -66,6 +69,7 @@ export class OrchestratorChats {
   private readonly routeKeys: Map<string, string> = new Map();
   private readonly active: Map<string, ActiveTurn> = new Map();
   private readonly runs: Map<string, Promise<void>> = new Map();
+  private readonly projectActions: Set<Promise<void>> = new Set();
   private readonly procs: Set<SpawnedProcess> = new Set();
   private readonly imageSupport: Map<string, boolean> = new Map();
   private readonly probes: Map<string, Promise<boolean>> = new Map();
@@ -288,19 +292,37 @@ export class OrchestratorChats {
     this.changed(assistantChat);
   }
 
-  async answerProjectCreation(id: string, decision: "approve" | "cancel"): Promise<void> {
-    const action = this.db.actions(assistantChat).find((entry) => entry.id === id && entry.tool === "create_project");
-    const target = action?.target as { state?: unknown; settings?: unknown } | null | undefined;
+  async answerProjectAction(tool: "create_project" | "delete_project", id: string, decision: "approve" | "cancel"): Promise<void> {
+    const action = this.db.actions(assistantChat).find((entry) => entry.id === id && entry.tool === tool);
+    const target = action?.target as { state?: unknown; settings?: unknown; rows?: unknown } | null | undefined;
     if (this.closed || target?.state !== "awaiting_confirmation") throw new HttpError("conflict", "This proposal is no longer pending.");
-    const settings = ProjectCreation.parse(target.settings);
-    const rows = projectCreationRows(settings);
-    this.db.finishAction(id, { rows, state: decision === "cancel" ? "cancelled" : "creating_project" });
+    const deletion: boolean = tool === "delete_project";
+    const rows: ChatConfirmationRow[] = deletion ? ChatConfirmationRow.array().min(1).parse(target.rows) : projectCreationRows(this.engine, ProjectCreation.parse(target.settings));
+    this.db.finishAction(id, { rows, state: decision === "cancel" ? "cancelled" : deletion ? "deleting_project" : "creating_project" });
     this.changed(assistantChat);
     if (decision === "cancel") return;
 
+    const pending: Promise<void> = this.runProjectAction(tool, id, rows, target.settings);
+    this.projectActions.add(pending);
     try {
-      const result = await createApprovedProject(this.engine, settings);
-      this.db.finishAction(id, { rows, state: result.error ? "failed" : "approved", ...result });
+      await pending;
+    } finally {
+      this.projectActions.delete(pending);
+    }
+  }
+
+  private async runProjectAction(tool: "create_project" | "delete_project", id: string, rows: ChatConfirmationRow[], settings: unknown): Promise<void> {
+    try {
+      if (tool === "delete_project") {
+        const { project, identity } = ProjectDeletion.parse(settings);
+        await definitionOperations(this.engine).removeProject(project, () => {
+          if (projectDeletion(this.engine, project).identity !== identity) throw new Error("The project changed. Ask the Assistant for a new deletion proposal.");
+        });
+        this.db.finishAction(id, { rows, state: "approved" });
+      } else {
+        const result = await createApprovedProject(this.engine, ProjectCreation.parse(settings));
+        this.db.finishAction(id, { rows, state: result.error ? "failed" : "approved", ...result });
+      }
     } catch (error) {
       this.db.finishAction(id, { rows, state: "failed", error: error instanceof Error ? error.message : String(error) });
     } finally {
@@ -310,8 +332,8 @@ export class OrchestratorChats {
 
   async clear(): Promise<void> {
     if (this.closed || this.db.busy(assistantChat)) throw new HttpError("conflict", "the chat is unavailable or has a pending turn");
-    if (this.db.actions(assistantChat).some(({ target }) => (target as { state?: unknown } | null)?.state === "creating_project")) {
-      throw new HttpError("conflict", "Wait for project creation to finish before clearing the chat.");
+    if (this.projectActions.size > 0) {
+      throw new HttpError("conflict", "Wait for the project operation to finish before clearing the chat.");
     }
     const attachments: ChatAttachment[] = this.db.attachments(assistantChat);
     this.db.clearChat(assistantChat);
@@ -494,6 +516,6 @@ export class OrchestratorChats {
     this.idle.clear();
     this.db.interruptMessages();
     await Promise.allSettled([...this.procs].map((proc) => proc.stop()));
-    await Promise.allSettled([...this.runs.values(), ...this.probes.values(), ...[...this.locations.values()].map(({ pending }) => pending)]);
+    await Promise.allSettled([...this.projectActions, ...this.runs.values(), ...this.probes.values(), ...[...this.locations.values()].map(({ pending }) => pending)]);
   }
 }

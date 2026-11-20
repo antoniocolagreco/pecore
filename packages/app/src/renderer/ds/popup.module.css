@@ -187,7 +187,7 @@
 
 .groupLabel {
   padding: 8px 12px 4px 32px;
-  font-size: var(--text-size-xs);
+  font-size: var(--text-size-sm);
   font-weight: 600;
   color: var(--text-3);
   user-select: none;

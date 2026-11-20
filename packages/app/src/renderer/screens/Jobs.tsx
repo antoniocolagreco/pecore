@@ -50,7 +50,7 @@ function treeRows(jobs: JobView[], collapsed: ReadonlySet<string>): JobRow[] {
   return rows;
 }
 
-function Row({ row, factory, collapsed, toggle, now }: { row: JobRow; factory: boolean; collapsed: boolean; toggle(): void; now: number }) {
+function Row({ row, factory, project, collapsed, toggle, now }: { row: JobRow; factory: boolean; project: boolean; collapsed: boolean; toggle(): void; now: number }) {
   const { job, depth, hasChildren } = row;
   const connected: boolean = useConnected();
   const navigate: ReturnType<typeof useNavigate> = useNavigate();
@@ -91,7 +91,7 @@ function Row({ row, factory, collapsed, toggle, now }: { row: JobRow; factory: b
         <button type="button" className={s.titleLink} disabled={!connected || open.busy} onClick={(event) => { event.stopPropagation(); openRow(); }}>{job.title}</button>
         <ErrorText error={open.error ?? detail.error} />
       </td>
-      <td>{job.projectId}</td>
+      {project && <td>{job.projectId}</td>}
       <td><StateLabel info={{ ...info, detail: job.state === "paused" ? info.detail : null }} /></td>
       <td>{isFinal(job) ? job.failureReason ?? (job.state === "stopped" ? null : last?.outcome) ?? "—" : current?.node ?? (detail.loading ? "…" : "—")}</td>
       <td>{job.state !== "paused" ? reasonLabel(job.waitingReason, current?.state === "waiting" ? current.resetAt : null) ?? "—" : "—"}</td>
@@ -101,7 +101,7 @@ function Row({ row, factory, collapsed, toggle, now }: { row: JobRow; factory: b
   );
 }
 
-export function JobTable({ jobs, factory = false, loading }: { jobs: JobView[]; factory?: boolean; loading: boolean }) {
+export function JobTable({ jobs, factory = false, project = true, loading, empty }: { jobs: JobView[]; factory?: boolean; project?: boolean; loading: boolean; empty?: string }) {
   const connected: boolean = useConnected();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set<string>());
   const [page, setPage] = useState<number>(0);
@@ -113,7 +113,7 @@ export function JobTable({ jobs, factory = false, loading }: { jobs: JobView[]; 
   }, [factory]);
   const rows: JobRow[] = treeRows(jobs, collapsed);
   const currentPage: number = Math.min(page, Math.max(0, Math.ceil(rows.length / pageSize) - 1));
-  const headings: string[] = ["Title", "Project", "State", factory ? "Node" : "Node or outcome", "Waiting reason", ...(factory ? [] : ["Duration", "Updated"]), "Actions"];
+  const headings: string[] = ["Title", ...(project ? ["Project"] : []), "State", factory ? "Node" : "Node or outcome", "Waiting reason", ...(factory ? [] : ["Duration", "Updated"]), "Actions"];
   return (
     <Card padded={false} className={s.card}>
       <div className={s.tableWrap}>
@@ -121,7 +121,7 @@ export function JobTable({ jobs, factory = false, loading }: { jobs: JobView[]; 
           <thead><tr>{headings.map((heading) => <th key={heading} scope="col">{heading}</th>)}</tr></thead>
           <tbody>
             {rows.slice(currentPage * pageSize, (currentPage + 1) * pageSize).map((row) => (
-              <Row key={row.job.id} row={row} factory={factory} now={now} collapsed={collapsed.has(row.job.id)} toggle={() => {
+              <Row key={row.job.id} row={row} factory={factory} project={project} now={now} collapsed={collapsed.has(row.job.id)} toggle={() => {
                 const next = new Set<string>(collapsed);
                 if (next.has(row.job.id)) next.delete(row.job.id);
                 else next.add(row.job.id);
@@ -134,7 +134,7 @@ export function JobTable({ jobs, factory = false, loading }: { jobs: JobView[]; 
           </tbody>
         </table>
       </div>
-      {rows.length === 0 && (loading ? <span role="status" className={s.visuallyHidden}>Loading jobs…</span> : <Empty>{factory ? "No active jobs." : "No jobs match these filters."}</Empty>)}
+      {rows.length === 0 && (loading ? <span role="status" className={s.visuallyHidden}>Loading jobs…</span> : <Empty>{empty ?? (factory ? "No active jobs." : "No jobs match these filters.")}</Empty>)}
       {rows.length > pageSize && (
         <div className={s.pagination}>
           <Button disabled={!connected || currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</Button>

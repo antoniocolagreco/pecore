@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { _electron as electron } from "playwright-core";
 import type { ElectronApplication, Locator, Page } from "playwright-core";
 import { afterAll, beforeAll, describe, it } from "vitest";
+import { apiClient } from "@pecore/schemas";
 import { initHome } from "../../engine/src/home/layout";
 import { FakeForge, forgeAccount } from "../../engine/test/fake-forge";
 
@@ -147,6 +148,39 @@ describe.skipIf(gui)("phase 5 gate: G16 actions from the GUI (built app, headles
     await dialog.getByRole("button", { name: "Instantiate", exact: true }).click({ timeout: 10_000 });
     await visible(page.getByText("projects/demo/recipes/reviewed.json"), 15_000);
   }, 30_000);
+
+  it("creates a recipe from scratch or a template in the project's flow editor", async () => {
+    const connection: { port: number; token: string } = await page.evaluate(() => (
+      globalThis as unknown as { pecore: { api(): Promise<{ port: number; token: string }> } }
+    ).pecore.api());
+    const call = apiClient(connection);
+    await call("createProject", { body: { project: { id: "recipe-flow", name: "Recipe Flow", repo: null, folder: join(root, "recipe-flow-code") } } });
+    await go("#/projects/recipe-flow");
+    await page.getByRole("tab", { name: "Recipes" }).click();
+    await page.getByRole("button", { name: "New Recipe", exact: true }).click();
+    await visible(page.locator(".react-flow"));
+    await page.getByLabel("Name", { exact: true }).fill("from-scratch");
+    await page.getByLabel("Description", { exact: true }).fill("Write a file");
+    const recipes: string = join(root, "home", "projects", "recipe-flow", "recipes");
+    if (await stat(join(recipes, "from-scratch.json")).catch(() => null)) throw new Error("The draft was saved early.");
+    await choose(page.getByLabel("Library node"), "write-hello");
+    await page.getByRole("button", { name: "Import node", exact: true }).click();
+    await page.getByRole("button", { name: "Add node", exact: true }).click();
+    await page.getByRole("button", { name: "Recipe settings", exact: true }).click();
+    await page.getByLabel("Success outcomes (comma separated)").fill("write-hello:done");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.waitForURL("**/#/edit/recipe/projects/recipe-flow/recipes/from-scratch.json");
+    await visible(page.locator(".react-flow__node"));
+    await stat(join(recipes, "from-scratch.json"));
+    await page.getByRole("link", { name: "Back to recipes" }).click();
+    await visible(page.getByRole("link", { name: "from-scratch" }));
+    await page.getByRole("button", { name: "New Recipe", exact: true }).click();
+    await choose(page.getByLabel("Recipe template"), "reviewed");
+    await page.getByRole("button", { name: "Import template", exact: true }).click();
+    await page.waitForURL("**/#/edit/recipe/projects/recipe-flow/recipes/reviewed.json");
+    await visible(page.locator(".react-flow__node").first());
+    await stat(join(recipes, "reviewed.json"));
+  }, 60_000);
 
   it("creates a job, approves its review in the Inbox and sees it succeed", async () => {
     const seed = join(root, "seed");

@@ -1,7 +1,7 @@
 import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { InstantiateBody, OrderPlan, ProjectId, TicketReply, TicketSnapshot } from "@pecore/schemas";
+import { InstantiateBody, OrderPlan, TicketReply, TicketSnapshot } from "@pecore/schemas";
 import type { Role, StoredEvent } from "@pecore/schemas";
 import { definitionOperations } from "../api/routes/definitions";
 import { jobHandlers } from "../api/routes/jobs";
@@ -16,7 +16,8 @@ import { runSource } from "../sources/run";
 import type { SourceRequest } from "../sources/run";
 import type { ChatTurn } from "../store/chats-db";
 import { stageOutbound } from "./outbound";
-import { ProjectCreation, projectCreationRows, validateProjectCreation } from "./project-creation";
+import { defaultFolder, ProjectCreation, projectCreationRows, validateProjectCreation } from "./project-creation";
+import { projectDeletion, ProjectSelection, ProjectUpdate, updateProject } from "./project-management";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: true };
 type ToolOutput = { value: unknown; target?: unknown; isError?: boolean };
@@ -28,7 +29,7 @@ type Tool = {
 };
 
 const id = z.string().min(1);
-const project = z.strictObject({ project: ProjectId });
+const project = ProjectSelection;
 const ticket = project.extend({ ticketId: id });
 const definition = z.strictObject({ path: id, content: z.string() });
 const artifactLimit = 200_000;
@@ -102,7 +103,7 @@ export function orchestratorTools(engine: Engine): {
     list_projects: tool("List projects and their configured sources.", z.strictObject({}), () => ({
       value: [...engine.projects.values()].map(({ ctx }) => ({
         id: ctx.id, name: ctx.project.name, repo: ctx.project.repo?.url ?? null, source: ctx.project.source?.node ?? null,
-        baseBranch: ctx.project.baseBranch, defaultRecipe: ctx.project.defaultRecipe,
+        baseBranch: ctx.project.baseBranch,
       })),
     })),
     project_creation_options: tool("List the configured forge accounts to present to the user when creating a project.", z.strictObject({}), () => ({
@@ -111,14 +112,29 @@ export function orchestratorTools(engine: Engine): {
           ? [{ id: account.id, host: account.host, forge: account.forge, user: account.user, canCreateRepository: account.forge === "github" || account.forge === "gitlab" }]
           : []),
         defaultBaseBranch: "main",
-        defaultFolder: "~/Projects/<project id>",
+        defaultFolder: defaultFolder(engine, "<project id>"),
       },
     })),
     create_project: tool("Validate and propose a project for confirmation in chat. This tool never creates the project. The user must approve the displayed settings in the confirmation card.", ProjectCreation, async (settings) => {
       await validateProjectCreation(engine, settings);
       return {
         value: { state: "awaiting_confirmation" },
-        target: { state: "awaiting_confirmation", settings, rows: projectCreationRows(settings) },
+        target: { state: "awaiting_confirmation", settings, rows: projectCreationRows(engine, settings) },
+      };
+    }),
+    get_project: tool("Read a project's current settings before editing it.", project, ({ project }) => {
+      const { id, name, baseBranch, services, repo, folder } = projectContext(engine, project).project;
+      return { value: { id, name, baseBranch, services, repo, folder }, target: { project } };
+    }),
+    update_project: tool("Update the specified project settings. Omit fields that should stay as they are. Set services to null to auto-detect the Compose file.", ProjectUpdate, async (input) => {
+      await updateProject(engine, input);
+      return { value: { updated: true, ...input }, target: { project: input.project, state: "Updated" } };
+    }),
+    delete_project: tool("Propose deletion of one project. Only the user can delete it by pressing Confirm on the chat card.", project, ({ project }) => {
+      const { identity, rows } = projectDeletion(engine, project);
+      return {
+        value: { state: "awaiting_confirmation" },
+        target: { state: "awaiting_confirmation", settings: { project, identity }, rows },
       };
     }),
     list_recipes: tool("List the confirmed recipe instances in a project.", project, ({ project }) => ({

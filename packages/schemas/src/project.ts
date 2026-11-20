@@ -24,7 +24,6 @@ const ProjectDefinition = z
     folder: z.string().min(1).nullable().default(null),
     baseBranch: z.string().min(1).default("main"),
     createRepo: Name.nullable().default(null),
-    defaultRecipe: Name.nullable().default(null),
     services: z.string().min(1).nullable().default(null),
     source: z
       .object({
@@ -39,10 +38,11 @@ const ProjectDefinition = z
   .superRefine((p, ctx) => {
     if (p.repo === null && p.createRepo !== null) ctx.addIssue({ code: "custom", path: ["createRepo"], message: "a local-only project has no createRepo" });
   });
-export const Project = z.preprocess((input: z.input<typeof ProjectDefinition> & { limits?: unknown }) => {
-  if (!input || typeof input !== "object" || !Object.hasOwn(input, "limits")) return input;
+export const Project = z.preprocess((input: z.input<typeof ProjectDefinition> & { limits?: unknown; defaultRecipe?: unknown }) => {
+  if (!input || typeof input !== "object" || (!Object.hasOwn(input, "limits") && !Object.hasOwn(input, "defaultRecipe"))) return input;
   const current = { ...input };
   delete current.limits;
+  delete current.defaultRecipe;
   return current;
 }, ProjectDefinition);
 export type Project = z.infer<typeof Project>;

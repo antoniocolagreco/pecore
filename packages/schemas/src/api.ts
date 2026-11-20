@@ -466,6 +466,7 @@ export const routes = {
   getChat: { method: "GET", path: "/chat", response: ChatDetail },
   clearChat: { method: "DELETE", path: "/chat", response: Ok },
   answerChatProjectCreation: { method: "POST", path: "/chat/actions/:id/project-creation", params: IdParams, body: z.strictObject({ decision: z.enum(["approve", "cancel"]) }), response: Ok },
+  answerChatProjectDeletion: { method: "POST", path: "/chat/actions/:id/project-deletion", params: IdParams, body: z.strictObject({ decision: z.enum(["approve", "cancel"]) }), response: Ok },
   sendChatMessage: { method: "POST", path: "/chat/messages", body: SendChatMessageBody, response: ChatMessageView },
   uploadChatAttachment: {
     method: "POST",

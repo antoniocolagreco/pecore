@@ -55,6 +55,18 @@
   grid-template-columns: minmax(0, 3fr) minmax(14rem, 1fr);
 }
 
+.importRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--gap);
+}
+
+.importRow > :first-child {
+  flex: 0 1 24rem;
+  min-width: 0;
+}
+
 .graph {
   height: 32rem;
   background: var(--bg);

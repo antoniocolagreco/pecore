@@ -129,7 +129,6 @@ export async function loadProject(projectDir: string): Promise<LoadedProject> {
   const project = p.value;
   if (project) {
     if (project.id !== basename(projectDir)) errors.push({ file, path: "id", message: `id must match the directory name ${basename(projectDir)}` });
-    if (project.defaultRecipe !== null && !defs.recipes.has(project.defaultRecipe)) errors.push({ file, path: "defaultRecipe", message: `recipe ${project.defaultRecipe} not found in the project` });
     if (project.createRepo !== null && !defs.nodes.has(project.createRepo)) errors.push({ file, path: "createRepo", message: `node ${project.createRepo} not found in the project` });
     if (project.source !== null) {
       const s = defs.nodes.get(project.source.node);

@@ -17,7 +17,7 @@
   height: var(--tag-h);
   padding: 0 9px;
   border-radius: 11px;
-  font-size: var(--text-size-xs);
+  font-size: var(--text-size-sm);
   font-weight: 550;
   white-space: nowrap;
   color: var(--tone);
@@ -25,6 +25,14 @@
   transition:
     color var(--medium) ease,
     background-color var(--medium) ease;
+}
+
+.badge[data-icon-only] {
+  flex: none;
+  justify-content: center;
+  width: var(--tag-h);
+  padding: 0;
+  border-radius: 50%;
 }
 
 .dot {
@@ -90,7 +98,7 @@
   height: var(--tag-h);
   padding: 0 6px;
   border-radius: 10px;
-  font-size: var(--text-size-xs);
+  font-size: var(--text-size-sm);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   background: var(--accent-fill);
@@ -227,7 +235,7 @@
   padding: 0 6px;
   border-radius: 4px;
   font-family: var(--font);
-  font-size: var(--text-size-xs);
+  font-size: var(--text-size-sm);
   color: var(--text-2);
   background: var(--fill);
   box-shadow: inset 0 -1px 0 var(--separator);

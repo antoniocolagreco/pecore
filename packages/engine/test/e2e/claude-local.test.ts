@@ -25,7 +25,7 @@ describe.skipIf(!real)("phase 3 gate: local-only job with Claude Code, normal mo
       const run = engine.project("demo").ctx.db.db.prepare("SELECT node, state, outcome, failure_reason FROM node_runs ORDER BY rowid DESC LIMIT 1").get();
       console.log(new Date().toISOString(), j.state, j.waiting_reason ?? "", JSON.stringify(run));
     });
-    await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, defaultRecipe: "local-only" }, ["local-only"]);
+    await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["local-only"]);
     const p = engine.project("demo");
     const id = await engine.createJob("demo", {
       title: "Add a sum function",

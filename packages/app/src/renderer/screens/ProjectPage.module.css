@@ -5,25 +5,28 @@
   font-size: var(--text-size-sm);
 }
 
-.meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin-top: -8px;
-  color: var(--text-2);
-}
-
-.metaItem {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
 .form {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  max-width: 720px;
+}
+
+.details {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--separator);
+  font-size: var(--text-size-sm);
+}
+
+.details > dd {
+  overflow-wrap: anywhere;
+}
+
+.grow {
+  margin-right: auto;
+}
+
+.narrow {
+  max-width: 820px;
 }
 
 .pair {
@@ -35,22 +38,10 @@
 
 .formActions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-}
-
-.advanced {
-  max-width: 720px;
-  padding-top: 12px;
-  border-top: 1px solid var(--separator);
-}
-
-.advanced > summary {
-  margin-bottom: 12px;
-  color: var(--text-2);
-  cursor: default;
-  user-select: none;
 }
 
 .files {
@@ -98,11 +89,4 @@
 
 .instantiate > :first-child {
   flex: 1;
-}
-
-.danger {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
 }

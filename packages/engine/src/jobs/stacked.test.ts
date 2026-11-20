@@ -100,7 +100,7 @@ async function setup() {
   for (const [name, n] of Object.entries(nodes(marker))) await writeFile(join(lib, "nodes", `${name}.json`), JSON.stringify(n));
   for (const [name, r] of Object.entries(recipes)) await writeFile(join(lib, "recipes", `${name}.json`), JSON.stringify(r));
   const engine = await Engine.start({ home: join(root, "home"), library: lib });
-  await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, defaultRecipe: "plain" }, Object.keys(recipes));
+  await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, Object.keys(recipes));
   const p = engine.project("demo");
   const repo = join(p.ctx.dir, "repo.git");
   const job = (id: string) => p.executor.job(id);
@@ -143,7 +143,7 @@ describe("stacked jobs (4.6, decision 10)", () => {
   it("refuses a parent whose recipe has no commit node", async () => {
     const { engine } = await setup();
     const parent = await engine.createJob("demo", { title: "parent", ticket: { text: "x" }, recipe: "no-commit" });
-    await expect(engine.createJob("demo", { title: "child", ticket: { text: "y" }, parentJobId: parent })).rejects.toThrow("no commit node");
+    await expect(engine.createJob("demo", { title: "child", ticket: { text: "y" }, recipe: "plain", parentJobId: parent })).rejects.toThrow("no commit node");
     await engine.shutdown();
   });
 
@@ -158,7 +158,7 @@ describe("stacked jobs (4.6, decision 10)", () => {
 
   it("a new parent commit waits while the child works, then rebases the child when it ends (decision 15)", async () => {
     const { engine, p, repo, job, files, sha, openItem } = await setup();
-    const parent = await engine.createJob("demo", { title: "parent", ticket: { text: "x" } });
+    const parent = await engine.createJob("demo", { title: "parent", ticket: { text: "x" }, recipe: "plain" });
     const child = await engine.createJob("demo", { title: "child", ticket: { text: "y" }, recipe: "reviewed", parentJobId: parent });
     const review = await until(() => openItem(child));
     const first = await sha(parent);

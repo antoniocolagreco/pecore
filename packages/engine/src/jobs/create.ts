@@ -32,8 +32,14 @@ export type CreateJob = {
   recipeConfirmationId?: string;
 };
 
-export function recipeForJob(ctx: ProjectContext, recipeName: string | null, confirmationId?: string): Recipe {
-  if (recipeName === null) throw new JobCreateError(`project ${ctx.id} has no default recipe; choose a recipe`);
+export function jobRecipeName(ctx: ProjectContext, requested: string | undefined): string {
+  if (requested !== undefined) return requested;
+  const names: string[] = [...ctx.defs.recipes.keys()];
+  if (names.length === 1) return names[0]!;
+  throw new JobCreateError(names.length === 0 ? `project ${ctx.id} has no recipes; add one` : `project ${ctx.id} has ${names.length} recipes; choose one`);
+}
+
+export function recipeForJob(ctx: ProjectContext, recipeName: string, confirmationId?: string): Recipe {
   let recipe: Recipe | undefined = ctx.defs.recipes.get(recipeName);
   if (confirmationId) {
     const item = ctx.db.db.prepare("SELECT subject FROM human_queue WHERE id = ? AND kind = 'recipe-change'").get(confirmationId) as { subject: string } | undefined;
@@ -49,7 +55,7 @@ export function recipeForJob(ctx: ProjectContext, recipeName: string | null, con
 
 export async function createJob(ctx: ProjectContext, req: CreateJob): Promise<string> {
   if ((req.orderId === undefined) !== (req.orderKey === undefined)) throw new JobCreateError("orderId and orderKey must be set together");
-  const recipe: Recipe = recipeForJob(ctx, req.recipe ?? ctx.project.defaultRecipe, req.recipeConfirmationId);
+  const recipe: Recipe = recipeForJob(ctx, jobRecipeName(ctx, req.recipe), req.recipeConfirmationId);
   const parent = req.parentJobId ? (ctx.db.db.prepare("SELECT * FROM jobs WHERE id = ?").get(req.parentJobId) as JobRow | undefined) : null;
   if (parent === undefined) throw new JobCreateError(`parent job ${req.parentJobId} not found`);
   let baseBranch = req.baseBranch ?? ctx.project.baseBranch;

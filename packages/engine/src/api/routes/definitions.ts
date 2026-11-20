@@ -3,11 +3,11 @@ import { lstat, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { Name, Node, Project, Recipe } from "@pecore/schemas";
 import type { DefinitionEntry, InstantiateBody, RouteOutput } from "@pecore/schemas";
-import { ensureConfirmed, needsConfirmation, runFiles, stageRecipeChange } from "../../definitions/confirm";
+import { ensureConfirmed, needsConfirmation, readSubject, recordConfirmation, runFiles, stageRecipeChange, subjectSha } from "../../definitions/confirm";
 import type { RecipeChangeSubject } from "../../definitions/confirm";
 import { sourceScope } from "../../sources/run";
 import { instantiateNode, instantiateRecipe } from "../../definitions/instantiate";
-import { loadLibrary, zodErrors } from "../../definitions/load";
+import { loadLibrary, loadNodeFile, zodErrors } from "../../definitions/load";
 import type { DefinitionError } from "../../definitions/load";
 import { checkRecipe, remoteIssues } from "../../definitions/recipe-check";
 import { commitDefinition, commitMessage, git } from "../../home/git-commit";
@@ -274,6 +274,7 @@ export function definitionOperations(engine: Engine) {
     const layoutPath = (file: string): string => `projects/${id}/${relative(projectDir, file).split(sep).join("/")}`;
     for (const file of result.written) engine.definitionChanged(layoutPath(file), sha256(await readFile(file)));
     const written: Set<string> = new Set(result.written);
+    if (kind === "recipe" && !stage) await approveRecipeTemplateNodes(id, nodesDir, new Set([...written, ...result.kept]));
     const confirmItemIds: string[] = await confirmNodes(engine, id, nodesDir, (node) => written.has(join(nodesDir, `${node.name}.json`)));
     if (result.stagedRecipe) {
       const path: string = layoutPath(result.stagedRecipe.path);
@@ -288,8 +289,33 @@ export function definitionOperations(engine: Engine) {
     return { created: result.written.map(layoutPath), kept: result.kept.map(layoutPath), confirmItemIds };
   }
 
+  async function approveRecipeTemplateNodes(id: string, nodesDir: string, files: Set<string>): Promise<void> {
+    const { ctx, executor } = engine.project(id);
+    let resolved: boolean = false;
+    for (const node of ctx.defs.nodes.values()) {
+      const filename: string = `${node.name}.json`;
+      if (node.kind !== "command" || !needsConfirmation(node) || !files.has(join(nodesDir, filename))) continue;
+      const { value: template } = await loadNodeFile(join(home.libraryNodes, filename));
+      if (template?.kind !== "command") continue;
+      const original = await readSubject(home.libraryNodes, template);
+      const installed = await readSubject(nodesDir, node);
+      const expected = { ...original, definition: { ...(original.definition as Node), $schema: "../../../schemas/node.json" } };
+      if (subjectSha(expected) !== subjectSha(installed)) continue;
+      if (recordConfirmation(ctx.db, installed, true)) resolved = true;
+    }
+    if (resolved) {
+      for (const job of executor.jobs()) {
+        if (job.state === "waiting" && job.waiting_reason === "confirmation") await executor.release(job.id, ["confirmation"]);
+      }
+    }
+  }
+
   return {
     handlers,
+    removeProject: (id: string, validate?: () => void) => mutate(async () => {
+      validate?.();
+      await engine.deleteProject(id);
+    }),
     write: (path: string, content: string) => mutate(async () => {
       const { root, absPath, kind, id } = location(path, false);
       await rejectSymlinks(root, absPath);

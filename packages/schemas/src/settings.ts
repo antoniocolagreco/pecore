@@ -22,6 +22,7 @@ export const Settings = z
     servicesRuntime: z.enum(["docker", "podman", "colima", "orbstack"]).nullable().default(null),
     minFreeDiskGb: z.number().nonnegative().default(10),
     mergeCheckSec: z.number().int().positive().default(300),
+    projectsFolder: z.string().min(1).default("~"),
     assistant: Agent,
     orchestrator: Agent,
     protectedMode: z.boolean().default(false),

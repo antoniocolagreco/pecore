@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { monotonicFactory } from "ulid";
 import { Node } from "@pecore/schemas";
 import type { Project, Recipe } from "@pecore/schemas";
-import type { ProjectDb } from "../store/project-db";
+import type { NewEvent, ProjectDb } from "../store/project-db";
 
 const ulid = monotonicFactory();
 
@@ -107,6 +107,18 @@ export async function ensureConfirmed(db: ProjectDb, jobId: string | null, nodes
   return { confirmed: false, itemId };
 }
 
-export function recordConfirmation(db: ProjectDb, subject: ConfirmSubject): void {
-  db.append([{ jobId: null, type: "confirmation.recorded", payload: { path: subject.path, sha256: subjectSha(subject) } }]);
+export function recordConfirmation(db: ProjectDb, subject: ConfirmSubject, resolveMatching = false): boolean {
+  const sha256: string = subjectSha(subject);
+  const events: NewEvent[] = [{ jobId: null, type: "confirmation.recorded", payload: { path: subject.path, sha256 } }];
+  if (resolveMatching) {
+    const open = db.db.prepare("SELECT id, subject FROM human_queue WHERE state = 'open' AND kind = ? AND json_extract(subject, '$.path') = ?")
+      .all(subject.kind, subject.path) as { id: string; subject: string }[];
+    for (const item of open) {
+      if (subjectSha(JSON.parse(item.subject) as ConfirmSubject) === sha256) {
+        events.push({ jobId: null, type: "queue.resolved", payload: { itemId: item.id, state: "resolved", choice: "confirm", note: "Imported from the Library by the user" } });
+      }
+    }
+  }
+  db.append(events);
+  return events.length > 1;
 }

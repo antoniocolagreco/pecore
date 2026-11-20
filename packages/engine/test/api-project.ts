@@ -38,7 +38,7 @@ export async function apiProject() {
   await writeFile(join(library, "nodes", "write-hello.json"), JSON.stringify(writeHello));
   await writeFile(join(library, "recipes", "reviewed.json"), JSON.stringify(reviewed));
   const engine = await Engine.start({ home, library });
-  await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, defaultRecipe: "reviewed" }, ["reviewed"]);
+  await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["reviewed"]);
   const api = await startApi(engine, { handlers: handlers("0.0.0-test"), validateResponses: true });
   const call = apiClient({ port: api.port, token: api.token });
   const close = async () => {

@@ -161,7 +161,7 @@
   border-radius: 8px;
   background: var(--fill);
   overflow: auto;
-  font-size: var(--text-size-xs);
+  font-size: var(--text-size-sm);
   white-space: pre-wrap;
 }
 

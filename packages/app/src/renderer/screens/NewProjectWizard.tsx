@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { projectIdCandidate } from "@pecore/schemas";
 import type { CreationView, CreateProjectBody, ForgeAccount, QueueItemView } from "@pecore/schemas";
 import { call } from "../api/client";
@@ -9,17 +9,19 @@ import { ConfirmItem } from "../components/ConfirmItem";
 import { reasonLabel } from "../components/states";
 import { Button, Empty, ErrorText, Page, Panel, ui } from "../components/ui";
 import { RadioGroup } from "../ds/choice";
-import { Alert, Card, Spinner } from "../ds/feedback";
+import { Alert, Badge, Card, Spinner } from "../ds/feedback";
+import type { Tone } from "../ds/feedback";
 import { TextField } from "../ds/field";
 import { AlertIcon, CheckIcon } from "../ds/icons";
 import { Select } from "../ds/select";
 import w from "./NewProjectWizard.module.css";
 
 type RepoMode = "existing" | "new" | "local";
-type Inputs = { name: string; mode: RepoMode; url: string; account: string; folder: string | null; baseBranch: string };
+type Inputs = { name: string; mode: RepoMode; url: string | null; account: string; folder: string | null; baseBranch: string };
 
-const initialInputs: Inputs = { name: "", mode: "local", url: "", account: "", folder: null, baseBranch: "main" };
-const defaultFolder = (id: string): string => `~/Projects/${id}`;
+const initialInputs: Inputs = { name: "", mode: "local", url: null, account: "", folder: null, baseBranch: "main" };
+const formWidth: number = 680;
+const folderIn = (root: string, id: string): string => `${root.replace(/\/+$/, "")}/${id}`;
 const tasks: string[] = [
   "Validate project inputs",
   "Check project user",
@@ -36,12 +38,18 @@ function ConfirmProject({ id }: { id: string }) {
   const queue = useData(() => call("listQueue", { query: { state: "open", project: id } }), [id], (m) => m.type === "queue.updated" && m.projectId === id);
   const items: QueueItemView[] = (queue.data ?? []).filter((item) => item.kind === "engine-node" || item.kind === "source-node");
   const start: number = Math.min(page, Math.max(0, Math.ceil(items.length / 10) - 1)) * 10;
-  const finish = () => void navigate(`/projects/${id}`);
+  if (queue.data && !queue.error && !queue.loading && items.length === 0) {
+    return <Navigate to={`/projects/${id}`} replace />;
+  }
+  const finish = () => void navigate(`/projects/${id}`, { replace: true });
   return (
-    <Page title="New project: confirm its nodes">
+    <Page title="Project created" width={formWidth}>
       <ErrorText error={queue.error} />
-      {queue.loading && !queue.data && <Empty>Loading confirmations…</Empty>}
-      {queue.data && items.length === 0 && <Empty>No open node confirmations</Empty>}
+      {queue.loading && items.length === 0 && <Empty>Checking for actions that need your approval…</Empty>}
+      {items.length > 0 && <p>
+        Some project actions need your permission before PeCore can run them. Review and approve the actions you want to allow.
+        You can open the project now and review pending requests later in Notifications.
+      </p>}
       {items.slice(start, start + 10).map(({ id: itemId }) => (
         <Panel key={itemId}><ConfirmItem itemId={itemId} onDone={queue.reload} /></Panel>
       ))}
@@ -51,12 +59,11 @@ function ConfirmProject({ id }: { id: string }) {
           <Button disabled={!connected || start + 10 >= items.length} onClick={() => setPage(start / 10 + 1)}>Show more</Button>
         </div>
       )}
-      <div className={ui.row}>
-        <Button disabled={!connected} onClick={() => void navigate("/projects")}>Cancel</Button>
-        <Button disabled={!connected} onClick={finish}>Skip</Button>
-        <Button kind="primary" disabled={!connected || !queue.data || !!queue.error || items.length > 0} onClick={finish}>Finish</Button>
-      </div>
-      {items.length > 0 && <p className={ui.muted}>Skip leaves open confirmations in Notifications.</p>}
+      {(items.length > 0 || queue.error) && (
+        <div className={ui.row}>
+          <Button kind="primary" disabled={!connected} onClick={finish}>Open project</Button>
+        </div>
+      )}
     </Page>
   );
 }
@@ -71,11 +78,12 @@ function CreationTasks({ creation, pending }: { creation: CreationView | undefin
         const state: string = report && step === failedStep ? "Failed" :
           step <= finished ? "Done" : !report && step === finished + 1 && (pending || creation) ? "In progress" : "Pending";
         const setup: CreationView["setupJob"] | undefined = step === 4 ? creation?.setupJob : null;
+        const tone: Tone = state === "Done" ? "success" : state === "Failed" ? "danger" : state === "In progress" ? "accent" : "neutral";
         return (
           <li key={name} className={w.step} data-state={state}>
-            <span className={w.stepIcon}>
+            <Badge tone={tone} iconOnly>
               {state === "Done" ? <CheckIcon bold /> : state === "Failed" ? <AlertIcon /> : state === "In progress" ? <Spinner /> : step}
-            </span>
+            </Badge>
             <span className={w.stepBody}>
               <span className={w.stepName}>{name}</span>
               <span className={w.stepState}>{state}</span>
@@ -98,6 +106,8 @@ export function NewProjectWizard() {
   const [creationId, setCreationId] = useState<string | null>(resume);
   const [restoring, setRestoring] = useState<boolean>(resume !== null);
   const accounts = useData(() => call("getAccounts"), [], (m) => m.type === "login.progress" && m.done);
+  const settings = useData(() => call("getSettings"), [], (m) => m.type === "definition.changed" && m.path === "settings.json");
+  const projectsFolder: string = settings.data?.value.projectsFolder ?? "";
   const creation = useData(
     () => creationId ? call("getCreation", { params: { id: creationId } }) : Promise.resolve(undefined),
     [creationId],
@@ -107,11 +117,15 @@ export function NewProjectWizard() {
   const available: ForgeAccount[] = forgeAccounts.filter((account) => inputs.mode !== "new" || account.forge === "github" || account.forge === "gitlab");
   const account: ForgeAccount | undefined = available.find((entry) => entry.id === inputs.account);
   const privateGit: boolean = account?.forge === "git";
-  const newRepoUnavailable: boolean = privateGit || (forgeAccounts.length > 0 && forgeAccounts.every((entry) => entry.forge === "git"));
+  const newRepoUnavailable: boolean = forgeAccounts.length > 0 && !forgeAccounts.some((entry) => entry.forge === "github" || entry.forge === "gitlab");
   const createRepo: string | null = inputs.mode === "new" && account ? `${account.forge}-create-repo` : null;
-  const folder: string = inputs.folder ?? defaultFolder(projectIdCandidate(inputs.name.trim(), 1));
+  const suggestedUrl: string = createRepo && account && inputs.name.trim()
+    ? `https://${account.host}/${account.user}/${projectIdCandidate(inputs.name.trim(), 1)}.git`
+    : "";
+  const repoUrl: string = inputs.url ?? suggestedUrl;
+  const folder: string = inputs.folder ?? (projectsFolder && folderIn(projectsFolder, projectIdCandidate(inputs.name.trim(), 1)));
   const valid: boolean = !!inputs.name.trim() && !!inputs.baseBranch.trim() && !!folder.trim() &&
-    (inputs.mode === "local" || (!!account && !!inputs.url.trim()));
+    (inputs.mode === "local" || (!!account && !!repoUrl.trim()));
   const update = (changes: Partial<Inputs>) => setInputs((current) => ({ ...current, ...changes }));
   const create = useAction(async () => {
     if (!valid) return;
@@ -121,11 +135,10 @@ export function NewProjectWizard() {
       project: {
         id: projectIdCandidate(name, 1),
         name,
-        repo: inputs.mode === "local" ? null : { url: inputs.url.trim(), account: inputs.account },
+        repo: inputs.mode === "local" ? null : { url: repoUrl.trim(), account: inputs.account },
         folder: null,
         baseBranch: inputs.baseBranch.trim(),
         createRepo,
-        defaultRecipe: null,
         services: null,
         source: null,
       },
@@ -134,7 +147,7 @@ export function NewProjectWizard() {
       const candidate: string = projectIdCandidate(name, index);
       if (taken.has(candidate)) continue;
       body.project.id = candidate;
-      body.project.folder = inputs.folder?.trim() ?? defaultFolder(candidate);
+      body.project.folder = inputs.folder?.trim() ?? folderIn(projectsFolder, candidate);
       try {
         const { id } = await call("createProject", { body });
         setCreationId(id);
@@ -164,7 +177,7 @@ export function NewProjectWizard() {
       setInputs({
         name: project.name,
         mode: project.repo === null ? "local" : project.createRepo ? "new" : "existing",
-        url: project.repo?.url ?? "",
+        url: project.repo?.url ?? null,
         account: project.repo?.account ?? "",
         folder: project.folder,
         baseBranch: project.baseBranch,
@@ -185,7 +198,7 @@ export function NewProjectWizard() {
   if (creationId || create.busy) {
     const busy: boolean = create.busy || retry.busy || cancel.busy;
     return (
-      <Page title="New project">
+      <Page title="New project" width={formWidth}>
         <Panel>
           <h2 className={w.creating}>Creating {creationId ?? inputs.name.trim()}</h2>
           <CreationTasks creation={creationId ? creation.data : undefined} pending={create.busy} />
@@ -203,8 +216,8 @@ export function NewProjectWizard() {
   }
 
   return (
-    <Page title="New project">
-      <Card padded className={w.card}>
+    <Page title="New project" width={formWidth}>
+      <Card padded>
         <form className={w.form} onSubmit={(e) => { e.preventDefault(); if (connected && valid) void create.run(); }}>
           <TextField label="Name" required disabled={!connected} value={inputs.name} placeholder="e.g. Space game" autoFocus
             onValueChange={(name) => update({ name })} />
@@ -212,25 +225,25 @@ export function NewProjectWizard() {
             label="Repository"
             value={inputs.mode}
             disabled={!connected}
-            onValueChange={(mode) => update({ mode: mode as RepoMode })}
+            onValueChange={(mode) => update({ mode: mode as RepoMode, url: null })}
             options={[
               { value: "local", label: "Local only", detail: "PeCore keeps the repository on this computer." },
               { value: "existing", label: "Existing repository", detail: privateGit ? "Jobs push branches to your Git server." : "Jobs push branches and open pull requests there." },
-              { value: "new", label: "New repository", disabled: newRepoUnavailable, detail: newRepoUnavailable ? "Private Git servers require an existing repository." : "PeCore creates it on GitHub or GitLab." },
+              { value: "new", label: "New repository", disabled: newRepoUnavailable, detail: "PeCore creates a private repository on GitHub or GitLab." },
             ]}
           />
           {inputs.mode !== "local" && (
             <div className={w.indent}>
-              <TextField label={inputs.mode === "new" ? "New repository URL" : "Repository URL"} required mono disabled={!connected} value={inputs.url}
-                placeholder={privateGit ? `https://${account!.host}/team/app.git` : "https://github.com/owner/name.git"} onValueChange={(url) => update({ url })} />
               <Select
                 label="Forge account"
                 disabled={!connected || available.length === 0}
                 value={account?.id ?? null}
-                onValueChange={(id) => update({ account: id ?? "" })}
+                onValueChange={(id) => update({ account: id ?? "", url: null })}
                 options={available.map((entry) => ({ value: entry.id, label: `${entry.id} · ${entry.host}` }))}
                 placeholder="Select an account"
               />
+              <TextField label={inputs.mode === "new" ? "New repository URL" : "Repository URL"} required mono disabled={!connected || !account} value={repoUrl}
+                placeholder={account ? `https://${account.host}/owner/name.git` : undefined} onValueChange={(url) => update({ url })} />
               <ErrorText error={accounts.error} />
               {accounts.data && available.length === 0 && <Alert tone="warning">
                 {inputs.mode === "new" ? "Add a GitHub or GitLab account in " : "Add a forge account in "}
@@ -239,11 +252,9 @@ export function NewProjectWizard() {
               {createRepo && <span className={ui.muted}>Repository creation node <code>{createRepo}</code></span>}
             </div>
           )}
-          <div className={w.folder}>
-            <TextField label="Folder" required mono disabled={!connected} value={folder} description="Your copy of the code. Each job's branch is copied here."
-              onValueChange={(value) => update({ folder: value })} />
-            <Button disabled={!connected} onClick={() => void window.pecore.pickFolder().then((picked) => picked && update({ folder: picked }))}>Choose…</Button>
-          </div>
+          <TextField label="Folder" required mono disabled={!connected} value={folder} description="Your copy of the code. Each job's branch is copied here."
+            onValueChange={(value) => update({ folder: value })}
+            action={<Button disabled={!connected} onClick={() => void window.pecore.pickFolder().then((picked) => picked && update({ folder: picked }))}>Choose…</Button>} />
           <TextField label="Base branch" required mono disabled={!connected} value={inputs.baseBranch} onValueChange={(baseBranch) => update({ baseBranch })} />
           <ErrorText error={create.error} />
           <div className={w.actions}>

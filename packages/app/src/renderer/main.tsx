@@ -21,6 +21,7 @@ const router = createHashRouter([
       { path: "/projects", element: <screens.Projects /> },
       { path: "/projects/new", element: <screens.NewProjectWizard /> },
       { path: "/projects/:id", element: <screens.ProjectPage /> },
+      { path: "/projects/:id/recipes/new", element: <screens.RecipeEditor /> },
       { path: "/edit/node/*", element: <screens.NodeEditor /> },
       { path: "/edit/recipe/*", element: <screens.RecipeEditor /> },
       { path: "/library", element: <screens.Library /> },

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { autoConfirm, forgeHome, forgeProject, until } from "../../test/forge-project";
 import { ensureConfirmed } from "../definitions/confirm";
 import { Engine } from "../main";
+import { createProjectWithRecipes } from "../../test/project";
 import { tempDir } from "../../test/tmp";
 import { gitApp, gitAppIn } from "../workdir/git-as";
 import { branchHead } from "../workdir/repo";
@@ -98,14 +99,25 @@ describe("project creation with a remote (section Project creation, decision 13)
     await engine.shutdown();
   });
 
-  it("creates a project with no recipes and no default recipe (decision 72)", async () => {
+  it("creates a project with no recipes, and a job needs one (decisions 72, 77)", async () => {
     const { home, library } = await forgeHome();
     const engine = await Engine.start({ home, library });
     await engine.createProject({ id: "plain", name: "Plain", repo: null });
     const p = engine.project("plain");
     expect(p.ctx.defs.recipes.size).toBe(0);
-    expect(p.ctx.project.defaultRecipe).toBeNull();
-    await expect(engine.createJob("plain", { title: "Add a file", ticket: { text: "add a file" } })).rejects.toThrow("project plain has no default recipe; choose a recipe");
+    expect(p.ctx.project).not.toHaveProperty("defaultRecipe");
+    await expect(engine.createJob("plain", { title: "Add a file", ticket: { text: "add a file" } })).rejects.toThrow("project plain has no recipes; add one");
+    await engine.shutdown();
+  });
+
+  it("a job without a recipe uses the project's only recipe, and must choose when there are more (decision 77)", async () => {
+    const { home, library } = await forgeHome();
+    const engine = await Engine.start({ home, library });
+    await createProjectWithRecipes(engine, { id: "one", name: "One", repo: null }, ["empty"]);
+    const id = await engine.createJob("one", { title: "Nothing", ticket: { text: "nothing" } });
+    expect(engine.project("one").executor.job(id).recipe).toBe("empty");
+    await createProjectWithRecipes(engine, { id: "two", name: "Two", repo: null }, ["empty", "local-only"]);
+    await expect(engine.createJob("two", { title: "Nothing", ticket: { text: "nothing" } })).rejects.toThrow("project two has 2 recipes; choose one");
     await engine.shutdown();
   });
 });

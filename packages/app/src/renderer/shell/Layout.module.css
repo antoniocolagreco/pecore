@@ -63,8 +63,7 @@
   top: 0;
   right: 0;
   line-height: 1;
-  scale: 0.75;
-  transform-origin: top right;
+  translate: 25% -25%;
 }
 
 .brand {
@@ -86,7 +85,7 @@
 
 .groupTitle {
   padding: 0 10px 4px;
-  font-size: var(--text-size-xs);
+  font-size: var(--text-size-sm);
   font-weight: 600;
   color: var(--text-3);
   user-select: none;
@@ -364,7 +363,7 @@
   padding: 8px 10px;
   border-radius: 6px;
   background: var(--fill);
-  font-size: var(--text-size-xs);
+  font-size: var(--text-size-sm);
   white-space: pre-wrap;
   user-select: text;
 }

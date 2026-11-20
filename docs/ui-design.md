@@ -89,7 +89,7 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 | IC7 | Artifact viewer: spec, diff, findings, risk, check log, delivery link | 3.3 |
 | IC8 | "Why is it waiting" text (same as `pecore job why`) | 9 |
 | IC9 | Base change notice | 4.2 |
-| IC10 | Withdrawn: New job form; jobs start from the orchestrator chat (decision 31) | "Local API", "Job creation" |
+| IC10 | New job form on the project page: title, what to do, recipe (decision 82, replaces decision 31); jobs also start from the chat | "Local API", "Job creation" |
 
 ### D. items to decide
 
@@ -121,7 +121,7 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 |---|---|---|
 | IF1 | Project list | 3.5 |
 | IF2 | New project wizard | CUJ 6, "Project creation" |
-| IF3 | Project settings: recipes, default recipe, services, ticket source, polling interval, trusted users | 3.5, 7 |
+| IF3 | Project settings: recipes, services, ticket source, polling interval, trusted users | 3.5, 7 |
 | IF4 | Knowledge base editor (Markdown) | 2 |
 | IF5 | Export, and import as a new project | CUJ 7, 8 |
 | IF6 | Protected mode: on and off, harness logins of `pecore-agent` | 5, 8 |
@@ -168,7 +168,7 @@ The prototype is normative only for: the gradients, Notifications as a list plus
 *   One list, no group titles (decision 14): Notifications (counter, IA2), Factory, Jobs, Projects, Library, Settings.
 *   Under the list, the open page's own sub-navigation (decision 13): Settings sections.
 *   Note: a project's recipes, nodes and settings are reached through Projects; the node editor and the job view are detail pages, not menu items.
-*   Page content is centred, with a maximum width (decision 15).
+*   Page width follows the content (decision 81): pages with tables, lists or graphs (Factory, Jobs, Projects, Notifications, a project page, a job) use the full width; pages that are only a form or text to read (Settings, the wizards) are centred with a maximum width. Inside a full-width page, a form keeps its maximum width and stays aligned to the left with the tabs.
 
 ### Top bar
 
@@ -193,7 +193,7 @@ The prototype is normative only for: the gradients, Notifications as a list plus
 
 ### Jobs
 
-*   Every job. Filters (IC2): text search on title, project, state label, archived. "Jobs of this project" on a project page opens Jobs with that project selected.
+*   Every job. Filters (IC2): text search on title, project, state label, archived. A project page shows the jobs of that project in its Jobs tab (decision 79).
 *   Columns: title, project, state, current node or final outcome, waiting reason, duration (from creation to end or to now, waits included), updated.
 *   Stacked jobs as a collapsible tree.
 *   Row actions on hover, following the controls table.
@@ -256,6 +256,7 @@ The prototype is normative only for: the gradients, Notifications as a list plus
 *   Compaction (decision 24): the Compact button, or `/compact` typed as a message, sends the harness's own compaction command to the chat's session. The chat shows a divider ("Compacting the conversation…", then "Conversation compacted"), no reply.
 *   Automatic compaction (decision 37): above the maximum threshold (default 256,000 tokens) the chat compacts at once; above the automatic threshold (default 128,000) it compacts after 5 minutes without use. Both thresholds are in Settings > Assistant; the Orchestrator's sessions have their own pair in Settings > Orchestrator (decision 43). The size comes from what the harness reports after each reply.
 *   An order the user gives in the chat is authorised as given (decision 39): if the user asks to comment on an issue, the Assistant posts it.
+*   The Assistant can update a project's name, base branch and services Compose path. A deletion request shows the project and what will be removed in a card with Confirm and Reject. Confirm deletes PeCore's data only, using the same operation as the project settings page.
 *   "Ask the AI" (IE5) puts the cursor in the chat with the current screen's object as context.
 *   Context chip: one at a time, a reference with its scope (for example "Job: Fix login timeout", "Recipe feature (project progetto-1)", "Template recipe feature"). It shows the object of the current screen and changes on navigation; pinning keeps it; removing it sends the next message with no context.
 *   What the Assistant did (IB4) appears under its reply, never under the user's message (decision 28). Actions that change something (create jobs, answer a job's question, add a node or recipe to a project, comment on a ticket) get a card that links to the job, definition or item to decide. Reads (projects, recipes, ticket, ticket replies, job status, job output, library templates, definition check) become one grey line: "Read: projects, job status".
@@ -267,19 +268,22 @@ The prototype is normative only for: the gradients, Notifications as a list plus
 *   List: name, repo (or "local only"), base branch, jobs that need the user, failed jobs, warning when a login expired.
 *   Buttons: "New project", "Import project".
 *   With no projects, "New project" appears only in the empty state, not in the page header (decision 74).
-*   Project page, configuration only, in sections:
-    *   General: name, base branch, default recipe (editable); id, repo, forge account, folder (read-only after creation).
+*   Project page header: a "New job" button that opens a dialog with Title, What to do and Recipe. Recipe is chosen by itself and locked when the project has one recipe; with none, the dialog says to add one in the Recipes tab. "Create job" creates it and closes the dialog; the job appears in the Jobs tab (decision 82).
+*   Project page, full width, in tabs (decisions 79, 81):
+    *   Jobs, the first tab and open by default: the project's jobs, in the same table as the Jobs page without the Project column.
+    *   Settings, Recipes, Nodes and Knowledge: a panel with a maximum width, aligned to the left.
+    *   Settings: at the top a details list, read-only after creation: repository, forge account, folder, id; under it the editable fields: name, base branch, services compose file. No default recipe and no `project.json` editor (decision 77). The services compose file is empty by default, meaning automatic (a standard compose file at the repository root); it can be typed or picked with "Choose…", which opens the file dialog in the project folder and keeps only files inside it, saved relative to it (decision 78).
     *   Recipes (recipe editor), Nodes (node editor), Knowledge (IF4), Services, Ticket source (`label`, `pollSec`, trusted users), Export.
-    *   Danger zone: Delete project (IF7).
-*   A link "Jobs of this project" opens Jobs with this project selected.
+    *   Delete project (IF7) sits at the left of the Settings actions, apart from Discard and Save.
+*   No "Jobs of this project" button (decision 79).
 
 ### New project wizard (full page)
 
 Pages: Inputs, Create, Confirm. Create runs the tasks of design.md "Project creation" in order; the project exists when Create ends.
 
-1.  **Inputs:** name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, folder, base branch. Folder is the user's copy of the code: typed by hand or picked with "Choose…" (system folder dialog); it starts as `~/Projects/<id>` and follows the name until the user edits it (decision 75). No recipes: the user adds them afterwards from the Library or the project page, and a recipe that pushes or opens a PR cannot be added to a project without a remote repo (decision 72). The id comes from the name (decision 70).
+1.  **Inputs:** name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, folder, base branch. Folder is the user's copy of the code: typed by hand or picked with "Choose…" (system folder dialog); it starts as the projects folder of Settings plus `<id>` and follows the name until the user edits it (decisions 75, 76). No recipes: the user adds them afterwards from the Library or the project page, and a recipe that pushes or opens a PR cannot be added to a project without a remote repo (decision 72). The id comes from the name (decision 70).
 2.  **Create:** the tasks of "Project creation" (validation, project directory, clone or repo creation, `repo.git` setup and home check, access for `pecore-agent` in protected mode, commit), each with its state. The creation request approves the shipped GitHub or GitLab repo setup node. Custom and modified nodes ask for confirmation inside the task (UI17). A failed task undoes the tasks before it, says why, and returns to Inputs with the values kept. A repo created on the forge is never deleted by the undo: the page lists it as left on the forge.
-3.  **Confirm:** the project's engine nodes and its `source` node, if any, on one screen, so the first job does not wait with reason `confirmation`. Can be skipped: the items stay in Notifications.
+3.  **Confirm:** if an engine or source node needs approval, explain that PeCore needs permission to run the action. The user can review it here or open the project and review it later in Notifications. Open the project directly when no approval is pending.
 4.  No logins page: logins belong to the user, not to the project (Settings > Accounts).
 
 Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done; Cancel on Confirm leaves the project created.
@@ -301,6 +305,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 ### Recipe editor
 
 *   Two modes: an instance (from the project page) or a template (from the Library).
+*   In a project's Recipes tab, New Recipe opens the graph editor with an empty draft. Import template adds a recipe and its required nodes to the project and opens it in the editor. That action authorizes the matching Library definitions and scripts. A recipe built from scratch is added when saved.
 *   React Flow graph on a grid. Nodes are added from a palette (the project's node instances, or node templates in template mode), placed on the grid and connected by dragging from an outcome to a node. Positions are saved in the recipe's `layout`; a recipe with no `layout` (for example written by the orchestrator) is laid out automatically when opened.
 *   Validation errors on the node or edge that causes them (IE2).
 *   Inspector for a node: kind, outcomes, `requires`, `optional`, `skipWhenUnchanged`, `maxRounds` of its outgoing edges, "Edit node", "Ask the AI".
@@ -318,12 +323,12 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 ### Library
 
 *   Node templates (filterable by kind) and recipe templates.
-*   "Instantiate into project": instantiating a recipe template also instantiates the node templates it uses (design.md `src/definitions/instantiate.ts`); a name that already exists in the project is kept and listed. Engine and source nodes created this way show their confirmation in place (UI17).
+*   "Instantiate into project": instantiating a recipe template also instantiates the node templates it uses (design.md `src/definitions/instantiate.ts`); a name that already exists in the project is kept and listed. An explicit recipe import approves the engine nodes that match the Library template. Standalone engine and source nodes show their confirmation in place (UI17).
 *   Clicking a row opens the template in the node or recipe editor.
 
 ### Settings
 
-*   Sections: Accounts (IG1), Protected mode (IF6), Assistant and Orchestrator (IG6), Limits and disk threshold, Services runtime, Merge check interval (IG3), Updates (IG7), Appearance (IG9). No Models section (decision 6) and no Notifications section (decision 53).
+*   Sections: Accounts (IG1), Protected mode (IF6), Assistant and Orchestrator (IG6), Projects, Limits and disk threshold, Services runtime, Merge check interval (IG3), Updates (IG7), Appearance (IG9). No Models section (decision 6) and no Notifications section (decision 53).
 *   The section list is in the main sidebar (decision 13). Sections adapt to the window width, and each has a one-line description under its title (decisions 2, 16).
 *   No text or JSON editing and no user-typed IDs; raw validation errors are never shown (decisions 1, 3).
 *   Every change saves by itself, a moment after the last keystroke and at once when the page is left; there is no Save or Discard button (decision 49). A value that is not valid is not saved and the problem shows at the bottom of the page.
@@ -333,6 +338,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   Assistant: Provider, Model and Effort selects, filled from what the harness reports (decision 7), and the automatic and maximum compaction thresholds in tokens (default 128,000 and 256,000, decision 37).
 *   Orchestrator: Provider, Model and Effort selects, by default "Same as the Assistant" (decision 38), and its own pair of compaction thresholds with the same defaults (decision 43).
 *   In both pickers Effort is locked until a model is chosen (decision 48) and lists only the levels that model offers, Default alone when it offers none; choosing another model resets it to Default (decision 52). The model list is read once when the app starts, and each model's levels the first time they are needed; a small refresh button next to Model reads both again (decision 50).
+*   Projects: "Projects folder", typed by hand or picked with "Choose…", default the user's home (`~`). A new project's folder starts as this folder plus the project id, in the wizard and in the chat (decision 76).
 *   Protected mode (IF6): one switch with a short explanation (agents cannot read your files and logins; one login per harness account for `pecore-agent`; agents can read all `pecore-agent` logins). Turning it on opens the admin prompt; if it cannot (no polkit agent), the page shows the exact script with a Copy button and "I ran it, recheck". Then the page lists each model account with a Login button for `pecore-agent`, showing the URL or code. Turning it off asks whether to also remove `pecore-agent`.
 *   "Recheck prerequisites", with a link to the setting each failed check points to.
 
@@ -437,7 +443,7 @@ Every size lives in `ds/tokens.css`; components use only these variables, never 
 
 | Token | Value | Use |
 |---|---|---|
-| `--text-size-xs`, `-sm`, base `--text-size`, `-md`, `-lg`, `-xl` | 12, 13, 14, 15, 17, 24 px | captions and badges, secondary text, body, chat messages and emphasis, section and dialog titles, page titles |
+| `--text-size-sm`, base `--text-size`, `-md`, `-lg`, `-xl` | 14, 15, 16, 18, 26 px | captions, badges, table headers, secondary text, logs and code; body and controls; chat messages and emphasis; section and dialog titles; page titles. No text is smaller than 14 px: no `xs` size, no text shrunk with `scale`, and third-party defaults (graph nodes and labels, `<small>`) are set to `--text-size-sm` (decision 80) |
 | `--line-height` | 1.5 | body text |
 | `--control-h-lg`, `--control-h`, `--control-h-sm` | 42, 36, 30 px | buttons, fields, selects |
 | `--row-h-lg`, `--row-h`, `--row-h-sm` | 44, 34, 30 px | table rows, menu and list rows, popup and menu items |

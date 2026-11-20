@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import type { ReactNode } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import type { DefinitionEntry, DefinitionFile, ProjectView } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
@@ -9,56 +10,41 @@ import { Button, Empty, ErrorText, Field, Page, Panel, ui } from "../components/
 import { Button as DsButton } from "../ds/button";
 import { Tabs } from "../ds/data";
 import { Alert, Card, Spinner } from "../ds/feedback";
-import { TextField } from "../ds/field";
-import { FolderIcon, LinkIcon } from "../ds/icons";
+import { TextArea, TextField } from "../ds/field";
+import { PlusIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
+import { JobTable, useJobs } from "./Jobs";
 import s from "./ProjectPage.module.css";
 
 const pageSize: number = 100;
 
 type Draft = { text: string; baseSha256: string | null };
 
-function projectText(content: string, editable?: string): string {
-  const original: Record<string, unknown> = JSON.parse(content);
-  if (editable === undefined) {
-    const fields: Record<string, unknown> = { ...original };
-    delete fields.id;
-    delete fields.repo;
-    delete fields.folder;
-    return JSON.stringify(fields, null, 2);
-  }
-  const fields: unknown = JSON.parse(editable);
-  if (!fields || typeof fields !== "object" || Array.isArray(fields)) throw new Error("Enter a JSON object");
-  return JSON.stringify({ ...fields, id: original.id, repo: original.repo, folder: original.folder }, null, 2) + "\n";
-}
-
-function FileEditor({ file, path, project, onSaved }: {
+function FileEditor({ file, path, onSaved }: {
   file: DefinitionFile | null;
   path: string;
-  project?: boolean;
   onSaved(file: DefinitionFile): void;
 }) {
   const connected: boolean = useConnected();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [comparison, setComparison] = useState<{ sha256: string | null } | null>(null);
-  const latestText: string = file ? project ? projectText(file.content) : file.content : "";
+  const latestText: string = file?.content ?? "";
   const latestHash: string | null = file?.sha256 ?? null;
   const text: string = draft?.text ?? latestText;
   const changed: boolean = draft !== null && draft.baseSha256 !== latestHash;
   const comparing: boolean = comparison !== null && comparison.sha256 === latestHash;
   const save = useAction(async (baseSha256: string | null) => {
-    const content: string = project && file ? projectText(file.content, text) : text;
-    const { sha256 } = await call("saveDefinition", { params: { path }, body: { content, baseSha256 } });
+    const { sha256 } = await call("saveDefinition", { params: { path }, body: { content: text, baseSha256 } });
     setDraft(null);
     setComparison(null);
-    onSaved({ path, content, sha256 });
+    onSaved({ path, content: text, sha256 });
   });
   const disabled: boolean = !connected || save.busy;
   return (
     <div className={ui.stack}>
-      <Field label={project ? "Project settings (JSON)" : path.split("/knowledge/")[1] ?? path}>
-        <textarea className={s.editor} rows={project ? 13 : 10} spellCheck={false} disabled={disabled} value={text}
+      <Field label={path.split("/knowledge/")[1] ?? path}>
+        <textarea className={s.editor} rows={10} spellCheck={false} disabled={disabled} value={text}
           onChange={(e) => setDraft({ text: e.target.value, baseSha256: draft ? draft.baseSha256 : latestHash })} />
       </Field>
       {changed && (
@@ -82,27 +68,17 @@ function FileEditor({ file, path, project, onSaved }: {
   );
 }
 
-function ExistingEditor({ path, project, onSaved }: { path: string; project?: boolean; onSaved?(): void }) {
+function ExistingEditor({ path }: { path: string }) {
   const data = useData(() => call("getDefinition", { params: { path } }), [path], (m) => m.type === "definition.changed" && m.path === path);
   const [saved, setSaved] = useState<{ file: DefinitionFile; previous: DefinitionFile } | null>(null);
   const file: DefinitionFile | undefined = saved && data.data === saved.previous ? saved.file : data.data;
-  const valid: boolean = !project || !file || (() => {
-    try {
-      const value: unknown = JSON.parse(file.content);
-      return value !== null && typeof value === "object" && !Array.isArray(value);
-    } catch {
-      return false;
-    }
-  })();
   return (
     <>
       <ErrorText error={data.error} />
-      {!valid && <ErrorText error="Project settings must be a JSON object." />}
       {data.loading && !file && <Empty>Loading file…</Empty>}
-      {file && data.data && valid && <FileEditor path={path} file={file} project={project} onSaved={(result) => {
+      {file && data.data && <FileEditor path={path} file={file} onSaved={(result) => {
         if (data.data) setSaved({ file: result, previous: data.data });
         data.reload();
-        onSaved?.();
       }} />}
     </>
   );
@@ -113,7 +89,8 @@ function Definitions({ id, kind }: { id: string; kind: "node" | "recipe" }) {
   const dir: string = `projects/${id}/${kind}s`;
   const libraryDir: string = `library/${kind}s`;
   const entries = useData(() => call("listDefinitions", { query: { dir } }), [dir], (m) => m.type === "definition.changed" && m.path.startsWith(dir + "/"));
-  const library = useData(() => call("listDefinitions", { query: { dir: libraryDir } }), [libraryDir], (m) => m.type === "definition.changed" && m.path.startsWith(libraryDir + "/"));
+  const library = useData(() => kind === "node" ? call("listDefinitions", { query: { dir: libraryDir } }) : Promise.resolve([]), [libraryDir], (m) => m.type === "definition.changed" && m.path.startsWith(libraryDir + "/"));
+  const navigate = useNavigate();
   const [name, setName] = useState<string>("");
   const [page, setPage] = useState<number>(0);
   const [confirmIds, setConfirmIds] = useState<string[]>([]);
@@ -130,6 +107,8 @@ function Definitions({ id, kind }: { id: string; kind: "node" | "recipe" }) {
   const start: number = Math.min(page, Math.max(0, Math.ceil(files.length / pageSize) - 1)) * pageSize;
   return (
     <div className={ui.stack}>
+      {kind === "recipe" && <div><DsButton variant="primary" icon={<PlusIcon />} disabled={!connected}
+        onClick={() => void navigate(`/projects/${encodeURIComponent(id)}/recipes/new`)}>New Recipe</DsButton></div>}
       <ErrorText error={entries.error ?? library.error} />
       {entries.loading && !entries.data ? <Spinner /> :
         files.length === 0 && !entries.error ? <Empty>{kind === "node" ? "No nodes" : "No recipes"}</Empty> : (
@@ -146,7 +125,7 @@ function Definitions({ id, kind }: { id: string; kind: "node" | "recipe" }) {
         <Button disabled={!connected || start === 0} onClick={() => setPage(start / pageSize - 1)}>Previous</Button>
         <Button disabled={!connected || start + pageSize >= files.length} onClick={() => setPage(start / pageSize + 1)}>Show more</Button>
       </div>}
-      <div className={s.instantiate}>
+      {kind === "node" && <div className={s.instantiate}>
         <Select
           label="Add from the library"
           value={name || null}
@@ -157,7 +136,7 @@ function Definitions({ id, kind }: { id: string; kind: "node" | "recipe" }) {
         />
         <Button disabled={!connected || instantiate.busy || !templates.some(({ path }) => path === `${libraryDir}/${name}.json`)}
           onClick={() => { setResult(""); void instantiate.run(); }}>Add to project</Button>
-      </div>
+      </div>}
       <ErrorText error={instantiate.error} />
       {result && <p role="status">{result}</p>}
       {confirmIds.length > 0 && <div className={ui.stack}>
@@ -220,15 +199,15 @@ function Knowledge({ id }: { id: string }) {
   );
 }
 
-type SettingsForm = { name: string; baseBranch: string; defaultRecipe: string; services: string };
+type SettingsForm = { name: string; baseBranch: string; services: string };
 
-function ProjectSettings({ id, onSaved }: { id: string; onSaved(): void }) {
+function ProjectSettings({ id, onSaved, deleteAction, deleteNotice }: { id: string; onSaved(): void; deleteAction: ReactNode; deleteNotice: ReactNode }) {
   const connected: boolean = useConnected();
   const path: string = `projects/${id}/project.json`;
   const file = useData(() => call("getDefinition", { params: { path } }), [path], (m) => m.type === "definition.changed" && m.path === path);
-  const recipes = useData(() => call("listDefinitions", { query: { dir: `projects/${id}/recipes` } }), [id], (m) => m.type === "definition.changed" && m.path.startsWith(`projects/${id}/recipes/`));
   const [form, setForm] = useState<SettingsForm | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [pickError, setPickError] = useState<string | null>(null);
   const raw: Record<string, unknown> | null = (() => {
     try {
       return file.data ? JSON.parse(file.data.content) as Record<string, unknown> : null;
@@ -239,7 +218,6 @@ function ProjectSettings({ id, onSaved }: { id: string; onSaved(): void }) {
   const current: SettingsForm | null = raw && {
     name: String(raw.name ?? ""),
     baseBranch: String(raw.baseBranch ?? "main"),
-    defaultRecipe: String(raw.defaultRecipe ?? ""),
     services: typeof raw.services === "string" ? raw.services : "",
   };
   const value: SettingsForm | null = form ?? current;
@@ -251,10 +229,10 @@ function ProjectSettings({ id, onSaved }: { id: string; onSaved(): void }) {
       ...raw,
       name: value.name.trim(),
       baseBranch: value.baseBranch.trim(),
-      defaultRecipe: value.defaultRecipe || null,
       services: value.services.trim() || null,
     };
     Reflect.deleteProperty(next, "limits");
+    Reflect.deleteProperty(next, "defaultRecipe");
     await call("saveDefinition", { params: { path }, body: { content: JSON.stringify(next, null, 2) + "\n", baseSha256: file.data.sha256 } });
     setForm(null);
     setSavedAt(Date.now());
@@ -262,20 +240,35 @@ function ProjectSettings({ id, onSaved }: { id: string; onSaved(): void }) {
     onSaved();
   });
   if (!value) return <ErrorText error={file.error ?? (file.data ? "project.json is not valid JSON." : null)} />;
-  const recipeNames: string[] = (recipes.data ?? []).filter((r) => r.path.endsWith(".json")).map((r) => r.path.split("/").pop()!.replace(/\.json$/, ""));
   const disabled: boolean = !connected || save.busy;
+  const folder: string | null = typeof raw?.folder === "string" ? raw.folder.replace(/\/+$/, "") : null;
+  const repo = raw?.repo as { url: string; account: string } | null | undefined ?? null;
+  const pickCompose = async (): Promise<void> => {
+    setPickError(null);
+    const picked: string | null = await window.pecore.pickFile(folder);
+    if (!picked) return;
+    if (folder === null || !picked.startsWith(`${folder}/`)) setPickError(folder === null ? "This project has no folder: type the path in the repository." : `Choose a file inside ${folder}.`);
+    else set({ services: picked.slice(folder.length + 1) });
+  };
   return (
     <form className={s.form} onSubmit={(e) => { e.preventDefault(); if (dirty) void save.run(); }}>
+      <dl className={`${ui.kv} ${s.details}`}>
+        <dt>Repository</dt><dd>{repo?.url ?? "Local only"}</dd>
+        {repo && <><dt>Forge account</dt><dd>{repo.account}</dd></>}
+        <dt>Folder</dt><dd>{folder ?? "None"}</dd>
+        <dt>Project ID</dt><dd>{id}</dd>
+      </dl>
       <div className={s.pair}>
         <TextField label="Name" value={value.name} onValueChange={(name) => set({ name })} disabled={disabled} error={value.name.trim() ? undefined : "Give the project a name."} />
         <TextField label="Base branch" mono value={value.baseBranch} onValueChange={(baseBranch) => set({ baseBranch })} disabled={disabled} description="New jobs start from here." />
       </div>
-      <Select label="Default recipe" value={value.defaultRecipe || null} onValueChange={(v) => set({ defaultRecipe: v ?? "" })} disabled={disabled}
-        options={recipeNames.map((name) => ({ value: name, label: name }))} description="Used when a job does not choose one." />
-      <TextField label="Services compose file" mono value={value.services} onValueChange={(services) => set({ services })} disabled={disabled}
-        placeholder="compose.yaml" description="Containers PeCore starts for each job, relative to the repository." />
+      <TextField label="Services compose file" mono value={value.services} onValueChange={(services) => { setPickError(null); set({ services }); }} disabled={disabled}
+        placeholder="Automatic" error={pickError ?? undefined} description="Empty: a compose file at the repository root, if there is one."
+        action={<DsButton disabled={disabled} onClick={() => void pickCompose()}>Choose…</DsButton>} />
       <ErrorText error={save.error} />
+      {deleteNotice}
       <div className={s.formActions}>
+        <span className={s.grow}>{deleteAction}</span>
         {savedAt && !dirty && <span className={ui.muted} role="status">Saved</span>}
         <DsButton disabled={!dirty || disabled} onClick={() => setForm(null)}>Discard</DsButton>
         <DsButton type="submit" variant="primary" disabled={!dirty || !value.name.trim() || !value.baseBranch.trim()} loading={save.busy}>Save settings</DsButton>
@@ -284,14 +277,49 @@ function ProjectSettings({ id, onSaved }: { id: string; onSaved(): void }) {
   );
 }
 
+function NewJobDialog({ id, onClose }: { id: string; onClose(): void }) {
+  const connected: boolean = useConnected();
+  const dir: string = `projects/${id}/recipes`;
+  const recipes = useData(() => call("listDefinitions", { query: { dir } }), [dir], (m) => m.type === "definition.changed" && m.path.startsWith(dir + "/"));
+  const names: string[] = (recipes.data ?? []).filter(({ path, errors }) => path.endsWith(".json") && errors.length === 0).map(({ path }) => path.slice(dir.length + 1, -5));
+  const [title, setTitle] = useState<string>("");
+  const [text, setText] = useState<string>("");
+  const [chosen, setChosen] = useState<string | null>(null);
+  const recipe: string | null = chosen ?? (names.length === 1 ? names[0]! : null);
+  const valid: boolean = !!title.trim() && !!text.trim() && recipe !== null;
+  const create = useAction(async () => {
+    await call("createJob", { body: { project: id, recipe: recipe!, title: title.trim(), ticket: { text: text.trim() }, parentJobId: null } });
+    onClose();
+  });
+  const disabled: boolean = !connected || create.busy;
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open && !create.busy) onClose(); }} title="New job" width={560}
+      footer={<>
+        <DsButton disabled={create.busy} onClick={onClose}>Cancel</DsButton>
+        <DsButton variant="primary" loading={create.busy} disabled={disabled || !valid} onClick={() => void create.run()}>Create job</DsButton>
+      </>}>
+      <form className={s.form} onSubmit={(e) => { e.preventDefault(); if (valid && !disabled) void create.run(); }}>
+        <TextField label="Title" required autoFocus value={title} onValueChange={setTitle} disabled={disabled} placeholder="e.g. Add dark mode" />
+        <TextArea label="What to do" required value={text} onValueChange={setText} disabled={disabled} placeholder="Describe the change, as in a ticket." />
+        {recipes.data && names.length === 0
+          ? <Alert tone="warning">This project has no recipes. Add one in the Recipes tab.</Alert>
+          : <Select label="Recipe" value={recipe} onValueChange={setChosen} disabled={disabled || names.length < 2} options={names.map((name) => ({ value: name, label: name }))} />}
+        <ErrorText error={recipes.error ?? create.error} />
+      </form>
+    </Dialog>
+  );
+}
+
 function ProjectDetails({ id }: { id: string }) {
   const connected: boolean = useConnected();
   const navigate = useNavigate();
+  const [query] = useSearchParams();
   const [deleting, setDeleting] = useState<boolean>(false);
+  const [creatingJob, setCreatingJob] = useState<boolean>(false);
   const data = useData(() => call("getProject", { params: { id } }), [id], (m) =>
     (m.type === "project.updated" && m.projectId === id) || (m.type === "definition.changed" && m.path.startsWith(`projects/${id}/`)),
   );
-  const jobs = useData(() => call("listJobs", { query: { project: id } }), [id], (m) => m.type === "job.updated" && m.projectId === id);
+  const jobs = useJobs("false", id);
   const running: boolean = jobs.data?.some((job) => job.state === "running") ?? false;
   const remove = useAction(async () => {
     await call("deleteProject", { params: { id } });
@@ -299,64 +327,57 @@ function ProjectDetails({ id }: { id: string }) {
   });
   const view: ProjectView | undefined = data.data;
   const project: ProjectView["project"] | undefined = view?.project;
-  const jobsLink = <Button disabled={!connected} onClick={() => void navigate(`/jobs?project=${encodeURIComponent(id)}`)}>Jobs of this project</Button>;
   return (
-    <Page title={project?.name ?? id} actions={jobsLink}>
-      {project && (
-        <div className={s.meta}>
-          <span className={s.metaItem}><LinkIcon />{project.repo?.url ?? "Local only"}</span>
-          {project.repo && <span className={s.metaItem}>Account {project.repo.account}</span>}
-          {project.folder && <span className={s.metaItem}><FolderIcon /><code>{project.folder}</code></span>}
-          <span className={s.metaItem}>ID <code>{id}</code></span>
-        </div>
-      )}
+    <Page title={project?.name ?? id} actions={project && !view?.creating &&
+      <DsButton variant="primary" icon={<PlusIcon />} disabled={!connected} onClick={() => setCreatingJob(true)}>New job</DsButton>}>
+      {creatingJob && <NewJobDialog id={id} onClose={() => setCreatingJob(false)} />}
       <ErrorText error={data.error} />
       {data.loading && !view && <Spinner />}
       {view?.errors.map(({ file, path, message }, index) => <ErrorText key={index} error={`${file}${path ? ` · ${path}` : ""}: ${message}`} />)}
       {view?.creating ? <Alert tone="warning" actions={connected && <Link to={`/projects/new?resume=${id}`}>Resume creation</Link>}>This project was not fully created.</Alert> : project && (
         <>
-          <Card padded>
-            <Tabs
-              tabs={[
-                {
-                  value: "settings",
-                  label: "Settings",
-                  content: (
-                    <div className={ui.stack}>
-                      <ProjectSettings id={id} onSaved={data.reload} />
-                      <details className={s.advanced}>
-                        <summary>Edit project.json</summary>
-                        <ExistingEditor project path={`projects/${id}/project.json`} onSaved={data.reload} />
-                      </details>
-                    </div>
-                  ),
-                },
-                { value: "recipes", label: "Recipes", content: <Definitions id={id} kind="recipe" /> },
-                { value: "nodes", label: "Nodes", content: <Definitions id={id} kind="node" /> },
-                { value: "knowledge", label: "Knowledge", content: <Knowledge id={id} /> },
-              ]}
-            />
-          </Card>
-          <Card title="Danger zone">
-            <div className={s.danger}>
-              <span className={ui.muted}>Deletes the project folder, work folders, artifacts, logs and history. The forge is untouched.</span>
-              <Button kind="danger" disabled={!connected || !jobs.data || !!jobs.error || running} onClick={() => setDeleting(true)}>Delete project</Button>
-            </div>
-            <ErrorText error={jobs.error} />
-            {running && <div className={ui.row}><span>Stop the running jobs before deleting this project.</span>{jobsLink}</div>}
-          </Card>
+          <Tabs
+            defaultValue={query.get("tab") === "recipes" ? "recipes" : "jobs"}
+            tabs={[
+              {
+                value: "jobs",
+                label: "Jobs",
+                content: <><ErrorText error={jobs.error} /><JobTable jobs={jobs.data ?? []} project={false} loading={jobs.loading} empty="No jobs in this project yet." /></>,
+              },
+              {
+                value: "settings",
+                label: "Settings",
+                content: (
+                  <Card padded className={s.narrow}>
+                    <ProjectSettings
+                      id={id}
+                      onSaved={data.reload}
+                      deleteAction={<DsButton variant="danger" disabled={!connected || !jobs.data || !!jobs.error || running} onClick={() => setDeleting(true)}>Delete project</DsButton>}
+                      deleteNotice={<>
+                        <ErrorText error={jobs.error} />
+                        {running && <span className={ui.muted}>Stop the running jobs, in the Jobs tab, before deleting this project.</span>}
+                      </>}
+                    />
+                  </Card>
+                ),
+              },
+              { value: "recipes", label: "Recipes", content: <Card padded className={s.narrow}><Definitions id={id} kind="recipe" /></Card> },
+              { value: "nodes", label: "Nodes", content: <Card padded className={s.narrow}><Definitions id={id} kind="node" /></Card> },
+              { value: "knowledge", label: "Knowledge", content: <Card padded className={s.narrow}><Knowledge id={id} /></Card> },
+            ]}
+          />
           <Dialog
             open={deleting}
             onOpenChange={(open) => { if (!open && !remove.busy) setDeleting(false); }}
             title={`Delete ${project.name}?`}
-            description="Its folder, work folders, artifacts, logs, database, definitions and service containers are removed. Repositories and pull requests on the forge stay there."
+            description="PeCore's copy of the repository, work folders, artifacts, logs, database, definitions and service containers are removed. Your project folder and the repositories and pull requests on the forge stay."
             width={460}
             footer={<>
               <Button disabled={!connected || remove.busy} onClick={() => setDeleting(false)}>Cancel</Button>
               <DsButton variant="dangerSolid" loading={remove.busy} disabled={!connected || !jobs.data || !!jobs.error || running} onClick={() => void remove.run()}>Delete project</DsButton>
             </>}
           >
-            {running && <div className={ui.row}><span>Stop the running jobs first.</span>{jobsLink}</div>}
+            {running && <span>Stop the running jobs first.</span>}
             <ErrorText error={remove.error} />
           </Dialog>
         </>

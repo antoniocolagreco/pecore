@@ -5,6 +5,7 @@ import { ProjectCreateError, setupJobId } from "../../projects/create";
 import { InvalidArchive, ShareConflict } from "../../share/archive";
 import { HttpError } from "../server";
 import type { Handlers } from "../server";
+import { definitionOperations } from "./definitions";
 
 function creationView(engine: Engine, id: string): CreationView | null {
   const c = engine.creating.get(id);
@@ -60,7 +61,7 @@ export function projectHandlers(engine: Engine) {
     deleteProject: async ({ params }) => {
       if (!engine.projects.has(params.id)) throw new NotFoundError(`project ${params.id} not found`);
       try {
-        await engine.deleteProject(params.id);
+        await definitionOperations(engine).removeProject(params.id);
       } catch (e) {
         throw new HttpError("conflict", (e as Error).message);
       }

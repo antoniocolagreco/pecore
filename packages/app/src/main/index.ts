@@ -188,6 +188,12 @@ async function main(): Promise<void> {
     const picked: Electron.OpenDialogReturnValue = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options);
     return picked.canceled ? null : picked.filePaths[0] ?? null;
   });
+  ipcMain.handle("pecore:pick-file", async (event, defaultPath: unknown) => {
+    const options: Electron.OpenDialogOptions = { properties: ["openFile"], filters: [{ name: "YAML", extensions: ["yaml", "yml"] }], ...(typeof defaultPath === "string" ? { defaultPath } : {}) };
+    const owner: BrowserWindow | null = BrowserWindow.fromWebContents(event.sender);
+    const picked: Electron.OpenDialogReturnValue = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options);
+    return picked.canceled ? null : picked.filePaths[0] ?? null;
+  });
   serveRenderer(engine.port);
   tray = new Tray(nativeImage.createFromPath(iconPath()).resize({ width: 22, height: 22 }));
   tray.setContextMenu(Menu.buildFromTemplate([{ label: "Open PeCore", click: () => showWindow() }, { label: "Quit", click: () => void quit() }]));

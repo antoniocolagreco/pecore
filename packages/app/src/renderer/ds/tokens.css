@@ -3,12 +3,11 @@
   color-scheme: light;
   --font: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --text-size-xs: 12px;
-  --text-size-sm: 13px;
-  --text-size: 14px;
-  --text-size-md: 15px;
-  --text-size-lg: 17px;
-  --text-size-xl: 24px;
+  --text-size-sm: 14px;
+  --text-size: 15px;
+  --text-size-md: 16px;
+  --text-size-lg: 18px;
+  --text-size-xl: 26px;
   --line-height: 1.5;
   --control-h-lg: 42px;
   --control-h: 36px;

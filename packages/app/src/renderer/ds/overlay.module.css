@@ -27,7 +27,7 @@
 
 .shortcut {
   color: rgb(235 235 245 / 0.55);
-  font-size: var(--text-size-xs);
+  font-size: var(--text-size-sm);
 }
 
 .backdrop {
@@ -172,7 +172,7 @@
 .menuShortcut {
   margin-left: auto;
   padding-left: 16px;
-  font-size: var(--text-size-xs);
+  font-size: var(--text-size-sm);
   color: var(--text-3);
 }
 

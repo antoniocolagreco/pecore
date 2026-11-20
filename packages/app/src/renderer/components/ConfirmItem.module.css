@@ -10,7 +10,7 @@
 
 .hash {
   overflow-wrap: anywhere;
-  font-size: var(--text-size-xs);
+  font-size: var(--text-size-sm);
   color: var(--text-3);
 }
 

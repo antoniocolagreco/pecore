@@ -42,30 +42,35 @@ export function settingUrl(section: string): string {
 
 type Validation = RouteResult<"validateDefinition">;
 type Snapshot = Pick<DefinitionFile, "content"> & { sha256: string | null };
+export type NewDefinition = { content: string; path(content: string): string };
 
-export function useDefinitionDraft(path: string, sidecar = false) {
+export function useDefinitionDraft(existingPath: string, sidecar = false, creation?: NewDefinition) {
   const connected: boolean = useConnected();
   const remote = useData(async (): Promise<Snapshot> => {
+    if (creation) return { content: creation.content, sha256: null };
     try {
-      return await call("getDefinition", { params: { path } });
+      return await call("getDefinition", { params: { path: existingPath } });
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) return { content: "", sha256: null };
       throw error;
     }
-  }, [path]);
+  }, [existingPath, creation]);
   const [base, setBase] = useState<Snapshot>();
   const [draft, setDraft] = useState<string>();
   const [changed, setChanged] = useState(false);
   const [compared, setCompared] = useState<Snapshot>();
   const [ids, setIds] = useState<string[]>([]);
+  const [savedPath, setSavedPath] = useState<string>();
   const [validation, setValidation] = useState<{ content: string; result?: Validation; error?: string }>();
   const saving = useRef(false);
   const pending = useRef<{ sha256: string | null } | null>(null);
   const baseline: Snapshot | undefined = base ?? remote.data;
   const content: string = draft ?? baseline?.content ?? "";
+  const path: string = creation ? creation.path(content) : existingPath;
   const dirty: boolean = draft !== undefined && content !== baseline?.content;
 
   useLive((message): void => {
+    if (creation) return;
     if (message.type !== "definition.changed" || message.path !== path || message.sha256 === baseline?.sha256) return;
     if (saving.current) {
       pending.current = { sha256: message.sha256 };
@@ -116,8 +121,10 @@ export function useDefinitionDraft(path: string, sidecar = false) {
       setChanged(false);
       setCompared(undefined);
       setIds((previous) => [...new Set([...previous, ...result.confirmItemIds])]);
+      if (creation) setSavedPath(path);
     } catch (error) {
       if (!(error instanceof ApiError && error.status === 409)) throw error;
+      if (creation) throw new Error("A recipe with this name already exists. Choose another name.", { cause: error });
       setBase(baseline);
       setChanged(true);
       setCompared(undefined);
@@ -149,16 +156,16 @@ export function useDefinitionDraft(path: string, sidecar = false) {
   });
 
   const errors = validation?.content === content ? validation.result?.errors : undefined;
-  const canSave: boolean = connected && !save.busy && !compare.busy && !reload.busy && (sidecar || errors?.length === 0);
+  const canSave: boolean = connected && !!path && !save.busy && !compare.busy && !reload.busy && (sidecar || errors?.length === 0);
 
   return {
-    content, dirty, ready: !!baseline && (sidecar || baseline.sha256 !== null || dirty), errors, connected,
+    content, dirty, ready: !!baseline && (!!creation || sidecar || baseline.sha256 !== null || dirty), errors, connected, savedPath,
     editable: connected && !save.busy && !reload.busy,
     update(value: string): void { if (!base && baseline) setBase(baseline); setDraft(value); },
     feedback: <>
       <ErrorText error={remote.error ?? save.error ?? compare.error ?? reload.error ?? (validation?.content === content ? validation.error : undefined)} />
       {!baseline && remote.loading && <p className={ui.muted}>Loading definition…</p>}
-      {baseline?.sha256 === null && !sidecar && !dirty && <ErrorText error="Definition file is missing." />}
+      {baseline?.sha256 === null && !creation && !sidecar && !dirty && <ErrorText error="Definition file is missing." />}
       {changed && <Panel>
         <p>Changed elsewhere: reload, compare, keep mine</p>
         <div className={ui.row}>
@@ -169,7 +176,7 @@ export function useDefinitionDraft(path: string, sidecar = false) {
         {compared && <div className={s.compare}><div>On disk<pre>{compared.sha256 === null ? "File removed" : compared.content}</pre></div><div>Mine<pre>{content}</pre></div></div>}
       </Panel>}
     </>,
-    saveButton: <Button kind="primary" disabled={!canSave || !dirty || changed} onClick={() => void save.run()}>Save{sidecar ? " file" : ""}</Button>,
+    saveButton: (disabled = false): ReactNode => <Button kind="primary" disabled={disabled || !canSave || !dirty || changed} onClick={() => void save.run()}>Save{sidecar ? " file" : ""}</Button>,
     confirmations: ids.map((id) => <ConfirmItem key={id} itemId={id} onDone={() => setIds((previous) => previous.filter((item) => item !== id))} />),
   };
 }
@@ -247,7 +254,7 @@ function SidecarFile({ path, name, isMarkdown, onDirty }: { path: string; name: 
   return <Panel>
     <h2>{isMarkdown ? "Prompt" : "Script"} <code>{name}</code></h2>
     {file.feedback}
-    {file.ready && <><Sidecar content={file.content} change={file.update} disabled={!file.editable} isMarkdown={isMarkdown} />{file.saveButton}</>}
+    {file.ready && <><Sidecar content={file.content} change={file.update} disabled={!file.editable} isMarkdown={isMarkdown} />{file.saveButton()}</>}
     {file.confirmations}
   </Panel>;
 }
@@ -275,7 +282,7 @@ function NodeFile({ path }: { path: string }) {
   const field = (key: string, label: string, input: ReactNode): ReactNode => <div><Field label={label}>{input}</Field>{fieldErrors(key)}</div>;
   const textField = (key: string, label: string): ReactNode => field(key, label, <input value={string(draft?.[key])} onChange={(event) => update(key, event.target.value || undefined)} />);
   const flag = (key: string, label: string): ReactNode => <div><label><input type="checkbox" checked={draft?.[key] === true} onChange={(event) => update(key, event.target.checked)} /> {label}</label>{fieldErrors(key)}</div>;
-  return <Page title={string(draft?.name) || "Node editor"} actions={file.saveButton}>
+  return <Page title={string(draft?.name) || "Node editor"} actions={file.saveButton()}>
     {path.startsWith("projects/") && <p className={ui.muted}>Jobs using this node use the new version at their next run of it</p>}
     {file.feedback}
     {file.ready && <Panel>

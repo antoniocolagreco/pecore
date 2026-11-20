@@ -6,7 +6,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-raised);
-  font: 12.5px/1.55 var(--mono);
+  font: var(--text-size-sm) / 1.55 var(--mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

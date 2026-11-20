@@ -64,7 +64,7 @@
 }
 
 .caption {
-  font-size: var(--text-size-xs);
+  font-size: var(--text-size-sm);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;

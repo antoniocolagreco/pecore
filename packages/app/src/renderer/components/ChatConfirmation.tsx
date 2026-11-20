@@ -4,7 +4,7 @@ import { Button } from "../ds/button";
 import { ErrorText } from "./ui";
 import s from "./ChatConfirmation.module.css";
 
-export function ChatConfirmation({ title, rows, status, pending, disabled, busy, error, onDecision, children }: {
+export function ChatConfirmation({ title, rows, status, pending, disabled, busy, error, destructive, onDecision, children }: {
   title: string;
   rows: ChatConfirmationRow[];
   status: string;
@@ -12,6 +12,7 @@ export function ChatConfirmation({ title, rows, status, pending, disabled, busy,
   disabled: boolean;
   busy: boolean;
   error: string | null;
+  destructive?: boolean;
   onDecision(decision: "approve" | "cancel"): void;
   children?: ReactNode;
 }) {
@@ -27,8 +28,8 @@ export function ChatConfirmation({ title, rows, status, pending, disabled, busy,
       <ErrorText error={error} />
       {children}
       {pending && <div className={s.actions}>
-        <Button variant="primary" disabled={disabled || busy} onClick={() => onDecision("approve")}>Confirm</Button>
-        <Button variant="danger" disabled={disabled || busy} onClick={() => onDecision("cancel")}>Reject</Button>
+        <Button variant={destructive ? "dangerSolid" : "primary"} disabled={disabled || busy} onClick={() => onDecision("approve")}>Confirm</Button>
+        <Button variant={destructive ? "secondary" : "danger"} disabled={disabled || busy} onClick={() => onDecision("cancel")}>Reject</Button>
       </div>}
     </section>
   );

@@ -104,7 +104,7 @@ async function run(recipe: string) {
   for (const n of nodes) await writeFile(join(library, "nodes", `${n.name}.json`), JSON.stringify(n));
   for (const r of recipes) await writeFile(join(library, "recipes", `${r.name}.json`), JSON.stringify(r));
   const engine = await Engine.start({ home: join(root, "home"), library });
-  await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, defaultRecipe: recipe }, [recipe]);
+  await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, [recipe]);
   const project = engine.project("demo");
   const id = await engine.createJob("demo", { title: "Add add", ticket: { text: "add two numbers" } });
   await until(() => ["succeeded", "failed"].includes(project.executor.job(id).state), 600_000);

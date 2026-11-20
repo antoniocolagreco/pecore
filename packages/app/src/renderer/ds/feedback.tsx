@@ -14,9 +14,9 @@ export function Spinner({ size = "sm" }: { size?: IconSize }) {
   );
 }
 
-export function Badge({ tone = "neutral", dot, pulse, children }: { tone?: Tone; dot?: boolean; pulse?: boolean; children: ReactNode }) {
+export function Badge({ tone = "neutral", dot, pulse, iconOnly, children }: { tone?: Tone; dot?: boolean; pulse?: boolean; iconOnly?: boolean; children: ReactNode }) {
   return (
-    <span className={`${s.badge} ${s[tone]}`}>
+    <span className={`${s.badge} ${s[tone]}`} data-icon-only={iconOnly || undefined}>
       {dot && <span className={`${s.dot} ${pulse ? s.pulse : ""}`} />}
       {children}
     </span>

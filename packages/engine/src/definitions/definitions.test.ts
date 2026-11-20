@@ -158,6 +158,7 @@ describe("instantiate", () => {
     expect(loaded.errors).toEqual([]);
     expect(loaded.project?.baseBranch).toBe("main");
     expect(loaded.project).not.toHaveProperty("limits");
+    expect(loaded.project).not.toHaveProperty("defaultRecipe");
   });
 
   it("refuses a recipe that pushes in a project without a remote repository (decision 72)", async () => {
@@ -166,7 +167,6 @@ describe("instantiate", () => {
     expect((await instantiateRecipe(shippedLibrary, project, "feature")).errors).toEqual([]);
     await writeFile(join(project, "project.json"), JSON.stringify({ id: "demo", name: "Demo", repo: null }));
     const loaded = await loadProject(project);
-    expect(loaded.project?.defaultRecipe).toBeNull();
     expect(loaded.errors.map(({ path, message }) => ({ path, message }))).toEqual([
       { path: "nodes.push.use", message: "git-push needs a remote repository, and this project has none" },
       { path: "nodes.pr.use", message: "github-pr needs a remote repository, and this project has none" },

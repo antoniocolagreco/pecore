@@ -58,7 +58,7 @@ async function setup(scripts: object[][], node: object = agentNode(), recipeExtr
   await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p1", account: "fake", model: "m1" }] }));
   await writeFile(join(home, "tiers.json"), JSON.stringify({ tiers: { strong: ["p1"] } }));
   const engine = await Engine.start({ home, library: lib, agents: { connectorsDir: connectors, adaptersDir: join(root, "adapters"), adapters: {} }, checkLogins: false });
-  await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, defaultRecipe: "one-agent" }, ["one-agent"]);
+  await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["one-agent"]);
   const p = engine.project("demo");
   const id = await engine.createJob("demo", { title: "Fix it", ticket: { text: "x" } });
   return { engine, p, id, root };

@@ -59,10 +59,9 @@ export function FieldFrame({ label, description, error, disabled, className, foo
   );
 }
 
-export function TextField({ label, description, error, disabled, className, leading, prefix, suffix, size = "md", mono, ...input }: TextProps & { leading?: ReactNode; prefix?: string; suffix?: string; type?: "text" | "email" | "url" }) {
+export function TextField({ label, description, error, disabled, className, leading, prefix, suffix, action, size = "md", mono, ...input }: TextProps & { leading?: ReactNode; prefix?: string; suffix?: string; action?: ReactNode; type?: "text" | "email" | "url" }) {
   const [value, setValue] = useText(input);
-  return (
-    <FieldFrame label={label} description={description} error={error} disabled={disabled} className={className}>
+  const control = (
       <div className={cx(s.shell, size === "sm" && s.sm)}>
         {prefix && <span className={s.affix}>{prefix}</span>}
         {leading && <span className={s.leading}>{leading}</span>}
@@ -80,6 +79,10 @@ export function TextField({ label, description, error, disabled, className, lead
         />
         {suffix && <span className={s.affix}>{suffix}</span>}
       </div>
+  );
+  return (
+    <FieldFrame label={label} description={description} error={error} disabled={disabled} className={className}>
+      {action ? <div className={s.controlRow}>{control}{action}</div> : control}
     </FieldFrame>
   );
 }

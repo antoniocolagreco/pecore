@@ -140,7 +140,7 @@ async function setup(build: (root: string) => object[][], extra: { source?: bool
     return { engine, api, call: apiClient({ port: api.port, token: api.token }), close: async () => { await api.close(); await engine.shutdown(); } };
   };
   const first = await open();
-  await createProjectWithRecipes(first.engine, { id: "demo", name: "Demo", repo: null, defaultRecipe: "reviewed" }, ["reviewed", "big"]);
+  await createProjectWithRecipes(first.engine, { id: "demo", name: "Demo", repo: null }, ["reviewed", "big"]);
   if (extra.source) {
     const dir = first.engine.projectDir("demo");
     await writeFile(join(dir, "nodes", "fake-source.json"), JSON.stringify({ ...fakeSource, comment: { command: ["/bin/sh", "-c", `echo posted >> '${join(root, "comments")}'`] } }));
@@ -166,8 +166,8 @@ function mcp(tokenFile: string) {
 const tokenFileOf = (chatId: string) => join(process.env.HOME!, ".pecore-chats", chatId, "mcp-token");
 const intakeChat = (t: { engine: Engine }) => t.engine.orchestrator.chats().find(({ project }) => project === "demo")!.id;
 const plan = [
-  { key: "api", title: "API", ticketText: "add the endpoint", dependsOn: [] },
-  { key: "ui", title: "UI", ticketText: "add the screen", dependsOn: ["api"] },
+  { key: "api", title: "API", ticketText: "add the endpoint", recipe: "reviewed", dependsOn: [] },
+  { key: "ui", title: "UI", ticketText: "add the screen", recipe: "reviewed", dependsOn: ["api"] },
 ];
 
 afterEach(() => {
@@ -408,6 +408,72 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     }
   });
 
+  it("updates only validated settings and deletes a project only after its chat card is confirmed", async () => {
+    const t = await setup((root) => [[
+      ...init(), ...newSession, { expect: "session/prompt" },
+      { dump: join(root, "manage-project.json") }, { waitFile: join(root, "done") }, ...replyWith("Check the project card."),
+    ]]);
+    const tokenFile: string = tokenFileOf("assistant");
+    const m = mcp(tokenFile);
+    try {
+      const folder: string = join(t.root, "managed-code");
+      await t.engine.createProject({ id: "managed", name: "Managed", repo: null, folder });
+      await t.call("sendChatMessage", { body: { text: "Update or delete Managed." } });
+      await until(() => existsSync(join(t.root, "manage-project.json")));
+      await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+      const get = () => t.call("getProject", { params: { id: "managed" } });
+      const update = (changes: unknown) => m.tool("update_project", { project: "managed", changes });
+      const original = await get();
+      expect((await m.tool("get_project", { project: "managed" })).result?.content?.[0]?.text).toContain('"name":"Managed"');
+      for (const changes of [{}, { name: " " }, { baseBranch: "bad..branch" }, { services: "../compose.yaml" }, { repo: null }]) {
+        expect((await update(changes)).result?.isError).toBe(true);
+      }
+      expect(await get()).toEqual(original);
+      expect((await update({ name: "Renamed", services: "ops/compose.yaml" })).result?.isError).toBeUndefined();
+      expect((await get()).project).toEqual({ ...original.project, name: "Renamed", services: "ops/compose.yaml" });
+      expect((await update({ services: null })).result?.isError).toBeUndefined();
+      expect((await get()).project?.services).toBeNull();
+
+      const propose = async (name: string): Promise<string> => {
+        expect((await m.tool("delete_project", { project: "managed" })).result?.content?.[0]?.text).toBe('{"state":"awaiting_confirmation"}');
+        const action = (await t.call("getChat")).actions.at(-1)!;
+        expect(action.target).toMatchObject({ state: "awaiting_confirmation", rows: expect.arrayContaining([
+          { label: "Project", value: name }, { label: "Project ID", value: "managed" }, { label: "Project folder kept", value: folder },
+        ]) });
+        return action.id;
+      };
+      const answer = (id: string, decision: "approve" | "cancel") => t.call("answerChatProjectDeletion", { params: { id }, body: { decision } });
+      const rejected: string = await propose("Renamed");
+      expect(existsSync(t.engine.projectDir("managed"))).toBe(true);
+      const { token } = JSON.parse(await readFile(tokenFile, "utf8")) as { token: string };
+      const denied: Response = await fetch(`http://127.0.0.1:${t.api.port}/chat/actions/${rejected}/project-deletion`, {
+        method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ decision: "approve" }),
+      });
+      expect(denied.status).toBe(401);
+      await answer(rejected, "cancel");
+      await expect(answer(rejected, "approve")).rejects.toThrow("no longer pending");
+      expect((await get()).project?.name).toBe("Renamed");
+
+      const stale: string = await propose("Renamed");
+      expect((await update({ name: "Demo updated" })).result?.isError).toBeUndefined();
+      await answer(stale, "approve");
+      expect((await t.call("getChat")).actions.find(({ id }) => id === stale)?.target).toMatchObject({ state: "failed", error: expect.stringContaining("project changed") });
+      expect((await get()).project?.name).toBe("Demo updated");
+
+      const approved: string = await propose("Demo updated");
+      const decisions = await Promise.allSettled([answer(approved, "approve"), answer(approved, "approve")]);
+      expect(decisions.map(({ status }) => status).sort()).toEqual(["fulfilled", "rejected"]);
+      expect((await t.call("getChat")).actions.find(({ id }) => id === approved)?.target).toMatchObject({ state: "approved" });
+      expect(existsSync(t.engine.projectDir("managed"))).toBe(false);
+      expect(existsSync(t.engine.projectDir("demo"))).toBe(true);
+      expect(existsSync(folder)).toBe(true);
+      await writeFile(join(t.root, "done"), "");
+    } finally {
+      m.close();
+      await t.close();
+    }
+  });
+
   it("validates assistant project settings before creating local or remote projects", async () => {
     const t = await setup((root) => [[
       ...init(),
@@ -426,7 +492,7 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       const options = await m.tool("project_creation_options", {});
       expect(options.result?.content?.[0]?.text).toContain('"defaultBaseBranch":"main"');
-      expect(options.result?.content?.[0]?.text).toContain('"defaultFolder":"~/Projects/<project id>"');
+      expect(options.result?.content?.[0]?.text).toContain('"defaultFolder":"~/<project id>"');
       expect(options.result?.content?.[0]?.text).toContain('"canCreateRepository":true');
       expect(options.result?.content?.[0]?.text).toContain(`"user":"${forgeAccount.user}"`);
       expect(options.result?.content?.[0]?.text).not.toContain('"recipes"');
@@ -458,12 +524,12 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       expect(existsSync(t.engine.projectDir("mock-one"))).toBe(false);
       const approved: string = await propose(settings);
       expect((await t.call("getChat")).actions.at(-1)?.target).toMatchObject({
-        rows: expect.arrayContaining([{ label: "Name", value: "Mock One" }, { label: "Folder", value: "~/Projects/mock-one" }, { label: "Base branch", value: "develop" }]),
+        rows: expect.arrayContaining([{ label: "Name", value: "Mock One" }, { label: "Folder", value: "~/mock-one" }, { label: "Base branch", value: "develop" }]),
       });
       const decisions = await Promise.allSettled([answer(approved, "approve"), answer(approved, "approve")]);
       expect(decisions.map(({ status }) => status).sort()).toEqual(["fulfilled", "rejected"]);
       expect((await t.call("getProject", { params: { id: "mock-one" } }))).toMatchObject({
-        creating: null, errors: [], project: { name: "Mock One", repo: null, folder: join(process.env.HOME!, "Projects", "mock-one"), baseBranch: "develop", defaultRecipe: null },
+        creating: null, errors: [], project: { name: "Mock One", repo: null, folder: join(process.env.HOME!, "mock-one"), baseBranch: "develop" },
       });
       expect(t.engine.project("mock-one").ctx.defs.recipes.size).toBe(0);
       expect(existsSync(t.engine.projectDir("mock-one-2"))).toBe(false);
@@ -472,12 +538,20 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       expect(existsSync(t.engine.projectDir("mock-one-2"))).toBe(true);
       expect(t.engine.project("mock-one-2").ctx.project.folder).toBe(chosen);
       expect(existsSync(join(chosen, ".git"))).toBe(true);
+      const current = await t.call("getSettings");
+      const code: string = join(t.root, "code");
+      await t.call("putSettings", { body: { value: { ...current.value, projectsFolder: code }, baseSha256: current.sha256 } });
+      expect((await m.tool("project_creation_options", {})).result?.content?.[0]?.text).toContain(`"defaultFolder":"${join(code, "<project id>")}"`);
+      const third: string = await propose({ ...settings, name: "Third" });
+      expect((await t.call("getChat")).actions.at(-1)?.target).toMatchObject({ rows: expect.arrayContaining([{ label: "Folder", value: join(code, "third") }]) });
+      await answer(third, "approve");
+      expect(t.engine.project("third").ctx.project.folder).toBe(join(code, "third"));
       await t.forge!.createRepo("acme/existing");
       const existing = { mode: "existing", url: "https://github.com/acme/existing.git", account: forgeAccount.id };
       expect((await m.tool("create_project", { ...settings, name: "Existing", repository: existing })).result?.isError).toBe(true);
       expect(existsSync(t.engine.projectDir("existing"))).toBe(false);
       await answer(await propose({ ...settings, name: "Existing", repository: existing, baseBranch: "main" }), "approve");
-      expect(t.engine.project("existing").ctx.project).toMatchObject({ defaultRecipe: null, baseBranch: "main", repo: { url: existing.url } });
+      expect(t.engine.project("existing").ctx.project).toMatchObject({ baseBranch: "main", repo: { url: existing.url } });
       const remote = { mode: "new", url: "https://github.com/acme/fresh.git", account: forgeAccount.id };
       const fresh: string = await propose({ ...settings, name: "Fresh", repository: remote });
       expect(existsSync(t.engine.projectDir("fresh"))).toBe(false);
@@ -486,7 +560,7 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
         role === "assistant" && state === "completed" && text === "Project settings checked."));
       await answer(fresh, "approve");
       expect((await t.call("getChat")).actions.at(-1)?.target).toMatchObject({ state: "approved", creating: true });
-      expect(t.engine.project("fresh").ctx.project).toMatchObject({ createRepo: "github-create-repo", baseBranch: "develop", defaultRecipe: null });
+      expect(t.engine.project("fresh").ctx.project).toMatchObject({ createRepo: "github-create-repo", baseBranch: "develop" });
       const db = t.engine.project("fresh").ctx.db.db;
       expect(db.prepare("SELECT sha256 FROM confirmed_hashes WHERE path = ?").get("nodes/github-create-repo.json")).toBeDefined();
       expect(db.prepare("SELECT id FROM human_queue WHERE job_id = ? AND kind = 'engine-node'").get("project-setup")).toBeUndefined();
@@ -531,7 +605,7 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     const created = await m.tool("create_jobs", { project: "demo", plan });
     expect(created.error).toBeUndefined();
     expect(created.result!.isError).not.toBe(true);
-    await m.tool("create_jobs", { project: "demo", plan: [{ key: "other", title: "Other", ticketText: "x", dependsOn: [] }] });
+    await m.tool("create_jobs", { project: "demo", plan: [{ key: "other", title: "Other", ticketText: "x", recipe: "reviewed", dependsOn: [] }] });
     expect(ctx.db.db.prepare("SELECT order_key FROM jobs WHERE order_id = ? ORDER BY order_key").all(message.id)).toEqual([{ order_key: "api" }, { order_key: "ui" }]);
 
     const log = await m.tool("read_artifact", { view: "log", jobId: bigJob, nodeRunId: bigRun });
@@ -602,7 +676,9 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
         .toEqual(["comment_ticket", "create_jobs", "job_status", "list_projects", "list_recipes", "read_artifact", "read_replies", "read_ticket"]);
       expect((await m.tool("write_instance", { path: "projects/demo/recipes/reviewed.json", content: "{}" })).result!.isError).toBe(true);
       expect((await m.tool("create_project", { id: "blocked", name: "Blocked" })).result?.isError).toBe(true);
-      const fix = [{ key: "fix", title: "Fix login", ticketText: "fix the login button", dependsOn: [] }];
+      expect((await m.tool("update_project", { project: "demo", changes: { name: "Blocked" } })).result?.isError).toBe(true);
+      expect((await m.tool("delete_project", { project: "demo" })).result?.isError).toBe(true);
+      const fix = [{ key: "fix", title: "Fix login", ticketText: "fix the login button", recipe: "reviewed", dependsOn: [] }];
       expect((await m.tool("create_jobs", { project: "demo", plan: fix })).result!.isError).not.toBe(true);
       await m.tool("create_jobs", { project: "demo", plan: fix });
       m.close();
@@ -712,7 +788,7 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     const orderId = (ctx.db.db.prepare("SELECT order_id FROM tickets_seen WHERE ticket_id = '7'").get() as { order_id: string }).order_id;
     const m = mcp(tokenFileOf(intakeChat(t)));
     await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
-    expect((await m.tool("create_jobs", { project: "demo", plan: [{ key: "fix", title: "Fix login", ticketText: "fix the login button", dependsOn: [] }] })).error).toBeUndefined();
+    expect((await m.tool("create_jobs", { project: "demo", plan: [{ key: "fix", title: "Fix login", ticketText: "fix the login button", recipe: "reviewed", dependsOn: [] }] })).error).toBeUndefined();
     m.close();
     expect(ctx.db.db.prepare("SELECT order_key FROM jobs WHERE order_id = ?").all(orderId)).toEqual([{ order_key: "fix" }]);
     expect(ctx.db.db.prepare("SELECT state FROM tickets_seen WHERE order_id = ?").get(orderId)).toEqual({ state: "done" });

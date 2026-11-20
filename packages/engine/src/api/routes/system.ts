@@ -15,7 +15,7 @@ const prerequisiteSetting: Record<string, string> = { compose: "servicesRuntime"
 
 async function prerequisites(engine: Engine): Promise<Prerequisite[]> {
   const { settings, accounts } = engine.global();
-  const services = [...engine.projects.values()].some(({ ctx }) => ctx.project.services !== null);
+  const services = settings.servicesRuntime !== null || [...engine.projects.values()].some(({ ctx }) => ctx.project.services !== null);
   return checkPrerequisites({ accounts: accounts.accounts, protectedMode: settings.protectedMode, services, servicesRuntime: settings.servicesRuntime });
 }
 

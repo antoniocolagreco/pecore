@@ -5,8 +5,10 @@ import { describe, expect, it } from "vitest";
 import { createProjectWithRecipes } from "../../test/project";
 import { shippedLibrary, tempDir } from "../../test/tmp";
 import { Engine } from "../main";
+import { ProjectDb } from "../store/project-db";
 import { gitApp } from "../workdir/git-as";
-import { branchHead } from "../workdir/repo";
+import { branchHead, createLocalRepo } from "../workdir/repo";
+import { JobServices } from "./job-services";
 import { composeProjectName } from "./runtime";
 
 function ready(): boolean {
@@ -68,7 +70,7 @@ describe.skipIf(!ready())("job services (4.9)", () => {
     await mkdir(home, { recursive: true });
     await writeFile(join(home, "settings.json"), JSON.stringify({ servicesRuntime: "docker" }));
     const engine = await Engine.start({ home, library: lib });
-    await createProjectWithRecipes(engine, { id: "svc", name: "Svc", repo: null, defaultRecipe: "svc", services: "compose.yaml" }, ["svc"]);
+    await createProjectWithRecipes(engine, { id: "svc", name: "Svc", repo: null, services: "compose.yaml" }, ["svc"]);
     const p = engine.project("svc");
     const repo = join(p.ctx.dir, "repo.git");
     const blob = (await gitApp(repo, ["hash-object", "-w", "--stdin"], { input: compose })).trim();
@@ -86,4 +88,53 @@ describe.skipIf(!ready())("job services (4.9)", () => {
     await until(() => composeProjects(id).trim() === "[]");
     await engine.shutdown();
   }, 120_000);
+
+  it("with no compose path, finds docker-compose.yml at the repository root (decision 78)", async () => {
+    const root = await tempDir();
+    const home = join(root, "home");
+    const lib = join(root, "library");
+    await cp(shippedLibrary, lib, { recursive: true });
+    await writeFile(join(lib, "nodes", "noop.json"), JSON.stringify({
+      name: "noop", description: "does nothing", kind: "command", command: ["true"], outcomes: ["done"], changesFiles: false, outcomeRules: [{ exitCode: 0, outcome: "done" }], timeoutSec: 30,
+    }));
+    await writeFile(join(lib, "recipes", "noop.json"), JSON.stringify({ name: "noop", description: "one node", start: "n", successOutcomes: ["n:done"], nodes: { n: { use: "noop" } } }));
+    await mkdir(home, { recursive: true });
+    await writeFile(join(home, "settings.json"), JSON.stringify({ servicesRuntime: "docker" }));
+    const engine = await Engine.start({ home, library: lib });
+    await createProjectWithRecipes(engine, { id: "auto", name: "Auto", repo: null }, ["noop"]);
+    const p = engine.project("auto");
+    await commitFile(join(p.ctx.dir, "repo.git"), "docker-compose.yml", compose);
+    await engine.createJob("auto", { title: "t", ticket: { text: "x" } });
+    const item = await until(() => p.ctx.db.db.prepare("SELECT subject FROM human_queue WHERE kind = 'services' AND state = 'open'").get() as { subject: string } | undefined);
+    expect(JSON.parse(item.subject)).toMatchObject({ path: "services/docker-compose.yml" });
+    await engine.shutdown();
+  }, 120_000);
+});
+
+async function commitFile(repo: string, name: string, content: string): Promise<string> {
+  const blob = (await gitApp(repo, ["hash-object", "-w", "--stdin"], { input: content })).trim();
+  const tree = (await gitApp(repo, ["mktree"], { input: `100644 blob ${blob}\t${name}\n` })).trim();
+  const commit = (await gitApp(repo, ["commit-tree", tree, "-p", (await branchHead(repo, "main"))!, "-m", name])).trim();
+  await gitApp(repo, ["update-ref", "refs/heads/main", commit]);
+  return commit;
+}
+
+describe("automatic compose file (decision 78)", () => {
+  async function services(runtime: "docker" | null, file: string | null) {
+    const dir = await tempDir();
+    const repo = join(dir, "repo.git");
+    await createLocalRepo(repo, "main");
+    const base = file === null ? (await branchHead(repo, "main"))! : await commitFile(repo, file, compose);
+    return { base, jobs: new JobServices(new ProjectDb(join(dir, "pecore.db")), dir, () => null, () => runtime) };
+  }
+
+  it("starts nothing when no services runtime is set, even with a compose file", async () => {
+    const { base, jobs } = await services(null, "compose.yaml");
+    expect(await jobs.ensure("j1", base, () => { throw new Error("started"); })).toEqual({ kind: "ready", env: {} });
+  });
+
+  it("starts nothing when the repository has no standard compose file", async () => {
+    const { base, jobs } = await services("docker", "other.yaml");
+    expect(await jobs.ensure("j1", base, () => { throw new Error("started"); })).toEqual({ kind: "ready", env: {} });
+  });
 });

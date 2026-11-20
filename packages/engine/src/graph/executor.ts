@@ -144,7 +144,7 @@ export class JobExecutor {
   readonly services: JobServices;
 
   constructor(readonly ctx: ProjectContext) {
-    this.services = new JobServices(ctx.db, ctx.dir, ctx.project.services, () => ctx.settings.servicesRuntime);
+    this.services = new JobServices(ctx.db, ctx.dir, () => ctx.project.services, () => ctx.settings.servicesRuntime);
     const requests = ctx.db.db.prepare("SELECT id, job_id FROM human_queue WHERE kind = 'budget' AND state = 'open'").all() as { id: string; job_id: string | null }[];
     const runs = ctx.db.db.prepare("SELECT id, job_id FROM node_runs WHERE state = 'waiting' AND waiting_reason = 'budget'").all() as { id: string; job_id: string }[];
     const jobs = ctx.db.db.prepare("SELECT id FROM jobs WHERE state = 'waiting' AND waiting_reason = 'budget'").all() as { id: string }[];

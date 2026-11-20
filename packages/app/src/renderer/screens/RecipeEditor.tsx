@@ -1,36 +1,78 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { Background, Controls, ReactFlow } from "@xyflow/react";
 import type { Connection, Edge, Node, NodeChange, NodePositionChange, ReactFlowInstance, XYPosition } from "@xyflow/react";
-import { Outcome } from "@pecore/schemas";
+import { Name, Outcome } from "@pecore/schemas";
+import type { DefinitionEntry } from "@pecore/schemas";
 import { call } from "../api/client";
-import { useData } from "../api/hooks";
+import { useAction, useData } from "../api/hooks";
+import { ConfirmItem } from "../components/ConfirmItem";
 import { Button, Empty, ErrorText, Field, Modal, Page, Panel, ui } from "../components/ui";
+import { Button as DsButton } from "../ds/button";
+import { TextField } from "../ds/field";
+import { Select } from "../ds/select";
 import { DefinitionErrors, definitionUrl, object, parseDraft, string, useDefinitionDraft, useUnsaved } from "./NodeEditor";
+import type { NewDefinition } from "./NodeEditor";
 import "@xyflow/react/dist/style.css";
 import s from "./Editors.module.css";
 
 type LinkDraft = { from: string; to: string; on: string };
+type OpenRecipe = { path: string; confirmItemIds: string[] };
 const grid: [number, number] = [20, 20];
+const emptyRecipe: string = JSON.stringify({ $schema: "../../../schemas/recipe.json", name: "", description: "", nodes: {}, edges: [] }, null, 2) + "\n";
 
 function position(layout: Record<string, unknown>, id: string, index: number): XYPosition {
   const point = object(layout[id]);
   return typeof point.x === "number" && typeof point.y === "number" ? { x: point.x, y: point.y } : { x: index % 4 * 200, y: Math.floor(index / 4) * 120 };
 }
 
-function RecipeFile({ path }: { path: string }) {
-  const file = useDefinitionDraft(path);
-  const warn = useUnsaved(file.dirty);
+function RecipeFile({ path, project, initialConfirmations }: { path: string; project?: string; initialConfirmations: string[] }) {
+  const navigate = useNavigate();
+  const creation = useMemo<NewDefinition | undefined>(() => project ? {
+    content: emptyRecipe,
+    path(content) {
+      const name = Name.safeParse(parseDraft(content)?.name);
+      return name.success ? `projects/${project}/recipes/${name.data}.json` : "";
+    },
+  } : undefined, [project]);
+  const file = useDefinitionDraft(path, false, creation);
+  const [destination, setDestination] = useState<OpenRecipe>();
+  const [confirmations, setConfirmations] = useState<string[]>(initialConfirmations);
+  const warn = useUnsaved(file.dirty && !destination);
+  useEffect(() => {
+    const saved: string | undefined = destination?.path ?? file.savedPath;
+    if (saved) void navigate(definitionUrl("recipe", saved), { replace: true, state: { confirmItemIds: destination?.confirmItemIds ?? confirmations } });
+  }, [destination, file.savedPath]);
   const [json, setJson] = useState(false);
   const [selected, setSelected] = useState("");
   const [template, setTemplate] = useState("");
   const [connection, setConnection] = useState<LinkDraft>();
   const [drag, setDrag] = useState<Record<string, XYPosition>>({});
   const [flow, setFlow] = useState<ReactFlowInstance>();
-  const scope: string = path.slice(0, path.lastIndexOf("/recipes/"));
+  const scope: string = project ? `projects/${project}` : path.slice(0, path.lastIndexOf("/recipes/"));
+  const projectId: string | undefined = project ?? /^projects\/([^/]+)$/.exec(scope)?.[1];
   const directory: string = scope + "/nodes";
   const definitions = useData(() => call("listDefinitions", { query: { dir: directory } }), [directory], (event) => event.type === "definition.changed" && event.path.startsWith(directory + "/"));
+  const [recipeTemplate, setRecipeTemplate] = useState<string | null>(null);
+  const [libraryNode, setLibraryNode] = useState<string | null>(null);
+  const recipeTemplates = useRecipeLibrary("recipes", !!creation);
+  const nodeTemplates = useRecipeLibrary("nodes", !!creation);
+  const importRecipe = useAction(async () => {
+    if (!project || !recipeTemplate || (file.dirty && !window.confirm("Replace your unsaved draft with this template?"))) return;
+    const result = await call("instantiate", { body: { kind: "recipe", name: recipeTemplate, project } });
+    setDestination({ path: `${scope}/recipes/${recipeTemplate}.json`, confirmItemIds: [...new Set([...confirmations, ...result.confirmItemIds])] });
+  });
+  const importNode = useAction(async () => {
+    if (!project || !libraryNode) return;
+    const result = await call("instantiate", { body: { kind: "node", name: libraryNode, project } });
+    setConfirmations((previous) => [...new Set([...previous, ...result.confirmItemIds])]);
+    definitions.reload();
+    setTemplate(libraryNode);
+    setLibraryNode(null);
+  });
+  const importing: boolean = importRecipe.busy || importNode.busy;
+  const editable: boolean = file.editable && !importing;
   const draft = parseDraft(file.content);
   const nodes = object(draft?.nodes);
   const layout = object(draft?.layout);
@@ -38,7 +80,7 @@ function RecipeFile({ path }: { path: string }) {
   const edges: unknown[] = Array.isArray(draft?.edges) ? draft.edges : [];
   useEffect(() => { void flow?.fitView(); }, [entries.length]);
   const selectedNode = object(nodes[selected]);
-  const palette = (definitions.data ?? []).filter((item) => item.path.endsWith(".json") && !item.errors.length && string(object(item.value).name));
+  const palette = (definitions.data ?? []).filter((item) => item.path.endsWith(".json") && !item.errors.length && string(object(item.value).name) && object(item.value).kind !== "source");
   const definition = palette.find((item) => object(item.value).name === selectedNode.use);
   const nodeValue = object(definition?.value);
   const update = (changes: Record<string, unknown>): void => file.update(JSON.stringify({ ...draft, ...changes }, null, 2) + "\n");
@@ -67,7 +109,7 @@ function RecipeFile({ path }: { path: string }) {
     setTemplate("");
   };
   const move = (changes: NodeChange<Node>[]): void => {
-    if (!file.editable) return;
+    if (!editable) return;
     const moves = changes.filter((change): change is NodePositionChange & { position: XYPosition } => change.type === "position" && !!change.position);
     if (!moves.length) return;
     setDrag((previous) => {
@@ -82,7 +124,7 @@ function RecipeFile({ path }: { path: string }) {
     if (finished.length) update({ layout: { ...layoutNow(), ...Object.fromEntries(finished.map((change) => [change.id, change.position])) } });
   };
   const connect = ({ source, target }: Connection): void => {
-    if (file.editable) setConnection({ from: source, to: target, on: "" });
+    if (editable) setConnection({ from: source, to: target, on: "" });
   };
   const nodeSelect = (key: string, label: string): ReactNode => <Field label={label}><select value={string(draft?.[key])} onChange={(event) => update({ [key]: event.target.value || undefined })}>
     <option value="">None</option>{entries.map(([id]) => <option key={id}>{id}</option>)}
@@ -90,34 +132,48 @@ function RecipeFile({ path }: { path: string }) {
   const outcomeSource = connection && palette.find((item) => object(item.value).name === object(nodes[connection.from]).use);
   const outcomes: unknown = object(outcomeSource?.value).outcomes;
 
-  return <Page title={string(draft?.name) || "Recipe editor"} actions={file.saveButton}>
+  const recipeOptions = templateOptions(recipeTemplates.data);
+  const nodeOptions = templateOptions(nodeTemplates.data).filter(({ value }) => !palette.some((item) => object(item.value).name === value));
+  return <Page title={creation ? "New Recipe" : string(draft?.name) || "Recipe editor"} actions={file.saveButton(importing)}>
+    {projectId && <Link to={`/projects/${encodeURIComponent(projectId)}?tab=recipes`}>Back to recipes</Link>}
     {file.feedback}
+    {creation && <Panel><div className={s.importRow}>
+      <Select label="Recipe template" value={recipeTemplate} onValueChange={setRecipeTemplate} options={recipeOptions} disabled={!editable || !recipeOptions.length} placeholder="Choose a template" />
+      <DsButton loading={importRecipe.busy} disabled={!editable || !recipeTemplate} onClick={() => void importRecipe.run()}>Import template</DsButton>
+    </div><ErrorText error={recipeTemplates.error ?? importRecipe.error} /></Panel>}
     {file.ready && <Panel>
       <div className={ui.row}>
         <Button disabled={!file.connected || !draft} aria-pressed={!json && !!draft} onClick={() => setJson(false)}>Graph</Button>
         <Button disabled={!file.connected} aria-pressed={json || !draft} onClick={() => setJson(true)}>JSON</Button>
       </div>
-      {json || !draft ? <Field label="Recipe JSON"><textarea className={s.json} disabled={!file.editable} value={file.content} onChange={(event) => { setJson(true); file.update(event.target.value); }} /></Field> :
+      {json || !draft ? <Field label="Recipe JSON"><textarea className={s.json} disabled={!editable} value={file.content} onChange={(event) => { setJson(true); file.update(event.target.value); }} /></Field> :
         <div className={s.workspace}>
           <div className={ui.stack}>
             <ErrorText error={definitions.error} />
             <div className={ui.row}>
-              <select aria-label="Node definition" disabled={!file.editable} value={template} onChange={(event) => setTemplate(event.target.value)}>
+              <select aria-label="Node definition" disabled={!editable} value={template} onChange={(event) => setTemplate(event.target.value)}>
                 <option value="">{definitions.loading ? "Loading nodes…" : "Select a node"}</option>
                 {palette.map((item) => <option key={item.path}>{string(object(item.value).name)}</option>)}
               </select>
-              <Button disabled={!file.editable || !template} onClick={add}>Add node</Button>
+              <Button disabled={!editable || !template || !palette.some((item) => object(item.value).name === template)} onClick={add}>Add node</Button>
             </div>
-            {!definitions.loading && !palette.length && <Empty>No valid node definitions in this scope.</Empty>}
-            <div className={s.graph} inert={!file.editable}>
+            {creation && <>
+              <div className={s.importRow}>
+                <Select label="Library node" value={libraryNode} onValueChange={setLibraryNode} options={nodeOptions} disabled={!editable || !nodeOptions.length} placeholder="Choose a node" />
+                <DsButton loading={importNode.busy} disabled={!editable || !libraryNode} onClick={() => void importNode.run()}>Import node</DsButton>
+              </div>
+              <ErrorText error={nodeTemplates.error ?? importNode.error} />
+            </>}
+            {!creation && !definitions.loading && !palette.length && <Empty>No valid node definitions in this scope.</Empty>}
+            <div className={s.graph} inert={!editable}>
               <ReactFlow nodes={graphNodes} edges={graphEdges} snapToGrid snapGrid={grid} fitView onInit={setFlow} deleteKeyCode={null}
-                onNodesChange={move} onConnect={connect} nodesDraggable={file.editable} nodesConnectable={file.editable}
+                onNodesChange={move} onConnect={connect} nodesDraggable={editable} nodesConnectable={editable}
                 onNodeClick={(_, node) => setSelected(node.id)} onPaneClick={() => setSelected("")}>
                 <Background gap={grid[0]} /><Controls showInteractive={false} />
               </ReactFlow>
             </div>
           </div>
-          <fieldset className={s.fields} disabled={!file.editable}>
+          <fieldset className={s.fields} disabled={!editable}>
             {Object.hasOwn(nodes, selected) ? <>
               <div className={ui.row}><strong>{selected}</strong><Button onClick={() => setSelected("")}>Recipe settings</Button></div>
               <Field label="Use"><select value={string(selectedNode.use)} onChange={(event) => updateNode("use", event.target.value)}>
@@ -137,6 +193,10 @@ function RecipeFile({ path }: { path: string }) {
               })}
             </> : <>
               <strong>Recipe settings</strong>
+              {creation && <>
+                <TextField label="Name" required value={string(draft.name)} onValueChange={(name) => update({ name })} description="Lowercase letters, digits and hyphens. Start with a letter." />
+                <TextField label="Description" required value={string(draft.description)} onValueChange={(description) => update({ description })} />
+              </>}
               {nodeSelect("start", "Start")}
               {nodeSelect("onBaseChanged", "On base changed")}
               <Field label="Max node runs"><input type="number" min={1} value={typeof draft.maxNodeRuns === "number" ? draft.maxNodeRuns : ""} placeholder="100" onChange={(event) => update({ maxNodeRuns: event.target.value ? Number(event.target.value) : undefined })} /></Field>
@@ -160,11 +220,28 @@ function RecipeFile({ path }: { path: string }) {
       </form>}
     </Modal>
     {file.confirmations}
+    {confirmations.map((id) => <ConfirmItem key={id} itemId={id} onDone={() => setConfirmations((previous) => previous.filter((item) => item !== id))} />)}
     {warn}
   </Page>;
 }
 
+function useRecipeLibrary(section: "recipes" | "nodes", enabled: boolean) {
+  const dir: string = `library/${section}`;
+  return useData(() => enabled ? call("listDefinitions", { query: { dir } }) : Promise.resolve([]), [dir, enabled],
+    (event) => event.type === "definition.changed" && event.path.startsWith(dir + "/"));
+}
+
+function templateOptions(entries: DefinitionEntry[] | undefined): { value: string; label: string }[] {
+  return (entries ?? []).flatMap(({ path, value, errors }) => {
+    const name: string = string(object(value).name);
+    return path.endsWith(".json") && name && !errors.length && object(value).kind !== "source" ? [{ value: name, label: name }] : [];
+  });
+}
+
 export function RecipeEditor() {
-  const path: string = useParams()["*"] ?? "";
-  return <RecipeFile key={path} path={path} />;
+  const { id, "*": path = "" } = useParams();
+  const { state } = useLocation();
+  const raw: unknown = object(state).confirmItemIds;
+  const confirmations: string[] = Array.isArray(raw) ? raw.filter((value): value is string => typeof value === "string") : [];
+  return <RecipeFile key={id ?? path} path={path} project={id} initialConfirmations={confirmations} />;
 }

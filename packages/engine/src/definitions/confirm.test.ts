@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createProjectWithRecipes } from "../../test/project";
 import { shippedLibrary, tempDir } from "../../test/tmp";
+import { definitionOperations } from "../api/routes/definitions";
 import { Engine } from "../main";
 import { canonical, subjectSha } from "./confirm";
 
@@ -34,7 +35,7 @@ async function setup() {
   await writeFile(join(lib, "nodes", "notify.sh"), `echo first >> ${marker(root)}\n`);
   await writeFile(join(lib, "recipes", "notify.json"), JSON.stringify({ name: "notify", description: "one engine node", start: "n", successOutcomes: ["n:done"], nodes: { n: { use: "notify" } } }));
   const engine = await Engine.start({ home: join(root, "home"), library: lib });
-  await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, defaultRecipe: "notify" }, ["notify"]);
+  await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["notify"]);
   return { root, engine, p: engine.project("demo") };
 }
 
@@ -51,6 +52,39 @@ async function until<T>(fn: () => T | undefined | false, ms = 10000): Promise<T>
 type Item = { id: string; subject_hash: string; subject: string; state: string };
 
 describe("confirmation queue (section 8)", () => {
+  it("treats a user's recipe import as approval of the matching library scripts", async () => {
+    const { root, engine, p } = await setup();
+    const definitions = definitionOperations(engine);
+    const instantiate = (project: string) => definitions.handlers.instantiate({ params: undefined, query: undefined, body: { kind: "recipe", name: "notify", project } });
+    try {
+      await engine.createProject({ id: "fresh", name: "Fresh", repo: null });
+      expect((await instantiate("fresh")).confirmItemIds).toEqual([]);
+      expect(engine.project("fresh").ctx.db.db.prepare("SELECT 1 FROM human_queue WHERE kind = 'engine-node'").get()).toBeUndefined();
+
+      await engine.createProject({ id: "staged", name: "Staged", repo: null });
+      const staged = await definitions.stageInstantiation({ kind: "recipe", name: "notify", project: "staged" });
+      expect(staged.confirmItemIds).toHaveLength(2);
+      expect(engine.project("staged").ctx.db.db.prepare("SELECT 1 FROM confirmed_hashes WHERE path = 'nodes/notify.json'").get()).toBeUndefined();
+
+      const first: string = await engine.createJob("demo", { title: "First", ticket: { text: "x" } });
+      await until(() => p.executor.job(first).waiting_reason === "confirmation");
+      const pending = p.ctx.db.db.prepare("SELECT id FROM human_queue WHERE kind = 'engine-node' AND state = 'open'").get() as { id: string };
+      expect((await instantiate("demo")).confirmItemIds).toEqual([]);
+      await until(() => p.executor.job(first).state === "succeeded");
+      expect(p.ctx.db.db.prepare("SELECT state FROM human_queue WHERE id = ?").get(pending.id)).toEqual({ state: "resolved" });
+
+      await writeFile(join(p.ctx.dir, "nodes", "notify.sh"), `echo changed >> ${marker(root)}\n`);
+      const second: string = await engine.createJob("demo", { title: "Second", ticket: { text: "x" } });
+      await until(() => p.executor.job(second).waiting_reason === "confirmation");
+      await instantiate("demo");
+      expect(p.executor.job(second).waiting_reason).toBe("confirmation");
+      expect((await readFile(marker(root), "utf8")).trim()).toBe("first");
+      await p.executor.stop(second);
+    } finally {
+      await engine.shutdown();
+    }
+  });
+
   it("a runsAs: engine node waits for confirmation, then runs the confirmed bytes", async () => {
     const { root, engine, p } = await setup();
     const id = await engine.createJob("demo", { title: "t", ticket: { text: "x" } });

@@ -89,7 +89,7 @@ a.card:focus-visible {
   border-radius: 5px;
   background: var(--fill);
   font-family: var(--mono);
-  font-size: var(--text-size-xs);
+  font-size: var(--text-size-sm);
 }
 
 .badges {

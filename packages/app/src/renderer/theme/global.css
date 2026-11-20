@@ -26,6 +26,10 @@ a:hover {
   text-decoration: underline;
 }
 
+small {
+  font-size: var(--text-size-sm);
+}
+
 :where(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"]), select, textarea) {
   min-height: var(--control-h);
   padding: 6px 11px;
@@ -120,13 +124,17 @@ svg[data-icon] * {
   background: transparent;
 }
 
+.react-flow__node {
+  font-size: var(--text-size-sm);
+}
+
 .react-flow__edge-textbg {
   fill: var(--surface);
 }
 
 .react-flow__edge-text {
   fill: var(--text-2);
-  font-size: var(--text-size-xs);
+  font-size: var(--text-size-sm);
 }
 
 .react-flow__edge-path {

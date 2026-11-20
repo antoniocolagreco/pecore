@@ -131,7 +131,7 @@ export class Engine extends EventEmitter {
       const resumed: TicketOrder[] = await resumeOrders(project.ctx);
       if (this.opts.orders && !this.creating.has(project.ctx.id)) resumedOrders.set(project, resumed);
     }
-    if (this.settings.servicesRuntime !== null && [...this.projects.values()].some(({ ctx }) => ctx.project.services !== null)) {
+    if (this.settings.servicesRuntime !== null && this.projects.size > 0) {
       const live = (jobId: string) => [...this.projects.values()].some(({ executor }) => executor.jobs().some((j) => j.id === jobId && !isFinal(j.state)));
       await new ServicesRuntimeController(this.settings.servicesRuntime).sweep((jobId) => !live(jobId)).catch((e: unknown) => console.error("services sweep:", e));
     }

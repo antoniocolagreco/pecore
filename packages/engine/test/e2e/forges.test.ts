@@ -116,7 +116,7 @@ for (const c of cases) {
       await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [{ id: c.forge, kind: "forge", forge: c.forge, host: c.host, tool: c.tool, user: c.user, author: { name: "PeCore Test", email: "pecore-test@example.com" } }] }));
 
       let engine = await Engine.start({ home, library });
-      await createProjectWithRecipes(engine, { id: "e2e", name: "E2E", repo: { url, account: c.forge }, createRepo: c.createRepo, defaultRecipe: "forge-e2e" }, ["forge-e2e"]);
+      await createProjectWithRecipes(engine, { id: "e2e", name: "E2E", repo: { url, account: c.forge }, createRepo: c.createRepo }, ["forge-e2e"]);
       let stopConfirm = autoConfirm(engine, "e2e");
       let p = engine.project("e2e");
       await until(async () => !(await exists(join(p.ctx.dir, "creating.json"))), 180_000);
