@@ -414,13 +414,14 @@ describe.skipIf(gui)("phase 5 gate: forge actions from the GUI (fake gh)", () =>
   it("logs in the forge account, creates a project on a new GitHub repository, confirms nodes inline, delivers a PR and detects its merge", async () => {
     await go("#/settings");
     const accounts = page.locator("#accounts");
-    await accounts.getByRole("button", { name: "Recheck", exact: true }).click();
-    await visible(accounts.getByText(/^logged out|^not logged in|^error/));
-    await accounts.getByRole("button", { name: "Login", exact: true }).click();
+    await visible(accounts.getByText(/^(Logged out|Error)$/), 15_000);
+    await accounts.getByRole("button", { name: "Check", exact: true }).click();
+    await visible(accounts.getByText(/^(Logged out|Error)$/), 15_000);
+    await accounts.getByRole("button", { name: "Log in", exact: true }).click();
     await visible(accounts.getByRole("link", { name: "Open login URL" }), 15_000);
     await visible(accounts.getByLabel("Login progress").getByText(/ABCD-1234/));
     await visible(accounts.getByLabel("Login progress").getByText(/state: logged_in/), 15_000);
-    await visible(accounts.getByText(/^logged in$/));
+    await visible(accounts.getByText(/^Logged in$/));
     await shot("forge-login");
     if (!(await forge.state()).tokenValid) throw new Error("gh auth login did not run");
 

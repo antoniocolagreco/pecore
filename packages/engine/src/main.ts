@@ -27,7 +27,7 @@ import { resumeOrders } from "./jobs/plan";
 import type { CreateJob } from "./jobs/create";
 import type { TicketOrder } from "./jobs/plan";
 import { homePaths, initHome } from "./home/layout";
-import { autoSetup } from "./home/autosetup";
+import { autoSetup, openCodeModels } from "./home/autosetup";
 import { takeLock } from "./home/lock";
 import { beginProject, cancelCreation, finishProject, prepareRepo, readCreation, repoCreated, setupJobId } from "./projects/create";
 import type { CreateOptions } from "./projects/create";
@@ -76,6 +76,7 @@ export class Engine extends EventEmitter {
   private stopMergeWatch: () => void = () => undefined;
   private globalFilesPending: Promise<unknown> = Promise.resolve();
   private shuttingDown: boolean = false;
+  private readonly openCodeReady = new Map<string, boolean>();
   private setupHarnesses: SetupView["harnesses"] = BuiltInHarness.options.map((connector) => ({ connector, installed: false, version: null, loggedIn: false }));
   globalPause = false;
   private readonly loginRunner = new LoginRunner((p) => this.live({ type: "login.progress", ...p }));
@@ -260,7 +261,7 @@ export class Engine extends EventEmitter {
       osUser: l.osUser,
       connector: l.connector,
       defaultDir: l.defaultDir,
-      state: s.state,
+      state: s.state === "unknown" && this.openCodeReady.get(l.id) ? "logged_in" : s.state,
       email: s.state === "logged_in" ? s.email : null,
       plan: s.state === "logged_in" ? (s.plan ?? null) : null,
       running: this.loginRunner.isActive(l.id),
@@ -283,6 +284,10 @@ export class Engine extends EventEmitter {
 
   private async checkLoginInfo(l: LoginInfo): Promise<LoginState> {
     const state = await this.agents!.check(l);
+    if (state.state === "unknown" && l.connector === "opencode") {
+      const connector = await this.agents!.resolve(l.connector);
+      this.openCodeReady.set(l.id, (await openCodeModels(connector, l).catch(() => null)) !== null);
+    }
     if (state.state !== "logged_out") await this.releaseAuth(l.account, l.osUser);
     return state;
   }

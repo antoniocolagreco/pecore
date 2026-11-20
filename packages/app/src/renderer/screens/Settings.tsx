@@ -1,20 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { ApiError, Accounts as AccountsSchema, Profiles as ProfilesSchema, Settings as SettingsSchema, Tiers as TiersSchema } from "@pecore/schemas";
-import type { Account, ForgeAccount, LiveMessage, Profile, RouteResult, Settings as SettingsValue, TierName } from "@pecore/schemas";
+import { ApiError, Profiles as ProfilesSchema, Settings as SettingsSchema, Tiers as TiersSchema } from "@pecore/schemas";
+import type { Account, BuiltInHarness, ForgeAccount, LiveMessage, Profile, RouteResult, Settings as SettingsValue, TierName } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
 import { ErrorText, Field, Page, ui } from "../components/ui";
 import { Button } from "../ds/button";
 import { Switch } from "../ds/choice";
-import { Alert, Badge, Card, EmptyState, Spinner } from "../ds/feedback";
+import { Alert, Badge, Card, Spinner } from "../ds/feedback";
 import { TextArea, TextField } from "../ds/field";
-import { CheckCircleIcon, AlertIcon, PlusIcon, TrashIcon } from "../ds/icons";
+import { CheckCircleIcon, AlertIcon, PlusIcon, RefreshIcon, TrashIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { MultiCombobox, Select } from "../ds/select";
 import { NumberField, Segmented } from "../ds/values";
+import { install } from "../shell/SetupBanner";
 import { themeChoice } from "../theme/ThemeLoader";
 import { DefinitionErrors, settingUrl, useDefinitionDraft, useUnsaved } from "./NodeEditor";
 import s from "./Settings.module.css";
@@ -70,7 +71,7 @@ function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (b
   };
   return {
     value: snapshot?.value, current: remote.data?.value, editKey: (snapshot?.sha256 ?? "") + ":" + revision, reload: remote.reload, saving: save.busy,
-    dirty: draft !== undefined, discard,
+    dirty: draft !== undefined, discard, commit: (value: T): Promise<boolean> => save.run(value),
     update(value: T): void { if (snapshot) setDraft({ ...snapshot, value }); },
     feedback: <>
       {remote.loading && !remote.data && <Spinner />}
@@ -82,12 +83,12 @@ function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (b
   };
 }
 
-function Section({ id, title, description, children }: { id: string; title: string; description?: ReactNode; children: ReactNode }) {
+function Section({ id, title, description, plain, children }: { id: string; title: string; description?: ReactNode; plain?: boolean; children: ReactNode }) {
   return (
     <section id={id} className={s.section}>
       <h2 className={s.sectionTitle}>{title}</h2>
       {description && <p className={s.sectionText}>{description}</p>}
-      <Card padded>{children}</Card>
+      {plain ? children : <Card padded>{children}</Card>}
     </section>
   );
 }
@@ -129,26 +130,50 @@ function LoginOutput({ id, progress, running }: { id: string; progress?: Progres
   </>;
 }
 
-function accountDetail(account: Account): string {
-  if (account.kind === "model") return `${account.provider} · ${account.connector}`;
-  if (account.kind === "forge") return `${account.forge} · ${account.host} · ${account.user}`;
-  return `${account.service} · ${account.tool}`;
-}
+const stateText: Record<string, string> = { logged_in: "Logged in", ready: "Ready", logged_out: "Logged out", no_models: "No models", error: "Error", unknown: "Unknown", unchecked: "Checking…" };
 
-function stateBadge(state: string): ReactNode {
-  const text: string = state.replaceAll("_", " ");
-  if (state === "logged_in") return <Badge tone="success" dot>{text}</Badge>;
-  if (state === "logged_out" || state === "error") return <Badge tone="danger" dot>{text}</Badge>;
+function stateBadge(state: string, checking: boolean): ReactNode {
+  if (checking || state === "unchecked") return <Badge>Checking…</Badge>;
+  const text: string = stateText[state] ?? state;
+  if (state === "logged_in" || state === "ready") return <Badge tone="success" dot>{text}</Badge>;
+  if (state === "logged_out" || state === "error" || state === "no_models") return <Badge tone="danger" dot>{text}</Badge>;
   return <Badge>{text}</Badge>;
 }
 
-function LoginControls({ accounts, protectedOnly = false }: { accounts: Account[]; protectedOnly?: boolean }) {
+function initials(name: string): string {
+  return name.split(/[\s·-]+/).filter(Boolean).slice(0, 2).map((word) => word[0]!.toUpperCase()).join("");
+}
+
+function AccountRow({ name, detail, state, checking, actions, children }: { name: string; detail?: ReactNode; state: string; checking: boolean; actions: ReactNode; children?: ReactNode }) {
+  return <li className={s.row}>
+    <div className={s.rowMain}>
+      <span className={s.avatar} aria-hidden>{initials(name)}</span>
+      <div className={s.rowText}>
+        <span className={s.rowTitle}>{name}</span>
+        {detail && <span className={s.rowDetail}>{detail}</span>}
+      </div>
+      {stateBadge(state, checking)}
+      <div className={s.rowActions}>{actions}</div>
+    </div>
+    {children && <div className={s.rowExtra}>{children}</div>}
+  </li>;
+}
+
+function harnessName(account: Account, all: Account[]): string {
+  if (account.kind !== "model") return account.id;
+  const name: string = install[account.connector as BuiltInHarness]?.name ?? account.connector;
+  return all.filter((other) => other.kind === "model" && other.connector === account.connector).length > 1 ? `${name} · ${account.id}` : name;
+}
+
+function LoginControls({ accounts, protectedOnly = false, kind = "model" }: { accounts: Account[]; protectedOnly?: boolean; kind?: "model" | "tool" }) {
   const connected: boolean = useConnected();
   const logins = useData(() => call("listLogins"), [], (message) => (message.type === "login.progress" && message.done) || (message.type === "definition.changed" && ["settings.json", "accounts.json"].includes(message.path)));
   const [progress, setProgress] = useState<Record<string, Progress>>({});
   const [toolRuns, setToolRuns] = useState<Record<string, string>>({});
   const [toolStates, setToolStates] = useState<Record<string, string>>({});
+  const [checking, setChecking] = useState<Set<string>>(new Set());
   const checkedRuns = useRef<Set<string>>(new Set());
+  const autoChecked = useRef<Set<string>>(new Set());
   useEffect(() => {
     for (const [account, loginId] of Object.entries(toolRuns)) {
       if (!progress[loginId]?.done || checkedRuns.current.has(loginId)) continue;
@@ -180,85 +205,111 @@ function LoginControls({ accounts, protectedOnly = false }: { accounts: Account[
     logins.reload();
   });
   const recheck = useAction(async (id: string, isModel: boolean) => {
-    if (isModel) {
-      await call("recheckLogin", { params: { id } });
-      logins.reload();
-    } else {
-      const { state } = await call("recheckAccount", { params: { id } });
-      setToolStates((old) => ({ ...old, [id]: state }));
+    setChecking((old) => new Set(old).add(id));
+    try {
+      if (isModel) {
+        await call("recheckLogin", { params: { id } });
+        logins.reload();
+      } else {
+        const { state } = await call("recheckAccount", { params: { id } });
+        setToolStates((old) => ({ ...old, [id]: state }));
+      }
+    } finally {
+      setChecking((old) => { const next = new Set(old); next.delete(id); return next; });
     }
   });
-  const visible = accounts.filter((account) => !protectedOnly || account.kind === "model");
-  const locked: boolean = !connected || start.busy || recheck.busy;
-  return <div className={s.accounts}>
+  const visible = accounts.filter((account) => kind === "model" ? account.kind === "model" : account.kind !== "model" && !protectedOnly);
+  useEffect(() => {
+    if (!connected) return;
+    const due: [string, boolean][] = [];
+    for (const account of visible) {
+      if (account.kind !== "model") due.push([account.id, false]);
+      else for (const login of logins.data ?? []) if (login.account === account.id && login.state === "unchecked" && !login.running) due.push([login.id, true]);
+    }
+    for (const [id, isModel] of due) {
+      if (autoChecked.current.has(id)) continue;
+      autoChecked.current.add(id);
+      void recheck.run(id, isModel);
+    }
+  }, [connected, logins.data, visible.map(({ id }) => id).join(",")]);
+  const locked: boolean = !connected || start.busy;
+  const checkButton = (id: string, isModel: boolean, disabled: boolean): ReactNode =>
+    <Button size="sm" icon={<RefreshIcon />} loading={checking.has(id)} disabled={locked || disabled || checking.has(id)} onClick={() => void recheck.run(id, isModel)}>Check</Button>;
+  return <>
     <ErrorText error={start.error ?? recheck.error ?? logins.error} />
-    {!visible.length && <EmptyState title={`No ${protectedOnly ? "model " : ""}accounts yet`}>Log in to Claude Code, Codex or OpenCode and PeCore adds them.</EmptyState>}
-    {visible.map((account) => {
-      const items = logins.data?.filter((login) => login.account === account.id && (protectedOnly ? login.osUser === "pecore-agent" : login.osUser !== "pecore-agent")) ?? [];
-      const id: string | undefined = toolRuns[account.id];
-      const output: Progress | undefined = id ? progress[id] : undefined;
-      return <div key={account.id} className={s.account}>
-        <div className={s.accountHead}>
-          <span className={s.accountName}>{account.id}</span>
-          <Badge tone={account.kind === "model" ? "accent" : "neutral"}>{account.kind}</Badge>
-          <span className={s.accountDetail}>{accountDetail(account)}</span>
-        </div>
-        {account.kind === "model" ? <>
-          {!items.length && <span className={ui.muted}>{logins.loading ? "Loading logins…" : "No login found for this user."}</span>}
-          {items.map((login) => {
+    {protectedOnly && !visible.length && <p className={s.groupText}>No AI tools yet.</p>}
+    {!!visible.length && <ul className={s.rows}>
+      {visible.map((account) => {
+        if (account.kind === "model") {
+          const name: string = harnessName(account, accounts);
+          const items = logins.data?.filter((login) => login.account === account.id && (protectedOnly ? login.osUser === "pecore-agent" : login.osUser !== "pecore-agent")) ?? [];
+          if (!items.length) return <AccountRow key={account.id} name={name} detail={logins.loading ? "Loading…" : "No login found."} state="unknown" checking={logins.loading} actions={null} />;
+          return items.map((login) => {
             const current: Progress | undefined = progress[login.id];
             const running: boolean = current ? !current.done : login.running;
-            return <div key={login.id} className={s.login}>
-              <div className={s.loginRow}>
-                {stateBadge(login.state)}
-                <span className={ui.muted}>{login.osUser}{login.email && " · " + login.email}{login.plan && " · " + login.plan}</span>
-                <span className={s.spacer} />
-                {login.defaultDir
-                  ? <span className={ui.muted} title="The first account of each harness uses the login you already have; log in with the harness itself if needed.">your existing login</span>
-                  : <Button size="sm" disabled={locked || running} onClick={() => void start.run(account, login.osUser, login.id)}>Login</Button>}
-                <Button size="sm" variant="ghost" disabled={locked || running} onClick={() => void recheck.run(login.id, true)}>Recheck login</Button>
-              </div>
-              <LoginOutput id={login.id} progress={current} running={running} />
-            </div>;
-          })}
-        </> : <div className={s.login}>
-          <div className={s.loginRow}>
-            {stateBadge(toolStates[account.id] ?? "unchecked")}
-            <span className={s.spacer} />
-            {account.kind === "forge" && <Button size="sm" disabled={locked || (!!id && !output?.done)} onClick={() => {
+            const checked: string = login.state === "unchecked" && autoChecked.current.has(login.id) && !checking.has(login.id) ? "unknown" : login.state;
+            const noIdentity: boolean = login.connector === "opencode";
+            const state: string = noIdentity && checked === "logged_in" ? "ready" : noIdentity && checked === "unknown" ? "no_models" : checked;
+            const detail: string = login.email
+              ? login.email + (login.plan ? " · " + login.plan : "")
+              : state === "no_models" ? `Open ${name} and set up a model provider, then check again.`
+              : state === "logged_out" && login.defaultDir ? `Log in with ${name} on this computer, then check again.` : protectedOnly ? "As pecore-agent" : "";
+            return <AccountRow key={login.id} name={name} detail={detail} state={state} checking={checking.has(login.id)} actions={<>
+              {!login.defaultDir && login.state !== "logged_in" && <Button size="sm" variant="primary" disabled={locked || running} onClick={() => void start.run(account, login.osUser, login.id)}>Log in</Button>}
+              {checkButton(login.id, true, running)}
+            </>}>
+              {(current || running) && <LoginOutput id={login.id} progress={current} running={running} />}
+            </AccountRow>;
+          });
+        }
+        const id: string | undefined = toolRuns[account.id];
+        const output: Progress | undefined = id ? progress[id] : undefined;
+        const busy: boolean = !!id && !output?.done;
+        const state: string = toolStates[account.id] ?? (autoChecked.current.has(account.id) && !checking.has(account.id) ? "unknown" : "unchecked");
+        return <AccountRow key={account.id}
+          name={account.kind === "forge" ? `${forgeLabel(account.forge)} · ${account.user}` : account.service}
+          detail={account.kind === "forge" ? account.host : `Log in with ${account.tool}, then check again.`}
+          state={state} checking={checking.has(account.id)}
+          actions={<>
+            {account.kind === "forge" && state !== "logged_in" && <Button size="sm" variant="primary" disabled={locked || busy} onClick={() => {
               if (id) setProgress((old) => { const next = { ...old }; delete next[id]; return next; });
               void start.run(account);
-            }}>Login</Button>}
-            {account.kind === "service" && <span className={ui.muted}>Log in with {account.tool}.</span>}
-            <Button size="sm" variant="ghost" disabled={locked || (!!id && !output?.done)} onClick={() => void recheck.run(account.id, false)}>Recheck</Button>
-          </div>
+            }}>Log in</Button>}
+            {checkButton(account.id, false, busy)}
+          </>}>
           {id && <LoginOutput id={id} progress={output} running={!output?.done} />}
-        </div>}
-      </div>;
-    })}
-  </div>;
+        </AccountRow>;
+      })}
+    </ul>}
+  </>;
 }
 
-const forgeHosts: Record<"github" | "gitlab", { host: string; tool: "gh" | "glab"; label: string }> = {
+type SupportedForge = "github" | "gitlab";
+
+const forges: Record<SupportedForge, { host: string; tool: "gh" | "glab"; label: string }> = {
   github: { host: "github.com", tool: "gh", label: "GitHub" },
   gitlab: { host: "gitlab.com", tool: "glab", label: "GitLab" },
 };
 
+function forgeLabel(forge: string): string {
+  return forges[forge as SupportedForge]?.label ?? forge;
+}
+
 function AddForgeAccount({ open, onClose, onAdd, taken }: { open: boolean; onClose(): void; onAdd(account: ForgeAccount): void; taken: string[] }) {
-  const [forge, setForge] = useState<"github" | "gitlab">("github");
+  const [forge, setForge] = useState<SupportedForge>("github");
   const [host, setHost] = useState("");
   const [user, setUser] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const base = forgeHosts[forge];
+  const base = forges[forge];
   const id: string = `${base.tool}-${user || "account"}`.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
   const valid: boolean = !!user.trim() && !!name.trim() && /^[^@\s]+@[^@\s]+$/.test(email) && !taken.includes(id);
   return (
     <Dialog
       open={open}
       onOpenChange={(o) => !o && onClose()}
-      title="Add a forge account"
-      description="PeCore uses it to push branches and open pull requests. You log in right after with the forge's own tool."
+      title="Add a Git hosting account"
+      description="PeCore uses it to push branches and open pull requests. You log in right after adding it."
       width={480}
       footer={<>
         <Button onClick={onClose}>Cancel</Button>
@@ -268,7 +319,8 @@ function AddForgeAccount({ open, onClose, onAdd, taken }: { open: boolean; onClo
         }}>Add account</Button>
       </>}
     >
-      <Segmented value={forge} onValueChange={(v) => setForge(v as "github" | "gitlab")} options={[{ value: "github", label: "GitHub" }, { value: "gitlab", label: "GitLab" }]} />
+      <Select label="Service" value={forge} onValueChange={(v) => { if (v) setForge(v as SupportedForge); }}
+        options={Object.entries(forges).map(([value, { label }]) => ({ value, label }))} />
       <TextField label="Username" value={user} onValueChange={setUser} placeholder={`your ${base.label} username`} autoFocus />
       <TextField label="Host" value={host} onValueChange={setHost} placeholder={base.host} description="Change it only for a self-hosted server." mono />
       <div className={s.pair}>
@@ -350,7 +402,6 @@ export function Settings() {
   const [checks, setChecks] = useState<RouteResult<"checkPrerequisites">>();
   const [disableDialog, setDisableDialog] = useState(false);
   const [addForge, setAddForge] = useState(false);
-  const [invalidAccounts, setInvalidAccounts] = useState(false);
   const [invalidJson, setInvalidJson] = useState<string[]>([]);
   const [active, setActive] = useState<string>(sections[0]!.id);
   const actualProtected: boolean = settings.current?.protectedMode ?? false;
@@ -362,7 +413,6 @@ export function Settings() {
     status.reload();
   });
   const settingsResult = SettingsSchema.safeParse(settings.value);
-  const accountsResult = AccountsSchema.safeParse(accounts.value);
   const profilesResult = ProfilesSchema.safeParse(profiles.value);
   const tiersResult = TiersSchema.safeParse(tiers.value);
   const value: SettingsValue | undefined = settings.value;
@@ -377,7 +427,6 @@ export function Settings() {
     <JsonField key={settings.editKey + key} label={label} value={value[key]} onValue={(data) => update({ ...value, [key]: data })} onInvalid={(invalid) => markJson(key, invalid)} />;
   const theme: string = themeChoice(value?.ui);
 
-  useEffect(() => { setInvalidAccounts(false); }, [accounts.editKey]);
   useEffect(() => { setInvalidJson([]); }, [settings.editKey]);
   useEffect(() => {
     const id: string | null = new URLSearchParams(search).get("section");
@@ -395,31 +444,23 @@ export function Settings() {
         {sections.map((section) => <button key={section.id} type="button" className={s.navItem} aria-current={active === section.id ? "true" : undefined} onClick={() => go(section.id)}>{section.title}</button>)}
       </nav>
       <div className={s.content}>
-        <Section id="accounts" title="Accounts" description="AI tools, Git forges and services PeCore works with. AI tools you are logged in to are added on their own.">
+        <Section id="accounts" title="Accounts" plain>
           {accounts.feedback}
-          <LoginControls accounts={accounts.current?.accounts ?? []} />
-          <div className={s.sectionActions}>
-            <Button icon={<PlusIcon />} disabled={!connected || !accounts.value} onClick={() => setAddForge(true)}>Add GitHub or GitLab account</Button>
+          <div className={s.groups}>
+            <Card title="AI tools">
+              {(accounts.current?.accounts ?? []).some(({ kind }) => kind === "model")
+                ? <LoginControls accounts={accounts.current?.accounts ?? []} />
+                : <p className={s.groupText}>No AI tools yet. The ones you log in to on this computer show up here on their own.</p>}
+            </Card>
+            <Card title="Git hosting" actions={<Button size="sm" icon={<PlusIcon />} disabled={!connected || !accounts.value || accounts.saving} onClick={() => setAddForge(true)}>Add account</Button>}>
+              {(accounts.current?.accounts ?? []).some(({ kind }) => kind !== "model")
+                ? <LoginControls accounts={accounts.current?.accounts ?? []} kind="tool" />
+                : <p className={s.groupText}>Add an account to push branches and open pull requests.</p>}
+            </Card>
           </div>
-          {accounts.value && <details className={s.advanced}>
-            <summary>Edit accounts as JSON</summary>
-            <div className={ui.stack}>
-              <JsonField key={accounts.editKey} label="Accounts list (model, forge and service JSON)" value={accounts.value.accounts} onValue={(data) => {
-                if (accounts.value) accounts.update({ ...accounts.value, accounts: data as Account[] });
-              }} onInvalid={(invalid) => {
-                if (invalid && accounts.value) accounts.update(accounts.value);
-                setInvalidAccounts(invalid);
-              }} />
-              <Issues issues={accountsResult.error?.issues} />
-            </div>
-          </details>}
-          {accounts.dirty && <div className={s.sectionActions}>
-            <Button onClick={accounts.discard}>Discard</Button>
-            {accounts.button("Save accounts", invalidAccounts || !accountsResult.success)}
-          </div>}
         </Section>
         <AddForgeAccount open={addForge} onClose={() => setAddForge(false)} taken={(accounts.value?.accounts ?? []).map(({ id }) => id)}
-          onAdd={(account) => { if (accounts.value) accounts.update({ ...accounts.value, accounts: [...accounts.value.accounts, account] }); }} />
+          onAdd={(account) => { if (accounts.value) void accounts.commit({ ...accounts.value, accounts: [...accounts.value.accounts, account] }); }} />
 
         <Section id="tiers" title="Models" description="Profiles pair an account with a model and an effort. Recipes ask for a tier, and PeCore picks a profile from it.">
           {profiles.feedback}

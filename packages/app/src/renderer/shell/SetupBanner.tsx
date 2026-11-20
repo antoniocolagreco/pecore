@@ -7,7 +7,7 @@ import { ErrorText, Field, ui } from "../components/ui";
 import { Button } from "../ds/button";
 import { Alert } from "../ds/feedback";
 
-const install: Record<BuiltInHarness, { name: string; url: string }> = {
+export const install: Record<BuiltInHarness, { name: string; url: string }> = {
   "claude-code": { name: "Claude Code", url: "https://code.claude.com/docs/en/setup" },
   codex: { name: "Codex", url: "https://developers.openai.com/codex/cli/" },
   opencode: { name: "OpenCode", url: "https://opencode.ai/docs/" },

@@ -44,7 +44,7 @@ function configModel(text: string): string | null {
   }
 }
 
-async function openCodeModels(connector: ResolvedConnector, login: LoginInfo): Promise<Options | null> {
+export async function openCodeModels(connector: ResolvedConnector, login: LoginInfo): Promise<Options | null> {
   const env: Record<string, string> = await baseEnv(login.osUser);
   const configHome: string = login.osUser === appUser ? (process.env.XDG_CONFIG_HOME || join(login.home, ".config")) : join(login.home, ".config");
   if (login.osUser === appUser && process.env.XDG_CONFIG_HOME) env.XDG_CONFIG_HOME = configHome;

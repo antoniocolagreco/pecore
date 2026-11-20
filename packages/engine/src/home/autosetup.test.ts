@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "@pecore/schemas";
 import type { LiveMessage } from "@pecore/schemas";
 import { fakeHarnesses } from "../../test/fake-harness";
@@ -255,6 +255,18 @@ describe("auto-setup", () => {
     });
     expect(await s.json("settings.json")).toEqual({ orchestrator: { profile: "mine" } });
     expect(await s.head()).toMatch(/ auto-setup: Set up Codex: 4 profiles added$/);
+    await app.close();
+  });
+
+  it("shows OpenCode as logged in when it lists models, since it reports no account, and as unknown when it lists none", async () => {
+    const s = await setup();
+    await s.harnesses.set("opencode", opencode);
+    const app = await s.start();
+    const login = async () => (await app.call("listLogins")).find((item) => item.connector === "opencode");
+    await vi.waitFor(async () => expect((await login())?.account).toBe("opencode"), { timeout: 15_000 });
+    expect(await app.call("recheckLogin", { params: { id: (await login())!.id } })).toMatchObject({ state: "logged_in", email: null, plan: null });
+    await s.harnesses.set("opencode", { ...opencode, cliModels: undefined });
+    expect(await app.call("recheckLogin", { params: { id: (await login())!.id } })).toMatchObject({ state: "unknown", email: null });
     await app.close();
   });
 
