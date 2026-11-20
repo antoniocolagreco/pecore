@@ -186,7 +186,7 @@ export class OrchestratorChats {
     const account = profile && agents?.account(profile.account);
     if (!profile || !account || !agents) return null;
     const user: string = agents.osUser();
-    const key: string = JSON.stringify([user, account.connector, agents.connector(account.connector), settings.programPaths]);
+    const key: string = JSON.stringify([user, account.connector, agents.connector(account.connector)]);
     const sessionKey: string = JSON.stringify([user, account.id, account.connector]);
     return { profile, account, agents, user, key, sessionKey };
   }

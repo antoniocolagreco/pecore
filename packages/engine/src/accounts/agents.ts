@@ -24,9 +24,7 @@ async function executable(path: string): Promise<boolean> {
   );
 }
 
-export async function resolveProgram(program: string, settings: Settings): Promise<string | null> {
-  const set = settings.programPaths[program];
-  if (set) return set;
+export async function resolveProgram(program: string): Promise<string | null> {
   if (program.startsWith("/")) return program;
   const shell = process.env.SHELL ?? "/bin/sh";
   try {
@@ -64,18 +62,15 @@ export class AgentServices {
 
   async loadConnectors(): Promise<string[]> {
     const errors: string[] = [];
-    const read = async (dir: string) => {
-      const out: Connector[] = [];
-      for (const f of (await readdir(dir).catch(() => [] as string[])).filter((f) => f.endsWith(".json"))) {
-        const r = parseConnector(JSON.parse(await readFile(join(dir, f), "utf8")));
-        if (r.connector) out.push(r.connector);
-        else errors.push(`${join(dir, f)}: ${r.errors.join("; ")}`);
-      }
-      return out;
-    };
-    const builtin = await read(this.paths.connectorsDir);
-    const user = await read(join(this.home, "connectors"));
-    this.connectors = new Map([...builtin, ...user].map((c) => [c.name, c]));
+    const connectors: Map<string, Connector> = new Map();
+    const dir: string = this.paths.connectorsDir;
+    for (const file of (await readdir(dir).catch(() => [] as string[])).filter((name) => name.endsWith(".json"))) {
+      const path: string = join(dir, file);
+      const result = parseConnector(JSON.parse(await readFile(path, "utf8")));
+      if (result.connector) connectors.set(result.connector.name, result.connector);
+      else errors.push(`${path}: ${result.errors.join("; ")}`);
+    }
+    this.connectors = connectors;
     return errors;
   }
 
@@ -86,8 +81,8 @@ export class AgentServices {
   async resolve(name: string): Promise<ResolvedConnector> {
     const c = this.connectors.get(name);
     if (!c) throw new Error(`connector ${name} not found`);
-    const harnessPath = await resolveProgram(c.harness.program, this.settings());
-    if (!harnessPath) throw new Error(`${c.harness.program} not found; set its path in settings`);
+    const harnessPath = await resolveProgram(c.harness.program);
+    if (!harnessPath) throw new Error(`${c.harness.program} not found on PATH`);
     return {
       ...c,
       harnessPath,

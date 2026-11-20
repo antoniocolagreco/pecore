@@ -10,7 +10,7 @@ import { ErrorText, Field, Page, ui } from "../components/ui";
 import { Button, IconButton } from "../ds/button";
 import { Switch } from "../ds/choice";
 import { Alert, Badge, Card, Spinner } from "../ds/feedback";
-import { TextArea, TextField } from "../ds/field";
+import { TextField } from "../ds/field";
 import { CheckCircleIcon, AlertIcon, PlusIcon, RefreshIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Combobox, Select } from "../ds/select";
@@ -19,7 +19,7 @@ import { install } from "../shell/SetupBanner";
 import { SidebarItem, SidebarSection } from "../shell/sidebar";
 import { builtInThemes, themeMode, themePrefs } from "../theme/themes";
 import type { ThemePrefs } from "../theme/themes";
-import { DefinitionErrors, settingUrl, useDefinitionDraft, useUnsaved } from "./NodeEditor";
+import { DefinitionErrors, settingUrl } from "./NodeEditor";
 import s from "./Settings.module.css";
 
 type Snapshot<T> = { value: T; sha256: string };
@@ -37,7 +37,6 @@ const sections: { id: string; title: string }[] = [
   { id: "limits", title: "Limits" },
   { id: "protectedMode", title: "Protected mode" },
   { id: "appearance", title: "Appearance" },
-  { id: "advanced", title: "Advanced" },
   { id: "prerequisites", title: "Diagnostics" },
 ];
 
@@ -46,7 +45,6 @@ const saveDelayMs = 600;
 function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (body: { value: T; baseSha256: string }) => Promise<{ sha256: string }>, valid: (value: T) => boolean = () => true) {
   const remote = useData(get, [], (message) => message.type === "definition.changed" && message.path === name + ".json");
   const [local, setLocal] = useState<T>();
-  const [revision, setRevision] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const shown: T | undefined = local ?? remote.data?.value;
@@ -63,7 +61,6 @@ function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (b
     sha.current = remote.data.sha256;
     if (first) return;
     setLocal(undefined);
-    setRevision((value) => value + 1);
   }, [remote.data]);
   const commit = (value: T): Promise<boolean> => {
     inFlight.current += 1;
@@ -78,7 +75,6 @@ function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (b
         if (failure instanceof ApiError && failure.status === 409) {
           sha.current = undefined;
           setLocal(undefined);
-          setRevision((old) => old + 1);
           remote.reload();
           setError("Changed elsewhere, so PeCore loaded the new version. Make your last change again.");
         } else setError(errorText(failure));
@@ -102,7 +98,7 @@ function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (b
   flushOnLeave.current = flush;
   useEffect(() => () => flushOnLeave.current(), []);
   return {
-    value: shown, current: remote.data?.value, editKey: String(revision), reload: remote.reload, saving, commit, error,
+    value: shown, current: remote.data?.value, reload: remote.reload, saving, commit, error,
     update(change: T | ((value: T) => T)): void {
       if (latest.current === undefined) return;
       const value: T = typeof change === "function" ? (change as (value: T) => T)(latest.current) : change;
@@ -127,19 +123,6 @@ function Section({ id, title, description, plain, children }: { id: string; titl
       {plain ? children : <Card padded>{children}</Card>}
     </section>
   );
-}
-
-function JsonField({ label, value, onValue }: { label: string; value: unknown; onValue(value: unknown): void }) {
-  const [text, setText] = useState<string>();
-  const [invalid, setInvalid] = useState(false);
-  return <TextArea label={label} mono value={text ?? JSON.stringify(value, null, 2)} error={invalid ? "Invalid JSON." : undefined} onValueChange={(next) => {
-    setText(next);
-    let parsed: unknown;
-    try { parsed = JSON.parse(next); }
-    catch { setInvalid(true); return; }
-    setInvalid(false);
-    onValue(parsed);
-  }} />;
 }
 
 function Issues({ issues }: { issues: { path: PropertyKey[]; message: string }[] | undefined }) {
@@ -408,39 +391,6 @@ function ModelPicker({ accounts, choice, onChoice, disabled, same = false }: { a
   </div>;
 }
 
-function ConnectorFile({ path, close }: { path: string; close(): void }) {
-  const file = useDefinitionDraft(path);
-  const warn = useUnsaved(file.dirty);
-  const dismiss = (): void => {
-    if (!file.dirty || window.confirm("Discard your unsaved connector changes?")) close();
-  };
-  return <Dialog open onOpenChange={(o) => !o && dismiss()} title={path.split("/").at(-1) ?? "Connector"} width={720} footer={<>{file.saveButton}<Button disabled={!file.connected} onClick={dismiss}>Close</Button></>}>
-    {file.feedback}
-    {file.ready && <>
-      <TextArea label="Connector JSON" mono value={file.content} disabled={!file.editable} onValueChange={(v) => file.update(v)} />
-      <DefinitionErrors errors={file.errors} />
-    </>}
-    {warn}
-  </Dialog>;
-}
-
-function Connectors() {
-  const connected: boolean = useConnected();
-  const [open, setOpen] = useState("");
-  const connectors = useData(() => call("listDefinitions", { query: { dir: "connectors" } }), [], (message) => message.type === "definition.changed" && message.path.startsWith("connectors/"));
-  return <div className={ui.stack}>
-    <span className={s.label}>Connector files</span>
-    <ErrorText error={connectors.error} />
-    {connectors.loading && <Spinner />}
-    {connectors.data?.length === 0 && <span className={ui.muted}>No custom connectors. Built-in ones cover Claude Code, Codex and OpenCode.</span>}
-    {connectors.data?.map((item) => <div key={item.path}>
-      <Button size="sm" disabled={!connected} onClick={() => setOpen(item.path)}>{item.path.split("/").at(-1)}</Button>
-      <DefinitionErrors errors={item.errors} />
-    </div>)}
-    {open && <ConnectorFile key={open} path={open} close={() => setOpen("")} />}
-  </div>;
-}
-
 export function Settings() {
   const connected: boolean = useConnected();
   const { search } = useLocation();
@@ -497,8 +447,6 @@ export function Settings() {
           onValueChange={(max) => update({ ...value, [role]: { ...value[role], compaction: { ...value[role].compaction, max: max ?? 0 } } })} />
       </div>
     </Section>;
-  const jsonField = (key: "prices" | "projectPaths" | "programPaths", label: string): ReactNode => value &&
-    <JsonField key={settings.editKey + key} label={label} value={value[key]} onValue={(data) => update({ ...value, [key]: data })} />;
   const prefs: ThemePrefs = themePrefs(value?.ui);
 
   useEffect(() => {
@@ -585,18 +533,6 @@ export function Settings() {
               </div>
               <ErrorText error={themes.error} />
               {themes.data?.filter((item) => item.errors.length).map((item) => <div key={item.file}><strong>{item.file}</strong><DefinitionErrors errors={item.errors} /></div>)}
-            </div>
-          </Section>
-
-          <Section id="advanced" title="Advanced" description="Rarely needed. Each field takes JSON.">
-            <div className={ui.stack}>
-              <div id="providers"><JsonField key={settings.editKey + "providers"} label="Concurrent agents by provider" value={value.limits.providers}
-                onValue={(data) => update({ ...value, limits: { ...value.limits, providers: data as SettingsValue["limits"]["providers"] } })} /></div>
-              <div id="prices">{jsonField("prices", "Prices by model")}</div>
-              <div id="projectPaths">{jsonField("projectPaths", "Paths by project")}</div>
-              <div id="programPaths">{jsonField("programPaths", "Absolute paths by tool")}</div>
-              <div className={s.divider} />
-              <Connectors />
             </div>
           </Section>
         </>}

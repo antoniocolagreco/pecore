@@ -1,15 +1,6 @@
 import { z } from "zod";
 import { SchemaRef } from "./common";
 
-const Price = z
-  .object({
-    input: z.number().nonnegative(),
-    output: z.number().nonnegative(),
-    cacheRead: z.number().nonnegative(),
-    cacheWrite: z.number().nonnegative(),
-  })
-  .strict();
-
 const Compaction = z
   .object({ auto: z.number().int().positive().default(128_000), max: z.number().int().positive().default(256_000) })
   .strict();
@@ -25,16 +16,12 @@ export const Settings = z
       .object({
         jobs: z.number().int().positive().nullable().default(null),
         agents: z.number().int().positive().default(4),
-        providers: z.record(z.string(), z.number().int().positive()).default({}),
       })
       .strict()
-      .default({ jobs: null, agents: 4, providers: {} }),
+      .default({ jobs: null, agents: 4 }),
     servicesRuntime: z.enum(["docker", "podman", "colima", "orbstack"]).nullable().default(null),
-    projectPaths: z.record(z.string(), z.string().min(1)).default({}),
     minFreeDiskGb: z.number().nonnegative().default(10),
     mergeCheckSec: z.number().int().positive().default(300),
-    prices: z.record(z.string(), Price).default({}),
-    programPaths: z.record(z.string(), z.string().regex(/^\//, "absolute path")).default({}),
     assistant: Agent,
     orchestrator: Agent,
     protectedMode: z.boolean().default(false),

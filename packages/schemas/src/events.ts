@@ -14,7 +14,6 @@ const QueueKind = z.enum([
   "agent-question",
   "engine-node",
   "source-node",
-  "connector",
   "recipe-change",
   "import",
   "ticket",

@@ -72,7 +72,7 @@ describe("system routes", () => {
 
   it("checks prerequisites with the setting each one points to; unknown accounts are 404", async () => {
     const { call, close } = await apiProject();
-    expect(await call("checkPrerequisites")).toContainEqual(expect.objectContaining({ tool: "git", ok: true, setting: "programPaths" }));
+    expect(await call("checkPrerequisites")).toContainEqual(expect.objectContaining({ tool: "git", ok: true, setting: null }));
     await expect(call("recheckAccount", { params: { id: "nope" } })).rejects.toMatchObject({ status: 404 });
     await expect(call("accountOptions", { params: { id: "nope" }, query: {} })).rejects.toMatchObject({ status: 404 });
     expect(await call("listLogins")).toEqual([]);

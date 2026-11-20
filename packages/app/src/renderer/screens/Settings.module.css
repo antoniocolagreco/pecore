@@ -50,27 +50,8 @@
   gap: 12px;
 }
 
-.divider {
-  height: 1px;
-  margin: 18px 0;
-  background: var(--separator);
-}
-
 .nested {
   margin-top: 14px;
-}
-
-.advanced {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--separator);
-}
-
-.advanced > summary {
-  margin-bottom: 12px;
-  color: var(--text-2);
-  cursor: default;
-  user-select: none;
 }
 
 .groups {

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { applyTraverseAcls } from "./osuser/acl";
 import { cpus } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { join, relative } from "node:path";
 import { removeAs } from "./workdir/fs-as";
 import { BuiltInHarness, defaultJobLimit, roleProfile, withForgeHosts } from "@pecore/schemas";
 import { listOptions, satisfies } from "@pecore/agents";
@@ -116,7 +116,6 @@ export class Engine extends EventEmitter {
       if (pool === "jobs") return this.settings.limits.jobs ?? defaultJobLimit(cpus().length);
       if (pool === "agents") return this.settings.limits.agents;
       if (pool.startsWith("jobs:")) return this.projects.get(pool.slice(5))?.ctx.project.limits.jobs ?? null;
-      if (pool.startsWith("provider:")) return this.settings.limits.providers[pool.slice(9)] ?? null;
       return null;
     });
     this.chats = new ChatsDb(p.chatsDb);
@@ -162,7 +161,6 @@ export class Engine extends EventEmitter {
   }
 
   projectDir(id: string): string {
-    if (Object.hasOwn(this.settings.projectPaths, id)) return this.settings.projectPaths[id]!;
     return join(homePaths(this.opts.home).projects, id);
   }
 
@@ -580,8 +578,7 @@ export class Engine extends EventEmitter {
   async importProject(input: ImportProjectBody): Promise<ImportProjectResult> {
     const result: ImportProjectResult = await beginImport(this.opts.home, input, {
       accounts: this.accounts,
-      knownProject: (id) => this.projects.has(id) || this.creating.has(id) || this.projectErrors.has(id) ||
-        resolve(this.projectDir(id)) !== resolve(homePaths(this.opts.home).projects, id),
+      knownProject: (id) => this.projects.has(id) || this.creating.has(id) || this.projectErrors.has(id),
     });
     if (result.state === "imported") await this.continueCreation(result.id);
     return result;

@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { LiveMessage } from "@pecore/schemas";
@@ -53,6 +53,30 @@ describe("definition routes", () => {
 });
 
 describe("global file routes", () => {
+  it("loads older settings without exposing removed manual configuration", async () => {
+    const { home, engine, call, close } = await apiProject();
+    try {
+      await writeFile(join(home, "settings.json"), JSON.stringify({
+        limits: { agents: 3, providers: { openai: 1 } },
+        prices: {},
+        projectPaths: { demo: "/old/demo" },
+        programPaths: { codex: "/old/codex" },
+        mergeCheckSec: 45,
+      }));
+      expect(await engine.reloadGlobal()).toEqual([]);
+      const settings = await call("getSettings");
+      expect(settings.value.limits).toEqual({ jobs: null, agents: 3 });
+      expect(settings.value.mergeCheckSec).toBe(45);
+      expect(settings.value).not.toHaveProperty("prices");
+      expect(settings.value).not.toHaveProperty("projectPaths");
+      expect(settings.value).not.toHaveProperty("programPaths");
+      expect(engine.projectDir("demo")).toBe(join(home, "projects", "demo"));
+      await expect(call("listDefinitions", { query: { dir: "connectors" } })).rejects.toMatchObject({ status: 400 });
+    } finally {
+      await close();
+    }
+  });
+
   it("saves settings with the hash, refuses protectedMode, and rolls back a profile that names a missing account", async () => {
     const { home, engine, call, close } = await apiProject();
     const s = await call("getSettings");

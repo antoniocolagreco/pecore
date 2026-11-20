@@ -25,7 +25,6 @@ export const queueKindLabel: Record<QueueItemView["kind"], string> = {
   ticket: "Untrusted ticket",
   "round-limit": "Round limit",
   budget: "Budget limit",
-  connector: "Connector",
   "agent-question": "Agent question",
   outbound: "Comment to post",
 };

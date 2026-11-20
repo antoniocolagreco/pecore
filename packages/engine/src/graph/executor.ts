@@ -694,7 +694,7 @@ export class JobExecutor {
         return false;
       }
       profile = choice;
-      pools = poolsFor(this.ctx.id, ["agents", `provider:${choice.provider}`, `account:${choice.account}`]);
+      pools = poolsFor(this.ctx.id, ["agents", `account:${choice.account}`]);
     }
 
     if (!this.ctx.pools.tryTake(pools)) {

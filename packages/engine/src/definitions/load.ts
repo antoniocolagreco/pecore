@@ -153,7 +153,10 @@ export type Global = { settings: Settings; accounts: Accounts; profiles: Profile
 export async function loadGlobal(home: string): Promise<{ value: Global | null; errors: DefinitionError[] }> {
   const [settings, accounts, profiles, tiers] = await Promise.all([
     parseOptional(join(home, "settings.json"), Settings, (value) => {
-      if (value !== null && typeof value === "object") Reflect.deleteProperty(value, "firstRunDone");
+      if (value !== null && typeof value === "object") {
+        for (const key of ["firstRunDone", "prices", "projectPaths", "programPaths"]) Reflect.deleteProperty(value, key);
+        if ("limits" in value && value.limits !== null && typeof value.limits === "object") Reflect.deleteProperty(value.limits, "providers");
+      }
       return value;
     }),
     parseOptional(join(home, "accounts.json"), Accounts),

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { Connector, Name, Node, Project, Recipe } from "@pecore/schemas";
+import { Name, Node, Project, Recipe } from "@pecore/schemas";
 import type { DefinitionEntry, InstantiateBody, RouteOutput } from "@pecore/schemas";
 import { ensureConfirmed, needsConfirmation, runFiles, stageRecipeChange } from "../../definitions/confirm";
 import type { RecipeChangeSubject } from "../../definitions/confirm";
@@ -19,7 +19,7 @@ import { projectDefaults } from "../../projects/defaults";
 import { HttpError } from "../server";
 import type { Handlers } from "../server";
 
-type DefinitionKind = "node" | "recipe" | "project" | "connector" | "knowledge" | "prompt" | "script";
+type DefinitionKind = "node" | "recipe" | "project" | "knowledge" | "prompt" | "script";
 const pendingDefinitions: WeakMap<Engine, Promise<unknown>> = new WeakMap();
 
 function pathParts(path: string): string[] {
@@ -38,7 +38,6 @@ function fileKind(directory: string, file: string): DefinitionKind | undefined {
   if (ext !== ".json" || !Name.safeParse(basename(file, ext)).success) return;
   if (directory === "nodes") return "node";
   if (directory === "recipes") return "recipe";
-  if (directory === "connectors") return "connector";
 }
 
 function projectContext(engine: Engine, id: string) {
@@ -141,7 +140,6 @@ export function definitionOperations(engine: Engine) {
       (directory === "knowledge" && (!listing || nested.length === 0))
     );
     const homeDirectory: string | undefined =
-      scope === "connectors" && parts.length === 1 ? home.connectors :
       scope === "library" && parts.length === 2 && definitionDirectory
         ? directory === "nodes" ? home.libraryNodes : home.libraryRecipes
         : undefined;
@@ -173,7 +171,7 @@ export function definitionOperations(engine: Engine) {
       if (id) errors.push(...checkRecipe(result.data, projectContext(engine, id).defs.nodes).map((issue) => ({ file: path, ...issue })));
       return { value, errors };
     }
-    const schema: typeof Node | typeof Project | typeof Connector = kind === "node" ? Node : kind === "project" ? Project : Connector;
+    const schema: typeof Node | typeof Project = kind === "node" ? Node : Project;
     const result = schema.safeParse(value);
     if (!result.success) return { value, errors: zodErrors(path, result.error) };
     const name: string = basename(path, ".json");

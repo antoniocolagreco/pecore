@@ -31,7 +31,6 @@ export function homePaths(home: string) {
     libraryNodes: join(home, "library", "nodes"),
     libraryRecipes: join(home, "library", "recipes"),
     projects: join(home, "projects"),
-    connectors: join(home, "connectors"),
     adapters: join(home, "adapters"),
     schemas: join(home, "schemas"),
     run: join(home, "run"),
@@ -84,7 +83,7 @@ export async function initHome(home: string, opts: { library: string }): Promise
   const created = !(await exists(join(home, ".git")));
   await mkdir(home, { recursive: true, mode: 0o700 });
   await mkdir(p.run, { recursive: true, mode: 0o700 });
-  for (const dir of [p.libraryNodes, p.libraryRecipes, p.projects, p.connectors, p.themes]) await mkdir(dir, { recursive: true });
+  for (const dir of [p.libraryNodes, p.libraryRecipes, p.projects, p.themes]) await mkdir(dir, { recursive: true });
   await writeSchemas(home);
   if (!created) {
     const added: string[] = await addShippedLibraryFiles(opts.library, p.library);

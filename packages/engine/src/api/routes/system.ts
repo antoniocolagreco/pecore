@@ -11,7 +11,7 @@ import { NotFoundError } from "../../main";
 import { HttpError } from "../server";
 import type { Handlers } from "../server";
 
-const prerequisiteSetting: Record<string, string> = { compose: "servicesRuntime", gh: "accounts", glab: "accounts", aws: "accounts", sudo: "protectedMode", setfacl: "protectedMode", git: "programPaths", gitleaks: "programPaths" };
+const prerequisiteSetting: Record<string, string> = { compose: "servicesRuntime", gh: "accounts", glab: "accounts", aws: "accounts", sudo: "protectedMode", setfacl: "protectedMode" };
 
 async function prerequisites(engine: Engine): Promise<Prerequisite[]> {
   const { settings, accounts } = engine.global();
