@@ -113,9 +113,9 @@
 :root[data-palette="everforest-light"] {
   --accent: #35a77c;
   --accent-hover: #8da101;
-  --accent-fill: #f0f1d2;
-  --accent-fill-hover: #eaedc8;
-  --on-accent: #5c6a72;
+  --accent-fill: #d6e0a8;
+  --accent-fill-hover: #cbd89a;
+  --on-accent: #3c474d;
   --danger: #f85552;
   --warning: #dfa000;
   --success: #8da101;
@@ -143,9 +143,9 @@
 :root[data-palette="everforest-dark"] {
   --accent: #a7c080;
   --accent-hover: #83c092;
-  --accent-fill: #425047;
-  --accent-fill-hover: #56635f;
-  --on-accent: #d3c6aa;
+  --accent-fill: #4a6640;
+  --accent-fill-hover: #557346;
+  --on-accent: #fdf6e3;
   --danger: #e67e80;
   --warning: #dbbc7f;
   --success: #a7c080;
