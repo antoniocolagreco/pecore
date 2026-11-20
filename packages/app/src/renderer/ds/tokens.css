@@ -72,6 +72,8 @@
 
   --bubble-user: linear-gradient(135deg, color-mix(in srgb, var(--accent-fill) 80%, white), var(--accent-fill));
   --bubble-user-text: var(--on-accent);
+  --avatar-bg: linear-gradient(145deg, color-mix(in srgb, var(--accent) 70%, white), var(--accent));
+  --avatar-fg: #ffffff;
   --bubble-user-border: transparent;
 }
 
@@ -146,6 +148,7 @@
   --accent-fill: #4a6640;
   --accent-fill-hover: #557346;
   --on-accent: #fdf6e3;
+  --avatar-fg: #2d353b;
   --danger: #e67e80;
   --warning: #dbbc7f;
   --success: #a7c080;
