@@ -55,6 +55,8 @@ Format: decision. **Why:** Antonio's reason. **Replaces:** what it changes, if a
 
 40. Everything inside a recipe the user approved runs with no further approval, its scripts included. A new or changed recipe needs the user's approval. Outside recipes, the Assistant can do anything Claude Code could do on the user's computer. **Why:** "tutto quello che è in una recipe già approvata da me può girare senza problemi. Per il resto l'assistente può tutto quello che sarebbe possibile fare tramite claude code." **Replaces:** the separate confirmation of each `runsAs: engine` and `source` node (design.md section 8), and the open question on whether the Assistant may approve scripts.
 
+41. With the menu hidden, pointing at the menu button shows the menu over the page, and moving away hides it; clicking the button keeps it open in its column. **Why:** "quando si fa hover sopra l'icona, la barra deve comparire sopra il contenuto della pagina. Come in claude web. Se si clicca sull'icona, la barra diventa fissa."
+
 ## Open
 
 - Shipped nodes default to "Automatic" with an optional explicit model (A, recommended), or always need an explicit model (B).

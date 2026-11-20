@@ -45,8 +45,10 @@ const nav: { group: string | null; items: { to: string; label: string; icon: Rea
 export function Layout() {
   const connected = useConnected();
   const [menu, setMenu] = useState<boolean>(storedMenu);
+  const [peek, setPeek] = useState<boolean>(false);
   const toggleMenu = (): void => {
     setMenu(!menu);
+    setPeek(false);
     try {
       localStorage.setItem(menuKey, menu ? "closed" : "open");
     } catch {
@@ -63,8 +65,9 @@ export function Layout() {
 
   return (
     <div className={s.shell}>
-      <nav className={s.sidebar} aria-label="Main" hidden={!menu}>
+      <nav className={s.sidebar} aria-label="Main" hidden={!menu && !peek} data-overlay={!menu && peek ? "" : undefined} onMouseLeave={() => setPeek(false)}>
         <div className={s.brand}>
+          <IconButton label={menu ? "Hide menu" : "Keep menu open"} icon={<SidebarIcon />} onClick={toggleMenu} />
           <span className={s.mark}><SparkIcon size={14} /></span>
           PeCore
         </div>
@@ -84,7 +87,7 @@ export function Layout() {
       </nav>
       <div className={s.main}>
         <header className={s.toolbar}>
-          <IconButton label={menu ? "Hide menu" : "Show menu"} icon={<SidebarIcon />} onClick={toggleMenu} />
+          {!menu && <IconButton label="Show menu" icon={<SidebarIcon />} onMouseEnter={() => setPeek(true)} onClick={toggleMenu} />}
           <div className={s.spacer} />
           <CommandPalette />
           <IconButton

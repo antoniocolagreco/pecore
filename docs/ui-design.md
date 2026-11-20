@@ -164,7 +164,7 @@ The prototype is normative only for: the Everforest palette and gradients, the I
 ### Navigation (left)
 
 *   Window: menu on the left, the page in the centre, the Assistant chat on the right (decision 32). The chat takes 30% of the width, between 300 and 380 px.
-*   The menu hides and shows with a button at the top left of the page (decision 34). The choice is remembered; the first time, the menu starts hidden below 1280 px of width.
+*   The menu hides and shows with a button at the top left of the page (decision 34). The choice is remembered; the first time, the menu starts hidden below 1280 px of width. With the menu hidden, pointing at the button shows the menu over the page until the pointer leaves it; clicking keeps it open in its column (decision 41).
 *   One list, no group titles (decision 14): Inbox (counter, IA2), Factory, Jobs, Projects, Library, Usage, Settings.
 *   Under the list, the open page's own sub-navigation (decision 13): Settings sections.
 *   Note: a project's recipes, nodes and settings are reached through Projects; the node editor and the job view are detail pages, not menu items.

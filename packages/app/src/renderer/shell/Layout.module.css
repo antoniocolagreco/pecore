@@ -12,7 +12,7 @@
   gap: 18px;
   width: 210px;
   min-height: 0;
-  padding: 14px 10px 10px;
+  padding: 12px 10px 10px;
   border-right: 1px solid var(--separator);
   background: color-mix(in srgb, var(--surface) 55%, var(--bg));
   overflow-y: auto;
@@ -22,11 +22,21 @@
   display: none;
 }
 
+.sidebar[data-overlay] {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 40;
+  background: color-mix(in srgb, var(--surface) 92%, var(--bg));
+  box-shadow: var(--popover-shadow);
+}
+
 .brand {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 4px 8px 2px;
+  padding: 0 0 0 2px;
   font-size: 15px;
   font-weight: 700;
   letter-spacing: -0.01em;
