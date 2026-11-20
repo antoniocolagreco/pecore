@@ -1,6 +1,6 @@
 import { ChatImageMime, chatAttachmentMaxBytes, chatCompactCommand } from "@pecore/schemas";
 import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatMessageView, ChatView } from "@pecore/schemas";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { call } from "../api/client";
@@ -99,6 +99,27 @@ function ActionCard({ action, connected }: { action: ChatActionView; connected: 
   );
 }
 
+const readTools: Record<string, string> = {
+  list_projects: "projects",
+  list_recipes: "recipes",
+  read_ticket: "ticket",
+  read_replies: "ticket replies",
+  job_status: "job status",
+  read_artifact: "job output",
+  list_templates: "library templates",
+  validate: "definition check",
+};
+
+function Actions({ actions, connected }: { actions: ChatActionView[]; connected: boolean }) {
+  const reads: string[] = [...new Set(actions.filter(({ tool }) => Object.hasOwn(readTools, tool)).map(({ tool }) => readTools[tool]!))];
+  return (
+    <>
+      {actions.filter(({ tool }) => !Object.hasOwn(readTools, tool)).map((action) => <ActionCard key={action.id} action={action} connected={connected} />)}
+      {reads.length > 0 && <div className={s.reads}>Read: {reads.join(", ")}</div>}
+    </>
+  );
+}
+
 function Message({ message, attachments, actions, connected, manual, reload }: {
   message: ChatMessageView;
   attachments: ChatAttachmentView[];
@@ -135,7 +156,7 @@ function Message({ message, attachments, actions, connected, manual, reload }: {
         <ErrorText error={message.error} />
         {manual && message.state === "interrupted" && <div><Button size="sm" disabled={!connected || retry.busy} loading={retry.busy} onClick={() => void retry.run()}>Retry</Button></div>}
         <ErrorText error={retry.error} />
-        {actions.map((action) => <ActionCard key={action.id} action={action} connected={connected} />)}
+        <Actions actions={actions} connected={connected} />
       </div>
     </article>
   );
@@ -158,13 +179,14 @@ function Compaction({ message }: { message: ChatMessageView }) {
   );
 }
 
-function Thinking() {
+function Activity({ actions, connected, working }: { actions: ChatActionView[]; connected: boolean; working: boolean }) {
   return (
     <article className={`${s.message} ${s.assistant}`}>
       <span className={s.avatar} aria-hidden><SparkIcon size={14} /></span>
       <div className={s.body}>
         <div className={s.meta}><span className={s.author}>Orchestrator</span></div>
-        <div className={s.thinking} role="status" aria-label="The orchestrator is working on a reply"><span /><span /><span /></div>
+        {working && <div className={s.thinking} role="status" aria-label="The orchestrator is working on a reply"><span /><span /><span /></div>}
+        <Actions actions={actions} connected={connected} />
       </div>
     </article>
   );
@@ -311,7 +333,8 @@ function Conversation({ id, connected }: { id: string; connected: boolean }) {
   });
   const last: ChatMessageView | undefined = chat?.messages.at(-1);
   const turnPending: boolean = last?.role === "user" && (last.state === "queued" || last.state === "running");
-  const thinking: boolean = turnPending && !isCompaction(last!) && !chat?.streamingReply;
+  const replied: Set<string> = new Set(chat?.messages.flatMap(({ replyTo }) => replyTo ? [replyTo] : []) ?? []);
+  const pending: ChatMessageView | undefined = chat?.messages.find((message) => message.role === "user" && (message.state === "running" || message.state === "queued") && !isCompaction(message));
   const canCompact: boolean = connected && !compact.busy && !turnPending && !!chat?.messages.some((message) => message.state === "completed" && !isCompaction(message));
 
   useEffect(() => {
@@ -351,6 +374,7 @@ function Conversation({ id, connected }: { id: string; connected: boolean }) {
     entries.push(attachment);
     attachments.set(attachment.messageId, entries);
   }
+  const pendingActions: ChatActionView[] = pending ? actions.get(pending.id) ?? [] : [];
   const manual: boolean = chat?.chat.projectId === null;
   return (
     <section className={s.pane}>
@@ -370,12 +394,19 @@ function Conversation({ id, connected }: { id: string; connected: boolean }) {
         <div className={s.thread}>
           {detail.loading && !chat && <Spinner />}
           {chat?.messages.length === 0 && <EmptyState icon={<ChatIcon size={18} />} title="No messages yet">Tell the orchestrator what you want: it plans the work and creates the jobs.</EmptyState>}
-          {chat?.messages.map((message) => isCompaction(message) ? <Compaction key={message.id} message={message} />
-            : <Message key={message.id} message={message} connected={connected} manual={manual}
-              actions={actions.get(message.id) ?? []} attachments={attachments.get(message.id) ?? []} reload={detail.reload} />)}
+          {chat?.messages.map((message) => {
+            if (isCompaction(message)) return <Compaction key={message.id} message={message} />;
+            const own: ChatActionView[] = message.role === "assistant" ? message.replyTo ? actions.get(message.replyTo) ?? [] : [] : actions.get(message.id) ?? [];
+            const unanswered: boolean = message.role === "user" && !replied.has(message.id) && message.state !== "running" && message.state !== "queued" && own.length > 0;
+            return <Fragment key={message.id}>
+              <Message message={message} connected={connected} manual={manual}
+                actions={message.role === "assistant" ? own : []} attachments={attachments.get(message.id) ?? []} reload={detail.reload} />
+              {unanswered && <Activity actions={own} connected={connected} working={false} />}
+            </Fragment>;
+          })}
           {chat?.streamingReply && <Message message={chat.streamingReply} connected={connected} manual={manual}
-            actions={[]} attachments={[]} reload={detail.reload} />}
-          {thinking && <Thinking />}
+            actions={pendingActions} attachments={[]} reload={detail.reload} />}
+          {pending && !chat?.streamingReply && <Activity actions={pendingActions} connected={connected} working />}
         </div>
       </div>
       {chat && manual && <Composer id={id} connected={connected} supportsImages={chat.supportsImages} reload={detail.reload} autoFocus />}

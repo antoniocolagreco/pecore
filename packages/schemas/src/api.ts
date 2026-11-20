@@ -169,6 +169,7 @@ export const ChatMessageView = z.object({
   createdAt: z.number(),
   state: z.enum(["queued", "running", "completed", "interrupted", "failed"]),
   error: z.string().nullable(),
+  replyTo: z.string().nullable(),
 });
 export type ChatMessageView = z.infer<typeof ChatMessageView>;
 export const ChatAttachmentView = z.object({

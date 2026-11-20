@@ -19,7 +19,7 @@ const chatColumns = `c.id, c.title, c.intake_project AS projectId, c.created_at 
   (SELECT COUNT(*) FROM messages m WHERE m.chat_id = c.id AND m.role = 'assistant'
     AND (CASE WHEN c.last_read_message_id IS NULL THEN m.created_at > COALESCE(c.last_read_at, -1)
       ELSE m.rowid > COALESCE((SELECT rowid FROM messages WHERE id = c.last_read_message_id), 0) END)) AS unread`;
-const messageColumns = `id, chat_id AS chatId, role, text, context, created_at AS createdAt, state, error,
+const messageColumns = `id, chat_id AS chatId, role, text, context, created_at AS createdAt, state, error, reply_to AS replyTo,
   COALESCE(order_id, id) AS orderId, order_project AS orderProject`;
 const attachmentColumns = "id, message_id AS messageId, mime, size, path";
 
@@ -86,10 +86,10 @@ export class ChatsDb {
     return row && messageView(row);
   }
 
-  addMessage(chatId: string, role: ChatMessageView["role"], text: string, context: ChatReference[], order?: { id: string; project: string }): ChatTurn {
+  addMessage(chatId: string, role: ChatMessageView["role"], text: string, context: ChatReference[], { order, replyTo }: { order?: { id: string; project: string }; replyTo?: string } = {}): ChatTurn {
     const id: string = ulid();
-    this.db.prepare(`INSERT INTO messages (id, chat_id, role, text, context, state, order_id, order_project, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, chatId, role, text, JSON.stringify(context), role === "user" ? "queued" : "completed", order?.id ?? null, order?.project ?? null, Date.now());
+    this.db.prepare(`INSERT INTO messages (id, chat_id, role, text, context, state, order_id, order_project, reply_to, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, chatId, role, text, JSON.stringify(context), role === "user" ? "queued" : "completed", order?.id ?? null, order?.project ?? null, replyTo ?? null, Date.now());
     return this.message(chatId, id)!;
   }
 

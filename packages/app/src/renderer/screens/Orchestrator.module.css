@@ -100,6 +100,11 @@
   color: var(--text-2);
 }
 
+.reads {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
 .headerAction {
   margin-left: auto;
 }

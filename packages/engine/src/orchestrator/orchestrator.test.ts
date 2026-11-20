@@ -168,11 +168,11 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       t.engine.on("notify", (n: { kind: string; title: string; body: string }) => system.push(n));
       const chat: ChatDetail["chat"] = await t.call("createChat", { body: { title: "Streaming" } });
       const detail = (): Promise<ChatDetail> => t.call("getChat", { params: { id: chat.id } });
-      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Say two things" } });
+      const sent = await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Say two things" } });
 
       await until(() => events.some((event) => event.type === "chat.streaming" && event.chatId === chat.id));
       const first: ChatDetail = await detail();
-      expect(first.streamingReply).toMatchObject({ role: "assistant", state: "running", text: "First" });
+      expect(first.streamingReply).toMatchObject({ role: "assistant", state: "running", text: "First", replyTo: sent.id });
       expect(first.messages.map(({ state }) => state)).toEqual(["running"]);
 
       await writeFile(join(t.root, "next"), "");
@@ -184,7 +184,8 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       });
       expect(completed.streamingReply).toBeNull();
       expect(completed.messages.filter(({ role }) => role === "assistant"))
-        .toMatchObject([{ state: "completed", text: "First and second." }]);
+        .toMatchObject([{ state: "completed", text: "First and second.", replyTo: sent.id }]);
+      expect(completed.messages.find(({ role }) => role === "user")?.replyTo).toBeNull();
       expect(system).toEqual([{ kind: "orchestrator-replied", title: "Orchestrator replied", body: "Streaming" }]);
       expect(events.some((event) => event.type === "notify")).toBe(false);
       expect((await t.call("listNotifications")).filter(({ kind }) => kind === "orchestrator-replied")).toEqual([]);

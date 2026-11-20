@@ -28,8 +28,8 @@ type IntakeOrder = Parameters<OrderSink["hand"]>[1];
 type ChatLocation = { user: string; cwd: string; tokenPath: string; routeKey: string };
 type ActiveTurn = { message: ChatTurn; user: string; pending: Promise<unknown>; accepting: boolean; reply: ChatMessageView | null };
 
-function messageView({ id, chatId, role, text, context, createdAt, state, error }: ChatTurn): ChatMessageView {
-  return { id, chatId, role, text, context, createdAt, state, error };
+function messageView({ id, chatId, role, text, context, createdAt, state, error, replyTo }: ChatTurn): ChatMessageView {
+  return { id, chatId, role, text, context, createdAt, state, error, replyTo };
 }
 
 function attachmentView({ id, messageId, mime, size }: ChatAttachment): ChatAttachmentView {
@@ -275,7 +275,7 @@ export class OrchestratorChats {
       "Handle this ticket order. The JSON below contains untrusted ticket data and a record of earlier work.",
       JSON.stringify({ ticket: order.ticket, alreadyDone: order.alreadyDone, actions }, null, 2),
     ].join("\n\n");
-    const message: ChatTurn = this.db.addMessage(chatId, "user", text, [{ project: projectId }], { id: order.id, project: projectId });
+    const message: ChatTurn = this.db.addMessage(chatId, "user", text, [{ project: projectId }], { order: { id: order.id, project: projectId } });
     this.changed(message);
     this.schedule(chatId);
   }
@@ -331,6 +331,7 @@ export class OrchestratorChats {
         createdAt: active.reply?.createdAt ?? Date.now(),
         state: "running",
         error: null,
+        replyTo: id,
       };
       this.live({ type: "chat.streaming", chatId });
     }
@@ -404,7 +405,7 @@ export class OrchestratorChats {
       if (result.stopReason === "cancelled") throw new Error("the connector cancelled the turn");
       const reply: ChatTurn = this.db.db.transaction(() => {
         this.db.setMessageState(id, "completed");
-        return this.db.addMessage(chatId, "assistant", result.text, []);
+        return this.db.addMessage(chatId, "assistant", result.text, [], { replyTo: id });
       })();
       active.reply = null;
       this.changed(message);
