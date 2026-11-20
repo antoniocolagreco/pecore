@@ -111,61 +111,63 @@
 }
 
 :root[data-palette="everforest-light"] {
-  --accent: #2e7d5b;
-  --accent-hover: #276b4e;
-  --on-accent: #fffbef;
-  --danger: #b93734;
-  --warning: #b47a00;
-  --success: #56700a;
+  --accent: #35a77c;
+  --accent-hover: #8da101;
+  --accent-fill: #f0f1d2;
+  --accent-fill-hover: #eaedc8;
+  --on-accent: #5c6a72;
+  --danger: #f85552;
+  --warning: #dfa000;
+  --success: #8da101;
 
   --bg: #efebd4;
   --surface: #fdf6e3;
-  --text: #3c474d;
-  --text-2: #5c6a72;
-  --text-3: #7a867c;
-  --separator: rgb(92 106 114 / 0.14);
+  --text: #5c6a72;
+  --text-2: #708089;
+  --text-3: #939f91;
+  --separator: #e0dcc7;
 
-  --control-bg: #fffbef;
-  --control-bg-hover: #fffbef;
-  --control-border: rgb(92 106 114 / 0.18);
-  --control-border-hover: rgb(92 106 114 / 0.3);
-  --control-disabled: rgb(92 106 114 / 0.05);
-  --fill: rgb(92 106 114 / 0.1);
-  --fill-strong: rgb(92 106 114 / 0.18);
-  --knob: #fffbef;
+  --control-bg: #f4f0d9;
+  --control-bg-hover: #fdf6e3;
+  --control-border: #e0dcc7;
+  --control-border-hover: #bdc3af;
+  --control-disabled: #e6e2cc;
+  --fill: #e6e2cc;
+  --fill-strong: #e0dcc7;
+  --knob: #fdf6e3;
 
-  --material: rgb(253 246 227 / 0.86);
-  --material-border: rgb(92 106 114 / 0.14);
+  --material: rgb(253 246 227 / 0.9);
+  --material-border: #e0dcc7;
 }
 
 :root[data-palette="everforest-dark"] {
   --accent: #a7c080;
-  --accent-hover: #b6cc94;
-  --accent-fill: #4f7136;
-  --accent-fill-hover: #5a7d3f;
-  --on-accent: #fdf6e3;
+  --accent-hover: #83c092;
+  --accent-fill: #425047;
+  --accent-fill-hover: #56635f;
+  --on-accent: #d3c6aa;
   --danger: #e67e80;
   --warning: #dbbc7f;
-  --success: #83c092;
+  --success: #a7c080;
 
   --bg: #232a2e;
   --surface: #2d353b;
   --text: #d3c6aa;
   --text-2: #9da9a0;
   --text-3: #7a8478;
-  --separator: rgb(211 198 170 / 0.1);
+  --separator: #3d484d;
 
   --control-bg: #343f44;
   --control-bg-hover: #3d484d;
-  --control-border: rgb(211 198 170 / 0.12);
-  --control-border-hover: rgb(211 198 170 / 0.22);
-  --control-disabled: rgb(211 198 170 / 0.04);
-  --fill: rgb(211 198 170 / 0.1);
-  --fill-strong: rgb(211 198 170 / 0.18);
+  --control-border: #475258;
+  --control-border-hover: #4f585e;
+  --control-disabled: #343f44;
+  --fill: #3d484d;
+  --fill-strong: #475258;
   --knob: #d3c6aa;
 
-  --material: rgb(45 53 59 / 0.88);
-  --material-border: rgb(211 198 170 / 0.12);
+  --material: rgb(45 53 59 / 0.92);
+  --material-border: #475258;
 }
 
 *,
