@@ -64,7 +64,7 @@
 }
 
 .step:active:not([data-disabled]) {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--on-accent);
 }
 
@@ -108,7 +108,7 @@
 
 .indicator {
   border-radius: 2px;
-  background: var(--accent);
+  background: var(--accent-fill);
 }
 
 .slider[data-disabled] .indicator {
@@ -233,7 +233,7 @@
 }
 
 .segmented[data-accent] .pill {
-  background: var(--accent);
+  background: var(--accent-fill);
 }
 
 .segmented[data-accent] .segment[data-pressed] {

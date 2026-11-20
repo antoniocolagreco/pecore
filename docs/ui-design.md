@@ -426,7 +426,8 @@ Color is never the only signal: every state also has an icon and its label.
 | `bg`, `bg-gradient-1`, `bg-gradient-2` | page background (dark green in the default theme) |
 | `surface`, `surface-raised`, `border` | panels, cards |
 | `text`, `text-muted` | text; contrast at least 4.5:1 on `bg`, `surface` and `surface-raised` |
-| `accent` | focus and primary actions |
+| `accent` | focus, links, highlighted text |
+| `accent-fill`, `on-accent` | solid fills (primary buttons, chat bubbles, selected items) and the text on them; same as `accent` unless the theme needs a darker fill for readable text (decision 61) |
 | `status-running` | light blue: running |
 | `status-success` | green: success, success outcomes |
 | `status-failed` | red: failed, fail outcomes, validation errors |

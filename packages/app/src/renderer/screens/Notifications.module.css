@@ -39,7 +39,7 @@
 }
 
 .item[aria-current="page"] {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--on-accent);
 }
 
@@ -70,7 +70,7 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--accent-fill);
 }
 
 .title {

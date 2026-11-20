@@ -64,7 +64,7 @@
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 70%, white), var(--accent));
+  background: linear-gradient(145deg, color-mix(in srgb, var(--accent-fill) 70%, white), var(--accent-fill));
   color: #fff;
 }
 

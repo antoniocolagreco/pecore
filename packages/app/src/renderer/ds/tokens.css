@@ -37,6 +37,8 @@
 
   --accent: #007aff;
   --accent-hover: #0068d9;
+  --accent-fill: var(--accent);
+  --accent-fill-hover: var(--accent-hover);
   --on-accent: #ffffff;
   --danger: #ff3b30;
   --warning: #ff9f0a;
@@ -68,7 +70,7 @@
   --popover-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 12px 32px -6px rgb(0 0 0 / 0.22), 0 4px 10px -4px rgb(0 0 0 / 0.1);
   --blur: blur(28px) saturate(190%);
 
-  --bubble-user: linear-gradient(135deg, color-mix(in srgb, var(--accent) 80%, white), var(--accent));
+  --bubble-user: linear-gradient(135deg, color-mix(in srgb, var(--accent-fill) 80%, white), var(--accent-fill));
   --bubble-user-text: var(--on-accent);
   --bubble-user-border: transparent;
 }
@@ -104,7 +106,7 @@
   --material: rgb(38 38 42 / 0.78);
   --material-border: rgb(255 255 255 / 0.1);
   --material-highlight: inset 0 0.5px 0 rgb(255 255 255 / 0.12);
-  --bubble-user: linear-gradient(135deg, color-mix(in srgb, var(--accent) 75%, black), var(--accent));
+  --bubble-user: linear-gradient(135deg, color-mix(in srgb, var(--accent-fill) 75%, black), var(--accent-fill));
   --popover-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.5), 0 16px 40px -8px rgb(0 0 0 / 0.6), 0 4px 12px -4px rgb(0 0 0 / 0.4);
 }
 
@@ -139,7 +141,9 @@
 :root[data-palette="everforest-dark"] {
   --accent: #a7c080;
   --accent-hover: #b6cc94;
-  --on-accent: #2d353b;
+  --accent-fill: #4f7136;
+  --accent-fill-hover: #5a7d3f;
+  --on-accent: #fdf6e3;
   --danger: #e67e80;
   --warning: #dbbc7f;
   --success: #83c092;

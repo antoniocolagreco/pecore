@@ -149,7 +149,7 @@
 }
 
 .menuItem[data-highlighted] {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--on-accent);
 }
 

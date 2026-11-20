@@ -34,7 +34,7 @@
 }
 
 .results :global([cmdk-item][data-selected="true"]) {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--on-accent);
 }
 
