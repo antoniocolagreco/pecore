@@ -347,6 +347,7 @@ function ModelPicker({ accounts, choice, onChoice, disabled, same = false }: { a
   const models: string[] = [...new Set([...(options.data?.models ?? []), ...(choice?.model ? [choice.model] : [])])];
   const efforts: string[] = [...new Set([...(options.data?.efforts ?? []).filter((effort) => effort !== "default"), ...(choice?.effort ? [choice.effort] : [])])];
   const loading: boolean = !!account && options.loading;
+  const current: Account | undefined = accounts.find(({ id }) => id === account);
   return <div className={s.grid}>
     <Select label="Provider" value={account || (same ? sameValue : null)} disabled={disabled} placeholder="Choose a provider"
       onValueChange={(next) => {
@@ -355,7 +356,7 @@ function ModelPicker({ accounts, choice, onChoice, disabled, same = false }: { a
       }}
       options={[...same ? [{ value: sameValue, label: "Same as the Assistant" }] : [], ...accounts.map((item) => ({ value: item.id, label: harnessName(item, accounts) }))]} />
     {loading
-      ? <TextField label="Model" leading={<Spinner size={13} />} value="" placeholder={`Reading models from ${harnessName(accounts.find(({ id }) => id === account) ?? accounts[0]!, accounts)}…`} readOnly />
+      ? <TextField label="Model" leading={<Spinner size={13} />} value="" placeholder={`Reading models from ${current ? harnessName(current, accounts) : account}…`} readOnly />
       : <Combobox label="Model" value={choice?.model || null} disabled={disabled || !account} placeholder="Choose a model"
         onValueChange={(model) => { if (choice && model) onChoice({ ...choice, model }); }}
         options={models.map((model) => ({ value: model, label: model }))} />}
