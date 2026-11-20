@@ -471,7 +471,6 @@ A node receives the latest artifact of each type in its `inputs`. The recipe val
 | `createRepo` | node instance that creates the remote repo when it does not exist (section 2); `null` if not needed |
 | `defaultRecipe` | recipe instance used when no recipe is specified and the orchestrator finds none that fits the order |
 | `services` | path of a compose file for job services, relative to the repo (4.9) |
-| `limits` | parallel jobs for this project; budget per job and per day, in tokens for subscription accounts and in money for API key accounts |
 | `source` | node instance of kind `source` that brings tickets into the project (section 7), with its `params` (for example the label), or `null` |
 
 ### 4. Engine
@@ -565,10 +564,10 @@ A job waiting for a human, a quota, a login or a confirmation releases its pool 
 
 #### 4.7 Scheduler and limits
 
-*   Limits are counters held in memory, organised in pools: `jobs` (global), `jobs:<project>`, `agents` (global), `account:<id>` (from `maxParallel`). A node run takes one unit from every pool that applies, all at once, or waits with reason `concurrency`.
+*   Limits are counters held in memory, organised in pools: `jobs` (global), `agents` (global), `account:<id>` (from `maxParallel`). A node run takes one unit from every pool that applies, all at once, or waits with reason `concurrency`.
 *   After an app restart the counters start at zero, after the leftover-process sweep of section 1.
 *   When a connector reports a quota or rate limit error (section 5), the engine marks the account as cooling down until the reset time the connector reported, or for a backoff of 1, 2, 4, then 8 minutes if no time is known. All node runs on that account wait with reason `quota` or `rate_limit`. A node whose tier has another available profile switches to it as a new attempt.
-*   Budget: each attempt records tokens and cost; budget tokens are input, output and cache writes (5.3). Cost comes from the connector when it reports one. When a project or job budget limit is reached, node runs wait with reason `budget` and the user is asked to raise the limit or stop the job. The limit is checked when an attempt starts, against the usage of attempts already ended; attempts already running finish, so the overshoot is at most what they use. Orchestrator turns count toward the project's budget when they act for one project (an intake turn, or a chat message about one project).
+*   Usage: attempts record token usage and the cost reported by the connector (5.3).
 
 #### 4.8 External effects and crash safety
 
@@ -1021,7 +1020,7 @@ Quit (tray, app menu, Cmd+Q): main asks the engine `active?`. If jobs are `runni
 1.  Validate the id. With a `repo`, also validate its URL and account and check the account belongs to the repo's forge and host; with `repo: null` there is no forge account to check.
 2.  Nothing to create for the OS user: in normal mode the project runs as the app user; in protected mode `pecore-agent` already exists.
 3.  Create the project directory, `project.json`, `pecore.db`; set ownership and permissions (section 8).
-4.  With `repo: null`: create `repo.git` with one empty initial commit on `baseBranch`; no `createRepo`, no clone. If the remote exists: clone into `repo.git`. Otherwise create the empty repo and run the `createRepo` node once, as a job-less node run recorded under the pseudo-job id `project-setup` with the usual probe, confirmation and `effect.*` events.
+4.  With `repo: null`: create `repo.git` with one empty initial commit on `baseBranch`; no `createRepo`, no clone. If the remote exists: clone into `repo.git`. Otherwise create the empty repo and run the `createRepo` node once under `project-setup`. Creating the project approves the shipped GitHub or GitLab setup node when its definition and scripts match the bundled files. Changed or custom nodes follow the normal confirmation flow.
 5.  Configure `repo.git` (Fixed choices), run the home check, commit the definitions to `PECORE_HOME`.
 6.  In protected mode, give `pecore-agent` access to the new project (group and ACLs, Fixed choices). No login is needed: logins belong to the user, not to the project.
 
@@ -1156,7 +1155,6 @@ Everything that knows ACP or a harness lives here (section 5). It imports only `
 | `src/scheduler/disk.ts` | before job start, checks free disk against `minFreeDiskGb`; below it the job waits with reason `disk` |
 | `src/scheduler/cooldown.ts` | per-account cooldown after quota or rate limit errors; backoff 1, 2, 4, then every 8 minutes |
 | `src/scheduler/tiers.ts` | picks the first available profile of a tier that satisfies `providerNot` |
-| `src/scheduler/budget.ts` | sums tokens and cost per attempt; at the job or project budget in `project.json` the job waits with reason `budget`; one `budget` queue item per limit reached, shared by every job that limit blocks |
 | **workdir/** | |
 | `src/workdir/repo.ts` | creates and configures `repo.git` (Fixed choices); adds `.pecore/` to `info/exclude`; clones and fetches with the project account and the forge's credential helper; deletes `factory/*` branches with `--git-dir` |
 | `src/workdir/worktrees.ts` | as the project user, with `--git-dir`: creates, recreates (job re-entering `running`) and removes job worktrees |

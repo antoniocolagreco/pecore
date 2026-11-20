@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { Link, useParams } from "react-router";
-import type { NotificationView, QueueItemView } from "@pecore/schemas";
+import type { NotificationView, ProjectView, QueueItemView } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
@@ -12,8 +12,13 @@ import { Card, EmptyState, Skeleton } from "../ds/feedback";
 import { BellIcon, TrashIcon } from "../ds/icons";
 import s from "./Notifications.module.css";
 
-function notificationLink({ target }: NotificationView): string | null {
+function notificationLink({ target }: NotificationView, projects: ProjectView[] | undefined): string | null {
   if (target?.item) return `/notifications/${encodeURIComponent(target.item)}`;
+  if (target?.job === "project-setup" && target.project) {
+    const id: string = encodeURIComponent(target.project);
+    const project: ProjectView | undefined = projects?.find((entry) => entry.id === target.project);
+    return project?.creating === null ? `/projects/${id}` : `/projects/new?resume=${id}`;
+  }
   if (target?.job) return `/jobs/${encodeURIComponent(target.job)}`;
   return null;
 }
@@ -31,13 +36,13 @@ function Row({ to, current, children, action, error }: { to: string | null; curr
   );
 }
 
-function NotificationRow({ notification, current, connected, reload }: { notification: NotificationView; current: boolean; connected: boolean; reload(): void }) {
+function NotificationRow({ notification, to, current, connected, reload }: { notification: NotificationView; to: string | null; current: boolean; connected: boolean; reload(): void }) {
   const remove = useAction(async () => {
     await call("deleteNotification", { params: { id: notification.id } });
     reload();
   });
   return (
-    <Row to={notificationLink(notification)} current={current} error={remove.error} action={
+    <Row to={to} current={current} error={remove.error} action={
       <IconButton size="sm" label={`Delete notification: ${notification.title}`} icon={<TrashIcon />} disabled={!connected}
         loading={remove.busy} onClick={() => void remove.run()} />
     }>
@@ -93,7 +98,7 @@ export function Notifications() {
                   <span className={s.itemMeta}>{names.get(item.projectId) ?? item.projectId}{jobTitle(item) && ` · ${jobTitle(item)}`}</span>
                 </Row>
               ))}
-              {log.map((n) => <NotificationRow key={n.id} notification={n} current={!!id && n.target?.item === id}
+              {log.map((n) => <NotificationRow key={n.id} notification={n} to={notificationLink(n, projects.data)} current={!!id && n.target?.item === id}
                 connected={connected} reload={notifications.reload} />)}
             </ul>
           </Card>

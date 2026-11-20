@@ -118,7 +118,6 @@ describe.skipIf(gui)("phase 5 gate: G16 actions from the GUI (built app, headles
 
   it("creates a local project with the wizard", async () => {
     await go("#/projects/new");
-    await page.getByLabel("Project ID").fill("demo");
     await page.getByLabel("Name").fill("Demo");
     await page.getByRole("radio", { name: /^Local only/ }).check();
     for (const r of ["feature", "bugfix"]) await page.getByRole("checkbox", { name: new RegExp(`^${r}`) }).uncheck();
@@ -126,6 +125,15 @@ describe.skipIf(gui)("phase 5 gate: G16 actions from the GUI (built app, headles
     await visible(page.getByRole("button", { name: /Finish|Skip/ }).first(), 30_000);
     await go("#/projects");
     await visible(page.getByText("Demo").first());
+
+    await go("#/projects/new");
+    await page.getByLabel("Name").fill("Demo");
+    for (const r of ["feature", "bugfix"]) await page.getByRole("checkbox", { name: new RegExp(`^${r}`) }).uncheck();
+    await page.getByRole("button", { name: "Create project" }).click();
+    const finish = page.getByRole("button", { name: /Finish|Skip/ }).first();
+    await visible(finish, 30_000);
+    await finish.click();
+    await page.waitForURL("**/#/projects/demo-2");
   }, 60_000);
 
   it("instantiates a recipe template from the Library into the project", async () => {
@@ -366,7 +374,7 @@ describe.skipIf(gui)("phase 5 gate: G16 actions from the GUI (built app, headles
     await go("#/projects");
     await shot("projects");
     await go("#/projects/demo");
-    await visible(page.getByLabel("Parallel jobs"));
+    await visible(page.getByLabel("Base branch"));
     await shot("project-page");
     await page.getByRole("button", { name: /Delete project/ }).click();
     await page.getByRole("dialog").getByRole("button", { name: /Delete/ }).last().click();
@@ -425,7 +433,6 @@ describe.skipIf(gui)("phase 5 gate: forge actions from the GUI (fake gh)", () =>
     if (!(await forge.state()).tokenValid) throw new Error("gh auth login did not run");
 
     await go("#/projects/new");
-    await page.getByLabel("Project ID").fill("shop");
     await page.getByLabel("Name").fill("Shop");
     await page.getByRole("radio", { name: /^New repository/ }).check();
     await page.getByLabel("New repository URL").fill("https://github.com/acme/shop.git");
@@ -552,7 +559,6 @@ describe.skipIf(gui)("phase 6: orchestrator chat from the GUI (fake agent)", () 
 
   it("creates a conversation, sends a message with an image, shows the actions and the reply, and counts it unread while away", async () => {
     await go("#/projects/new");
-    await page.getByLabel("Project ID").fill("demo");
     await page.getByLabel("Name").fill("Demo");
     await page.getByRole("radio", { name: /^Local only/ }).check();
     for (const r of ["feature", "bugfix"]) await page.getByRole("checkbox", { name: new RegExp(`^${r}`) }).uncheck();

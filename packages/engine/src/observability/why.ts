@@ -60,7 +60,7 @@ function runReason(ctx: ProjectContext, r: WaitingRun): WhyReason {
     case "rate_limit":
       return reason({ ...base, account, reason: "rate_limit", text: `Node ${n} waits for the rate limit of account ${account ?? "?"}` });
     case "budget":
-      return reason({ ...base, reason: "budget", text: `Node ${n}: the budget limit is reached; raise it or stop the job in the Inbox` });
+      return reason({ ...base, reason: "budget", text: `Node ${n}: a former project budget was reached` });
     case "human":
       return reason({ ...base, reason: "human", text: `Node ${n} waits for your review in the Inbox` });
     case "services":

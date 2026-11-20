@@ -143,10 +143,13 @@ describe("instantiate", () => {
     const project = join(await tempDir(), "demo");
     await mkdir(project);
     expect((await instantiateRecipe(shippedLibrary, project, "empty")).errors).toEqual([]);
-    await writeFile(join(project, "project.json"), JSON.stringify({ id: "demo", name: "Demo", repo: null, defaultRecipe: "empty" }));
+    await writeFile(join(project, "project.json"), JSON.stringify({
+      id: "demo", name: "Demo", repo: null, defaultRecipe: "empty", limits: { jobs: 2, budget: { jobUsd: 5 } },
+    }));
     const loaded = await loadProject(project);
     expect(loaded.errors).toEqual([]);
     expect(loaded.project?.baseBranch).toBe("main");
+    expect(loaded.project).not.toHaveProperty("limits");
   });
 });
 

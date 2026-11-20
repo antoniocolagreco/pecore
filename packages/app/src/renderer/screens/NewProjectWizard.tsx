@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { ProjectId } from "@pecore/schemas";
+import { projectIdCandidate, startingRecipes } from "@pecore/schemas";
 import type { CreationView, CreateProjectBody, ForgeAccount, QueueItemView } from "@pecore/schemas";
 import { call } from "../api/client";
 import { errorText, useAction, useData } from "../api/hooks";
@@ -16,10 +16,10 @@ import { Select } from "../ds/select";
 import w from "./NewProjectWizard.module.css";
 
 type RepoMode = "existing" | "new" | "local";
-type Inputs = { id: string; name: string; mode: RepoMode; url: string; account: string; baseBranch: string; recipes: string[] };
+type Inputs = { name: string; mode: RepoMode; url: string; account: string; baseBranch: string; recipes: string[] };
 
-const recipes: string[] = ["feature", "bugfix", "local-only"];
-const initialInputs: Inputs = { id: "", name: "", mode: "local", url: "", account: "", baseBranch: "main", recipes };
+const recipes: string[] = [...startingRecipes];
+const initialInputs: Inputs = { name: "", mode: "local", url: "", account: "", baseBranch: "main", recipes };
 const tasks: string[] = [
   "Validate project inputs",
   "Check project user",
@@ -60,7 +60,6 @@ function ConfirmProject({ id }: { id: string }) {
     </Page>
   );
 }
-
 function CreationTasks({ creation, pending }: { creation: CreationView | undefined; pending: boolean }) {
   const finished: number = creation?.step ?? 0;
   const report: string | null | undefined = creation?.error;
@@ -96,7 +95,6 @@ export function NewProjectWizard() {
   const resume: string | null = params.get("resume");
   const connected: boolean = useConnected();
   const [inputs, setInputs] = useState<Inputs>(initialInputs);
-  const [idEdited, setIdEdited] = useState<boolean>(false);
   const [creationId, setCreationId] = useState<string | null>(resume);
   const [restoring, setRestoring] = useState<boolean>(resume !== null);
   const accounts = useData(() => call("getAccounts"), [], (m) => m.type === "login.progress" && m.done);
@@ -112,31 +110,40 @@ export function NewProjectWizard() {
   const newRepoUnavailable: boolean = privateGit || (forgeAccounts.length > 0 && forgeAccounts.every((entry) => entry.forge === "git"));
   const createRepo: string | null = inputs.mode === "new" && account ? `${account.forge}-create-repo` : null;
   const defaultRecipe: string | undefined = inputs.recipes[0];
-  const valid: boolean = ProjectId.safeParse(inputs.id).success && !!inputs.name.trim() && !!inputs.baseBranch.trim() && !!defaultRecipe &&
+  const valid: boolean = !!inputs.name.trim() && !!inputs.baseBranch.trim() && !!defaultRecipe &&
     (inputs.mode === "local" || (!!account && !!inputs.url.trim()));
   const update = (changes: Partial<Inputs>) => setInputs((current) => ({ ...current, ...changes }));
   const create = useAction(async () => {
     if (!valid || !defaultRecipe) return;
+    const name: string = inputs.name.trim();
+    const taken: Set<string> = new Set((await call("listProjects")).map(({ id }) => id));
     const body: CreateProjectBody = {
       project: {
-        id: inputs.id,
-        name: inputs.name.trim(),
+        id: projectIdCandidate(name, 1),
+        name,
         repo: inputs.mode === "local" ? null : { url: inputs.url.trim(), account: inputs.account },
         baseBranch: inputs.baseBranch.trim(),
         createRepo,
         defaultRecipe,
         services: null,
-        limits: { jobs: 2, budget: {} },
         source: null,
       },
       recipes: inputs.recipes,
     };
-    try {
-      const { id } = await call("createProject", { body });
-      setCreationId(id);
-    } catch (error) {
-      if (/^step [456]:/.test(errorText(error))) setCreationId(inputs.id);
-      throw error;
+    for (let index: number = 1; ; index++) {
+      const candidate: string = projectIdCandidate(name, index);
+      if (taken.has(candidate)) continue;
+      body.project.id = candidate;
+      try {
+        const { id } = await call("createProject", { body });
+        setCreationId(id);
+        return;
+      } catch (error) {
+        const message: string = errorText(error);
+        if (message === `step 1: project ${candidate} already exists`) continue;
+        if (/^step [456]:/.test(message)) setCreationId(candidate);
+        throw error;
+      }
     }
   });
   const retry = useAction(async (id: string) => {
@@ -158,7 +165,6 @@ export function NewProjectWizard() {
       const selected: string[] = recipes.filter((name) => entries.some(({ path }) => path === `projects/${id}/recipes/${name}.json`));
       await call("cancelCreation", { params: { id } });
       setInputs({
-        id,
         name: project.name,
         mode: project.repo === null ? "local" : project.createRepo ? "new" : "existing",
         url: project.repo?.url ?? "",
@@ -184,7 +190,7 @@ export function NewProjectWizard() {
     return (
       <Page title="New project">
         <Panel>
-          <h2 className={w.creating}>Creating {creationId ?? inputs.id}</h2>
+          <h2 className={w.creating}>Creating {creationId ?? inputs.name.trim()}</h2>
           <CreationTasks creation={creationId ? creation.data : undefined} pending={create.busy} />
           <ErrorText error={creation.data?.error ?? creation.error ?? create.error} />
           <ErrorText error={retry.error ?? cancel.error} />
@@ -199,17 +205,12 @@ export function NewProjectWizard() {
     );
   }
 
-  const idError: string | undefined = inputs.id && !ProjectId.safeParse(inputs.id).success ? "Use up to 24 lowercase letters, digits or dashes, starting with a letter." : undefined;
   return (
     <Page title="New project">
       <Card padded className={w.card}>
         <form className={w.form} onSubmit={(e) => { e.preventDefault(); if (connected && valid) void create.run(); }}>
-          <div className={w.pair}>
-            <TextField label="Name" required disabled={!connected} value={inputs.name} placeholder="e.g. Space game" autoFocus
-              onValueChange={(name) => update(idEdited ? { name } : { name, id: slug(name) })} />
-            <TextField label="Project ID" required mono disabled={!connected} value={inputs.id} error={idError} description="Used for folders and branches."
-              onValueChange={(id) => { setIdEdited(true); update({ id }); }} />
-          </div>
+          <TextField label="Name" required disabled={!connected} value={inputs.name} placeholder="e.g. Space game" autoFocus
+            onValueChange={(name) => update({ name })} />
           <RadioGroup
             label="Repository"
             value={inputs.mode}
@@ -263,8 +264,4 @@ export function NewProjectWizard() {
       </Card>
     </Page>
   );
-}
-
-function slug(name: string): string {
-  return name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^[^a-z]+/, "").replace(/-+$/, "").slice(0, 24).replace(/-+$/, "");
 }

@@ -166,6 +166,8 @@ export const ChatAttachmentView = z.object({
   size: z.number().int().nonnegative(),
 });
 export type ChatAttachmentView = z.infer<typeof ChatAttachmentView>;
+export const ChatConfirmationRow = z.object({ label: z.string(), value: z.string() });
+export type ChatConfirmationRow = z.infer<typeof ChatConfirmationRow>;
 export const ChatActionView = z.object({
   id: z.string(),
   messageId: z.string(),
@@ -464,6 +466,7 @@ export const routes = {
   deleteNotification: { method: "DELETE", path: "/notifications/:id", params: IdParams, response: Ok },
   getChat: { method: "GET", path: "/chat", response: ChatDetail },
   clearChat: { method: "DELETE", path: "/chat", response: Ok },
+  answerChatProjectCreation: { method: "POST", path: "/chat/actions/:id/project-creation", params: IdParams, body: z.strictObject({ decision: z.enum(["approve", "cancel"]) }), response: Ok },
   sendChatMessage: { method: "POST", path: "/chat/messages", body: SendChatMessageBody, response: ChatMessageView },
   uploadChatAttachment: {
     method: "POST",

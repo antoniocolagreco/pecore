@@ -115,7 +115,6 @@ export class Engine extends EventEmitter {
     this.pools = new Pools((pool) => {
       if (pool === "jobs") return this.settings.limits.jobs ?? defaultJobLimit(cpus().length);
       if (pool === "agents") return this.settings.limits.agents;
-      if (pool.startsWith("jobs:")) return this.projects.get(pool.slice(5))?.ctx.project.limits.jobs ?? null;
       return null;
     });
     this.chats = new ChatsDb(p.chatsDb);
@@ -565,7 +564,7 @@ export class Engine extends EventEmitter {
   }
 
   async createProject(input: ProjectInput, recipes: string[]): Promise<void> {
-    const project = await beginProject(this.opts.home, input, recipes, this.createOptions());
+    const project = await beginProject(this.opts.home, input, recipes, this.createOptions(), this.opts.library);
     await this.continueCreation(project.id);
   }
 

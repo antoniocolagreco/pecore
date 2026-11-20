@@ -1,6 +1,6 @@
 import { readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { Name } from "@pecore/schemas";
+import { Name, startingRecipes } from "@pecore/schemas";
 import type { Project } from "@pecore/schemas";
 import { z } from "zod";
 import { loadRecipeFile, readJson, zodErrors } from "../definitions/load";
@@ -16,8 +16,7 @@ const forgeDefaults = z.strictObject({
   source: Name.nullable(),
 });
 
-const defaultRecipes = ["feature", "bugfix", "local-only"] as const;
-export type DefaultRecipe = (typeof defaultRecipes)[number];
+export type DefaultRecipe = (typeof startingRecipes)[number];
 export type ForgeDefaults = z.infer<typeof forgeDefaults>;
 export type ProjectDefaults = { recipes: DefaultRecipe[]; nodes: string[]; forge: ForgeDefaults | null; rename: Record<string, string> };
 
@@ -39,11 +38,11 @@ export async function projectDefaults(
   libraryDir: string,
   repo: Project["repo"],
   forgeName: string | null,
-  selectedRecipes: readonly DefaultRecipe[] = defaultRecipes,
+  selectedRecipes: readonly DefaultRecipe[] = startingRecipes,
 ): Promise<ProjectDefaults> {
   if (repo !== null && forgeName === null) throw new Error("A repository project needs a forge");
   const forge = repo !== null && forgeName !== null ? await loadForgeDefaults(libraryDir, forgeName) : null;
-  const recipes: DefaultRecipe[] = repo === null ? ["local-only"] : defaultRecipes.filter((name) => selectedRecipes.includes(name));
+  const recipes: DefaultRecipe[] = repo === null ? ["local-only"] : startingRecipes.filter((name) => selectedRecipes.includes(name));
   const rename: Record<string, string> = {};
   if (forge !== null) {
     const files = (await readdir(join(libraryDir, "forges"))).filter((file) => file.endsWith(".json")).sort();

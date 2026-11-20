@@ -6,6 +6,7 @@ import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { ArtifactView } from "./ArtifactView";
+import { CodeSnapshot } from "./CodeSnapshot";
 import { Button } from "../ds/button";
 import { Alert } from "../ds/feedback";
 import { TextArea } from "../ds/field";
@@ -84,12 +85,14 @@ function Subject({ item, connected }: { item: QueueItemView; connected: boolean 
           {typeof subject.path === "string" && <code>{subject.path}</code>}
           <div>
             <strong>Definition</strong>
-            <Snapshot value={JSON.stringify(subject.definition, null, 2)} />
+            <CodeSnapshot content={JSON.stringify(subject.definition, null, 2) ?? ""} language="json" label="Definition" />
           </div>
           {Object.entries(record(subject.scripts)).map(([path, content]) => (
             <div key={path}>
               <strong>{path}</strong>
-              <Snapshot value={content} />
+              {path.endsWith(".sh") && typeof content === "string"
+                ? <CodeSnapshot content={content} language="shell" label={path} />
+                : <Snapshot value={content} />}
             </div>
           ))}
         </>

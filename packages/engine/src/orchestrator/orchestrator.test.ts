@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { apiClient } from "@pecore/schemas";
 import type { ChatDetail, LiveMessage } from "@pecore/schemas";
+import { FakeForge, forgeAccount } from "../../test/fake-forge";
 import { shippedLibrary, tempDir } from "../../test/tmp";
 import { handlers } from "../api/handlers";
 import { startApi } from "../api/server";
@@ -15,6 +16,7 @@ import { Engine } from "../main";
 const fakeAgent = fileURLToPath(new URL("../../../agents/test/fake-agent/agent.mjs", import.meta.url));
 const shim = fileURLToPath(new URL("../../../agents/scripts/orchestrator-mcp.mjs", import.meta.url));
 const realHome = process.env.HOME;
+const realPath: string | undefined = process.env.PATH;
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
 const writeHello = {
@@ -85,12 +87,13 @@ async function until<T>(fn: () => T | undefined | false | Promise<T | undefined 
   }
 }
 
-async function setup(build: (root: string) => object[][], extra: { source?: boolean; orchestrator?: (root: string) => object[][]; compaction?: object } = {}) {
+async function setup(build: (root: string) => object[][], extra: { source?: boolean; orchestrator?: (root: string) => object[][]; compaction?: object; forge?: boolean } = {}) {
   const root = await tempDir();
   const scripts: object[][] = build(root);
   const orchestratorScripts: object[][] = extra.orchestrator?.(root) ?? [];
   process.env.HOME = join(root, "user");
   await mkdir(process.env.HOME);
+  const forge: FakeForge | null = extra.forge ? await FakeForge.start() : null;
   const home = join(root, "home");
   const library = join(root, "library");
   await cp(shippedLibrary, library, { recursive: true });
@@ -124,7 +127,7 @@ async function setup(build: (root: string) => object[][], extra: { source?: bool
     await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p1", account: "fake", model: "m1" }, { id: "p2", account: "background", model: "m2" }] }));
     await writeFile(join(home, "settings.json"), JSON.stringify({ assistant: { profile: "p1" }, orchestrator: { profile: "p2", ...extra.compaction && { compaction: extra.compaction } } }));
   } else {
-    await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [{ id: "fake", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" }] }));
+    await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [{ id: "fake", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" }, ...(forge ? [forgeAccount] : [])] }));
     await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p1", account: "fake", model: "m1" }] }));
     await writeFile(join(home, "settings.json"), JSON.stringify({ assistant: { profile: "p1" } }));
   }
@@ -144,7 +147,7 @@ async function setup(build: (root: string) => object[][], extra: { source?: bool
     await writeFile(join(dir, "project.json"), JSON.stringify({ ...project, source: { node: "fake-source", params: { trusted: ["alice"] } } }));
     expect(await first.engine.reloadProject("demo")).toEqual([]);
   }
-  return { root, open, ...first };
+  return { root, forge, open, ...first };
 }
 
 function mcp(tokenFile: string) {
@@ -168,6 +171,7 @@ const plan = [
 
 afterEach(() => {
   process.env.HOME = realHome;
+  if (realPath !== undefined) process.env.PATH = realPath;
 });
 
 describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3 and 4)", () => {
@@ -403,6 +407,90 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     }
   });
 
+  it("validates assistant project settings before creating local or remote projects", async () => {
+    const t = await setup((root) => [[
+      ...init(),
+      { expect: "session/new" },
+      { send: { jsonrpc: "2.0", id: "$id", result: { sessionId: "S1" } } },
+      { expect: "session/prompt" },
+      { dump: join(root, "project-prompt.json") },
+      { waitFile: join(root, "done") },
+      ...replyWith("Project settings checked."),
+    ]], { forge: true });
+    const m = mcp(tokenFileOf("assistant"));
+    try {
+      await t.call("sendChatMessage", { body: { text: "progetto-test, repository su github, fai tu per il resto" } });
+      await until(() => existsSync(join(t.root, "project-prompt.json")));
+      expect(await readFile(join(t.root, "project-prompt.json"), "utf8")).toContain("Only the card's Confirm button authorizes creation.");
+      await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+      const options = await m.tool("project_creation_options", {});
+      expect(options.result?.content?.[0]?.text).toContain('"defaultBaseBranch":"main"');
+      expect(options.result?.content?.[0]?.text).toContain('"canCreateRepository":true');
+      expect(options.result?.content?.[0]?.text).toContain(`"user":"${forgeAccount.user}"`);
+      expect((await m.tool("read_artifact", { view: "log", jobId: "unknown" })).result?.content?.[0]?.text).toContain("nodeRunId");
+      expect((await m.tool("create_jobs", { project: "demo", plan: [] })).result?.isError).toBe(true);
+      const settings = { name: "Mock One", repository: { mode: "local" }, baseBranch: "develop", recipes: ["local-only"] };
+      for (const invalid of [
+        { name: "Mock One" },
+        { ...settings, baseBranch: "bad..branch" },
+        { ...settings, recipes: [] },
+        { ...settings, recipes: ["local-only", "local-only"] },
+        { ...settings, repository: { mode: "new", url: "https://github.com/acme/mock-one.git", account: "missing" } },
+      ]) {
+        expect((await m.tool("create_project", invalid)).result?.isError).toBe(true);
+      }
+      expect(existsSync(t.engine.projectDir("mock-one"))).toBe(false);
+      const propose = async (input: unknown): Promise<string> => {
+        const result: Rpc = await m.tool("create_project", input);
+        expect(result.result).toEqual({ content: [{ type: "text", text: JSON.stringify({ state: "awaiting_confirmation" }) }] });
+        const action = (await t.call("getChat")).actions.at(-1)!;
+        expect(action.target).toMatchObject({ state: "awaiting_confirmation", settings: input });
+        return action.id;
+      };
+      const answer = (id: string, decision: "approve" | "cancel") =>
+        t.call("answerChatProjectCreation", { params: { id }, body: { decision } });
+      const cancelled: string = await propose(settings);
+      expect(existsSync(t.engine.projectDir("mock-one"))).toBe(false);
+      await answer(cancelled, "cancel");
+      await expect(answer(cancelled, "approve")).rejects.toThrow("no longer pending");
+      expect(existsSync(t.engine.projectDir("mock-one"))).toBe(false);
+      const approved: string = await propose(settings);
+      expect((await t.call("getChat")).actions.at(-1)?.target).toMatchObject({
+        rows: expect.arrayContaining([{ label: "Name", value: "Mock One" }, { label: "Base branch", value: "develop" }]),
+      });
+      const decisions = await Promise.allSettled([answer(approved, "approve"), answer(approved, "approve")]);
+      expect(decisions.map(({ status }) => status).sort()).toEqual(["fulfilled", "rejected"]);
+      expect((await t.call("getProject", { params: { id: "mock-one" } }))).toMatchObject({
+        creating: null, errors: [], project: { name: "Mock One", repo: null, baseBranch: "develop", defaultRecipe: "local-only" },
+      });
+      expect(existsSync(t.engine.projectDir("mock-one-2"))).toBe(false);
+      await answer(await propose(settings), "approve");
+      expect(existsSync(t.engine.projectDir("mock-one-2"))).toBe(true);
+      await t.forge!.createRepo("acme/existing");
+      const existing = { mode: "existing", url: "https://github.com/acme/existing.git", account: forgeAccount.id };
+      expect((await m.tool("create_project", { ...settings, name: "Existing", repository: existing })).result?.isError).toBe(true);
+      expect(existsSync(t.engine.projectDir("existing"))).toBe(false);
+      await answer(await propose({ ...settings, name: "Existing", repository: existing, baseBranch: "main", recipes: ["bugfix", "feature"] }), "approve");
+      expect(t.engine.project("existing").ctx.project).toMatchObject({ defaultRecipe: "feature", baseBranch: "main", repo: { url: existing.url } });
+      const remote = { mode: "new", url: "https://github.com/acme/fresh.git", account: forgeAccount.id };
+      const fresh: string = await propose({ ...settings, name: "Fresh", repository: remote, recipes: ["bugfix"] });
+      expect(existsSync(t.engine.projectDir("fresh"))).toBe(false);
+      await writeFile(join(t.root, "done"), "");
+      await until(async () => (await t.call("getChat")).messages.some(({ role, state, text }) =>
+        role === "assistant" && state === "completed" && text === "Project settings checked."));
+      await answer(fresh, "approve");
+      expect((await t.call("getChat")).actions.at(-1)?.target).toMatchObject({ state: "approved", creating: true });
+      expect(t.engine.project("fresh").ctx.project).toMatchObject({ createRepo: "github-create-repo", baseBranch: "develop", defaultRecipe: "bugfix" });
+      const db = t.engine.project("fresh").ctx.db.db;
+      expect(db.prepare("SELECT sha256 FROM confirmed_hashes WHERE path = ?").get("nodes/github-create-repo.json")).toBeDefined();
+      expect(db.prepare("SELECT id FROM human_queue WHERE job_id = ? AND kind = 'engine-node'").get("project-setup")).toBeUndefined();
+    } finally {
+      m.close();
+      await writeFile(join(t.root, "done"), "");
+      await t.close();
+    }
+  }, 30_000);
+
   it("passes no token on the command line, binds create_jobs to the message order, stages recipe changes, caps read_artifact, and stores the reply", async () => {
     const t = await setup((root) => [[
       ...init(),
@@ -434,12 +522,6 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     const m = mcp(tokenFile);
     expect((await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } })).result).toBeDefined();
     expect((await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name)).toEqual(expect.arrayContaining(["create_jobs", "create_project", "list_projects", "read_artifact", "answer_question", "write_instance"]));
-    const newProject: Rpc = await m.tool("create_project", { id: "mock-one", name: "Mock One" });
-    expect(newProject.result).toEqual({ content: [{ type: "text", text: JSON.stringify({ id: "mock-one", name: "Mock One" }) }] });
-    expect((await t.call("getProject", { params: { id: "mock-one" } }))).toMatchObject({
-      creating: null, errors: [], project: { name: "Mock One", repo: null, defaultRecipe: "local-only" },
-    });
-    expect((await m.tool("create_project", { id: "mock-one", name: "Duplicate" })).result?.isError).toBe(true);
     const created = await m.tool("create_jobs", { project: "demo", plan });
     expect(created.error).toBeUndefined();
     expect(created.result!.isError).not.toBe(true);

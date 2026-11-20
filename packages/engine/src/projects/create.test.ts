@@ -1,7 +1,8 @@
-import { readFile, stat } from "node:fs/promises";
+import { appendFile, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { autoConfirm, forgeHome, forgeProject, until } from "../../test/forge-project";
+import { ensureConfirmed } from "../definitions/confirm";
 import { Engine } from "../main";
 import { gitApp } from "../workdir/git-as";
 import { branchHead } from "../workdir/repo";
@@ -54,6 +55,22 @@ describe("project creation with a remote (section Project creation, decision 13)
     expect(forge.remoteHead("acme/dev", "main")).toBeNull();
     stop();
     await engine.shutdown();
+  });
+
+  it("asks for confirmation when the repository setup script differs from the shipped script", async () => {
+    const { forge, home, library } = await forgeHome();
+    const engine = await Engine.start({ home, library });
+    try {
+      await appendFile(join(home, "library", "nodes", "github-create-repo.sh"), "\nprintf 'custom setup\\n'\n");
+      await engine.createProject({ id: "custom", name: "Custom", repo: { url: "https://github.com/acme/custom.git", account: "gh-test" }, createRepo: "github-create-repo", defaultRecipe: "deliver" }, ["deliver"]);
+      const { ctx } = engine.project("custom");
+      const node = ctx.defs.nodes.get("github-create-repo")!;
+      expect(await ensureConfirmed(ctx.db, "project-setup", join(ctx.dir, "nodes"), node)).toMatchObject({ confirmed: false });
+      expect(ctx.db.db.prepare("SELECT sha256 FROM confirmed_hashes WHERE path = ?").get("nodes/github-create-repo.json")).toBeUndefined();
+      expect((await forge.state()).repos).not.toContain("acme/custom");
+    } finally {
+      await engine.shutdown();
+    }
   });
 
   it("cancel removes a project whose creation waits for the forge", async () => {

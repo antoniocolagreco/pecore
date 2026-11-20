@@ -1,4 +1,4 @@
-import { ChatImageMime, chatAttachmentMaxBytes, chatCompactCommand, roleProfile } from "@pecore/schemas";
+import { ChatConfirmationRow, ChatImageMime, chatAttachmentMaxBytes, chatCompactCommand, roleProfile } from "@pecore/schemas";
 import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatMessageView } from "@pecore/schemas";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -6,6 +6,7 @@ import { Link, useSearchParams } from "react-router";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
+import { ChatConfirmation } from "../components/ChatConfirmation";
 import { StateLabel } from "../components/states";
 import type { StateInfo } from "../components/states";
 import { ErrorText, dateTime, time } from "../components/ui";
@@ -69,14 +70,50 @@ function actionLinks(target: Record<string, unknown>): ActionLink[] {
   return links;
 }
 
+const confirmationRows = ChatConfirmationRow.array().min(1);
+const confirmationStatuses: Record<string, string> = {
+  awaiting_confirmation: "Awaiting confirmation",
+  creating_project: "Creating project…",
+  approved: "Confirmed",
+  cancelled: "Rejected",
+  failed: "Creation failed",
+  interrupted: "Creation interrupted",
+};
+
+function ProjectConfirmation({ action, rows, connected }: { action: ChatActionView; rows: ChatConfirmationRow[]; connected: boolean }) {
+  const target: Record<string, unknown> = object(action.target);
+  const state: string = string(target.state);
+  const project: string = string(target.project);
+  const id: string = encodeURIComponent(project);
+  const answer = useAction(async (decision: "approve" | "cancel") => {
+    await call("answerChatProjectCreation", { params: { id: action.id }, body: { decision } });
+  });
+  return (
+    <ChatConfirmation title="Create project" rows={rows} status={confirmationStatuses[state] ?? ""}
+      pending={state === "awaiting_confirmation"} disabled={!connected} busy={answer.busy}
+      error={answer.error ?? (string(target.error) || null)} onDecision={(decision) => void answer.run(decision)}>
+      {project && connected && <Link to={target.creating === true ? `/projects/new?resume=${id}` : `/projects/${id}`}>
+        {target.creating === true ? "Open project setup" : "Open project"}
+      </Link>}
+    </ChatConfirmation>
+  );
+}
+
 function ActionCard({ action, connected }: { action: ChatActionView; connected: boolean }) {
   const target: Record<string, unknown> = object(action.target);
+  if (action.tool === "create_project") {
+    const rows = confirmationRows.safeParse(target.rows);
+    if (rows.success) return <ProjectConfirmation action={action} rows={rows.data} connected={connected} />;
+  }
   const links: ActionLink[] = actionLinks(target);
   const state: string = string(target.state);
   const error: string = string(target.error);
   const ticket: string = string(target.ticketId);
   const project: string = string(target.project);
-  if (action.tool === "create_project" && project) links.push({ to: `/projects/${encodeURIComponent(project)}`, label: project });
+  if (action.tool === "create_project" && project) {
+    const id: string = encodeURIComponent(project);
+    links.push({ to: target.creating === true ? `/projects/new?resume=${id}` : `/projects/${id}`, label: project });
+  }
   return (
     <div className={s.action}>
       <div className={s.actionHead}>
@@ -115,29 +152,32 @@ function Actions({ actions, connected }: { actions: ChatActionView[]; connected:
   );
 }
 
-function Message({ message, attachments, actions, connected, reload }: {
-  message: ChatMessageView;
+function Message({ message, attachments, actions, connected, reload, working = false }: {
+  message: ChatMessageView | undefined;
   attachments: ChatAttachmentView[];
   actions: ChatActionView[];
   connected: boolean;
   reload(): void;
+  working?: boolean;
 }) {
   const retry = useAction(async () => {
+    if (!message) return;
     await call("retryChatMessage", { params: { id: message.id } });
     reload();
   });
-  const user: boolean = message.role === "user";
-  const state: StateInfo | null = user && message.state === "running" ? null : messageStates[message.state];
+  const user: boolean = message?.role === "user";
+  const state: StateInfo | null = !message || (user && message.state === "running") ? null : messageStates[message.state];
   return (
     <article className={`${s.message} ${user ? s.user : s.assistant}`}>
       {!user && <span className={s.avatar} aria-hidden><SparkIcon /></span>}
       <div className={s.body}>
         <div className={s.meta}>
           <span className={s.author}>{user ? "You" : "Assistant"}</span>
-          <time dateTime={new Date(message.createdAt).toISOString()} title={dateTime(message.createdAt)}>{time(message.createdAt)}</time>
+          {message && <time dateTime={new Date(message.createdAt).toISOString()} title={dateTime(message.createdAt)}>{time(message.createdAt)}</time>}
           {state && <StateLabel info={state} />}
         </div>
-        {message.text && <div className={s.bubble}>
+        {working && !message && <div className={s.thinking} role="status" aria-label="The Assistant is working on a reply"><span /><span /><span /></div>}
+        {message?.text && <div className={s.bubble}>
           <ReactMarkdown skipHtml disallowedElements={["img"]} components={{
             a: ({ href, children }) => connected && href?.startsWith("https://")
               ? <a href={href} target="_blank" rel="noreferrer">{children}</a>
@@ -147,8 +187,8 @@ function Message({ message, attachments, actions, connected, reload }: {
         {attachments.length > 0 && <ul className={s.chips} aria-label="Message attachments">
           {attachments.map(({ id, mime, size }) => <li className={s.chip} key={id} title={`${size} bytes`}>{mime} · {fileSize(size)}</li>)}
         </ul>}
-        <ErrorText error={message.error} />
-        {message.state === "interrupted" && <div><Button size="sm" disabled={!connected || retry.busy} loading={retry.busy} onClick={() => void retry.run()}>Retry</Button></div>}
+        <ErrorText error={message?.error} />
+        {message?.state === "interrupted" && <div><Button size="sm" disabled={!connected || retry.busy} loading={retry.busy} onClick={() => void retry.run()}>Retry</Button></div>}
         <ErrorText error={retry.error} />
         <Actions actions={actions} connected={connected} />
       </div>
@@ -170,19 +210,6 @@ function Compaction({ message }: { message: ChatMessageView }) {
       <span className={s.compactionLabel}>{pending && <Spinner size="xs" />}{label}</span>
       <ErrorText error={message.error} />
     </div>
-  );
-}
-
-function Activity({ actions, connected, working }: { actions: ChatActionView[]; connected: boolean; working: boolean }) {
-  return (
-    <article className={`${s.message} ${s.assistant}`}>
-      <span className={s.avatar} aria-hidden><SparkIcon /></span>
-      <div className={s.body}>
-        <div className={s.meta}><span className={s.author}>Assistant</span></div>
-        {working && <div className={s.thinking} role="status" aria-label="The Assistant is working on a reply"><span /><span /><span /></div>}
-        <Actions actions={actions} connected={connected} />
-      </div>
-    </article>
   );
 }
 
@@ -326,7 +353,12 @@ export function ChatPanel() {
     detail.reload();
   });
   const turnPending: boolean = chat?.messages.some(({ state }) => state === "queued" || state === "running") ?? false;
-  const replied: Set<string> = new Set(chat?.messages.flatMap(({ replyTo }) => replyTo ? [replyTo] : []) ?? []);
+  const orders: Set<string> = new Set(chat?.messages.filter(({ role }) => role === "user").map(({ id }) => id));
+  const replies: Map<string, ChatMessageView> = new Map();
+  if (chat?.streamingReply?.replyTo) replies.set(chat.streamingReply.replyTo, chat.streamingReply);
+  for (const message of chat?.messages ?? []) {
+    if (message.replyTo) replies.set(message.replyTo, message);
+  }
   const pending: ChatMessageView | undefined = chat?.messages.find((message) => message.role === "user" && (message.state === "running" || message.state === "queued") && !isCompaction(message));
   const canManage: boolean = connected && !compact.busy && !clear.busy && !turnPending;
   const canCompact: boolean = canManage && !!chat?.messages.some((message) => message.state === "completed" && !isCompaction(message));
@@ -368,7 +400,6 @@ export function ChatPanel() {
     entries.push(attachment);
     attachments.set(attachment.messageId, entries);
   }
-  const pendingActions: ChatActionView[] = pending ? actions.get(pending.id) ?? [] : [];
   return (
     <aside className={s.panel} aria-label="Assistant"><section className={s.pane}>
       <div className={s.toolbar} role="group" aria-label="Conversation controls">
@@ -388,17 +419,18 @@ export function ChatPanel() {
           {detail.loading && !chat && <Spinner />}
           {chat?.messages.map((message) => {
             if (isCompaction(message)) return <Compaction key={message.id} message={message} />;
-            const own: ChatActionView[] = message.role === "assistant" ? message.replyTo ? actions.get(message.replyTo) ?? [] : [] : actions.get(message.id) ?? [];
-            const unanswered: boolean = message.role === "user" && !replied.has(message.id) && message.state !== "running" && message.state !== "queued" && own.length > 0;
+            if (message.replyTo && orders.has(message.replyTo)) return null;
+            const own: ChatActionView[] = actions.get(message.replyTo ?? message.id) ?? [];
+            const reply: ChatMessageView | undefined = replies.get(message.id);
+            const working: boolean = message.id === pending?.id;
             return <Fragment key={message.id}>
               <Message message={message} connected={connected}
                 actions={message.role === "assistant" ? own : []} attachments={attachments.get(message.id) ?? []} reload={detail.reload} />
-              {unanswered && <Activity actions={own} connected={connected} working={false} />}
+              {message.role === "user" && (reply || working || own.length > 0) &&
+                <Message message={reply} connected={connected} actions={own} attachments={reply ? attachments.get(reply.id) ?? [] : []}
+                  reload={detail.reload} working={working} />}
             </Fragment>;
           })}
-          {chat?.streamingReply && <Message message={chat.streamingReply} connected={connected}
-            actions={pendingActions} attachments={[]} reload={detail.reload} />}
-          {pending && !chat?.streamingReply && <Activity actions={pendingActions} connected={connected} working />}
         </div>
       </div>
       {ready === false && connected && (

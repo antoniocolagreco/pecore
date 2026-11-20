@@ -1,0 +1,40 @@
+.card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--separator);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.table th,
+.table td {
+  padding: 5px 0;
+  border-bottom: 1px solid var(--separator);
+  vertical-align: top;
+}
+
+.table th {
+  width: 38%;
+  padding-right: 8px;
+  font-weight: 500;
+}
+
+.status {
+  font-size: 0.85em;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

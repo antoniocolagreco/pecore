@@ -19,7 +19,6 @@ import { commitSha, fetchBase, latestArtifact, reentryPending } from "../jobs/st
 import { runCommandNode, runMergedCheck } from "../runners/command";
 import type { CommandRun } from "../runners/command";
 import { forgeEnv, identityOk, toolAccounts, ToolAuthError } from "../runners/forge-env";
-import { budgetBlock } from "../scheduler/budget";
 import { candidateProfiles, pickProfile } from "../scheduler/tiers";
 import type { ProfileChoice } from "../scheduler/tiers";
 import { humanItem, humanResult, subjectHash } from "../runners/human";
@@ -27,7 +26,6 @@ import { paramsWithDefaults } from "../runners/placeholders";
 import { appUser, killJobProcesses, signalGroup, stopGroup } from "../runners/process";
 import { enoughDisk } from "../scheduler/disk";
 import type { Pools } from "../scheduler/pools";
-import { poolsFor } from "../scheduler/pools";
 import type { NewEvent, ProjectDb } from "../store/project-db";
 import { resolveTicketOrder } from "../sources/poll";
 import { contentState, deleteScratch, recordGit, restoreState, undoInterrupted } from "../workdir/content-state";
@@ -147,6 +145,15 @@ export class JobExecutor {
 
   constructor(readonly ctx: ProjectContext) {
     this.services = new JobServices(ctx.db, ctx.dir, ctx.project.services, () => ctx.settings.servicesRuntime);
+    const requests = ctx.db.db.prepare("SELECT id, job_id FROM human_queue WHERE kind = 'budget' AND state = 'open'").all() as { id: string; job_id: string | null }[];
+    const runs = ctx.db.db.prepare("SELECT id, job_id FROM node_runs WHERE state = 'waiting' AND waiting_reason = 'budget'").all() as { id: string; job_id: string }[];
+    const jobs = ctx.db.db.prepare("SELECT id FROM jobs WHERE state = 'waiting' AND waiting_reason = 'budget'").all() as { id: string }[];
+    const events: NewEvent[] = [
+      ...requests.map(({ id, job_id }): NewEvent => ({ jobId: job_id, type: "queue.resolved", payload: { itemId: id, state: "cancelled", choice: null, note: "Project budgets were removed" } })),
+      ...runs.map(({ id, job_id }): NewEvent => ({ jobId: job_id, type: "node_run.state_changed", payload: { nodeRunId: id, state: "waiting", waitingReason: "concurrency" } })),
+      ...jobs.map(({ id }): NewEvent => ({ jobId: id, type: "job.state_changed", payload: { state: "paused", reason: "quit" } })),
+    ];
+    if (events.length) ctx.db.append(events);
   }
 
   job(id: string): JobRow {
@@ -654,7 +661,7 @@ export class JobExecutor {
     }
 
     let profile: AgentProfile | null = null;
-    let pools = poolsFor(this.ctx.id);
+    let pools: string[] = ["jobs"];
     if (node.kind === "agent") {
       const agents = this.ctx.agents;
       if (!agents) throw new Error("agents are not configured");
@@ -676,20 +683,8 @@ export class JobExecutor {
         this.waitUntil(job.id, run.id, choice.reason, choice.until);
         return false;
       }
-      const block = budgetBlock(this.ctx.db.db, this.ctx.project, job.id);
-      if (block) {
-        const open = this.ctx.db.db.prepare("SELECT 1 FROM human_queue WHERE job_id = ? AND kind = 'budget' AND state = 'open'").get(job.id);
-        if (!open) {
-          const subject = { ...block, project: this.ctx.id };
-          this.ctx.db.append([{ jobId: job.id, type: "queue.added", payload: { itemId: ulid(), kind: "budget", subject, subjectHash: sha256(JSON.stringify(subject)), choices: ["raise", "stop"] } }]);
-          this.ctx.notify({ kind: "budget", title: job.title, body: `budget ${block.limit} reached`, jobId: job.id });
-        }
-        this.setRun(job.id, run.id, "waiting", "budget");
-        this.setState(job.id, "waiting", "budget");
-        return false;
-      }
       profile = choice;
-      pools = poolsFor(this.ctx.id, ["agents", `account:${choice.account}`]);
+      pools = ["jobs", "agents", `account:${choice.account}`];
     }
 
     if (!this.ctx.pools.tryTake(pools)) {
@@ -1108,18 +1103,6 @@ export class JobExecutor {
         return;
       }
       this.ctx.db.append([{ jobId, type: "queue.resolved", payload: { itemId, state: "resolved", choice, note } }]);
-      if (item.kind === "budget") {
-        if (job.state !== "waiting") return;
-        const open = this.runs(jobId).find((r) => r.state === "waiting");
-        if (choice === "stop") {
-          if (open) this.setRun(jobId, open.id, "interrupted", null);
-          this.setState(jobId, "stopped", null);
-          return;
-        }
-        if (open) this.setRun(jobId, open.id, "waiting", "concurrency");
-        this.setState(jobId, "running", null);
-        return;
-      }
       if (item.kind === "round-limit") {
         if (job.state === "waiting") this.setState(jobId, "running", null);
         if (choice === "end") {

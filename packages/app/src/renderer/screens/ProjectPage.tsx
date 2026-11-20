@@ -13,7 +13,6 @@ import { TextField } from "../ds/field";
 import { LinkIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
-import { NumberField } from "../ds/values";
 import s from "./ProjectPage.module.css";
 
 const pageSize: number = 100;
@@ -220,7 +219,7 @@ function Knowledge({ id }: { id: string }) {
   );
 }
 
-type SettingsForm = { name: string; baseBranch: string; defaultRecipe: string; jobs: number | null; dayUsd: number | null; jobUsd: number | null; services: string };
+type SettingsForm = { name: string; baseBranch: string; defaultRecipe: string; services: string };
 
 function ProjectSettings({ id, onSaved }: { id: string; onSaved(): void }) {
   const connected: boolean = useConnected();
@@ -236,14 +235,10 @@ function ProjectSettings({ id, onSaved }: { id: string; onSaved(): void }) {
       return null;
     }
   })();
-  const limits = (raw?.limits ?? {}) as { jobs?: number; budget?: { dayUsd?: number; jobUsd?: number } };
   const current: SettingsForm | null = raw && {
     name: String(raw.name ?? ""),
     baseBranch: String(raw.baseBranch ?? "main"),
     defaultRecipe: String(raw.defaultRecipe ?? ""),
-    jobs: limits.jobs ?? 2,
-    dayUsd: limits.budget?.dayUsd ?? null,
-    jobUsd: limits.budget?.jobUsd ?? null,
     services: typeof raw.services === "string" ? raw.services : "",
   };
   const value: SettingsForm | null = form ?? current;
@@ -251,19 +246,14 @@ function ProjectSettings({ id, onSaved }: { id: string; onSaved(): void }) {
   const set = (changes: Partial<SettingsForm>) => value && setForm({ ...value, ...changes });
   const save = useAction(async () => {
     if (!raw || !value || !file.data) return;
-    const budget: Record<string, unknown> = { ...(limits.budget ?? {}) };
-    for (const key of ["dayUsd", "jobUsd"] as const) {
-      if (value[key] === null || value[key] <= 0) delete budget[key];
-      else budget[key] = value[key];
-    }
     const next = {
       ...raw,
       name: value.name.trim(),
       baseBranch: value.baseBranch.trim(),
       defaultRecipe: value.defaultRecipe,
       services: value.services.trim() || null,
-      limits: { ...(raw.limits as object | undefined), jobs: value.jobs ?? 2, budget },
     };
+    Reflect.deleteProperty(next, "limits");
     await call("saveDefinition", { params: { path }, body: { content: JSON.stringify(next, null, 2) + "\n", baseSha256: file.data.sha256 } });
     setForm(null);
     setSavedAt(Date.now());
@@ -281,11 +271,6 @@ function ProjectSettings({ id, onSaved }: { id: string; onSaved(): void }) {
       </div>
       <Select label="Default recipe" value={value.defaultRecipe || null} onValueChange={(v) => set({ defaultRecipe: v ?? "" })} disabled={disabled}
         options={recipeNames.map((name) => ({ value: name, label: name }))} description="Used when a job does not choose one." />
-      <div className={s.triple}>
-        <NumberField label="Parallel jobs" value={value.jobs} onValueChange={(jobs) => set({ jobs })} min={1} max={32} disabled={disabled} />
-        <NumberField label="Daily budget" unit="USD" value={value.dayUsd} onValueChange={(dayUsd) => set({ dayUsd })} min={0} step={0.5} disabled={disabled} description="Blank for no limit." />
-        <NumberField label="Budget per job" unit="USD" value={value.jobUsd} onValueChange={(jobUsd) => set({ jobUsd })} min={0} step={0.5} disabled={disabled} description="Blank for no limit." />
-      </div>
       <TextField label="Services compose file" mono value={value.services} onValueChange={(services) => set({ services })} disabled={disabled}
         placeholder="compose.yaml" description="Containers PeCore starts for each job, relative to the repository." />
       <ErrorText error={save.error} />

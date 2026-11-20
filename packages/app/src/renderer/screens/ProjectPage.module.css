@@ -33,13 +33,6 @@
   align-items: start;
 }
 
-.triple {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  align-items: start;
-}
-
 .formActions {
   display: flex;
   align-items: center;

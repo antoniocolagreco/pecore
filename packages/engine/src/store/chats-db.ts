@@ -134,6 +134,7 @@ export class ChatsDb {
     this.db.transaction(() => {
       this.db.prepare("UPDATE messages SET state = 'interrupted' WHERE state IN ('queued', 'running')").run();
       this.db.prepare("UPDATE actions SET target = ? WHERE json_extract(target, '$.state') = 'running'").run(JSON.stringify({ state: "interrupted" }));
+      this.db.prepare("UPDATE actions SET target = json_set(target, '$.state', 'interrupted') WHERE json_extract(target, '$.state') = 'creating_project'").run();
     })();
   }
 

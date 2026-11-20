@@ -10,6 +10,10 @@ export function chatHandlers(engine: Engine) {
       return { ok: true as const };
     },
     sendChatMessage: async ({ body }) => chats.send(body),
+    answerChatProjectCreation: async ({ params, body }) => {
+      await chats.answerProjectCreation(params.id, body.decision);
+      return { ok: true as const };
+    },
     uploadChatAttachment: async ({ body }) => chats.upload(body.mime, body.data),
     retryChatMessage: async ({ params }) => chats.retry(params.id),
     markChatRead: async () => {

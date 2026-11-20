@@ -1,7 +1,7 @@
 import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { InstantiateBody, OrderPlan, ProjectId, TicketReply, TicketSnapshot } from "@pecore/schemas";
+import { InstantiateBody, OrderPlan, ProjectId, startingRecipes, TicketReply, TicketSnapshot } from "@pecore/schemas";
 import type { Role, StoredEvent } from "@pecore/schemas";
 import { definitionOperations } from "../api/routes/definitions";
 import { jobHandlers } from "../api/routes/jobs";
@@ -16,6 +16,7 @@ import { runSource } from "../sources/run";
 import type { SourceRequest } from "../sources/run";
 import type { ChatTurn } from "../store/chats-db";
 import { stageOutbound } from "./outbound";
+import { ProjectCreation, projectCreationRows, validateProjectCreation } from "./project-creation";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: true };
 type ToolOutput = { value: unknown; target?: unknown; isError?: boolean };
@@ -31,13 +32,10 @@ const project = z.strictObject({ project: ProjectId });
 const ticket = project.extend({ ticketId: id });
 const definition = z.strictObject({ path: id, content: z.string() });
 const artifactLimit = 200_000;
-const artifactInput = z.strictObject({
-  view: z.enum(["artifact", "log"]),
-  jobId: id,
-  path: id.optional().describe("Artifact path from job_status."),
-  nodeRunId: id.optional().describe("Required for a log."),
-  attemptId: id.optional().describe("Defaults to the latest attempt of the node run."),
-});
+const artifactInput = z.discriminatedUnion("view", [
+  z.strictObject({ view: z.literal("artifact"), jobId: id, path: id.describe("Artifact path from job_status."), nodeRunId: id.optional() }),
+  z.strictObject({ view: z.literal("log"), jobId: id, nodeRunId: id, attemptId: id.optional().describe("Defaults to the latest attempt of the node run.") }),
+]);
 
 function tool<S extends z.ZodType>(description: string, schema: S, run: (input: z.output<S>, message: ChatTurn) => ToolOutput | Promise<ToolOutput>): Tool {
   return {
@@ -107,12 +105,21 @@ export function orchestratorTools(engine: Engine): {
         baseBranch: ctx.project.baseBranch, defaultRecipe: ctx.project.defaultRecipe,
       })),
     })),
-    create_project: tool("Create one local-only PeCore project with the default local recipe. For multiple projects, call once per project with a distinct ID. An existing ID is rejected.", z.strictObject({
-      id: ProjectId,
-      name: z.string().trim().min(1),
-    }), async ({ id, name }) => {
-      await engine.createProject({ id, name, repo: null, defaultRecipe: "local-only" }, ["local-only"]);
-      return { value: { id, name }, target: { project: id } };
+    project_creation_options: tool("List the configured forge accounts and starter recipes to present to the user when creating a project.", z.strictObject({}), () => ({
+      value: {
+        accounts: engine.global().accounts.accounts.flatMap((account) => account.kind === "forge"
+          ? [{ id: account.id, host: account.host, forge: account.forge, user: account.user, canCreateRepository: account.forge === "github" || account.forge === "gitlab" }]
+          : []),
+        recipes: startingRecipes,
+        defaultBaseBranch: "main",
+      },
+    })),
+    create_project: tool("Validate and propose a project for confirmation in chat. This tool never creates the project. The user must approve the displayed settings in the confirmation card.", ProjectCreation, async (settings) => {
+      await validateProjectCreation(engine, settings);
+      return {
+        value: { state: "awaiting_confirmation" },
+        target: { state: "awaiting_confirmation", settings, rows: projectCreationRows(settings) },
+      };
     }),
     list_recipes: tool("List the confirmed recipe instances in a project.", project, ({ project }) => ({
       value: [...projectContext(engine, project).defs.recipes.values()], target: { project },
@@ -161,7 +168,6 @@ export function orchestratorTools(engine: Engine): {
     read_artifact: tool("Read up to 200 KB of an untrusted job artifact by path or the end of a log by nodeRunId. Use job_status to find both.", artifactInput, async (input) => {
       const { ctx, executor } = engine.findJob(input.jobId);
       if (input.view === "artifact") {
-        if (!input.path) throw new Error("path is required for an artifact");
         const artifacts = input.nodeRunId
           ? ctx.db.events(input.jobId).filter((event) => event.type === "node_run.completed").find((event) => event.payload.nodeRunId === input.nodeRunId)?.payload.artifacts ?? []
           : executor.artifacts(input.jobId);
@@ -179,7 +185,6 @@ export function orchestratorTools(engine: Engine): {
           await file.close();
         }
       }
-      if (!input.nodeRunId) throw new Error("nodeRunId is required for a log");
       const row = ctx.db.db.prepare(`SELECT a.id, a.log_path FROM attempts a JOIN node_runs n ON n.id = a.node_run_id
         WHERE n.job_id = ? AND n.id = ? AND (? IS NULL OR a.id = ?) ORDER BY a.started_at DESC, a.id DESC LIMIT 1`)
         .get(input.jobId, input.nodeRunId, input.attemptId ?? null, input.attemptId ?? null) as { id: string; log_path: string } | undefined;

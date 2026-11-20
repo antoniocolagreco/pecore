@@ -125,7 +125,7 @@ function Gallery() {
   const [name, setName] = useState("Pippo 2");
   const [recipe, setRecipe] = useState<string | null>(null);
   const [effort, setEffort] = useState(2);
-  const [budget, setBudget] = useState<number | null>(5);
+  const [freeDisk, setFreeDisk] = useState<number | null>(10);
   const [mode, setMode] = useState("ask");
   const [all, setAll] = useState<boolean[]>([true, false, true]);
   const someChecked = all.some(Boolean);
@@ -255,11 +255,11 @@ function Gallery() {
 
       <Section title="Numbers and ranges" note="Drag the number field label left or right to change the value.">
         <Example caption="Number field">
-          <NumberField label="Daily budget" value={budget} onValueChange={setBudget} min={0} max={100} step={0.5} unit="USD" />
-          <span className={g.output}>value: {String(budget)}</span>
+          <NumberField label="Minimum free disk" value={freeDisk} onValueChange={setFreeDisk} min={0} max={100} step={0.5} unit="GB" />
+          <span className={g.output}>value: {String(freeDisk)}</span>
         </Example>
         <Example caption="Number field, small range">
-          <NumberField label="Parallel jobs" defaultValue={2} min={1} max={8} />
+          <NumberField label="Concurrent jobs" defaultValue={2} min={1} max={8} />
         </Example>
         <Example caption="Slider with steps">
           <Slider label="Effort" value={effort} onValueChange={setEffort} min={0} max={4} format={(v) => efforts[v]!} ticks={efforts} />

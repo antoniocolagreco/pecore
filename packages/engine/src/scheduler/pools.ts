@@ -24,7 +24,3 @@ export class Pools {
     return this.used.get(pool) ?? 0;
   }
 }
-
-export function poolsFor(projectId: string, extra: string[] = []): string[] {
-  return ["jobs", `jobs:${projectId}`, ...extra];
-}

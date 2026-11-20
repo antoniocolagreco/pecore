@@ -121,7 +121,7 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 |---|---|---|
 | IF1 | Project list | 3.5 |
 | IF2 | New project wizard | CUJ 6, "Project creation" |
-| IF3 | Project settings: recipes, default recipe, services, limits, budget, ticket source, polling interval, trusted users | 3.5, 7 |
+| IF3 | Project settings: recipes, default recipe, services, ticket source, polling interval, trusted users | 3.5, 7 |
 | IF4 | Knowledge base editor (Markdown) | 2 |
 | IF5 | Export, and import as a new project | CUJ 7, 8 |
 | IF6 | Protected mode: on and off, harness logins of `pecore-agent` | 5, 8 |
@@ -268,7 +268,7 @@ The prototype is normative only for: the gradients, Notifications as a list plus
 *   Buttons: "New project", "Import project".
 *   Project page, configuration only, in sections:
     *   General: name, base branch, default recipe (editable); id, repo, forge account (read-only after creation).
-    *   Recipes (recipe editor), Nodes (node editor), Knowledge (IF4), Services, Ticket source (`label`, `pollSec`, trusted users), Limits and budget, Export.
+    *   Recipes (recipe editor), Nodes (node editor), Knowledge (IF4), Services, Ticket source (`label`, `pollSec`, trusted users), Export.
     *   Danger zone: Delete project (IF7).
 *   A link "Jobs of this project" opens Jobs with this project selected.
 
@@ -277,7 +277,7 @@ The prototype is normative only for: the gradients, Notifications as a list plus
 Pages: Inputs, Create, Confirm. Create runs the tasks of design.md "Project creation" in order; the project exists when Create ends.
 
 1.  **Inputs:** id (`^[a-z][a-z0-9-]{0,23}$`), name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, base branch, starting recipes (the shipped ones, with delivery nodes for the project's forge; each can be unchecked).
-2.  **Create:** the tasks of "Project creation" (validation, project directory, clone or repo creation, `repo.git` setup and home check, access for `pecore-agent` in protected mode, commit), each with its state. The repo creation node's confirmation is shown inside its task (UI17). A failed task undoes the tasks before it, says why, and returns to Inputs with the values kept. A repo created on the forge is never deleted by the undo: the page lists it as left on the forge.
+2.  **Create:** the tasks of "Project creation" (validation, project directory, clone or repo creation, `repo.git` setup and home check, access for `pecore-agent` in protected mode, commit), each with its state. The creation request approves the shipped GitHub or GitLab repo setup node. Custom and modified nodes ask for confirmation inside the task (UI17). A failed task undoes the tasks before it, says why, and returns to Inputs with the values kept. A repo created on the forge is never deleted by the undo: the page lists it as left on the forge.
 3.  **Confirm:** the engine nodes of the starting recipes and the project's `source` node, if any, on one screen, so the first job does not wait with reason `confirmation`. Can be skipped: the items stay in Notifications.
 4.  No logins page: logins belong to the user, not to the project (Settings > Accounts).
 
