@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { projectIdCandidate, startingRecipes } from "@pecore/schemas";
+import { projectIdCandidate } from "@pecore/schemas";
 import type { ProjectInput } from "@pecore/schemas";
 import { homePaths } from "../home/layout";
 import type { Engine } from "../main";
@@ -19,14 +19,11 @@ export const ProjectCreation = z.strictObject({
     z.strictObject({ mode: z.literal("new"), ...remote }),
   ]),
   baseBranch: requiredText,
-  recipes: z.array(z.enum(startingRecipes)).min(1).max(startingRecipes.length)
-    .refine((recipes) => new Set(recipes).size === recipes.length, "Select each starting recipe at most once."),
 });
 
 type Settings = z.infer<typeof ProjectCreation>;
 
-export async function validateProjectCreation(engine: Engine, { name, repository, baseBranch, recipes }: Settings) {
-  const selected = startingRecipes.filter((recipe) => recipes.includes(recipe));
+export async function validateProjectCreation(engine: Engine, { name, repository, baseBranch }: Settings) {
   const home: string = engine.opts.home;
   try {
     const checked: string = await gitAppIn(home, ["check-ref-format", "--branch", baseBranch]);
@@ -70,11 +67,10 @@ export async function validateProjectCreation(engine: Engine, { name, repository
     }
     repo = { url, account: accountId };
   }
-  return { name, repo, createRepo, baseBranch, selected };
+  return { name, repo, createRepo, baseBranch };
 }
 
-export function projectCreationRows({ name, repository, baseBranch, recipes }: Settings): { label: string; value: string }[] {
-  const selected = startingRecipes.filter((recipe) => recipes.includes(recipe));
+export function projectCreationRows({ name, repository, baseBranch }: Settings): { label: string; value: string }[] {
   return [
     { label: "Name", value: name },
     { label: "Repository", value: { local: "Local only", existing: "Existing repository", new: "New repository" }[repository.mode] },
@@ -84,17 +80,15 @@ export function projectCreationRows({ name, repository, baseBranch, recipes }: S
     ]),
     ...(repository.mode === "new" ? [{ label: "Remote setup", value: `Create a private repository if needed and push ${baseBranch}` }] : []),
     { label: "Base branch", value: baseBranch },
-    { label: "Starting recipes", value: selected.join(", ") },
-    { label: "Default recipe", value: selected[0]! },
   ];
 }
 
 export async function createApprovedProject(engine: Engine, settings: Settings): Promise<{ project: string; creating: boolean; error?: string }> {
-  const { name, repo, createRepo, baseBranch, selected } = await validateProjectCreation(engine, settings);
+  const { name, repo, createRepo, baseBranch } = await validateProjectCreation(engine, settings);
   for (let index: number = 1; ; index++) {
     const id: string = projectIdCandidate(name, index);
     try {
-      await engine.createProject({ id, name, repo, createRepo, baseBranch, defaultRecipe: selected[0]! }, selected);
+      await engine.createProject({ id, name, repo, createRepo, baseBranch });
     } catch (error) {
       if (error instanceof ProjectCreateError && error.message === `step 1: project ${id} already exists`) continue;
       if (engine.creating.has(id)) return { project: id, creating: true, error: error instanceof Error ? error.message : String(error) };

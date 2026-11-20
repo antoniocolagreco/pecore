@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Engine } from "../../src/main";
 import { gitApp } from "../../src/workdir/git-as";
+import { createProjectWithRecipes } from "../project";
 import { shippedLibrary, tempDir } from "../tmp";
 
 const tsFiles = (body: string) => `set -e
@@ -103,7 +104,7 @@ async function run(recipe: string) {
   for (const n of nodes) await writeFile(join(library, "nodes", `${n.name}.json`), JSON.stringify(n));
   for (const r of recipes) await writeFile(join(library, "recipes", `${r.name}.json`), JSON.stringify(r));
   const engine = await Engine.start({ home: join(root, "home"), library });
-  await engine.createProject({ id: "demo", name: "Demo", repo: null, defaultRecipe: recipe }, [recipe]);
+  await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, defaultRecipe: recipe }, [recipe]);
   const project = engine.project("demo");
   const id = await engine.createJob("demo", { title: "Add add", ticket: { text: "add two numbers" } });
   await until(() => ["succeeded", "failed"].includes(project.executor.job(id).state), 600_000);

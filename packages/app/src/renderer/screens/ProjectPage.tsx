@@ -250,7 +250,7 @@ function ProjectSettings({ id, onSaved }: { id: string; onSaved(): void }) {
       ...raw,
       name: value.name.trim(),
       baseBranch: value.baseBranch.trim(),
-      defaultRecipe: value.defaultRecipe,
+      defaultRecipe: value.defaultRecipe || null,
       services: value.services.trim() || null,
     };
     Reflect.deleteProperty(next, "limits");

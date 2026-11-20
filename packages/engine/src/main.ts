@@ -563,8 +563,8 @@ export class Engine extends EventEmitter {
     return { accounts: this.accounts, protectedMode: this.settings.protectedMode, ...(this.opts.admin ? { admin: this.opts.admin } : {}) };
   }
 
-  async createProject(input: ProjectInput, recipes: string[]): Promise<void> {
-    const project = await beginProject(this.opts.home, input, recipes, this.createOptions(), this.opts.library);
+  async createProject(input: ProjectInput): Promise<void> {
+    const project = await beginProject(this.opts.home, input, this.createOptions(), this.opts.library);
     await this.continueCreation(project.id);
   }
 

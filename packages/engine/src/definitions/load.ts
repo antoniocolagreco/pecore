@@ -91,7 +91,7 @@ export type Definitions = {
   errors: DefinitionError[];
 };
 
-export async function loadDefinitions(dir: string, opts: { checkRecipes: boolean }): Promise<Definitions> {
+export async function loadDefinitions(dir: string, opts: { checkRecipes: boolean; remote: boolean }): Promise<Definitions> {
   const nodes = new Map<string, Node>();
   const recipes = new Map<string, Recipe>();
   const errors: DefinitionError[] = [];
@@ -109,14 +109,14 @@ export async function loadDefinitions(dir: string, opts: { checkRecipes: boolean
   if (opts.checkRecipes) {
     for (const file of recipeFiles) {
       const recipe = recipes.get(basename(file, ".json"));
-      if (recipe) errors.push(...checkRecipe(recipe, nodes).map((e) => ({ file, ...e })));
+      if (recipe) errors.push(...checkRecipe(recipe, nodes, opts.remote).map((e) => ({ file, ...e })));
     }
   }
   return { nodes, recipes, errors };
 }
 
 export function loadLibrary(libraryDir: string): Promise<Definitions> {
-  return loadDefinitions(libraryDir, { checkRecipes: true });
+  return loadDefinitions(libraryDir, { checkRecipes: true, remote: true });
 }
 
 export type LoadedProject = Definitions & { project: Project | null };
@@ -124,12 +124,12 @@ export type LoadedProject = Definitions & { project: Project | null };
 export async function loadProject(projectDir: string): Promise<LoadedProject> {
   const file = join(projectDir, "project.json");
   const p = await parseFile(file, Project);
-  const defs = await loadDefinitions(projectDir, { checkRecipes: true });
+  const defs = await loadDefinitions(projectDir, { checkRecipes: true, remote: p.value?.repo !== null });
   const errors = [...p.errors, ...defs.errors];
   const project = p.value;
   if (project) {
     if (project.id !== basename(projectDir)) errors.push({ file, path: "id", message: `id must match the directory name ${basename(projectDir)}` });
-    if (!defs.recipes.has(project.defaultRecipe)) errors.push({ file, path: "defaultRecipe", message: `recipe ${project.defaultRecipe} not found in the project` });
+    if (project.defaultRecipe !== null && !defs.recipes.has(project.defaultRecipe)) errors.push({ file, path: "defaultRecipe", message: `recipe ${project.defaultRecipe} not found in the project` });
     if (project.createRepo !== null && !defs.nodes.has(project.createRepo)) errors.push({ file, path: "createRepo", message: `node ${project.createRepo} not found in the project` });
     if (project.source !== null) {
       const s = defs.nodes.get(project.source.node);

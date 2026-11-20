@@ -30,16 +30,6 @@
   }
 }
 
-.group {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.groupLabel {
-  font-weight: 500;
-}
-
 .actions {
   display: flex;
   justify-content: flex-end;

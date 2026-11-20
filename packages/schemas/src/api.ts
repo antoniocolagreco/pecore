@@ -12,7 +12,6 @@ import { Project, ProjectId } from "./project";
 export const CreateProjectBody = z
   .object({
     project: Project,
-    recipes: z.array(Name).default(["feature", "bugfix", "local-only"]),
   })
   .strict();
 export type CreateProjectBody = z.infer<typeof CreateProjectBody>;

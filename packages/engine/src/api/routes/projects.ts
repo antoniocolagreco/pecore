@@ -33,7 +33,7 @@ export function projectHandlers(engine: Engine) {
     },
     createProject: async ({ body }) => {
       try {
-        await engine.createProject(body.project, body.recipes);
+        await engine.createProject(body.project);
       } catch (e) {
         if (e instanceof ProjectCreateError) throw new HttpError("bad_request", e.message);
         throw e;

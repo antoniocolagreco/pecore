@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { createProjectWithRecipes } from "../../test/project";
 import { shippedLibrary, tempDir } from "../../test/tmp";
 import { Engine } from "../main";
 import { gitApp } from "../workdir/git-as";
@@ -67,7 +68,7 @@ describe.skipIf(!ready())("job services (4.9)", () => {
     await mkdir(home, { recursive: true });
     await writeFile(join(home, "settings.json"), JSON.stringify({ servicesRuntime: "docker" }));
     const engine = await Engine.start({ home, library: lib });
-    await engine.createProject({ id: "svc", name: "Svc", repo: null, defaultRecipe: "svc", services: "compose.yaml" }, ["svc"]);
+    await createProjectWithRecipes(engine, { id: "svc", name: "Svc", repo: null, defaultRecipe: "svc", services: "compose.yaml" }, ["svc"]);
     const p = engine.project("svc");
     const repo = join(p.ctx.dir, "repo.git");
     const blob = (await gitApp(repo, ["hash-object", "-w", "--stdin"], { input: compose })).trim();

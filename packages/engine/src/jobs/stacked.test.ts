@@ -1,6 +1,7 @@
 import { cp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { createProjectWithRecipes } from "../../test/project";
 import { shippedLibrary, tempDir } from "../../test/tmp";
 import { Engine } from "../main";
 import { gitApp } from "../workdir/git-as";
@@ -99,7 +100,7 @@ async function setup() {
   for (const [name, n] of Object.entries(nodes(marker))) await writeFile(join(lib, "nodes", `${name}.json`), JSON.stringify(n));
   for (const [name, r] of Object.entries(recipes)) await writeFile(join(lib, "recipes", `${name}.json`), JSON.stringify(r));
   const engine = await Engine.start({ home: join(root, "home"), library: lib });
-  await engine.createProject({ id: "demo", name: "Demo", repo: null, defaultRecipe: "plain" }, Object.keys(recipes));
+  await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, defaultRecipe: "plain" }, Object.keys(recipes));
   const p = engine.project("demo");
   const repo = join(p.ctx.dir, "repo.git");
   const job = (id: string) => p.executor.job(id);

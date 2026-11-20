@@ -3,8 +3,6 @@ import { JsonSchemaObject, Name, SchemaRef } from "./common";
 
 export const ProjectId = z.string().regex(/^[a-z][a-z0-9-]{0,23}$/, "lower case letters, digits and dashes, starting with a letter, at most 24");
 
-export const startingRecipes = ["feature", "bugfix", "local-only"] as const;
-
 export function projectIdCandidate(name: string, index: number): string {
   const base: string = name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^[^a-z]+/, "").replace(/-+$/, "") || "project";
   const suffix: string = index === 1 ? "" : `-${index}`;
@@ -25,7 +23,7 @@ const ProjectDefinition = z
       .nullable(),
     baseBranch: z.string().min(1).default("main"),
     createRepo: Name.nullable().default(null),
-    defaultRecipe: Name,
+    defaultRecipe: Name.nullable().default(null),
     services: z.string().min(1).nullable().default(null),
     source: z
       .object({

@@ -36,7 +36,8 @@ function validatePlan(ctx: ProjectContext, plan: OrderPlan): PlannedOrder["plan"
       if (!parent) throw new JobCreateError(`${entry.key} must depend on an earlier key`);
       if (!hasCommitNode(parent, ctx.defs.nodes)) throw new JobCreateError(`the recipe for parent key ${parentKey} has no commit node`);
     }
-    const recipe: string = entry.recipe ?? ctx.project.defaultRecipe;
+    const recipe: string | null = entry.recipe ?? ctx.project.defaultRecipe;
+    if (recipe === null) throw new JobCreateError(`project ${ctx.id} has no default recipe; choose a recipe`);
     const pending = ctx.db.db.prepare(`SELECT id FROM human_queue WHERE state = 'open' AND kind = 'recipe-change'
       AND json_extract(subject, '$.path') = ? ORDER BY id DESC LIMIT 1`).get(`projects/${ctx.id}/recipes/${recipe}.json`) as { id: string } | undefined;
     recipes.set(entry.key, recipeForJob(ctx, recipe, pending?.id));

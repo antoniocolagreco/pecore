@@ -30,7 +30,7 @@ describe("project creation with a remote (section Project creation, decision 13)
   it("a new remote is created by the createRepo node in the project-setup job, then set as origin", async () => {
     const { forge, home, library } = await forgeHome();
     const engine = await Engine.start({ home, library });
-    await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "github-create-repo", defaultRecipe: "deliver" }, ["deliver"]);
+    await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "github-create-repo" });
     const p = engine.project("fresh");
     expect(JSON.parse(await readFile(join(p.ctx.dir, "creating.json"), "utf8"))).toMatchObject({ step: 3 });
     const stop = autoConfirm(engine, "fresh");
@@ -47,7 +47,7 @@ describe("project creation with a remote (section Project creation, decision 13)
   it("a new remote gets the project's base branch, not main", async () => {
     const { forge, home, library } = await forgeHome();
     const engine = await Engine.start({ home, library });
-    await engine.createProject({ id: "dev", name: "Dev", repo: { url: "https://github.com/acme/dev.git", account: "gh-test" }, baseBranch: "develop", createRepo: "github-create-repo", defaultRecipe: "deliver" }, ["deliver"]);
+    await engine.createProject({ id: "dev", name: "Dev", repo: { url: "https://github.com/acme/dev.git", account: "gh-test" }, baseBranch: "develop", createRepo: "github-create-repo" });
     const p = engine.project("dev");
     const stop = autoConfirm(engine, "dev");
     await until(async () => !(await exists(join(p.ctx.dir, "creating.json"))));
@@ -62,7 +62,7 @@ describe("project creation with a remote (section Project creation, decision 13)
     const engine = await Engine.start({ home, library });
     try {
       await appendFile(join(home, "library", "nodes", "github-create-repo.sh"), "\nprintf 'custom setup\\n'\n");
-      await engine.createProject({ id: "custom", name: "Custom", repo: { url: "https://github.com/acme/custom.git", account: "gh-test" }, createRepo: "github-create-repo", defaultRecipe: "deliver" }, ["deliver"]);
+      await engine.createProject({ id: "custom", name: "Custom", repo: { url: "https://github.com/acme/custom.git", account: "gh-test" }, createRepo: "github-create-repo" });
       const { ctx } = engine.project("custom");
       const node = ctx.defs.nodes.get("github-create-repo")!;
       expect(await ensureConfirmed(ctx.db, "project-setup", join(ctx.dir, "nodes"), node)).toMatchObject({ confirmed: false });
@@ -77,7 +77,7 @@ describe("project creation with a remote (section Project creation, decision 13)
     const { forge, home, library } = await forgeHome();
     await forge.set({ offline: true });
     const engine = await Engine.start({ home, library });
-    await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "github-create-repo", defaultRecipe: "deliver" }, ["deliver"]);
+    await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "github-create-repo" });
     const p = engine.project("fresh");
     const stop = autoConfirm(engine, "fresh");
     await until(() => p.executor.job("project-setup").waiting_reason === "network");
@@ -92,8 +92,19 @@ describe("project creation with a remote (section Project creation, decision 13)
   it("refuses an account that does not match the repository host", async () => {
     const { home, library } = await forgeHome();
     const engine = await Engine.start({ home, library });
-    await expect(engine.createProject({ id: "bad", name: "Bad", repo: { url: "https://gitlab.com/acme/x.git", account: "gh-test" }, defaultRecipe: "deliver" }, ["deliver"])).rejects.toThrow("step 1");
+    await expect(engine.createProject({ id: "bad", name: "Bad", repo: { url: "https://gitlab.com/acme/x.git", account: "gh-test" } })).rejects.toThrow("step 1");
     expect(repoHost("git@github.com:acme/x.git")).toBe("github.com");
+    await engine.shutdown();
+  });
+
+  it("creates a project with no recipes and no default recipe (decision 72)", async () => {
+    const { home, library } = await forgeHome();
+    const engine = await Engine.start({ home, library });
+    await engine.createProject({ id: "plain", name: "Plain", repo: null });
+    const p = engine.project("plain");
+    expect(p.ctx.defs.recipes.size).toBe(0);
+    expect(p.ctx.project.defaultRecipe).toBeNull();
+    await expect(engine.createJob("plain", { title: "Add a file", ticket: { text: "add a file" } })).rejects.toThrow("project plain has no default recipe; choose a recipe");
     await engine.shutdown();
   });
 });

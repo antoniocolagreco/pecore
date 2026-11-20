@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { apiClient } from "@pecore/schemas";
 import type { ChatDetail, LiveMessage } from "@pecore/schemas";
 import { FakeForge, forgeAccount } from "../../test/fake-forge";
+import { createProjectWithRecipes } from "../../test/project";
 import { shippedLibrary, tempDir } from "../../test/tmp";
 import { handlers } from "../api/handlers";
 import { startApi } from "../api/server";
@@ -139,7 +140,7 @@ async function setup(build: (root: string) => object[][], extra: { source?: bool
     return { engine, api, call: apiClient({ port: api.port, token: api.token }), close: async () => { await api.close(); await engine.shutdown(); } };
   };
   const first = await open();
-  await first.engine.createProject({ id: "demo", name: "Demo", repo: null, defaultRecipe: "reviewed" }, ["reviewed", "big"]);
+  await createProjectWithRecipes(first.engine, { id: "demo", name: "Demo", repo: null, defaultRecipe: "reviewed" }, ["reviewed", "big"]);
   if (extra.source) {
     const dir = first.engine.projectDir("demo");
     await writeFile(join(dir, "nodes", "fake-source.json"), JSON.stringify({ ...fakeSource, comment: { command: ["/bin/sh", "-c", `echo posted >> '${join(root, "comments")}'`] } }));
@@ -427,14 +428,14 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       expect(options.result?.content?.[0]?.text).toContain('"defaultBaseBranch":"main"');
       expect(options.result?.content?.[0]?.text).toContain('"canCreateRepository":true');
       expect(options.result?.content?.[0]?.text).toContain(`"user":"${forgeAccount.user}"`);
+      expect(options.result?.content?.[0]?.text).not.toContain('"recipes"');
       expect((await m.tool("read_artifact", { view: "log", jobId: "unknown" })).result?.content?.[0]?.text).toContain("nodeRunId");
       expect((await m.tool("create_jobs", { project: "demo", plan: [] })).result?.isError).toBe(true);
-      const settings = { name: "Mock One", repository: { mode: "local" }, baseBranch: "develop", recipes: ["local-only"] };
+      const settings = { name: "Mock One", repository: { mode: "local" }, baseBranch: "develop" };
       for (const invalid of [
         { name: "Mock One" },
         { ...settings, baseBranch: "bad..branch" },
-        { ...settings, recipes: [] },
-        { ...settings, recipes: ["local-only", "local-only"] },
+        { ...settings, recipes: ["local-only"] },
         { ...settings, repository: { mode: "new", url: "https://github.com/acme/mock-one.git", account: "missing" } },
       ]) {
         expect((await m.tool("create_project", invalid)).result?.isError).toBe(true);
@@ -461,8 +462,9 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       const decisions = await Promise.allSettled([answer(approved, "approve"), answer(approved, "approve")]);
       expect(decisions.map(({ status }) => status).sort()).toEqual(["fulfilled", "rejected"]);
       expect((await t.call("getProject", { params: { id: "mock-one" } }))).toMatchObject({
-        creating: null, errors: [], project: { name: "Mock One", repo: null, baseBranch: "develop", defaultRecipe: "local-only" },
+        creating: null, errors: [], project: { name: "Mock One", repo: null, baseBranch: "develop", defaultRecipe: null },
       });
+      expect(t.engine.project("mock-one").ctx.defs.recipes.size).toBe(0);
       expect(existsSync(t.engine.projectDir("mock-one-2"))).toBe(false);
       await answer(await propose(settings), "approve");
       expect(existsSync(t.engine.projectDir("mock-one-2"))).toBe(true);
@@ -470,17 +472,17 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       const existing = { mode: "existing", url: "https://github.com/acme/existing.git", account: forgeAccount.id };
       expect((await m.tool("create_project", { ...settings, name: "Existing", repository: existing })).result?.isError).toBe(true);
       expect(existsSync(t.engine.projectDir("existing"))).toBe(false);
-      await answer(await propose({ ...settings, name: "Existing", repository: existing, baseBranch: "main", recipes: ["bugfix", "feature"] }), "approve");
-      expect(t.engine.project("existing").ctx.project).toMatchObject({ defaultRecipe: "feature", baseBranch: "main", repo: { url: existing.url } });
+      await answer(await propose({ ...settings, name: "Existing", repository: existing, baseBranch: "main" }), "approve");
+      expect(t.engine.project("existing").ctx.project).toMatchObject({ defaultRecipe: null, baseBranch: "main", repo: { url: existing.url } });
       const remote = { mode: "new", url: "https://github.com/acme/fresh.git", account: forgeAccount.id };
-      const fresh: string = await propose({ ...settings, name: "Fresh", repository: remote, recipes: ["bugfix"] });
+      const fresh: string = await propose({ ...settings, name: "Fresh", repository: remote });
       expect(existsSync(t.engine.projectDir("fresh"))).toBe(false);
       await writeFile(join(t.root, "done"), "");
       await until(async () => (await t.call("getChat")).messages.some(({ role, state, text }) =>
         role === "assistant" && state === "completed" && text === "Project settings checked."));
       await answer(fresh, "approve");
       expect((await t.call("getChat")).actions.at(-1)?.target).toMatchObject({ state: "approved", creating: true });
-      expect(t.engine.project("fresh").ctx.project).toMatchObject({ createRepo: "github-create-repo", baseBranch: "develop", defaultRecipe: "bugfix" });
+      expect(t.engine.project("fresh").ctx.project).toMatchObject({ createRepo: "github-create-repo", baseBranch: "develop", defaultRecipe: null });
       const db = t.engine.project("fresh").ctx.db.db;
       expect(db.prepare("SELECT sha256 FROM confirmed_hashes WHERE path = ?").get("nodes/github-create-repo.json")).toBeDefined();
       expect(db.prepare("SELECT id FROM human_queue WHERE job_id = ? AND kind = 'engine-node'").get("project-setup")).toBeUndefined();

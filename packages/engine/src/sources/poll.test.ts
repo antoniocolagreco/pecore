@@ -1,6 +1,7 @@
 import { cp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { createProjectWithRecipes } from "../../test/project";
 import { shippedLibrary, tempDir } from "../../test/tmp";
 import { Engine } from "../main";
 import type { OrderSink } from "./poll";
@@ -40,7 +41,7 @@ describe("ticket intake (section 7, Phase 6 decision 1)", () => {
       },
     };
     const engine = await Engine.start({ home, library, orders });
-    await engine.createProject({ id: "demo", name: "Demo", repo: null, defaultRecipe: "local-only" }, ["local-only"]);
+    await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, defaultRecipe: "local-only" }, ["local-only"]);
     const dir = engine.projectDir("demo");
     await writeFile(join(dir, "nodes", "fake-source.json"), JSON.stringify(fakeSource));
     const projectFile = join(dir, "project.json");

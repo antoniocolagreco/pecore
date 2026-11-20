@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { gitApp } from "../../src/workdir/git-as";
 import { Engine } from "../../src/main";
+import { createProjectWithRecipes } from "../project";
 import { shippedLibrary, tempDir } from "../tmp";
 
 const nodes: Record<string, object> = {
@@ -106,7 +107,7 @@ async function setup(recipe: string) {
   const home = join(await tempDir(), "home");
   const lib = await library();
   const engine = await Engine.start({ home, library: lib });
-  await engine.createProject({ id: "demo", name: "Demo", repo: null, defaultRecipe: recipe }, [recipe]);
+  await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, defaultRecipe: recipe }, [recipe]);
   return { home, lib, engine, project: engine.project("demo") };
 }
 

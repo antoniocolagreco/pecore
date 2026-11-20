@@ -7,9 +7,9 @@ import { ensureConfirmed, needsConfirmation, runFiles, stageRecipeChange } from 
 import type { RecipeChangeSubject } from "../../definitions/confirm";
 import { sourceScope } from "../../sources/run";
 import { instantiateNode, instantiateRecipe } from "../../definitions/instantiate";
-import { zodErrors } from "../../definitions/load";
+import { loadLibrary, zodErrors } from "../../definitions/load";
 import type { DefinitionError } from "../../definitions/load";
-import { checkRecipe } from "../../definitions/recipe-check";
+import { checkRecipe, remoteIssues } from "../../definitions/recipe-check";
 import { commitDefinition, commitMessage, git } from "../../home/git-commit";
 import { homePaths } from "../../home/layout";
 import { NotFoundError } from "../../main";
@@ -168,7 +168,10 @@ export function definitionOperations(engine: Engine) {
       const result = Recipe.safeParse(value);
       if (!result.success) return { value, errors: zodErrors(path, result.error) };
       if (result.data.name !== basename(path, ".json")) errors.push({ file: path, path: "name", message: `name must match the file name ${basename(path, ".json")}` });
-      if (id) errors.push(...checkRecipe(result.data, projectContext(engine, id).defs.nodes).map((issue) => ({ file: path, ...issue })));
+      if (id) {
+        const ctx = projectContext(engine, id);
+        errors.push(...checkRecipe(result.data, ctx.defs.nodes, ctx.project.repo !== null).map((issue) => ({ file: path, ...issue })));
+      }
       return { value, errors };
     }
     const schema: typeof Node | typeof Project = kind === "node" ? Node : Project;
@@ -243,11 +246,18 @@ export function definitionOperations(engine: Engine) {
     if (kind === "recipe" && project.repo !== null) {
       try {
         const account = forgeAccountOf(project, engine.global().accounts);
-        ({ rename } = await projectDefaults(home.library, project.repo, account?.forge ?? null, []));
+        ({ rename } = await projectDefaults(home.library, project.repo, account?.forge ?? null));
       } catch (e) {
         if (e instanceof ProjectCreateError) throw new HttpError("bad_request", e.message);
         throw e;
       }
+    }
+    if (kind === "recipe" && project.repo === null) {
+      const library = await loadLibrary(home.library);
+      const recipe = library.recipes.get(name);
+      const errors: DefinitionError[] = recipe ? remoteIssues(recipe, library.nodes).map((issue) => ({ file: `library/recipes/${name}.json`, ...issue })) : [];
+      if (errors.length && stage) return { created: [], kept: [], confirmItemIds: [], errors };
+      if (errors.length) throw new HttpError("bad_request", errors.map((error) => error.message).join("\n"));
     }
     const nodesDir: string = join(projectDir, "nodes");
     await rejectSymlinks(projectDir, nodesDir);

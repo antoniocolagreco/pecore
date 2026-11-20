@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { Engine } from "../../src/main";
 import { gitApp } from "../../src/workdir/git-as";
+import { createProjectWithRecipes } from "../project";
 import { shippedLibrary, tempDir } from "../tmp";
 
 const real = process.env.PECORE_REAL === "1";
@@ -60,7 +61,7 @@ describe.skipIf(!real)("phase 6 gate: Codex and opencode connectors with the use
       await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p", account, model, ...(effort ? { effort } : {}) }] }));
       const adapters = (await import(join(agentsRoot, "adapters.json"), { with: { type: "json" } })).default as { adapters: Record<string, { version: string; entry: string }> };
       const engine = await Engine.start({ home, library, agents: { connectorsDir, adaptersDir: join(agentsRoot, "out", "adapters"), adapters: adapters.adapters }, checkLogins: false });
-      await engine.createProject({ id: "demo", name: "Demo", repo: null, defaultRecipe: "one-agent" }, ["one-agent"]);
+      await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, defaultRecipe: "one-agent" }, ["one-agent"]);
       const p = engine.project("demo");
       const id = await engine.createJob("demo", { title: "Write done", ticket: { text: "write done.txt" } });
       for (;;) {
@@ -88,7 +89,7 @@ describe.skipIf(!real)("phase 6 gate: Codex and opencode connectors with the use
       await writeFile(join(home, "tiers.json"), JSON.stringify({ tiers: { frontier: ["p"], strong: ["p"], standard: ["p"], cheap: ["p"] } }));
       const adapters = (await import(join(agentsRoot, "adapters.json"), { with: { type: "json" } })).default as { adapters: Record<string, { version: string; entry: string }> };
       const engine = await Engine.start({ home, library: shippedLibrary, agents: { connectorsDir, adaptersDir: join(agentsRoot, "out", "adapters"), adapters: adapters.adapters }, checkLogins: false });
-      await engine.createProject({ id: "demo", name: "Demo", repo: null, defaultRecipe: "local-only" }, ["local-only"]);
+      await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, defaultRecipe: "local-only" }, ["local-only"]);
       const p = engine.project("demo");
       const id = await engine.createJob("demo", {
         title: "Add a sum function",

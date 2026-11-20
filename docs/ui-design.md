@@ -276,9 +276,9 @@ The prototype is normative only for: the gradients, Notifications as a list plus
 
 Pages: Inputs, Create, Confirm. Create runs the tasks of design.md "Project creation" in order; the project exists when Create ends.
 
-1.  **Inputs:** name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, base branch, starting recipes (the shipped ones, with delivery nodes for the project's forge; each can be unchecked). The id comes from the name (decision 70).
+1.  **Inputs:** name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, base branch. No recipes: the user adds them afterwards from the Library or the project page, and a recipe that pushes or opens a PR cannot be added to a project without a remote repo (decision 72). The id comes from the name (decision 70).
 2.  **Create:** the tasks of "Project creation" (validation, project directory, clone or repo creation, `repo.git` setup and home check, access for `pecore-agent` in protected mode, commit), each with its state. The creation request approves the shipped GitHub or GitLab repo setup node. Custom and modified nodes ask for confirmation inside the task (UI17). A failed task undoes the tasks before it, says why, and returns to Inputs with the values kept. A repo created on the forge is never deleted by the undo: the page lists it as left on the forge.
-3.  **Confirm:** the engine nodes of the starting recipes and the project's `source` node, if any, on one screen, so the first job does not wait with reason `confirmation`. Can be skipped: the items stay in Notifications.
+3.  **Confirm:** the project's engine nodes and its `source` node, if any, on one screen, so the first job does not wait with reason `confirmation`. Can be skipped: the items stay in Notifications.
 4.  No logins page: logins belong to the user, not to the project (Settings > Accounts).
 
 Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done; Cancel on Confirm leaves the project created.

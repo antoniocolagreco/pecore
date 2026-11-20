@@ -1,9 +1,11 @@
+import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { LiveMessage } from "@pecore/schemas";
 import { git } from "../home/git-commit";
 import { apiProject } from "../../test/api-project";
+import { definitionOperations } from "./routes/definitions";
 
 describe("definition routes", () => {
   it("lists, reads and saves a project file with its hash; a stale hash is 409, an invalid file is 400", async () => {
@@ -48,6 +50,25 @@ describe("definition routes", () => {
     expect(engine.project("demo").ctx.defs.nodes.has("github-pr")).toBe(true);
     const again = await call("instantiate", { body: { kind: "node", name: "github-pr", project: "demo" } });
     expect(again).toMatchObject({ created: [], kept: ["projects/demo/nodes/github-pr.json"] });
+    await close();
+  });
+
+  it("refuses to add or save a recipe that needs a remote repository in a local project (decision 72)", async () => {
+    const { engine, call, close } = await apiProject();
+    const refusal = "git-push needs a remote repository, and this project has none";
+    await expect(call("instantiate", { body: { kind: "recipe", name: "feature", project: "demo" } })).rejects.toThrow(refusal);
+    expect(existsSync(join(engine.projectDir("demo"), "recipes", "feature.json"))).toBe(false);
+    expect(existsSync(join(engine.projectDir("demo"), "nodes", "git-push.json"))).toBe(false);
+    const staged = await definitionOperations(engine).stageInstantiation({ kind: "recipe", name: "feature", project: "demo" });
+    expect(staged.errors?.map(({ message }) => message)).toContain(refusal);
+    expect((await call("listQueue", { query: { state: "open" } })).filter(({ kind }) => kind === "recipe-change")).toEqual([]);
+    await call("instantiate", { body: { kind: "node", name: "git-push", project: "demo" } });
+    const content = JSON.stringify({ name: "push", description: "commit and push", start: "commit", successOutcomes: ["push:pushed"],
+      nodes: { commit: { use: "git-commit" }, push: { use: "git-push" } }, edges: [{ from: "commit", on: "done", to: "push" }] });
+    expect((await call("validateDefinition", { body: { path: "projects/demo/recipes/push.json", content } })).errors.map(({ message }) => message)).toEqual([refusal]);
+    await expect(call("saveDefinition", { params: { path: "projects/demo/recipes/push.json" }, body: { content, baseSha256: null } })).rejects.toThrow(refusal);
+    expect(existsSync(join(engine.projectDir("demo"), "recipes", "push.json"))).toBe(false);
+    expect((await call("instantiate", { body: { kind: "recipe", name: "local-only", project: "demo" } })).created).toContain("projects/demo/recipes/local-only.json");
     await close();
   });
 });

@@ -1,6 +1,7 @@
 import { cp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { createProjectWithRecipes } from "../../test/project";
 import { shippedLibrary, tempDir } from "../../test/tmp";
 import { Engine } from "../main";
 import { canonical, subjectSha } from "./confirm";
@@ -33,7 +34,7 @@ async function setup() {
   await writeFile(join(lib, "nodes", "notify.sh"), `echo first >> ${marker(root)}\n`);
   await writeFile(join(lib, "recipes", "notify.json"), JSON.stringify({ name: "notify", description: "one engine node", start: "n", successOutcomes: ["n:done"], nodes: { n: { use: "notify" } } }));
   const engine = await Engine.start({ home: join(root, "home"), library: lib });
-  await engine.createProject({ id: "demo", name: "Demo", repo: null, defaultRecipe: "notify" }, ["notify"]);
+  await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, defaultRecipe: "notify" }, ["notify"]);
   return { root, engine, p: engine.project("demo") };
 }
 

@@ -1,7 +1,7 @@
 import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { InstantiateBody, OrderPlan, ProjectId, startingRecipes, TicketReply, TicketSnapshot } from "@pecore/schemas";
+import { InstantiateBody, OrderPlan, ProjectId, TicketReply, TicketSnapshot } from "@pecore/schemas";
 import type { Role, StoredEvent } from "@pecore/schemas";
 import { definitionOperations } from "../api/routes/definitions";
 import { jobHandlers } from "../api/routes/jobs";
@@ -105,12 +105,11 @@ export function orchestratorTools(engine: Engine): {
         baseBranch: ctx.project.baseBranch, defaultRecipe: ctx.project.defaultRecipe,
       })),
     })),
-    project_creation_options: tool("List the configured forge accounts and starter recipes to present to the user when creating a project.", z.strictObject({}), () => ({
+    project_creation_options: tool("List the configured forge accounts to present to the user when creating a project.", z.strictObject({}), () => ({
       value: {
         accounts: engine.global().accounts.accounts.flatMap((account) => account.kind === "forge"
           ? [{ id: account.id, host: account.host, forge: account.forge, user: account.user, canCreateRepository: account.forge === "github" || account.forge === "gitlab" }]
           : []),
-        recipes: startingRecipes,
         defaultBaseBranch: "main",
       },
     })),

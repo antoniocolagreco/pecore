@@ -120,7 +120,7 @@ describe.skipIf(gui)("phase 5 gate: G16 actions from the GUI (built app, headles
     await go("#/projects/new");
     await page.getByLabel("Name").fill("Demo");
     await page.getByRole("radio", { name: /^Local only/ }).check();
-    for (const r of ["feature", "bugfix"]) await page.getByRole("checkbox", { name: new RegExp(`^${r}`) }).uncheck();
+    if (await page.getByRole("checkbox").count()) throw new Error("the wizard still offers recipes");
     await page.getByRole("button", { name: "Create project" }).click();
     await visible(page.getByRole("button", { name: /Finish|Skip/ }).first(), 30_000);
     await go("#/projects");
@@ -128,7 +128,6 @@ describe.skipIf(gui)("phase 5 gate: G16 actions from the GUI (built app, headles
 
     await go("#/projects/new");
     await page.getByLabel("Name").fill("Demo");
-    for (const r of ["feature", "bugfix"]) await page.getByRole("checkbox", { name: new RegExp(`^${r}`) }).uncheck();
     await page.getByRole("button", { name: "Create project" }).click();
     const finish = page.getByRole("button", { name: /Finish|Skip/ }).first();
     await visible(finish, 30_000);
@@ -437,7 +436,6 @@ describe.skipIf(gui)("phase 5 gate: forge actions from the GUI (fake gh)", () =>
     await page.getByRole("radio", { name: /^New repository/ }).check();
     await page.getByLabel("New repository URL").fill("https://github.com/acme/shop.git");
     await choose(page.getByLabel("Forge account"), "gh-test · github.com");
-    for (const r of ["feature", "bugfix"]) await page.getByRole("checkbox", { name: new RegExp(`^${r}`) }).uncheck();
     await shot("wizard");
     await page.getByRole("button", { name: "Create project" }).click();
     await visible(page.getByText("Engine node").first(), 30_000);
@@ -561,7 +559,6 @@ describe.skipIf(gui)("phase 6: orchestrator chat from the GUI (fake agent)", () 
     await go("#/projects/new");
     await page.getByLabel("Name").fill("Demo");
     await page.getByRole("radio", { name: /^Local only/ }).check();
-    for (const r of ["feature", "bugfix"]) await page.getByRole("checkbox", { name: new RegExp(`^${r}`) }).uncheck();
     await page.getByRole("button", { name: "Create project" }).click();
     await visible(page.getByRole("button", { name: /Finish|Skip/ }).first(), 30_000);
 

@@ -65,8 +65,17 @@ export function reachable(recipe: Recipe): Set<string> {
   return seen;
 }
 
-export function checkRecipe(recipe: Recipe, nodes: Map<string, Node>): RecipeIssue[] {
-  const issues: RecipeIssue[] = [];
+export function remoteIssues(recipe: Recipe, nodes: Map<string, Node>): RecipeIssue[] {
+  return Object.entries(recipe.nodes).flatMap(([id, r]) => {
+    const node = nodes.get(r.use);
+    return node?.kind === "command" && node.credentials.includes("project.account")
+      ? [{ path: `nodes.${id}.use`, message: `${r.use} needs a remote repository, and this project has none` }]
+      : [];
+  });
+}
+
+export function checkRecipe(recipe: Recipe, nodes: Map<string, Node>, remote: boolean): RecipeIssue[] {
+  const issues: RecipeIssue[] = remote ? [] : remoteIssues(recipe, nodes);
   const resolved = new Map<string, Node>();
   for (const [id, r] of Object.entries(recipe.nodes)) {
     const node = nodes.get(r.use);

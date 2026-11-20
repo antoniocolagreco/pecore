@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { projectIdCandidate, startingRecipes } from "@pecore/schemas";
+import { projectIdCandidate } from "@pecore/schemas";
 import type { CreationView, CreateProjectBody, ForgeAccount, QueueItemView } from "@pecore/schemas";
 import { call } from "../api/client";
 import { errorText, useAction, useData } from "../api/hooks";
@@ -8,7 +8,7 @@ import { useConnected } from "../api/live";
 import { ConfirmItem } from "../components/ConfirmItem";
 import { reasonLabel } from "../components/states";
 import { Button, Empty, ErrorText, Page, Panel, ui } from "../components/ui";
-import { Checkbox, RadioGroup } from "../ds/choice";
+import { RadioGroup } from "../ds/choice";
 import { Alert, Card, Spinner } from "../ds/feedback";
 import { TextField } from "../ds/field";
 import { AlertIcon, CheckIcon } from "../ds/icons";
@@ -16,10 +16,9 @@ import { Select } from "../ds/select";
 import w from "./NewProjectWizard.module.css";
 
 type RepoMode = "existing" | "new" | "local";
-type Inputs = { name: string; mode: RepoMode; url: string; account: string; baseBranch: string; recipes: string[] };
+type Inputs = { name: string; mode: RepoMode; url: string; account: string; baseBranch: string };
 
-const recipes: string[] = [...startingRecipes];
-const initialInputs: Inputs = { name: "", mode: "local", url: "", account: "", baseBranch: "main", recipes };
+const initialInputs: Inputs = { name: "", mode: "local", url: "", account: "", baseBranch: "main" };
 const tasks: string[] = [
   "Validate project inputs",
   "Check project user",
@@ -109,12 +108,11 @@ export function NewProjectWizard() {
   const privateGit: boolean = account?.forge === "git";
   const newRepoUnavailable: boolean = privateGit || (forgeAccounts.length > 0 && forgeAccounts.every((entry) => entry.forge === "git"));
   const createRepo: string | null = inputs.mode === "new" && account ? `${account.forge}-create-repo` : null;
-  const defaultRecipe: string | undefined = inputs.recipes[0];
-  const valid: boolean = !!inputs.name.trim() && !!inputs.baseBranch.trim() && !!defaultRecipe &&
+  const valid: boolean = !!inputs.name.trim() && !!inputs.baseBranch.trim() &&
     (inputs.mode === "local" || (!!account && !!inputs.url.trim()));
   const update = (changes: Partial<Inputs>) => setInputs((current) => ({ ...current, ...changes }));
   const create = useAction(async () => {
-    if (!valid || !defaultRecipe) return;
+    if (!valid) return;
     const name: string = inputs.name.trim();
     const taken: Set<string> = new Set((await call("listProjects")).map(({ id }) => id));
     const body: CreateProjectBody = {
@@ -124,11 +122,10 @@ export function NewProjectWizard() {
         repo: inputs.mode === "local" ? null : { url: inputs.url.trim(), account: inputs.account },
         baseBranch: inputs.baseBranch.trim(),
         createRepo,
-        defaultRecipe,
+        defaultRecipe: null,
         services: null,
         source: null,
       },
-      recipes: inputs.recipes,
     };
     for (let index: number = 1; ; index++) {
       const candidate: string = projectIdCandidate(name, index);
@@ -156,13 +153,9 @@ export function NewProjectWizard() {
   });
   const cancel = useAction(async (id: string) => {
     if (restoring) {
-      const [view, entries] = await Promise.all([
-        call("getProject", { params: { id } }),
-        call("listDefinitions", { query: { dir: `projects/${id}/recipes` } }),
-      ]);
+      const view = await call("getProject", { params: { id } });
       const project: typeof view.project = view.project;
       if (!project) throw new Error("Project inputs are unavailable.");
-      const selected: string[] = recipes.filter((name) => entries.some(({ path }) => path === `projects/${id}/recipes/${name}.json`));
       await call("cancelCreation", { params: { id } });
       setInputs({
         name: project.name,
@@ -170,7 +163,6 @@ export function NewProjectWizard() {
         url: project.repo?.url ?? "",
         account: project.repo?.account ?? "",
         baseBranch: project.baseBranch,
-        recipes: selected,
       });
       setRestoring(false);
       void navigate("/projects/new", { replace: true });
@@ -243,18 +235,6 @@ export function NewProjectWizard() {
             </div>
           )}
           <TextField label="Base branch" required mono disabled={!connected} value={inputs.baseBranch} onValueChange={(baseBranch) => update({ baseBranch })} />
-          <div className={w.group} role="group" aria-label="Starting recipes">
-            <span className={w.groupLabel}>Starting recipes</span>
-            {recipes.map((name) => (
-              <Checkbox
-                key={name}
-                label={`${name}${defaultRecipe === name ? " (default)" : ""}`}
-                disabled={!connected}
-                checked={inputs.recipes.includes(name)}
-                onCheckedChange={(checked) => update({ recipes: recipes.filter((recipe) => recipe === name ? checked : inputs.recipes.includes(recipe)) })}
-              />
-            ))}
-          </div>
           <ErrorText error={create.error} />
           <div className={w.actions}>
             <Button disabled={!connected} onClick={() => void navigate("/projects")}>Cancel</Button>

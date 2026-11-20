@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Engine } from "../../src/main";
 import { autoConfirm, until } from "../forge-project";
+import { createProjectWithRecipes } from "../project";
 import { shippedLibrary, tempDir } from "../tmp";
 
 type Request = { url: string; target: string };
@@ -115,7 +116,7 @@ for (const c of cases) {
       await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [{ id: c.forge, kind: "forge", forge: c.forge, host: c.host, tool: c.tool, user: c.user, author: { name: "PeCore Test", email: "pecore-test@example.com" } }] }));
 
       let engine = await Engine.start({ home, library });
-      await engine.createProject({ id: "e2e", name: "E2E", repo: { url, account: c.forge }, createRepo: c.createRepo, defaultRecipe: "forge-e2e" }, ["forge-e2e"]);
+      await createProjectWithRecipes(engine, { id: "e2e", name: "E2E", repo: { url, account: c.forge }, createRepo: c.createRepo, defaultRecipe: "forge-e2e" }, ["forge-e2e"]);
       let stopConfirm = autoConfirm(engine, "e2e");
       let p = engine.project("e2e");
       await until(async () => !(await exists(join(p.ctx.dir, "creating.json"))), 180_000);

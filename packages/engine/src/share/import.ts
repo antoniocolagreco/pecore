@@ -147,7 +147,7 @@ export async function beginImport(home: string, input: ImportProjectBody, option
     } finally {
       db.close();
     }
-    await writeCreation(original, 3, []);
+    await writeCreation(original, 3);
     checkId(dest, id, options.knownProject);
     renameSync(original, dest);
     return { state: "imported", id, itemId: event.payload.itemId, warning: importWarning };

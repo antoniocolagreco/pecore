@@ -1,9 +1,9 @@
 import { readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { Name, startingRecipes } from "@pecore/schemas";
+import { Name } from "@pecore/schemas";
 import type { Project } from "@pecore/schemas";
 import { z } from "zod";
-import { loadRecipeFile, readJson, zodErrors } from "../definitions/load";
+import { readJson, zodErrors } from "../definitions/load";
 import type { DefinitionError } from "../definitions/load";
 
 const forgeDefaults = z.strictObject({
@@ -16,9 +16,8 @@ const forgeDefaults = z.strictObject({
   source: Name.nullable(),
 });
 
-export type DefaultRecipe = (typeof startingRecipes)[number];
 export type ForgeDefaults = z.infer<typeof forgeDefaults>;
-export type ProjectDefaults = { recipes: DefaultRecipe[]; nodes: string[]; forge: ForgeDefaults | null; rename: Record<string, string> };
+export type ProjectDefaults = { forge: ForgeDefaults | null; rename: Record<string, string> };
 
 function definitionError(errors: DefinitionError[]): Error {
   return new Error(errors.map(({ file, path, message }) => `${file}${path ? ` at ${path}` : ""}: ${message}`).join("\n"));
@@ -34,15 +33,9 @@ export async function loadForgeDefaults(libraryDir: string, forge: string): Prom
   return result.data;
 }
 
-export async function projectDefaults(
-  libraryDir: string,
-  repo: Project["repo"],
-  forgeName: string | null,
-  selectedRecipes: readonly DefaultRecipe[] = startingRecipes,
-): Promise<ProjectDefaults> {
+export async function projectDefaults(libraryDir: string, repo: Project["repo"], forgeName: string | null): Promise<ProjectDefaults> {
   if (repo !== null && forgeName === null) throw new Error("A repository project needs a forge");
   const forge = repo !== null && forgeName !== null ? await loadForgeDefaults(libraryDir, forgeName) : null;
-  const recipes: DefaultRecipe[] = repo === null ? ["local-only"] : startingRecipes.filter((name) => selectedRecipes.includes(name));
   const rename: Record<string, string> = {};
   if (forge !== null) {
     const files = (await readdir(join(libraryDir, "forges"))).filter((file) => file.endsWith(".json")).sort();
@@ -56,16 +49,5 @@ export async function projectDefaults(
       }
     }
   }
-  const nodes = new Set<string>();
-  for (const name of recipes) {
-    const recipe = await loadRecipeFile(join(libraryDir, "recipes", `${name}.json`));
-    if (!recipe.value) throw definitionError(recipe.errors);
-    for (const node of Object.values(recipe.value.nodes)) {
-      const replacement = Object.hasOwn(rename, node.use) ? rename[node.use] : undefined;
-      nodes.add(replacement ?? node.use);
-    }
-  }
-  if (forge?.createRepo) nodes.add(forge.createRepo);
-  if (forge?.source) nodes.add(forge.source);
-  return { recipes, nodes: [...nodes], forge, rename };
+  return { forge, rename };
 }

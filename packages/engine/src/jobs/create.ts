@@ -32,7 +32,8 @@ export type CreateJob = {
   recipeConfirmationId?: string;
 };
 
-export function recipeForJob(ctx: ProjectContext, recipeName: string, confirmationId?: string): Recipe {
+export function recipeForJob(ctx: ProjectContext, recipeName: string | null, confirmationId?: string): Recipe {
+  if (recipeName === null) throw new JobCreateError(`project ${ctx.id} has no default recipe; choose a recipe`);
   let recipe: Recipe | undefined = ctx.defs.recipes.get(recipeName);
   if (confirmationId) {
     const item = ctx.db.db.prepare("SELECT subject FROM human_queue WHERE id = ? AND kind = 'recipe-change'").get(confirmationId) as { subject: string } | undefined;
@@ -41,7 +42,7 @@ export function recipeForJob(ctx: ProjectContext, recipeName: string, confirmati
     recipe = Recipe.parse(JSON.parse(subject.content));
   }
   if (!recipe) throw new JobCreateError(`recipe ${recipeName} not found in project ${ctx.id}`);
-  const issues = checkRecipe(recipe, ctx.defs.nodes);
+  const issues = checkRecipe(recipe, ctx.defs.nodes, ctx.project.repo !== null);
   if (issues.length) throw new JobCreateError(`recipe ${recipeName} is not valid: ${issues.map((i) => `${i.path}: ${i.message}`).join("; ")}`);
   return recipe;
 }

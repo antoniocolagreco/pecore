@@ -8,16 +8,14 @@ import { loadForgeDefaults, projectDefaults } from "./defaults";
 const repo = { url: "https://gitlab.example.com/acme/shop.git", account: "work-gitlab" };
 
 describe("project defaults (decision 8)", () => {
-  it("a local project gets only local-only and no forge", async () => {
+  it("a local project has no forge and no renames", async () => {
     const d = await projectDefaults(shippedLibrary, null, null);
-    expect(d.recipes).toEqual(["local-only"]);
     expect(d.forge).toBeNull();
     expect(d.rename).toEqual({});
   });
 
   it("a GitLab project maps every GitHub template to its GitLab one", async () => {
     const d = await projectDefaults(shippedLibrary, repo, "gitlab");
-    expect(d.recipes).toEqual(["feature", "bugfix", "local-only"]);
     expect(d.rename).toMatchObject({
       "github-pr": "gitlab-mr",
       "github-issue-comment": "gitlab-issue-comment",
@@ -25,14 +23,6 @@ describe("project defaults (decision 8)", () => {
       "github-issues": "gitlab-issues",
       "gitlab-mr": "gitlab-mr",
     });
-    expect(d.nodes).toEqual(expect.arrayContaining(["gitlab-mr", "gitlab-issue-comment", "gitlab-create-repo", "gitlab-issues", "git-push"]));
-    expect(d.nodes.filter((n) => n.startsWith("github-"))).toEqual([]);
-  });
-
-  it("only the selected recipes are kept", async () => {
-    const d = await projectDefaults(shippedLibrary, repo, "github", ["bugfix"]);
-    expect(d.recipes).toEqual(["bugfix"]);
-    expect(d.nodes).toContain("github-issue-comment");
   });
 
   it("a repository project needs a forge, and the forge file must match its name", async () => {
@@ -48,8 +38,6 @@ describe("project defaults (decision 8)", () => {
     expect(d.rename).toMatchObject({ "github-pr": "git-delivery", "gitlab-mr": "git-delivery", "github-issue-comment": "git-no-comment", "gitlab-issue-comment": "git-no-comment" });
     expect(d.rename).not.toHaveProperty("github-create-repo");
     expect(d.rename).not.toHaveProperty("github-issues");
-    expect(d.nodes).toEqual(expect.arrayContaining(["git-delivery", "git-no-comment", "git-push"]));
-    expect(d.nodes.filter((n) => n.startsWith("github-") || n.startsWith("gitlab-"))).toEqual([]);
     const project = await tempDir();
     for (const name of ["feature", "bugfix"]) expect((await instantiateRecipe(shippedLibrary, project, name, d.rename)).errors).toEqual([]);
     const bugfix = JSON.parse(await readFile(join(project, "recipes", "bugfix.json"), "utf8"));
