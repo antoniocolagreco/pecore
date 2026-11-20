@@ -1,70 +1,70 @@
-import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { call } from "../api/client";
 import { useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { needsYou } from "../components/states";
-import { Button, Empty, ErrorText, Page, Panel, ui } from "../components/ui";
+import { ErrorText, Page } from "../components/ui";
+import { Button } from "../ds/button";
+import { Badge, Card, EmptyState, Skeleton } from "../ds/feedback";
+import { FolderIcon, LinkIcon, PlusIcon } from "../ds/icons";
+import s from "./Projects.module.css";
 
-type JobCounts = { attention: number; failed: number; auth: boolean };
-
-const pageSize: number = 100;
+type JobCounts = { attention: number; failed: number; running: number; auth: boolean };
 
 export function Projects() {
   const navigate = useNavigate();
   const connected: boolean = useConnected();
-  const [page, setPage] = useState<number>(0);
   const projects = useData(() => call("listProjects"), [], (m) => m.type === "project.updated" || m.type === "definition.changed");
   const jobs = useData(() => call("listJobs", { query: { archived: "false" } }), [], (m) => m.type === "job.updated" || m.type === "project.updated");
   const counts: Map<string, JobCounts> = new Map();
   for (const job of jobs.data ?? []) {
-    const stats: JobCounts = counts.get(job.projectId) ?? { attention: 0, failed: 0, auth: false };
+    const stats: JobCounts = counts.get(job.projectId) ?? { attention: 0, failed: 0, running: 0, auth: false };
     if (needsYou(job)) stats.attention++;
     if (job.state === "failed") stats.failed++;
+    if (job.state === "running") stats.running++;
     if (job.state === "waiting" && job.waitingReason === "auth") stats.auth = true;
     counts.set(job.projectId, stats);
   }
-  const total: number = projects.data?.length ?? 0;
-  const currentPage: number = Math.min(page, Math.max(0, Math.ceil(total / pageSize) - 1));
-  const start: number = currentPage * pageSize;
+  const newProject = <Button variant="primary" icon={<PlusIcon />} disabled={!connected} onClick={() => void navigate("/projects/new")}>New project</Button>;
   return (
-    <Page title="Projects" actions={<Button kind="primary" disabled={!connected} onClick={() => void navigate("/projects/new")}>New project</Button>}>
+    <Page title="Projects" actions={newProject}>
       <ErrorText error={projects.error ?? jobs.error} />
-      <Panel>
-        <div style={{ overflowX: "auto" }}>
-          <table className={ui.table}>
-            <thead><tr><th>Name</th><th>Repository</th><th>Base branch</th><th>Needs you</th><th>Failed jobs</th></tr></thead>
-            <tbody>
-              {projects.loading && !projects.data && <tr><td colSpan={5} className={ui.muted}>Loading…</td></tr>}
-              {projects.data?.slice(start, start + pageSize).map(({ id, project, creating, errors }) => {
-                const name: string = project?.name ?? id;
-                const stats: JobCounts | undefined = counts.get(id);
-                return (
-                  <tr key={id}>
-                    <td>
-                      {connected ? <Link to={`/projects/${id}`}>{name}</Link> : name}
-                      {creating && <div style={{ color: "var(--status-warning)" }}>
-                        {connected ? <Link to={`/projects/new?resume=${id}`}>Resume creation</Link> : "Unfinished creation"}
-                      </div>}
-                      {errors.length > 0 && <div style={{ color: "var(--status-warning)" }}>Definition errors</div>}
-                      {stats?.auth && <div style={{ color: "var(--status-warning)" }}>Login needed</div>}
-                    </td>
-                    <td>{project ? project.repo?.url ?? "local only" : "—"}</td>
-                    <td>{project?.baseBranch ?? "—"}</td>
-                    <td>{jobs.data ? stats?.attention ?? 0 : "—"}</td>
-                    <td>{jobs.data ? stats?.failed ?? 0 : "—"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        {!projects.loading && !projects.error && total === 0 && <Empty>No projects: New project</Empty>}
-        {total > pageSize && <div className={ui.row} style={{ marginTop: 12 }}>
-          <Button disabled={!connected || currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</Button>
-          <Button disabled={!connected || start + pageSize >= total} onClick={() => setPage(currentPage + 1)}>Show more</Button>
-        </div>}
-      </Panel>
+      {projects.data?.length === 0 && (
+        <Card padded>
+          <EmptyState icon={<FolderIcon size={20} />} title="No projects yet" action={newProject}>
+            A project is a repository PeCore works on. It can live only on this computer or on GitHub and GitLab.
+          </EmptyState>
+        </Card>
+      )}
+      <div className={s.grid}>
+        {projects.loading && !projects.data && [0, 1, 2].map((i) => <Card key={i} padded><Skeleton width="40%" /><Skeleton width="70%" height={10} style={{ marginTop: 10 }} /></Card>)}
+        {projects.data?.map(({ id, project, creating, errors }) => {
+          const stats: JobCounts | undefined = counts.get(id);
+          const body = (
+            <>
+              <span className={s.head}>
+                <span className={s.icon}><FolderIcon size={16} /></span>
+                <span className={s.name}>{project?.name ?? id}</span>
+              </span>
+              <span className={s.repo}>
+                {project?.repo ? <><LinkIcon size={12} />{project.repo.url.replace(/^https?:\/\//, "").replace(/\.git$/, "")}</> : "Local only"}
+                {project && <span className={s.branch}>{project.baseBranch}</span>}
+              </span>
+              <span className={s.badges}>
+                {creating && <Badge tone="warning">Unfinished creation</Badge>}
+                {errors.length > 0 && <Badge tone="danger">Definition errors</Badge>}
+                {stats?.auth && <Badge tone="warning">Login needed</Badge>}
+                {!!stats?.attention && <Badge tone="warning" dot>{stats.attention} need you</Badge>}
+                {!!stats?.running && <Badge tone="accent" dot pulse>{stats.running} running</Badge>}
+                {!!stats?.failed && <Badge tone="danger" dot>{stats.failed} failed</Badge>}
+                {!creating && !errors.length && !stats?.attention && !stats?.running && !stats?.failed && !stats?.auth && <Badge>Idle</Badge>}
+              </span>
+            </>
+          );
+          const to: string = creating ? `/projects/new?resume=${id}` : `/projects/${id}`;
+          return connected ? <Link key={id} to={to} className={s.card}>{body}</Link> : <div key={id} className={s.card}>{body}</div>;
+        })}
+      </div>
     </Page>
   );
 }

@@ -2,9 +2,114 @@
   width: 100%;
   resize: vertical;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: 12px;
 }
 
-.pre {
-  overflow: auto;
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: -8px;
+  color: var(--text-2);
+}
+
+.metaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 720px;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.triple {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.formActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.advanced {
+  max-width: 720px;
+  padding-top: 12px;
+  border-top: 1px solid var(--separator);
+}
+
+.advanced > summary {
+  margin-bottom: 12px;
+  color: var(--text-2);
+  cursor: default;
+  user-select: none;
+}
+
+.files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.file {
+  display: flex;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  text-align: left;
+  text-decoration: none;
+  cursor: default;
+  transition: background-color var(--fast) ease;
+}
+
+.file:hover {
+  background: var(--fill);
+  text-decoration: none;
+}
+
+.file[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
+.instantiate {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 560px;
+}
+
+.instantiate > :first-child {
+  flex: 1;
+}
+
+.danger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }

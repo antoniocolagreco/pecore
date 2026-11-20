@@ -364,7 +364,11 @@ describe.skipIf(gui)("phase 5 gate: G16 actions from the GUI (built app, headles
   }, 30_000);
 
   it("deletes the project from its page", async () => {
+    await go("#/projects");
+    await shot("projects");
     await go("#/projects/demo");
+    await visible(page.getByLabel("Parallel jobs"));
+    await shot("project-page");
     await page.getByRole("button", { name: /Delete project/ }).click();
     await page.getByRole("dialog").getByRole("button", { name: /Delete/ }).last().click();
     await page.waitForTimeout(1500);

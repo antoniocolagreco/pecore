@@ -1,0 +1,88 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 16px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: 0 0 0 0.5px var(--separator), 0 1px 2px rgb(0 0 0 / 0.04);
+  color: var(--text);
+  text-decoration: none;
+  animation: card-in var(--medium) var(--ease-out);
+  transition:
+    box-shadow var(--medium) var(--ease-out),
+    translate var(--spring-time) var(--spring);
+}
+
+a.card:hover {
+  text-decoration: none;
+  translate: 0 -2px;
+  box-shadow: 0 0 0 0.5px var(--separator), 0 10px 26px -10px rgb(0 0 0 / 0.22);
+}
+
+a.card:active {
+  translate: 0 0;
+}
+
+a.card:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3.5px var(--ring);
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
+.name {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.repo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.branch {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--fill);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
