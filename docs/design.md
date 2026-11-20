@@ -770,7 +770,7 @@ Two agents with different roles (decisions.md 38). The mechanics below apply to 
 *   `pecore.db` holds the job views: `jobs`, `node_runs` (with state, waiting reason, content states), `attempts` (profile, harness version, model, tokens, cost, log path), `human_queue` (human nodes and the confirmation queue, by `kind`), `usage_daily`. External effects are events (`effect.requested`, `effect.completed`, `effect.failed`) with no separate view.
 *   Raw logs are files under `logs/`, named by attempt id (a ULID). For an agent node, one line per item: `{ "dir": "in" | "out", "msg": <JSON-RPC message>, "at" }` for ACP traffic and `{ "dir": "err", "line", "at" }` for the connector's stderr. For a command node, its output. Each attempt row stores its log path.
 *   The GUI shows the job graph with each node's state, round, waiting reason, duration, tokens and cost. One click opens the node's attempts, artifacts and raw log. `pecore job why <id>` prints the same blocking reasons.
-*   Notifications: job finished, job needs the user, budget reached, harness or tool login expired, parent job failed, job started from a ticket, auto-setup changes, login files readable by other users. Each is also stored in the notification log of `chats.db`. Orchestrator replies are a native notification only, never stored (section 6). Native notifications through Electron, only while the PeCore window is not focused, with optional sound and a quiet-hours setting.
+*   Notifications: job finished, job needs the user, budget reached, harness or tool login expired, parent job failed, job started from a ticket, auto-setup changes, login files readable by other users. Each is also stored in the notification log of `chats.db`. Orchestrator replies are a native notification only, never stored (section 6). Native notifications through Electron, only while the PeCore window is not focused. PeCore has no quiet hours: the operating system's do-not-disturb applies (decisions.md 53).
 
 ### 10. Stack
 
@@ -1095,7 +1095,7 @@ Every file exports a Zod schema and the TypeScript type inferred from it. The en
 | `src/accounts.ts` | `accounts.json` with the kinds `model`, `forge`, `service` |
 | `src/profiles.ts` | `profiles.json` |
 | `src/tiers.ts` | `tiers.json`, with the four tier names fixed |
-| `src/settings.ts` | `settings.json` with defaults: `limits.jobs` (CPU cores / 2), `limits.agents` (4), `limits.providers` (per provider, none), `servicesRuntime`, `projectPaths`, `minFreeDiskGb` (10), `mergeCheckSec` (300), `prices` (per resolved model id, per million tokens of input, output, cache read and cache write), `programPaths` (optional absolute paths of harness programs and Node, 5.7), `quietHours`, `orchestrator` (profile), `protectedMode` (false), `firstRunDone` (false until the first run ends; while false the GUI opens the first run), UI preferences |
+| `src/settings.ts` | `settings.json` with defaults: `limits.jobs` (CPU cores / 2), `limits.agents` (4), `limits.providers` (per provider, none), `servicesRuntime`, `projectPaths`, `minFreeDiskGb` (10), `mergeCheckSec` (300), `prices` (per resolved model id, per million tokens of input, output, cache read and cache write), `programPaths` (optional absolute paths of harness programs and Node, 5.7), `orchestrator` (profile), `protectedMode` (false), `firstRunDone` (false until the first run ends; while false the GUI opens the first run), UI preferences |
 | `src/connector.ts` | connector file (Connector file above) |
 | `src/artifacts.ts` | artifact types of 3.3. `spec`: `criteria[]`, `tests[]`, `interfaces[] {name, signature}`, `optionalNodes[]`. `findings`: `verdict`, `items[] {file, line, severity, text}`. `risk`: `hunks[] {file, hunkIndex, level: safe \| risky, reason}` |
 | `src/events.ts` | the events of Data model |
@@ -1230,7 +1230,7 @@ The screens below come from G16. Their layout is designed in [ui-design.md](ui-d
 | `src/main/index.ts` | window, menus, tray and single-instance lock; if `userData/home.json` is missing, asks for the `PECORE_HOME` location (default `~/.pecore`) in a small main-process window and writes `home.json`, before the engine starts; then starts the engine; the quit confirmation and the shutdown sequence on `before-quit` (Engine and main process messages) |
 | `src/main/engine.ts` | `utilityProcess.fork` of the engine with `PECORE_HOME`; handles `parentPort` messages |
 | `src/main/admin.ts` | runs the privileged script text with `pkexec` or `osascript` (Fixed choices) |
-| `src/main/notifications.ts` | native notifications for `notify` messages; optional sound; quiet hours |
+| `src/main/notifications.ts` | native notifications for `notify` messages; optional sound |
 | `src/main/updater.ts` | auto-update |
 | `src/preload/index.ts` | exposes only the API port and token (from the `ready` message) to the renderer |
 | `src/renderer/main.tsx` | React root and routes |

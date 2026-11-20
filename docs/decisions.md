@@ -68,6 +68,7 @@ Format: decision. **Why:** Antonio's reason. **Replaces:** what it changes, if a
 50. The models of each AI tool are read once when the app starts, not every time Settings opens. A small refresh button next to Model reads them again. **Why:** "La ricerca dei modelli deve avvenire solo all'avvio, non ogni volta che torno in settings. Aggiungi un piccolo pulsante invece per rifare il check forzato, refresh."
 51. Every working account shows "Logged in", OpenCode and a private Git server included. **Why:** "metti 'logged in' per tutti". **Replaces:** "Ready" for OpenCode (decision 12) and for a private Git server.
 52. Effort lists only what the chosen model offers; a model with no effort levels offers only Default. Choosing another model resets Effort to Default. **Why:** "questo modello, ha solo default" (Effort showed the levels of the tool's default model). **Replaces:** one effort list per AI tool.
+53. No quiet hours in PeCore: the operating system handles do-not-disturb. The Notifications section of Settings and the `quietHours` setting are removed. **Why:** "Questo è qualcosa che si gestisce a livello OS. È slop." **Replaces:** IG8 notifications and quiet hours.
 
 ## Open
 

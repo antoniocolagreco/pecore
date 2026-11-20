@@ -10,8 +10,6 @@ const Price = z
   })
   .strict();
 
-const Time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
-
 const Compaction = z
   .object({ auto: z.number().int().positive().default(128_000), max: z.number().int().positive().default(256_000) })
   .strict();
@@ -37,7 +35,6 @@ export const Settings = z
     mergeCheckSec: z.number().int().positive().default(300),
     prices: z.record(z.string(), Price).default({}),
     programPaths: z.record(z.string(), z.string().regex(/^\//, "absolute path")).default({}),
-    quietHours: z.object({ from: Time, to: Time }).strict().nullable().default(null),
     assistant: Agent,
     orchestrator: Agent,
     protectedMode: z.boolean().default(false),

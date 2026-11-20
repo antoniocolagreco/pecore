@@ -35,7 +35,6 @@ const sections: { id: string; title: string }[] = [
   { id: "orchestrator", title: "Orchestrator" },
   { id: "limits", title: "Limits" },
   { id: "protectedMode", title: "Protected mode" },
-  { id: "notifications", title: "Notifications" },
   { id: "appearance", title: "Appearance" },
   { id: "advanced", title: "Advanced" },
   { id: "prerequisites", title: "Diagnostics" },
@@ -570,13 +569,6 @@ export function Settings() {
             </>}>
             <ErrorText error={protect.error} />
           </Dialog>
-
-          <Section id="notifications" title="Notifications" description="Quiet hours hold system notifications; they stay in Notifications.">
-            <Switch label="Quiet hours" checked={value.quietHours !== null} onCheckedChange={(checked) => update({ ...value, quietHours: checked ? { from: "22:00", to: "08:00" } : null })} />
-            {value.quietHours && <div className={s.grid}>
-              {(["from", "to"] as const).map((key) => <Field key={key} label={key === "from" ? "From" : "To"}><input type="time" value={value.quietHours?.[key]} onChange={(event) => { if (value.quietHours) update({ ...value, quietHours: { ...value.quietHours, [key]: event.target.value } }); }} /></Field>)}
-            </div>}
-          </Section>
 
           <Section id="appearance" title="Appearance">
             <div className={ui.stack}>

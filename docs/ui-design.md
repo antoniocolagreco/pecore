@@ -138,7 +138,7 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 | IG5 | First run | G14 |
 | IG6 | Assistant and Orchestrator, each: provider, model, effort, automatic and maximum compaction thresholds (decisions 7, 37, 38, 43) | 6 |
 | IG7 | Connector files, auto-update | 5, "Fixed implementation choices" |
-| IG8 | Notifications and quiet hours | 9, `src/settings.ts` |
+| IG8 | Withdrawn: quiet hours are left to the operating system (decision 53) | 9 |
 | IG9 | Appearance: theme, reduced motion | UI4, UI6 |
 
 ## Screens
@@ -326,7 +326,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 ### Settings
 
-*   Sections: Accounts (IG1), Protected mode (IF6), Assistant and Orchestrator (IG6), Limits and disk threshold, Services runtime, Merge check interval, Prices, Project paths (IG3), Connectors and Updates (IG7), Notifications and quiet hours (IG8), Appearance (IG9). No Models section (decision 6).
+*   Sections: Accounts (IG1), Protected mode (IF6), Assistant and Orchestrator (IG6), Limits and disk threshold, Services runtime, Merge check interval, Prices, Project paths (IG3), Connectors and Updates (IG7), Appearance (IG9). No Models section (decision 6) and no Notifications section (decision 53).
 *   The section list is in the main sidebar (decision 13). Sections adapt to the window width, and each has a one-line description under its title (decisions 2, 16).
 *   No text or JSON editing and no user-typed IDs; raw validation errors are never shown (decisions 1, 3).
 *   Every change saves by itself, a moment after the last keystroke and at once when the page is left; there is no Save or Discard button (decision 49). A value that is not valid is not saved and the problem shows at the bottom of the page.
