@@ -4,6 +4,7 @@
 *   **Status:** Approved (EGM stages 5-8 applied; stage 9 not applicable; reports in [reviews/ui/](reviews/ui/)). The `packages/app` table of design.md matches the Screens table below.
 *   **Date:** 2026-11-18
 *   **Related:** [design.md](design.md), [concepts-brief.md](concepts-brief.md)
+*   **Overridden by:** [decisions.md](decisions.md) wherever the two disagree.
 
 ## Problem Statement
 

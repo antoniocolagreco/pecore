@@ -4,6 +4,7 @@
 *   **Status:** Reviewed (EGM stages 5-9); UI specified, reviewed and approved in [ui-design.md](ui-design.md). Agents moved to ACP after the phase 0 spikes (section 5); that change had a targeted review ([report](reviews/design/acp_review_report.md)). A second full EGM run followed the move to normal and protected modes; the findings for phases 0 to 3 are applied ([triage](reviews/design/round2/triage.md)).
 *   **Date:** 2026-11-18
 *   **Replaces:** `docs/initial-brainstorm.md` (PeCore v0.5)
+*   **Overridden by:** [decisions.md](decisions.md) wherever the two disagree.
 *   **Inputs:** [concepts-brief.md](concepts-brief.md): review findings B1-B8, M1-M16, N1-N9 and author decisions D1-D27. In this document, "Dn" always means a decision in that file, and "v0.5 Qn" an open question in [initial-brainstorm.md](initial-brainstorm.md).
 *   **Changes to the brief's decisions:** see [Changes from the Concepts Brief](#changes-from-the-concepts-brief).
 
