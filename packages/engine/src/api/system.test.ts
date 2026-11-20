@@ -54,22 +54,6 @@ describe("system routes", () => {
     await close();
   });
 
-  it("reports usage per day, project and account, and today's use against the budget", async () => {
-    const { engine, call, close } = await apiProject();
-    const db = engine.project("demo").ctx.db;
-    const today = new Date();
-    const day = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-    db.append([
-      { jobId: null, type: "attempt.ended", payload: { attemptId: "x", endReason: "completed", model: null, account: "claude-main", tokens: { input: 10, output: 5, cacheRead: 100, cacheWrite: 2 }, cost: 0.5, day } },
-      { jobId: null, type: "attempt.ended", payload: { attemptId: "y", endReason: "completed", model: null, account: "claude-main", tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }, cost: null, day: "2026-01-01" } },
-    ]);
-    const u = await call("getUsage", { query: { from: day } });
-    expect(u.days).toEqual([{ day, project: "demo", account: "claude-main", tokens: { input: 10, output: 5, cacheRead: 100, cacheWrite: 2 }, cost: 0.5 }]);
-    expect(u.budgets).toEqual([{ project: "demo", dayTokens: null, dayUsd: null, usedTokens: 17, usedUsd: 0.5 }]);
-    expect((await call("getUsage", { query: {} })).days).toHaveLength(2);
-    await close();
-  });
-
   it("checks prerequisites with the setting each one points to; unknown accounts are 404", async () => {
     const { call, close } = await apiProject();
     expect(await call("checkPrerequisites")).toContainEqual(expect.objectContaining({ tool: "git", ok: true, setting: null }));

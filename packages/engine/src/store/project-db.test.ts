@@ -21,7 +21,7 @@ describe("pecore.db", () => {
     const again = new ProjectDb(path);
     expect(again.version()).toBe(2);
     const tables = (again.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as { name: string }[]).map((r) => r.name);
-    expect(tables).toEqual(["attempts", "confirmed_hashes", "events", "human_queue", "jobs", "node_runs", "schema_version", "tickets_seen", "usage_daily"]);
+    expect(tables).toEqual(["attempts", "confirmed_hashes", "events", "human_queue", "jobs", "node_runs", "schema_version", "tickets_seen"]);
     again.close();
   });
 
@@ -57,16 +57,15 @@ describe("pecore.db", () => {
     db.close();
   });
 
-  it("sums attempt usage per day and account", async () => {
+  it("records the end of each attempt", async () => {
     const db = new ProjectDb(join(await tempDir(), "pecore.db"));
     db.append([created]);
     for (const id of ["A1", "A2"]) {
       db.append([
         { jobId: job, type: "attempt.started", payload: { attemptId: id, nodeRunId: `${job}/code#0`, profile: "opus", connector: "claude-code", harnessVersion: "2.1.327", connectorVersion: "0.108.0", account: "claude", osUser: "ac", sessionGroup: null, logPath: `logs/${id}.jsonl.zst` } },
-        { jobId: job, type: "attempt.ended", payload: { attemptId: id, endReason: "done", model: "claude-opus-5-5", account: "claude", tokens: { input: 10, output: 20, cacheRead: 300, cacheWrite: 40 }, cost: 0.5, day: "2026-11-18" } },
+        { jobId: job, type: "attempt.ended", payload: { attemptId: id, endReason: "done", model: "claude-opus-5-5", account: "claude", tokens: { input: 10, output: 20, cacheRead: 300, cacheWrite: 40 }, cost: 0.5 } },
       ]);
     }
-    expect(db.db.prepare("SELECT * FROM usage_daily").all()).toEqual([{ day: "2026-11-18", account: "claude", tokens_in: 20, tokens_out: 40, cache_read: 600, cache_write: 80, cost: 1 }]);
     expect(db.db.prepare("SELECT model, end_reason FROM attempts WHERE id = 'A2'").get()).toEqual({ model: "claude-opus-5-5", end_reason: "done" });
     db.close();
   });

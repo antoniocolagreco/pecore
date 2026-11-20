@@ -380,15 +380,6 @@ const SetupHarness = z.object({
 export const SetupView = z.object({ harnesses: z.array(SetupHarness), modelAccountWorks: z.boolean() });
 export type SetupView = z.infer<typeof SetupView>;
 
-const TokenCounts = z.object({ input: z.number(), output: z.number(), cacheRead: z.number(), cacheWrite: z.number() });
-
-export const UsageView = z.object({
-  days: z.array(z.object({ day: z.string(), project: z.string(), account: z.string(), tokens: TokenCounts, cost: z.number() })),
-  budgets: z.array(z.object({ project: z.string(), dayTokens: z.number().nullable(), dayUsd: z.number().nullable(), usedTokens: z.number(), usedUsd: z.number() })),
-  cooldowns: z.array(z.object({ account: z.string(), kind: z.enum(["quota", "rate_limit"]), until: z.number() })),
-  quotas: z.array(z.object({ account: z.string(), status: z.string(), resetAt: z.number().nullable(), windows: z.record(z.string(), z.object({ utilization: z.number(), resetAt: z.number() })), seenAt: z.number() })),
-});
-export type UsageView = z.infer<typeof UsageView>;
 
 export const themeTokens = [
   "bg",
@@ -508,7 +499,6 @@ export const routes = {
   checkPrerequisites: { method: "POST", path: "/prerequisites/check", response: z.array(PrerequisiteView) },
   getSetup: { method: "GET", path: "/setup", response: SetupView },
   startSetupLogin: { method: "POST", path: "/setup/:connector/login", params: z.object({ connector: BuiltInHarness }), response: z.object({ loginId: z.string() }) },
-  getUsage: { method: "GET", path: "/usage", query: z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }), response: UsageView },
   listThemes: { method: "GET", path: "/themes", response: z.array(ThemeFileView) },
   getLog: { method: "GET", path: "/logs/:id", params: IdParams, query: LogQuery, response: z.union([z.object({ view: z.literal("raw"), lines: z.array(z.unknown()) }), z.object({ view: z.literal("events"), events: z.array(LogEvent) })]) },
 } as const satisfies Record<string, RouteDef>;

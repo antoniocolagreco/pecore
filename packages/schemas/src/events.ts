@@ -130,7 +130,6 @@ export const EventBody = z.discriminatedUnion("type", [
       account: z.string().nullable(),
       tokens: Tokens,
       cost: z.number().nonnegative().nullable(),
-      day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     }),
   ),
   ev("effect.requested", z.object({ nodeRunId: z.string(), node: z.string(), commandHash: z.string() })),

@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Theme } from "@pecore/schemas";
-import type { PrerequisiteView, UsageView } from "@pecore/schemas";
+import type { PrerequisiteView } from "@pecore/schemas";
 import { zodErrors } from "../../definitions/load";
 import { homePaths } from "../../home/layout";
 import { checkPrerequisites } from "../../home/prerequisites";
@@ -17,33 +17,6 @@ async function prerequisites(engine: Engine): Promise<Prerequisite[]> {
   const { settings, accounts } = engine.global();
   const services = [...engine.projects.values()].some(({ ctx }) => ctx.project.services !== null);
   return checkPrerequisites({ accounts: accounts.accounts, protectedMode: settings.protectedMode, services, servicesRuntime: settings.servicesRuntime });
-}
-
-function localDay(now = new Date()): string {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
-}
-
-type UsageRow = { day: string; account: string; tokens_in: number; tokens_out: number; cache_read: number; cache_write: number; cost: number };
-
-function usage(engine: Engine, from: string | undefined, to: string | undefined): UsageView {
-  const today = localDay();
-  const out: UsageView = { days: [], budgets: [], cooldowns: [], quotas: [] };
-  for (const [project, { ctx }] of engine.projects) {
-    const rows = ctx.db.db.prepare("SELECT * FROM usage_daily WHERE day >= ? AND day <= ? ORDER BY day, account").all(from ?? "0000-00-00", to ?? "9999-99-99") as UsageRow[];
-    for (const r of rows) out.days.push({ day: r.day, project, account: r.account, tokens: { input: r.tokens_in, output: r.tokens_out, cacheRead: r.cache_read, cacheWrite: r.cache_write }, cost: r.cost });
-    const t = ctx.db.db.prepare("SELECT coalesce(sum(tokens_in + tokens_out + cache_write), 0) AS tokens, coalesce(sum(cost), 0) AS usd FROM usage_daily WHERE day = ?").get(today) as { tokens: number; usd: number };
-    const b = ctx.project.limits.budget;
-    out.budgets.push({ project, dayTokens: b.dayTokens ?? null, dayUsd: b.dayUsd ?? null, usedTokens: t.tokens, usedUsd: t.usd });
-  }
-  for (const a of engine.global().accounts.accounts) {
-    if (a.kind !== "model" || !engine.agents) continue;
-    const c = engine.agents.cooling(a.id);
-    if (c) out.cooldowns.push({ account: a.id, kind: c.kind, until: c.until });
-    const q = engine.agents.quotas.get(a.id);
-    if (q) out.quotas.push({ account: a.id, status: q.quota.status, resetAt: q.quota.resetAt ?? null, windows: q.quota.windows ?? {}, seenAt: q.seenAt });
-  }
-  return out;
 }
 
 async function themes(engine: Engine) {
@@ -93,7 +66,6 @@ export function systemHandlers(engine: Engine) {
     checkPrerequisites: async (): Promise<PrerequisiteView[]> => (await prerequisites(engine)).map((p) => ({ ...p, setting: prerequisiteSetting[p.tool] ?? null })),
     getSetup: async () => engine.setupView(),
     startSetupLogin: async ({ params }) => ({ loginId: await conflictOn(() => engine.startSetupLogin(params.connector)) }),
-    getUsage: async ({ query }) => usage(engine, query.from, query.to),
     listThemes: async () => themes(engine),
   } satisfies Partial<Handlers>;
 }

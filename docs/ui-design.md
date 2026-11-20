@@ -134,7 +134,7 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 | IG1 | Accounts: AI tools (found by themselves), Git hosting (public services and private Git servers), services | 3.4 |
 | IG2 | Withdrawn: profiles and tiers; models are chosen on each node and for the orchestrator (decisions 5, 6) | 3.4 |
 | IG3 | Global limits, services runtime, disk threshold, merge check interval | 4.7, 4.9, "Risks & Limits" |
-| IG4 | Usage: tokens and cost per account, project, day (a top-level page) | 4.7 |
+| IG4 | Withdrawn: the Usage page (decision 64) | 4.7 |
 | IG5 | First run | G14 |
 | IG6 | Assistant and Orchestrator, each: provider, model, effort, automatic and maximum compaction thresholds (decisions 7, 37, 38, 43) | 6 |
 | IG7 | Auto-update | "Fixed implementation choices" |
@@ -153,7 +153,6 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 | Projects, project page, wizards | centre, detail page, full page | IF1-IF7 |
 | Recipe editor, node editor | detail page | IE1-IE3, IE5 |
 | Library | centre | IE4 |
-| Usage | centre | IG4 |
 | Settings | centre | IG1, IG3, IG6-IG9 |
 | First run | full screen | IG5 |
 
@@ -166,7 +165,7 @@ The prototype is normative only for: the Everforest palette and gradients, Notif
 *   Window: menu on the left, the page in the centre, the Assistant chat on the right (decision 32). The chat takes 30% of the width, between 300 and 380 px.
 *   The menu collapses and expands with a button at the top left (decision 34). The choice is remembered; the first time, the menu starts collapsed below 1280 px of width. Collapsed, it is a column of icons, each showing its name on pointing (decision 55).
 *   The chat panel's width changes by dragging its left edge or with the arrow keys on it (decision 56).
-*   One list, no group titles (decision 14): Notifications (counter, IA2), Factory, Jobs, Projects, Library, Usage, Settings.
+*   One list, no group titles (decision 14): Notifications (counter, IA2), Factory, Jobs, Projects, Library, Settings.
 *   Under the list, the open page's own sub-navigation (decision 13): Settings sections.
 *   Note: a project's recipes, nodes and settings are reached through Projects; the node editor and the job view are detail pages, not menu items.
 *   Page content is centred, with a maximum width (decision 15).
@@ -187,7 +186,7 @@ The prototype is normative only for: the Everforest palette and gradients, Notif
 
 ### Factory
 
-*   Counters, each opening a filtered view: items to decide (opens Notifications; global), Needs you, Failed, Working, Waiting (open Jobs filtered by that label), cost today (API key accounts) and tokens today (open Usage).
+*   Counters, each opening a filtered view: items to decide (opens Notifications; global), Needs you, Failed, Working, Waiting (open Jobs filtered by that label). No token or cost counters (decision 64).
 *   After a restart with jobs paused by the quit: "Play interrupted jobs" (UI15).
 *   Rows of jobs not in a final state, compact, so 15 or more rows fit in a 1080 px tall window: project, title, current node, state, waiting reason with time ("Quota until 15:40"). Stacked jobs indented under their parent. Hover actions follow the controls table.
 *   A Needs you row opens its target (see "Job states shown").
@@ -320,11 +319,6 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   Node templates (filterable by kind) and recipe templates.
 *   "Instantiate into project": instantiating a recipe template also instantiates the node templates it uses (design.md `src/definitions/instantiate.ts`); a name that already exists in the project is kept and listed. Engine and source nodes created this way show their confirmation in place (UI17).
 *   Clicking a row opens the template in the node or recipe editor.
-
-### Usage
-
-*   Only observed values (UI11): tokens per account, project and day; cost only for API key accounts; budgets set in PeCore and how much is used; accounts cooling down, with the reset time only when the harness reported it.
-*   Remaining quota per subscription account, only when its connector reports it (Claude Code: the 5-hour and 7-day windows with their reset times, design.md 5.3): the last value seen, with the time it was seen. Accounts whose connector reports nothing show no quota.
 
 ### Settings
 

@@ -39,7 +39,6 @@ export const ListIcon = icon(<path d="M5.5 4h8M5.5 8h8M5.5 12h8M2.5 4h.01M2.5 8h
 export const InboxIcon = icon(<><path d="M2 9.25 3.6 3.9c.15-.5.6-.85 1.13-.85h6.54c.52 0 .98.34 1.13.85L14 9.25V12c0 .55-.45 1-1 1H3c-.55 0-1-.45-1-1Z" /><path d="M2 9.25h3.25l.75 1.5h4l.75-1.5H14" /></>);
 export const ChatIcon = icon(<path d="M2.25 7.6c0-2.75 2.57-4.85 5.75-4.85s5.75 2.1 5.75 4.85S11.18 12.45 8 12.45c-.6 0-1.17-.07-1.71-.2L3.5 13.5l.7-2.45C2.98 10.18 2.25 8.96 2.25 7.6Z" />);
 export const BoxIcon = icon(<><path d="M8 1.9 13.75 5v6L8 14.1 2.25 11V5Z" /><path d="M2.25 5 8 8.1 13.75 5M8 8.1v6" /></>);
-export const ChartIcon = icon(<path d="M2.5 13.5h11M4.5 11V8M8 11V4.5M11.5 11V6.5" strokeWidth={1.8} />);
 export const BookIcon = icon(<><path d="M2.75 3.25c1.9-.6 3.65-.4 5.25.75v9c-1.6-1.15-3.35-1.35-5.25-.75Z" /><path d="M13.25 3.25c-1.9-.6-3.65-.4-5.25.75v9c1.6-1.15 3.35-1.35 5.25-.75Z" /></>);
 export const GearIcon = icon(<><circle cx="8" cy="8" r="2.1" /><path d="M8 1.75v1.6M8 12.65v1.6M14.25 8h-1.6M3.35 8h-1.6M12.42 3.58l-1.13 1.13M4.71 11.29l-1.13 1.13M12.42 12.42l-1.13-1.13M4.71 4.71 3.58 3.58" /><circle cx="8" cy="8" r="4.6" /></>);
 export const MoreIcon = icon(<><circle cx="3.5" cy="8" r="1.1" fill="currentColor" stroke="none" /><circle cx="8" cy="8" r="1.1" fill="currentColor" stroke="none" /><circle cx="12.5" cy="8" r="1.1" fill="currentColor" stroke="none" /></>);

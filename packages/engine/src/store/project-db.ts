@@ -178,15 +178,6 @@ export class ProjectDb {
              cache_read = @cr, cache_write = @cw, cost = @cost, ended_at = @at WHERE id = @id`,
           { id: p.attemptId, reason: p.endReason, model: p.model, in: t.input, out: t.output, cr: t.cacheRead, cw: t.cacheWrite, cost: p.cost, at },
         );
-        if (p.account !== null) {
-          run(
-            `INSERT INTO usage_daily (day, account, tokens_in, tokens_out, cache_read, cache_write, cost)
-             VALUES (@day, @account, @in, @out, @cr, @cw, @cost)
-             ON CONFLICT (day, account) DO UPDATE SET tokens_in = tokens_in + @in, tokens_out = tokens_out + @out,
-               cache_read = cache_read + @cr, cache_write = cache_write + @cw, cost = cost + @cost`,
-            { day: p.day, account: p.account, in: t.input, out: t.output, cr: t.cacheRead, cw: t.cacheWrite, cost: p.cost ?? 0 },
-          );
-        }
         return;
       }
       case "effect.requested":

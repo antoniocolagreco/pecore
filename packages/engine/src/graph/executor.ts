@@ -123,11 +123,6 @@ type QuestionSubject = AgentQuestion & {
 };
 type QueueItem = Omit<Extract<NewEvent, { type: "queue.added" }>["payload"], "itemId">;
 
-function localDay(now = new Date()): string {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
-}
-
 const backoffMs = [60_000, 120_000, 240_000, 480_000];
 
 function sha256(data: string | Buffer): string {
@@ -757,7 +752,7 @@ export class JobExecutor {
         const ended = (reason: string): NewEvent => ({
           jobId: job.id,
           type: "attempt.ended",
-          payload: { attemptId, endReason: reason, model: result.model ?? profile?.model ?? null, account: profile?.account ?? null, tokens: result.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, cost: result.cost ?? null, day: localDay() },
+          payload: { attemptId, endReason: reason, model: result.model ?? profile?.model ?? null, account: profile?.account ?? null, tokens: result.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, cost: result.cost ?? null },
         });
         const end = (reason: string): void => { this.ctx.db.append([ended(reason)]); };
 
@@ -999,9 +994,6 @@ export class JobExecutor {
       onRaw: (line) => {
         x.log.write(line);
         this.ctx.live?.(attemptId, line);
-      },
-      onEvent: (e) => {
-        if (e.type === "quota") this.ctx.agents?.noteQuota(profile.account, e.quota);
       },
     });
     const usage = r.usage;

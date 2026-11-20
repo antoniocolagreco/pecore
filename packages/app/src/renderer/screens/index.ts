@@ -9,5 +9,4 @@ export { NewProjectWizard } from "./NewProjectWizard";
 export { NodeEditor } from "./NodeEditor";
 export { RecipeEditor } from "./RecipeEditor";
 export { Library } from "./Library";
-export { Usage } from "./Usage";
 export { Settings } from "./Settings";
