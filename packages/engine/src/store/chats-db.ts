@@ -77,6 +77,22 @@ export class ChatsDb {
     this.db.prepare("UPDATE chats SET session_id = ?, session_key = ? WHERE id = ?").run(sessionId, sessionKey, id);
   }
 
+  contextTokens(id: string): number | null {
+    return (this.db.prepare("SELECT context_tokens AS tokens FROM chats WHERE id = ?").get(id) as { tokens: number | null } | undefined)?.tokens ?? null;
+  }
+
+  setContextTokens(id: string, tokens: number | null): void {
+    this.db.prepare("UPDATE chats SET context_tokens = ? WHERE id = ?").run(tokens, id);
+  }
+
+  busy(chatId: string): boolean {
+    return this.db.prepare("SELECT 1 FROM messages WHERE chat_id = ? AND state IN ('queued', 'running') LIMIT 1").get(chatId) !== undefined;
+  }
+
+  queued(chatId: string, text: string): boolean {
+    return this.db.prepare("SELECT 1 FROM messages WHERE chat_id = ? AND state = 'queued' AND text = ? LIMIT 1").get(chatId, text) !== undefined;
+  }
+
   messages(chatId: string): ChatTurn[] {
     return (this.db.prepare(`SELECT ${messageColumns} FROM messages WHERE chat_id = ? ORDER BY rowid`).all(chatId) as MessageRow[]).map(messageView);
   }

@@ -484,6 +484,12 @@ export function Settings() {
                 setOrchestrator(choice);
                 update({ ...value, orchestrator: { profile: orchestratorProfile } });
               }} />
+            <div className={s.grid} id="compaction">
+              <NumberField label="Compact when idle above" unit="tokens" value={value.compaction.auto} min={1} step={1000}
+                onValueChange={(auto) => update({ ...value, compaction: { ...value.compaction, auto: auto ?? 0 } })} description="After 5 minutes without messages." />
+              <NumberField label="Compact at once above" unit="tokens" value={value.compaction.max} min={1} step={1000}
+                onValueChange={(max) => update({ ...value, compaction: { ...value.compaction, max: max ?? 0 } })} />
+            </div>
           </Section>
 
           <Section id="limits" title="Limits" description="How much PeCore runs at the same time.">

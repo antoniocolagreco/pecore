@@ -58,6 +58,8 @@ export class OrchestratorChats {
   private readonly procs: Set<SpawnedProcess> = new Set();
   private readonly imageSupport: Map<string, boolean> = new Map();
   private readonly probes: Map<string, Promise<boolean>> = new Map();
+  private readonly idle: Map<string, NodeJS.Timeout> = new Map();
+  idleCompactionMs: number = 5 * 60_000;
   private closed = false;
   private creating: Promise<ChatView> | null = null;
 
@@ -69,7 +71,30 @@ export class OrchestratorChats {
     this.endpoint = { url, token };
     for (const chat of this.db.listChats()) {
       await this.location(chat.id).catch((e: unknown) => console.error(`orchestrator chat ${chat.id}:`, e));
+      this.compactLater(chat.id);
     }
+  }
+
+  private compactLater(chatId: string): void {
+    clearTimeout(this.idle.get(chatId));
+    this.idle.delete(chatId);
+    const tokens: number | null = this.db.contextTokens(chatId);
+    if (this.closed || tokens === null) return;
+    const { auto, max } = this.engine.global().settings.compaction;
+    if (tokens >= max) return this.compact(chatId);
+    if (tokens < auto) return;
+    const timer: NodeJS.Timeout = setTimeout(() => {
+      this.idle.delete(chatId);
+      if (!this.closed && !this.db.busy(chatId)) this.compact(chatId);
+    }, this.idleCompactionMs);
+    timer.unref();
+    this.idle.set(chatId, timer);
+  }
+
+  private compact(chatId: string): void {
+    if (this.db.queued(chatId, chatCompactCommand)) return;
+    this.changed(this.db.addMessage(chatId, "user", chatCompactCommand, []));
+    this.schedule(chatId);
   }
 
   private user(): string {
@@ -346,6 +371,8 @@ export class OrchestratorChats {
   }
 
   private schedule(id: string): void {
+    clearTimeout(this.idle.get(id));
+    this.idle.delete(id);
     if (this.closed || this.runs.has(id)) return;
     const task: Promise<void> = new Promise<void>((resolve) => setImmediate(resolve)).then(async () => {
       while (!this.closed) {
@@ -382,11 +409,14 @@ export class OrchestratorChats {
       this.imageSupport.set(key, session.supportsImages);
       if (attachments.length && !session.supportsImages) throw new Error("the orchestrator connector does not support images");
       if (compact) {
+        let tokens: number | null = null;
         if (session.resumed) {
           const result = await session.prompt(chatCompactCommand);
           if (this.closed) return;
           if (result.error) throw new Error(result.error.raw);
+          tokens = result.context?.used ?? null;
         }
+        this.db.setContextTokens(chatId, tokens);
         this.db.setMessageState(id, "completed");
         this.changed(message);
         return;
@@ -413,11 +443,13 @@ export class OrchestratorChats {
       if (result.stopReason === "cancelled") throw new Error("the connector cancelled the turn");
       const reply: ChatTurn = this.db.db.transaction(() => {
         this.db.setMessageState(id, "completed");
+        if (result.context) this.db.setContextTokens(chatId, result.context.used);
         return this.db.addMessage(chatId, "assistant", result.text, [], { replyTo: id });
       })();
       active.reply = null;
       this.changed(message);
       this.changed(reply);
+      this.compactLater(chatId);
       if (!this.chat(chatId).projectId) this.engine.emit("notify", { kind: "assistant-replied", title: "Assistant replied", body: result.text.trim().split("\n")[0]!.slice(0, 120) });
     } catch (e) {
       active.reply = null;
@@ -437,6 +469,8 @@ export class OrchestratorChats {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    for (const timer of this.idle.values()) clearTimeout(timer);
+    this.idle.clear();
     this.db.interruptMessages();
     await Promise.allSettled([...this.procs].map((proc) => proc.stop()));
     await Promise.allSettled([...this.runs.values(), ...this.probes.values(), ...[...this.locations.values()].map(({ pending }) => pending)]);

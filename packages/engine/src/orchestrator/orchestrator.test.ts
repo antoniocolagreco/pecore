@@ -71,7 +71,9 @@ const replyWith = (text: string) => [
   { send: { jsonrpc: "2.0", id: "$id", result: { stopReason: "end_turn" } } },
 ];
 
-type Rpc = { id: number; result?: { tools?: { name: string }[]; content?: { text: string }[]; isError?: boolean }; error?: unknown };
+const usage = (used: number) => ({ send: { jsonrpc: "2.0", method: "session/update", params: { sessionId: "S1", update: { sessionUpdate: "usage_update", used, size: 1_000_000 } } } });
+
+type Rpc ={ id: number; result?: { tools?: { name: string }[]; content?: { text: string }[]; isError?: boolean }; error?: unknown };
 
 async function until<T>(fn: () => T | undefined | false | Promise<T | undefined | false>, ms = 20000): Promise<T> {
   const end = Date.now() + ms;
@@ -226,6 +228,112 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       expect(after).not.toContain("Earlier conversation");
     } finally {
       await t.close();
+    }
+  });
+
+  it("compacts at once when the context passes the maximum threshold", async () => {
+    const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
+    const t = await setup((root) => [
+      init(),
+      [...init(), ...newSession, { expect: "session/prompt" }, usage(256_000), ...replyWith("Long answer.")],
+      [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "compact.json") }, usage(20_000), ...replyWith("")],
+    ]);
+    try {
+      const chat: ChatDetail["chat"] = await t.call("getAssistantChat");
+      expect((await t.call("getChat", { params: { id: chat.id } })).supportsImages).toBe(false);
+      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Hi" } });
+      const compacted: ChatDetail = await until(async () => {
+        const snapshot: ChatDetail = await t.call("getChat", { params: { id: chat.id } });
+        return snapshot.messages.length === 3 && snapshot.messages.every(({ state }) => state === "completed") && snapshot;
+      });
+      expect(compacted.messages.map(({ role, text }) => [role, text])).toEqual([["user", "Hi"], ["assistant", "Long answer."], ["user", "/compact"]]);
+      expect((JSON.parse(await readFile(join(t.root, "compact.json"), "utf8")) as { params: { prompt: unknown } }).params.prompt).toEqual([{ type: "text", text: "/compact" }]);
+    } finally {
+      await t.close();
+    }
+  });
+
+  it("compacts after the idle time only when the context passes the automatic threshold", async () => {
+    const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
+    const t = await setup((root) => [
+      init(),
+      [...init(), ...newSession, { expect: "session/prompt" }, usage(127_999), ...replyWith("Short.")],
+      [...init(), ...resumed, { expect: "session/prompt" }, usage(128_000), ...replyWith("Longer.")],
+      [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "compact.json") }, ...replyWith("")],
+    ]);
+    try {
+      t.engine.orchestrator.idleCompactionMs = 300;
+      const chat: ChatDetail["chat"] = await t.call("getAssistantChat");
+      expect((await t.call("getChat", { params: { id: chat.id } })).supportsImages).toBe(false);
+      const settled = (count: number) => until(async () => {
+        const snapshot: ChatDetail = await t.call("getChat", { params: { id: chat.id } });
+        return snapshot.messages.length === count && snapshot.messages.every(({ state }) => state === "completed") && snapshot;
+      });
+      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Hi" } });
+      await settled(2);
+      await new Promise((r) => setTimeout(r, 600));
+      expect((await t.call("getChat", { params: { id: chat.id } })).messages).toHaveLength(2);
+      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "More" } });
+      const started: number = Date.now();
+      const compacted: ChatDetail = await settled(5);
+      expect(Date.now() - started).toBeGreaterThanOrEqual(300);
+      expect(compacted.messages.map(({ text }) => text)).toEqual(["Hi", "Short.", "More", "Longer.", "/compact"]);
+      expect(existsSync(join(t.root, "compact.json"))).toBe(true);
+    } finally {
+      await t.close();
+    }
+  });
+
+  it("restarts the idle time when a message is sent, even if that message fails", async () => {
+    const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
+    const t = await setup(() => [
+      init(),
+      [...init(), ...newSession, { expect: "session/prompt" }, usage(200_000), ...replyWith("Long.")],
+      [...init(), ...resumed, { expect: "session/prompt" }, { send: { jsonrpc: "2.0", id: "$id", error: { code: -32603, message: "boom" } } }],
+    ]);
+    try {
+      t.engine.orchestrator.idleCompactionMs = 800;
+      const chat: ChatDetail["chat"] = await t.call("getAssistantChat");
+      expect((await t.call("getChat", { params: { id: chat.id } })).supportsImages).toBe(false);
+      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Hi" } });
+      await until(async () => (await t.call("getChat", { params: { id: chat.id } })).messages.length === 2);
+      await t.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Again" } });
+      await until(async () => (await t.call("getChat", { params: { id: chat.id } })).messages.at(-1)?.state === "failed");
+      await new Promise((r) => setTimeout(r, 1500));
+      expect((await t.call("getChat", { params: { id: chat.id } })).messages.map(({ text }) => text)).toEqual(["Hi", "Long.", "Again"]);
+    } finally {
+      await t.close();
+    }
+  });
+
+  it("checks the thresholds again at start, with the current settings", async () => {
+    const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
+    const t = await setup((root) => [
+      init(),
+      [...init(), ...newSession, { expect: "session/prompt" }, usage(260_000), ...replyWith("Long.")],
+      [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "compact.json") }, ...replyWith("")],
+    ]);
+    const settings: string = join(t.root, "home", "settings.json");
+    await writeFile(settings, JSON.stringify({ orchestrator: { profile: "p1" }, compaction: { auto: 270_000, max: 280_000 } }));
+    await t.close();
+    const first = await t.open();
+    const chat: ChatDetail["chat"] = await first.call("getAssistantChat");
+    expect((await first.call("getChat", { params: { id: chat.id } })).supportsImages).toBe(false);
+    await first.call("sendChatMessage", { params: { id: chat.id }, body: { text: "Hi" } });
+    await until(async () => (await first.call("getChat", { params: { id: chat.id } })).messages.length === 2);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(existsSync(join(t.root, "compact.json"))).toBe(false);
+    await first.close();
+    await writeFile(settings, JSON.stringify({ orchestrator: { profile: "p1" } }));
+    const again = await t.open();
+    try {
+      await until(async () => {
+        const snapshot: ChatDetail = await again.call("getChat", { params: { id: chat.id } });
+        return snapshot.messages.at(-1)?.text === "/compact" && snapshot.messages.at(-1)?.state === "completed";
+      });
+      expect(existsSync(join(t.root, "compact.json"))).toBe(true);
+    } finally {
+      await again.close();
     }
   });
 

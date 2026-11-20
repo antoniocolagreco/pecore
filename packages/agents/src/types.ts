@@ -45,6 +45,7 @@ export type TurnResult = {
   model?: string;
   costUsd?: number;
   quota?: Quota;
+  context?: { used: number; size: number };
   text: string;
 };
 

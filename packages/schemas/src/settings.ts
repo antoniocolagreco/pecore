@@ -31,6 +31,10 @@ export const Settings = z
     programPaths: z.record(z.string(), z.string().regex(/^\//, "absolute path")).default({}),
     quietHours: z.object({ from: Time, to: Time }).strict().nullable().default(null),
     orchestrator: z.object({ profile: z.string().min(1) }).strict().nullable().default(null),
+    compaction: z
+      .object({ auto: z.number().int().positive().default(128_000), max: z.number().int().positive().default(256_000) })
+      .strict()
+      .default({ auto: 128_000, max: 256_000 }),
     protectedMode: z.boolean().default(false),
     ui: z.record(z.string(), z.unknown()).default({}),
   })

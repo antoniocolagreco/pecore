@@ -100,7 +100,7 @@ export async function startSession(p: StartParams): Promise<Session> {
   const { client, init } = await openConnection({ connector, login: p.login, spawn: p.spawn, cwd: p.cwd, secrets, ...(p.requestTimeoutMs !== undefined ? { requestTimeoutMs: p.requestTimeoutMs } : {}) });
   const reader = readerFor(c.reader);
   const events = new AsyncQueue<AgentEvent>();
-  const turn = { text: "", quota: undefined as Quota | undefined, model: undefined as string | undefined, cost: undefined as { amount: number; currency: string } | undefined };
+  const turn = { text: "", quota: undefined as Quota | undefined, model: undefined as string | undefined, cost: undefined as { amount: number; currency: string } | undefined, context: undefined as TurnResult["context"] };
   let dropReplay = false;
   let prompting: boolean = false;
 
@@ -122,6 +122,8 @@ export async function startSession(p: StartParams): Promise<Session> {
       events.push({ type: "text", text });
     } else if (u.sessionUpdate === "tool_call" || u.sessionUpdate === "tool_call_update") {
       events.push({ type: "tool_call", toolCallId: String(u.toolCallId ?? ""), title: String(u.title ?? ""), kind: String(u.kind ?? ""), status: String(u.status ?? "") });
+    } else if (u.sessionUpdate === "usage_update" && typeof u.used === "number" && typeof u.size === "number") {
+      turn.context = { used: u.used, size: u.size };
     }
   });
   client.handleRequests((method, params) => {
@@ -216,6 +218,7 @@ export async function startSession(p: StartParams): Promise<Session> {
       const model: string | undefined = reader.model?.(result) ?? turn.model;
       if (model) out.model = model;
       if (turn.quota) out.quota = turn.quota;
+      if (turn.context) out.context = turn.context;
       if (!resumed && turn.cost && turn.cost.currency === "USD") out.costUsd = turn.cost.amount;
       return out;
     },
