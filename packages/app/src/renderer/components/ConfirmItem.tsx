@@ -35,6 +35,7 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 function Snapshot({ value }: { value: unknown }) {
+  if (value !== null && typeof value === "object") return <CodeSnapshot content={JSON.stringify(value, null, 2)} language="json" label="Details" />;
   return <pre className={s.snapshot}>{typeof value === "string" ? value : JSON.stringify(value, null, 2)}</pre>;
 }
 
@@ -74,64 +75,7 @@ function Subject({ item, connected }: { item: QueueItemView; connected: boolean 
           {typeof subject.contentState === "string" && <div>Content state: <code>{subject.contentState}</code></div>}
           {connected && item.jobId ? <Link to={`/jobs/${item.jobId}`}>Open the job</Link> : null}
           {artifacts.success && <ReviewArtifacts artifacts={artifacts.data} />}
-          {!artifacts.success && <Snapshot value={JSON.stringify(item.subject, null, 2)} />}
-        </>
-      );
-    }
-    case "engine-node":
-    case "source-node":
-      return (
-        <>
-          {typeof subject.path === "string" && <code>{subject.path}</code>}
-          <div>
-            <strong>Definition</strong>
-            <CodeSnapshot content={JSON.stringify(subject.definition, null, 2) ?? ""} language="json" label="Definition" />
-          </div>
-          {Object.entries(record(subject.scripts)).map(([path, content]) => (
-            <div key={path}>
-              <strong>{path}</strong>
-              {path.endsWith(".sh") && typeof content === "string"
-                ? <CodeSnapshot content={content} language="shell" label={path} />
-                : <Snapshot value={content} />}
-            </div>
-          ))}
-        </>
-      );
-    case "services":
-      return (
-        <>
-          {typeof subject.path === "string" && <code>{subject.path}</code>}
-          <Snapshot value={subject.compose} />
-        </>
-      );
-    case "import": {
-      const { warning, project, nodes, recipes, knowledge } = subject;
-      if (typeof warning !== "string" || !Array.isArray(nodes)) return <Snapshot value={item.subject} />;
-      return (
-        <>
-          <p className={ui.banner}>{warning}</p>
-          <div>
-            <strong>project.json</strong>
-            <Snapshot value={project} />
-          </div>
-          {nodes.map((value: unknown) => {
-            const { path, definition, files } = record(value);
-            if (typeof path !== "string") return null;
-            return (
-              <div key={path}>
-                <strong>{path}</strong>
-                <Snapshot value={definition} />
-                {Object.entries(record(files)).map(([name, content]) => (
-                  <div key={name}>
-                    <strong>{name}</strong>
-                    <Snapshot value={content} />
-                  </div>
-                ))}
-              </div>
-            );
-          })}
-          <div><strong>Recipes</strong><Snapshot value={recipes} /></div>
-          <div><strong>Knowledge files</strong><Snapshot value={knowledge} /></div>
+          {!artifacts.success && <Snapshot value={item.subject} />}
         </>
       );
     }
@@ -151,7 +95,7 @@ function Subject({ item, connected }: { item: QueueItemView; connected: boolean 
         </dl>
       );
     default:
-      return <Snapshot value={JSON.stringify(item.subject, null, 2)} />;
+      return <Snapshot value={item.subject} />;
   }
 }
 

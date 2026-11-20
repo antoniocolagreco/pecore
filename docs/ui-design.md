@@ -32,7 +32,7 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 ## Terms
 
 *   **Factory:** the home screen, a summary dashboard.
-*   **Notifications:** the screen that lists the items to decide (open `human_queue` rows, except `agent-question` items, answered in the chat) and the notification log (decision 45). Its counter counts the items to decide plus the notifications not seen yet. In design.md, the kinds `engine-node`, `source-node`, `recipe-change`, `import`, `ticket` and `services` are also called the confirmation queue.
+*   **Notifications:** the screen that lists the items to decide (open `human_queue` rows, except `agent-question` items, answered in the chat) and the notification log (decision 45). Its counter counts the items to decide plus the notifications not seen yet.
 *   **Engine:** the background process that runs jobs (design.md section 1). **Engine node:** a node with `runsAs: engine`. **Engine state:** a job or node run state of design.md 4.1 and 4.3.
 *   **Normal mode and protected mode:** design.md's project user (section 8). In normal mode, the default, agents and the orchestrator run as the user, with the user's own harness logins, like Claude Code or Codex run by hand. In protected mode they run as `pecore-agent`, which cannot read the user's files and logins; it needs one login per harness account. The mode is global, not per project.
 *   **Check node:** a recipe node named in some node's `requires` (design.md 4.4).
@@ -96,10 +96,6 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 | Id | Element | `human_queue.kind` | Source |
 |---|---|---|---|
 | ID1 | Human review | `human-node` | 3.1 |
-| ID2 | Confirmation of an engine or `source` node | `engine-node`, `source-node` | 8 |
-| ID3 | Confirmation of a recipe change by the orchestrator | `recipe-change` | 6, 8 |
-| ID4 | Confirmation of an imported project | `import` | 8 |
-| ID5 | Confirmation of a new compose file version | `services` | 4.9 |
 | ID6 | Untrusted ticket | `ticket` | 7 |
 | ID7 | Round limit reached | `round-limit` | 4.2 |
 | ID8 | Withdrawn: budget reached; projects have no budgets (decision 71) | | 4.7 |
@@ -230,17 +226,12 @@ The prototype is normative only for: the gradients, Notifications as a list plus
 
 ### Notifications
 
-*   One list, all projects (decision 45). First the items to decide, oldest first, each marked with a dot: kind label ("Human review", "Engine node", ...), project, the job when the item has one, age. Then the notification log (`GET /notifications`), newest first: title, text, age; a row opens its job or item to decide, and its trash button deletes it (decision 58). Opening the page marks the notifications seen.
+*   One list, all projects (decision 45). First the items to decide, oldest first, each marked with a dot: kind label ("Human review", "Comment to post", ...), project, the job when the item has one, age. Then the notification log (`GET /notifications`), newest first: title, text, age; a row opens its job or item to decide, and its trash button deletes it (decision 58). Opening the page marks the notifications seen.
 *   The detail pane appears only when an item to decide is open.
 *   Empty: "Nothing new".
-*   Every detail renders the item's `subject` snapshot, never a file read at decision time, and shows its sha256. The decision is sent with that hash. Items never change: a definition edited while its item is open cancels the item and creates a new one (design.md `confirm.ts`). If `queue.updated` reports the open item resolved or cancelled (for example a review cancelled by a base change), the detail locks with a banner and a button that opens the new item, if any.
-*   Inline confirmations (UI17: wizard, import, node editor, Library) use the same component on the same queue item, with the same snapshot and hash.
+*   Every detail renders the item's `subject` snapshot, never a file read at decision time, and shows its sha256. The decision is sent with that hash. If `queue.updated` reports the open item resolved or cancelled (for example a review cancelled by a base change), the detail locks with a banner and a button that opens the new item, if any.
 *   Detail by kind:
     *   ID1: the diff in the unified view of the artifact viewer, risky hunks first, then findings and spec, check logs collapsed, one button per node outcome, a note field when the node's `answer` setting allows one.
-    *   ID2, engine node: `command` or `script`, `probe`, `probeRules`, `mergedCheck`, `credentials`, `params`. Source node: its four commands (`list`, `read`, `comment`, `replies`) with their scripts and `outputRules`, `credentials`, `params`. For a changed node, a diff against the last confirmed version.
-    *   ID3: diff on the recipe graph (UI10).
-    *   ID4: every node, script and prompt of the imported project, engine and source nodes first.
-    *   ID5: compose file diff against the confirmed version.
     *   ID6: ticket text, author, start or discard.
     *   ID7: which cap was hit (the edge's `maxRounds` or the job's `maxNodeRuns`) and the runs used; input "allow N more" (default: the cap's value), or fail.
     *   ID8: cost or tokens used and the limit reached (per job, or per project per day); input for the new limit, saved to `project.json` (one commit; the label says it applies to future jobs too), or stop. One item per limit: every job blocked by the same limit waits on it.
@@ -279,19 +270,17 @@ The prototype is normative only for: the gradients, Notifications as a list plus
 
 ### New project wizard (full page)
 
-Pages: Inputs, Create, Confirm. Create runs the tasks of design.md "Project creation" in order; the project exists when Create ends.
+Pages: Inputs and Create. Create runs the tasks of design.md "Project creation" in order; the project exists when Create ends.
 
 1.  **Inputs:** name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, folder, base branch. Folder is the user's copy of the code: typed by hand or picked with "Choose…" (system folder dialog); it starts as the projects folder of Settings plus `<id>` and follows the name until the user edits it (decisions 75, 76). No recipes: the user adds them afterwards from the Library or the project page, and a recipe that pushes or opens a PR cannot be added to a project without a remote repo (decision 72). The id comes from the name (decision 70).
-2.  **Create:** the tasks of "Project creation" (validation, project directory, clone or repo creation, `repo.git` setup and home check, access for `pecore-agent` in protected mode, commit), each with its state. The creation request approves the shipped GitHub or GitLab repo setup node. Custom and modified nodes ask for confirmation inside the task (UI17). A failed task undoes the tasks before it, says why, and returns to Inputs with the values kept. A repo created on the forge is never deleted by the undo: the page lists it as left on the forge.
-3.  **Confirm:** if an engine or source node needs approval, explain that PeCore needs permission to run the action. The user can review it here or open the project and review it later in Notifications. Open the project directly when no approval is pending.
-4.  No logins page: logins belong to the user, not to the project (Settings > Accounts).
+2.  **Create:** the tasks of "Project creation" (validation, project directory, clone or repo creation, `repo.git` setup and home check, access for `pecore-agent` in protected mode, commit), each with its state. A failed task undoes the tasks before it, says why, and returns to Inputs with the values kept. A repo created on the forge is never deleted by the undo: the page lists it as left on the forge.
+3.  No logins page: logins belong to the user, not to the project (Settings > Accounts).
 
-Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done; Cancel on Confirm leaves the project created.
+Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done.
 
 ### Import project (full page)
 
-*   Pages: archive (choose the `.tar.zst`), accounts (map each account reference to a local account), Create (the "Project creation" tasks with the archive's definitions), Confirm (ID4: every node, script and prompt).
-*   No node from the archive runs before it is confirmed: if Create needs the archive's repo creation node (no existing remote), its confirmation is shown inside that task (UI17), as in the wizard.
+*   Archive import is currently available through the CLI. Before import it warns that scripts and prompts may be malicious and asks the user to review all of them.
 
 ### Export (dialog)
 
@@ -305,7 +294,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 ### Recipe editor
 
 *   Two modes: an instance (from the project page) or a template (from the Library).
-*   In a project's Recipes tab, New Recipe opens the graph editor with an empty draft. Import template adds a recipe and its required nodes to the project and opens it in the editor. That action authorizes the matching Library definitions and scripts. A recipe built from scratch is added when saved.
+*   In a project's Recipes tab, New Recipe opens the graph editor with an empty draft. Import template adds a recipe and its required nodes to the project and opens it in the editor. A recipe built from scratch is added when saved.
 *   React Flow graph on a grid. Nodes are added from a palette (the project's node instances, or node templates in template mode), placed on the grid and connected by dragging from an outcome to a node. Positions are saved in the recipe's `layout`; a recipe with no `layout` (for example written by the orchestrator) is laid out automatically when opened.
 *   Validation errors on the node or edge that causes them (IE2).
 *   Inspector for a node: kind, outcomes, `requires`, `optional`, `skipWhenUnchanged`, `maxRounds` of its outgoing edges, "Edit node", "Ask the AI".
@@ -317,13 +306,12 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   Form with the fields of the node's kind (agent, command, human, source); prompt in Markdown and script in shell with CodeMirror; a JSON tab for the whole file.
 *   Validation errors next to the field. Save is disabled while the draft is invalid. The draft lives in memory until saved or discarded; leaving the page with an unsaved draft asks first.
 *   No autosave: every save is one commit in `PECORE_HOME`, or in the project's own repository for a project outside it.
-*   Saving an engine or source node instance opens its confirmation inside the editor (UI17). Saving a template needs no confirmation; each instance made from it is confirmed when it is created.
 *   When live jobs use the node instance being edited, the editor says so: they will use the new version at their next run of that node.
 
 ### Library
 
 *   Node templates (filterable by kind) and recipe templates.
-*   "Instantiate into project": instantiating a recipe template also instantiates the node templates it uses (design.md `src/definitions/instantiate.ts`); a name that already exists in the project is kept and listed. An explicit recipe import approves the engine nodes that match the Library template. Standalone engine and source nodes show their confirmation in place (UI17).
+*   "Instantiate into project": instantiating a recipe template also instantiates the node templates it uses (design.md `src/definitions/instantiate.ts`); a name that already exists in the project is kept and listed.
 *   Clicking a row opens the template in the node or recipe editor.
 
 ### Settings
@@ -467,7 +455,6 @@ Every size lives in `ds/tokens.css`; components use only these variables, never 
 | UI7b | Libraries: React Flow (recipe graphs), CodeMirror 6 (editors), `@tanstack/react-virtual` (long lists and logs), `cmdk` (command palette). |
 | UI8 | The job list has no model or harness columns; those are details of a node run. |
 | UI9 | Stacked jobs are a tree of indented rows in the job lists. Graphs show recipes only. |
-| UI10 | A recipe change proposed by the orchestrator is shown as a diff on the graph before the user confirms it (ID3). |
 | UI11 | Every value shown comes from engine state, an artifact, a persisted definition, or a deterministic computation on these. A value with no source is shown as missing; the UI never asks an LLM to fill it. |
 | UI12 | Factory shows only what needs the user and the state of unfinished work. Every other function is one navigation click away. |
 | UI13 | Withdrawn: there is no global project filter (decisions.md 30). Jobs has a project filter of its own. |
@@ -477,7 +464,6 @@ Every size lives in `ds/tokens.css`; components use only these variables, never 
 | UI15c | After a restart, Factory shows "Play interrupted jobs" for jobs paused with reason `quit`. |
 | UI15d | Every job control has a tooltip that says what it does (Job controls table). |
 | UI16 | Status colors keep fixed meanings in every theme: green success, red failure, yellow warning, grey inactive, light blue running. A theme may change their shades. All other colors, the accent included, are free for the theme. |
-| UI17 | A confirmation that blocks a flow the user is in (wizard, editor, Library instantiation) is shown inside that flow, as well as in Notifications. |
 | UI18 | A decision on an item to decide approves the snapshot the user saw, identified by its hash; a changed item cannot be approved. |
 | UI19 | Delete of a job or project is local only and asks for confirmation; Stop needs none. |
 
@@ -489,9 +475,7 @@ Every size lives in `ds/tokens.css`; components use only these variables, never 
 | Chat only on its own page (UI2b) | Rejected (author) | Asking about the open job or recipe needs the chat next to it | Simpler layout |
 | shadcn/ui and Tailwind (UI7) | Rejected (author) | shadcn copies styled components into the code base and Tailwind replaces CSS variables with utility classes; the author wants themes as CSS variable tokens and plain CSS Modules | Ready-made styled components |
 | A separate graph of stacked jobs (UI9) | Rejected (author) | A job has at most one parent, so stacks are trees; indented rows show them without a second graph view | A visual map of large stacks |
-| Recipe change as a text diff (UI10) | Rejected | A graph change is hard to read as JSON | Nothing |
 | Automatic layout only for recipes | Rejected (author) | Nodes are placed and connected by hand; positions must stay where the user put them | Nothing in the engine: `layout` is ignored by it |
-| Notifications only for confirmations (UI17) | Rejected | The wizard and editors would stop on an item the user must find elsewhere | Nothing |
 | Tool logins (`gh`, `glab`) run by the user in a terminal | Rejected | design.md G16 allows only one terminal step (manual creation of the protected user) | Nothing |
 | Delete runs a cleanup on the forge | Rejected (author) | Delete must not act on remote resources | Remote branches and PRs stay until closed on the forge |
 | Progress percentages for agent nodes (UI6) | Rejected | No harness reports progress; a percentage would be invented | A progress bar |
@@ -500,7 +484,6 @@ Every size lives in `ds/tokens.css`; components use only these variables, never 
 
 | Risk | Impact | Mitigation | Where |
 |---|---|---|---|
-| A prompt-injected orchestrator changes a node while its confirmation is open | an unseen command runs as the app user | snapshot and hash on every Notifications decision | UI18, Notifications |
 | Untrusted text (tickets, agent output, logs) rendered in the GUI | script injection in the renderer | Markdown rendered without raw HTML; logs as text; no `dangerouslySetInnerHTML` | Job view, Notifications |
 | Engine crash or WebSocket drop | stale states look live | disconnected banner, controls disabled, refetch on reconnect | Cross-cutting behaviour |
 | Many running agents streaming logs | renderer overload | log streaming only for the open attempt; updates once per frame; virtual lists | Job view, Updates |

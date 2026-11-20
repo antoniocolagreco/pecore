@@ -81,7 +81,7 @@ async function launch(root: string, nodes: Record<string, unknown>, recipes: Rec
   for (const [name, node] of Object.entries(nodes)) await writeFile(join(library, "nodes", `${name}.json`), JSON.stringify(node));
   for (const [name, recipe] of Object.entries(recipes)) await writeFile(join(library, "recipes", `${name}.json`), JSON.stringify(recipe));
   await initHome(home, { library });
-  await writeFile(join(home, "settings.json"), JSON.stringify({ firstRunDone: true }));
+  await writeFile(join(home, "settings.json"), JSON.stringify({ firstRunDone: true, projectsFolder: root }));
   if (accounts.length) await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts }));
   await prepare?.(home);
   await mkdir(join(root, "ud"), { recursive: true });
@@ -123,16 +123,13 @@ describe.skipIf(gui)("phase 5 gate: G16 actions from the GUI (built app, headles
     await page.getByRole("radio", { name: /^Local only/ }).check();
     if (await page.getByRole("checkbox").count()) throw new Error("the wizard still offers recipes");
     await page.getByRole("button", { name: "Create project" }).click();
-    await visible(page.getByRole("button", { name: /Finish|Skip/ }).first(), 30_000);
+    await page.waitForURL("**/#/projects/demo");
     await go("#/projects");
     await visible(page.getByText("Demo").first());
 
     await go("#/projects/new");
     await page.getByLabel("Name").fill("Demo");
     await page.getByRole("button", { name: "Create project" }).click();
-    const finish = page.getByRole("button", { name: /Finish|Skip/ }).first();
-    await visible(finish, 30_000);
-    await finish.click();
     await page.waitForURL("**/#/projects/demo-2");
   }, 60_000);
 
@@ -313,27 +310,28 @@ describe.skipIf(gui)("phase 5 gate: G16 actions from the GUI (built app, headles
     await shot("recipe-editor");
   }, 60_000);
 
-  it("confirms an engine node inline after instantiating it and after editing it", async () => {
+  it("adds and saves a project engine node without an approval prompt", async () => {
+    const connection: { port: number; token: string } = await page.evaluate(() => (
+      globalThis as unknown as { pecore: { api(): Promise<{ port: number; token: string }> } }
+    ).pecore.api());
+    const call = apiClient(connection);
+    await call("createProject", { body: { project: { id: "node-edit", name: "Node Edit", repo: null } } });
     await go("#/library");
     await page.getByRole("row", { name: /^git-push / }).getByRole("button", { name: "Instantiate into project" }).click();
     const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Project").selectOption("demo");
+    await dialog.getByLabel("Project").selectOption("node-edit");
     await dialog.getByRole("button", { name: "Instantiate", exact: true }).click();
-    await visible(page.getByText("Engine node").first(), 15_000);
-    await shot("library-confirm");
-    await page.getByRole("button", { name: "confirm", exact: true }).click();
-    await page.getByText("Engine node").first().waitFor({ state: "detached", timeout: 10_000 });
-    if (await dialog.count()) await page.keyboard.press("Escape");
-    await go("#/edit/node/projects/demo/nodes/git-push.json");
+    await visible(page.getByText("projects/node-edit/nodes/git-push.json", { exact: true }));
+    await go("#/edit/node/projects/node-edit/nodes/git-push.json");
     await page.getByLabel("Description").fill("pushes the job branch, edited");
+    const saving = page.waitForResponse((response) => response.request().method() === "PUT" && new URL(response.url()).pathname.startsWith("/definitions/"));
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await visible(page.getByText("Engine node").first(), 15_000);
-    await shot("node-editor-confirm");
-    await page.getByRole("button", { name: "confirm", exact: true }).click();
-    await page.getByText("Engine node").first().waitFor({ state: "detached", timeout: 10_000 });
-    const open = await page.evaluate(() => (globalThis as unknown as { pecore: { api(): Promise<{ port: number; token: string }> } }).pecore.api());
-    const queue = (await (await fetch(`http://127.0.0.1:${open.port}/queue?state=open`, { headers: { authorization: `Bearer ${open.token}` } })).json()) as { kind: string }[];
-    if (queue.some((item) => item.kind === "engine-node")) throw new Error("an engine-node confirmation is still open");
+    if (!(await saving).ok()) throw new Error("Saving the node failed");
+    const path: string = "projects/node-edit/nodes/git-push.json";
+    const saved = await call("getDefinition", { params: { path } });
+    if (!saved.content.includes("pushes the job branch, edited")) throw new Error("The node edit was not saved");
+    const queue = await call("listQueue", { query: { project: "node-edit", state: "open" } });
+    if (queue.length) throw new Error("The node edit created a queue item");
   }, 60_000);
 
   it("adds, moves and connects a node in the recipe editor", async () => {
@@ -430,14 +428,6 @@ describe.skipIf(gui)("phase 5 gate: forge actions from the GUI (fake gh)", () =>
   const shot = async (name: string) => {
     if (process.env.PECORE_GUI_SHOTS) await page.screenshot({ path: join(process.env.PECORE_GUI_SHOTS, `forge-${name}.png`) });
   };
-  const confirmAll = async () => {
-    const item = page.getByText("Engine node").first();
-    await visible(item, 15_000);
-    while (await item.count()) {
-      await page.getByRole("button", { name: "confirm", exact: true }).first().click();
-      await page.waitForTimeout(500);
-    }
-  };
 
   beforeAll(async () => {
     root = await mkdtemp(join(tmpdir(), "pecore-gui-forge-"));
@@ -451,7 +441,7 @@ describe.skipIf(gui)("phase 5 gate: forge actions from the GUI (fake gh)", () =>
     await rm(root, { recursive: true, force: true });
   });
 
-  it("logs in the forge account, creates a project on a new GitHub repository, confirms nodes inline, delivers a PR and detects its merge", async () => {
+  it("creates a GitHub project and delivers a PR without technical approvals", async () => {
     await go("#/settings");
     const accounts = page.locator("#accounts");
     await visible(accounts.getByText(/^(Logged out|Error)$/), 15_000);
@@ -468,14 +458,10 @@ describe.skipIf(gui)("phase 5 gate: forge actions from the GUI (fake gh)", () =>
     await go("#/projects/new");
     await page.getByLabel("Name").fill("Shop");
     await page.getByRole("radio", { name: /^New repository/ }).check();
-    await page.getByLabel("New repository URL").fill("https://github.com/acme/shop.git");
     await choose(page.getByLabel("Forge account"), "gh-test · github.com");
+    await page.getByLabel("New repository URL").fill("https://github.com/acme/shop.git");
     await shot("wizard");
     await page.getByRole("button", { name: "Create project" }).click();
-    await visible(page.getByText("Engine node").first(), 30_000);
-    await shot("wizard-confirm");
-    await page.getByRole("button", { name: "confirm", exact: true }).click();
-    await page.getByRole("button", { name: "Finish" }).click({ timeout: 30_000 });
     await page.waitForFunction(() => (globalThis as unknown as { location: { hash: string } }).location.hash === "#/projects/shop");
     if (!(await forge.state()).repos.includes("acme/shop")) throw new Error("the repository was not created");
 
@@ -484,17 +470,14 @@ describe.skipIf(gui)("phase 5 gate: forge actions from the GUI (fake gh)", () =>
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Project").selectOption("shop");
     await dialog.getByRole("button", { name: "Instantiate", exact: true }).click();
-    await confirmAll();
-    if (await dialog.count()) await page.keyboard.press("Escape");
+    await visible(page.getByText("projects/shop/recipes/deliver-pr.json", { exact: true }));
 
-    await go("#/jobs");
-    await page.getByRole("banner").getByRole("button", { name: "New job" }).click();
+    await go("#/projects/shop");
+    await page.getByRole("button", { name: "New job", exact: true }).click();
     const create = page.getByRole("dialog");
-    await choose(create.getByLabel("Project"), "Shop");
     await create.getByLabel("Title").fill("Deliver hello");
-    await choose(create.getByLabel("Recipe"), "deliver-pr");
-    await create.getByLabel("Ticket text").fill("Please add hello.txt");
-    await create.getByRole("button", { name: "Create" }).click();
+    await create.getByLabel("What to do").fill("Please add hello.txt");
+    await create.getByRole("button", { name: "Create job" }).click();
     await create.waitFor({ state: "hidden" });
     await go("#/jobs");
     await visible(page.getByRole("row", { name: /Deliver hello/ }).getByText("Success"), 60_000);
@@ -579,7 +562,7 @@ describe.skipIf(gui)("phase 6: orchestrator chat from the GUI (fake agent)", () 
       await mkdir(join(home, "connectors"), { recursive: true });
       await writeFile(join(home, "connectors", "fake.json"), JSON.stringify({ name: "fake", title: "Fake", kind: "native", harness: { program: "node", versionArgs: ["--version"], versionRange: ">=18.0.0" }, command: ["{harnessPath}", fakeAgent], env: { FAKE_AGENT_SCRIPT: files.join(",") }, reader: "claude-code" }));
       await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p1", account: "fake", model: "m1" }] }));
-      await writeFile(join(home, "settings.json"), JSON.stringify({ firstRunDone: true, orchestrator: { profile: "p1" } }));
+      await writeFile(join(home, "settings.json"), JSON.stringify({ firstRunDone: true, projectsFolder: root, orchestrator: { profile: "p1" } }));
     }));
   }, 60_000);
 
@@ -594,7 +577,7 @@ describe.skipIf(gui)("phase 6: orchestrator chat from the GUI (fake agent)", () 
     await page.getByLabel("Name").fill("Demo");
     await page.getByRole("radio", { name: /^Local only/ }).check();
     await page.getByRole("button", { name: "Create project" }).click();
-    await visible(page.getByRole("button", { name: /Finish|Skip/ }).first(), 30_000);
+    await page.waitForURL("**/#/projects/demo");
 
     await page.getByRole("link", { name: "Orchestrator" }).click();
     await page.getByRole("button", { name: "New conversation" }).click();

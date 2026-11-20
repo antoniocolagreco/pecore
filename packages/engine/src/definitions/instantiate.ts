@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { loadNodeFile, loadRecipeFile } from "./load";
 import type { DefinitionError } from "./load";
 
-export type InstantiateResult = { written: string[]; kept: string[]; errors: DefinitionError[]; stagedRecipe?: { path: string; content: string } };
+export type InstantiateResult = { written: string[]; kept: string[]; errors: DefinitionError[] };
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -55,7 +55,7 @@ export async function instantiateNode(libraryDir: string, projectDir: string, na
   return result;
 }
 
-export async function instantiateRecipe(libraryDir: string, projectDir: string, name: string, rename: Record<string, string> = {}, stage = false): Promise<InstantiateResult> {
+export async function instantiateRecipe(libraryDir: string, projectDir: string, name: string, rename: Record<string, string> = {}, validate?: (content: string) => Promise<DefinitionError[]>): Promise<InstantiateResult> {
   const result: InstantiateResult = { written: [], kept: [], errors: [] };
   const source = join(libraryDir, "recipes", `${name}.json`);
   const loaded = await loadRecipeFile(source);
@@ -80,10 +80,8 @@ export async function instantiateRecipe(libraryDir: string, projectDir: string, 
     const nodes = recipe.nodes as Record<string, { use: string }> | undefined;
     for (const node of Object.values(nodes ?? {})) node.use = renamedUse(node.use);
   });
-  if (stage) {
-    result.stagedRecipe = { path: target, content };
-    return result;
-  }
+  if (validate) result.errors.push(...await validate(content));
+  if (result.errors.length) return result;
   await mkdir(join(projectDir, "recipes"), { recursive: true });
   await writeFile(target, content);
   result.written.push(target);

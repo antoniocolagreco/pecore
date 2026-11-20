@@ -1,13 +1,12 @@
 import { useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { projectIdCandidate } from "@pecore/schemas";
-import type { CreationView, CreateProjectBody, ForgeAccount, QueueItemView } from "@pecore/schemas";
+import type { CreationView, CreateProjectBody, ForgeAccount } from "@pecore/schemas";
 import { call } from "../api/client";
 import { errorText, useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
-import { ConfirmItem } from "../components/ConfirmItem";
 import { reasonLabel } from "../components/states";
-import { Button, Empty, ErrorText, Page, Panel, ui } from "../components/ui";
+import { Button, ErrorText, Page, Panel, ui } from "../components/ui";
 import { RadioGroup } from "../ds/choice";
 import { Alert, Badge, Card, Spinner } from "../ds/feedback";
 import type { Tone } from "../ds/feedback";
@@ -31,42 +30,6 @@ const tasks: string[] = [
   "Grant project access in protected mode",
 ];
 
-function ConfirmProject({ id }: { id: string }) {
-  const navigate = useNavigate();
-  const connected: boolean = useConnected();
-  const [page, setPage] = useState<number>(0);
-  const queue = useData(() => call("listQueue", { query: { state: "open", project: id } }), [id], (m) => m.type === "queue.updated" && m.projectId === id);
-  const items: QueueItemView[] = (queue.data ?? []).filter((item) => item.kind === "engine-node" || item.kind === "source-node");
-  const start: number = Math.min(page, Math.max(0, Math.ceil(items.length / 10) - 1)) * 10;
-  if (queue.data && !queue.error && !queue.loading && items.length === 0) {
-    return <Navigate to={`/projects/${id}`} replace />;
-  }
-  const finish = () => void navigate(`/projects/${id}`, { replace: true });
-  return (
-    <Page title="Project created" width={formWidth}>
-      <ErrorText error={queue.error} />
-      {queue.loading && items.length === 0 && <Empty>Checking for actions that need your approval…</Empty>}
-      {items.length > 0 && <p>
-        Some project actions need your permission before PeCore can run them. Review and approve the actions you want to allow.
-        You can open the project now and review pending requests later in Notifications.
-      </p>}
-      {items.slice(start, start + 10).map(({ id: itemId }) => (
-        <Panel key={itemId}><ConfirmItem itemId={itemId} onDone={queue.reload} /></Panel>
-      ))}
-      {items.length > 10 && (
-        <div className={ui.row}>
-          <Button disabled={!connected || start === 0} onClick={() => setPage(start / 10 - 1)}>Previous</Button>
-          <Button disabled={!connected || start + 10 >= items.length} onClick={() => setPage(start / 10 + 1)}>Show more</Button>
-        </div>
-      )}
-      {(items.length > 0 || queue.error) && (
-        <div className={ui.row}>
-          <Button kind="primary" disabled={!connected} onClick={finish}>Open project</Button>
-        </div>
-      )}
-    </Page>
-  );
-}
 function CreationTasks({ creation, pending }: { creation: CreationView | undefined; pending: boolean }) {
   const finished: number = creation?.step ?? 0;
   const report: string | null | undefined = creation?.error;
@@ -88,7 +51,6 @@ function CreationTasks({ creation, pending }: { creation: CreationView | undefin
               <span className={w.stepName}>{name}</span>
               <span className={w.stepState}>{state}</span>
               {setup?.waitingReason && <span className={ui.muted}>{reasonLabel(setup.waitingReason)}</span>}
-              {step === 4 && creation?.setupItemId && <Panel><ConfirmItem itemId={creation.setupItemId} /></Panel>}
             </span>
           </li>
         );
@@ -193,7 +155,7 @@ export function NewProjectWizard() {
   });
 
   if (creationId && creation.data?.step === 6 && !creation.data.error && !cancel.busy && !retry.busy) {
-    return <ConfirmProject id={creationId} />;
+    return <Navigate to={`/projects/${creationId}`} replace />;
   }
   if (creationId || create.busy) {
     const busy: boolean = create.busy || retry.busy || cancel.busy;

@@ -3,7 +3,7 @@ import { chmod, cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promise
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Engine } from "../../src/main";
-import { autoConfirm, until } from "../forge-project";
+import { until } from "../forge-project";
 import { createProjectWithRecipes } from "../project";
 import { shippedLibrary, tempDir } from "../tmp";
 
@@ -117,7 +117,6 @@ for (const c of cases) {
 
       let engine = await Engine.start({ home, library });
       await createProjectWithRecipes(engine, { id: "e2e", name: "E2E", repo: { url, account: c.forge }, createRepo: c.createRepo }, ["forge-e2e"]);
-      let stopConfirm = autoConfirm(engine, "e2e");
       let p = engine.project("e2e");
       await until(async () => !(await exists(join(p.ctx.dir, "creating.json"))), 180_000);
       expect(remoteHead("main")).not.toBeNull();
@@ -131,13 +130,11 @@ for (const c of cases) {
       const second = await engine.createJob("e2e", { title: "PeCore e2e: kill during push", ticket: { text: "x" } });
       await until(() => p.ctx.db.events(second).some((e) => e.type === "effect.requested" && e.payload.node === "push"), 300_000);
       await new Promise((r) => setTimeout(r, 5000));
-      stopConfirm();
       await engine.shutdown();
       await rm(flag);
 
       engine = await Engine.start({ home, library });
       p = engine.project("e2e");
-      stopConfirm = autoConfirm(engine, "e2e");
       expect(p.executor.job(second)).toMatchObject({ state: "paused", waiting_reason: "quit" });
       await p.executor.play(second);
       await until(() => ended(p.executor.job(second).state), 300_000);
@@ -148,7 +145,6 @@ for (const c of cases) {
       expect(c.requests(repo, `factory/${second}`)).toHaveLength(1);
       expect(p.ctx.db.events(second).filter((e) => e.type === "effect.requested" && e.payload.node === "push")).toHaveLength(1);
       console.log(`${c.forge}: ${c.requests(repo, `factory/${first}`)[0]!.url} ${c.requests(repo, `factory/${second}`)[0]!.url}`);
-      stopConfirm();
       await engine.shutdown();
       process.env.PATH = path;
     }, 900_000);

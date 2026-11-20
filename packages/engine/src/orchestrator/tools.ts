@@ -68,9 +68,7 @@ function intakeOrder(ctx: ProjectContext, message: ChatTurn): TicketOrder | unde
 }
 
 async function source(ctx: ProjectContext, request: SourceRequest): Promise<unknown> {
-  const result = await runSource(ctx, request);
-  if (result.kind === "waiting") throw new Error(`the source needs confirmation (queue item ${result.itemId})`);
-  return result.data;
+  return (await runSource(ctx, request)).data;
 }
 
 function definitionPath(path: string, scope: "template" | "instance" | "knowledge" | "any"): void {
@@ -96,7 +94,7 @@ export function orchestratorTools(engine: Engine): {
   const write = (scope: "template" | "instance" | "knowledge", description: string): Tool => tool(description, definition, async ({ path, content }) => {
     definitionPath(path, scope);
     const value = await definitions.write(path, content);
-    return { value, target: { path, queueItemIds: value.confirmItemIds }, isError: value.errors.length > 0 };
+    return { value, target: { path }, isError: value.errors.length > 0 };
   });
 
   const tools: Record<string, Tool> = {
@@ -224,11 +222,11 @@ export function orchestratorTools(engine: Engine): {
       },
     })),
     write_template: write("template", "Validate and save a library template or node sidecar under library/nodes or library/recipes."),
-    instantiate: tool("Instantiate a library node or propose a recipe instance for confirmation.", InstantiateBody, async (input) => {
-      const value = await definitions.stageInstantiation(input);
-      return { value, target: { ...input, paths: value.created, queueItemIds: value.confirmItemIds }, isError: !!value.errors?.length };
+    instantiate: tool("Add a library node or recipe to a project.", InstantiateBody, async (input) => {
+      const value = await definitions.instantiate(input);
+      return { value, target: { ...input, paths: value.created }, isError: value.errors.length > 0 };
     }),
-    write_instance: write("instance", "Validate and save a project node or propose a recipe change for confirmation."),
+    write_instance: write("instance", "Validate and save a project node or recipe."),
     write_knowledge: write("knowledge", "Validate and save a Markdown file under the project's knowledge directory."),
     validate: tool("Validate a proposed template, instance or knowledge file without saving it.", definition, async ({ path, content }) => {
       definitionPath(path, "any");

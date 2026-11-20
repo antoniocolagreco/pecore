@@ -11,7 +11,6 @@ import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { call } from "../api/client";
 import { errorText, useAction, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
-import { ConfirmItem } from "../components/ConfirmItem";
 import { Button, ErrorText, Field, Modal, Page, Panel, ui } from "../components/ui";
 import s from "./Editors.module.css";
 
@@ -59,7 +58,6 @@ export function useDefinitionDraft(existingPath: string, sidecar = false, creati
   const [draft, setDraft] = useState<string>();
   const [changed, setChanged] = useState(false);
   const [compared, setCompared] = useState<Snapshot>();
-  const [ids, setIds] = useState<string[]>([]);
   const [savedPath, setSavedPath] = useState<string>();
   const [validation, setValidation] = useState<{ content: string; result?: Validation; error?: string }>();
   const saving = useRef(false);
@@ -120,7 +118,6 @@ export function useDefinitionDraft(existingPath: string, sidecar = false, creati
       setDraft(undefined);
       setChanged(false);
       setCompared(undefined);
-      setIds((previous) => [...new Set([...previous, ...result.confirmItemIds])]);
       if (creation) setSavedPath(path);
     } catch (error) {
       if (!(error instanceof ApiError && error.status === 409)) throw error;
@@ -177,7 +174,6 @@ export function useDefinitionDraft(existingPath: string, sidecar = false, creati
       </Panel>}
     </>,
     saveButton: (disabled = false): ReactNode => <Button kind="primary" disabled={disabled || !canSave || !dirty || changed} onClick={() => void save.run()}>Save{sidecar ? " file" : ""}</Button>,
-    confirmations: ids.map((id) => <ConfirmItem key={id} itemId={id} onDone={() => setIds((previous) => previous.filter((item) => item !== id))} />),
   };
 }
 
@@ -255,7 +251,6 @@ function SidecarFile({ path, name, isMarkdown, onDirty }: { path: string; name: 
     <h2>{isMarkdown ? "Prompt" : "Script"} <code>{name}</code></h2>
     {file.feedback}
     {file.ready && <><Sidecar content={file.content} change={file.update} disabled={!file.editable} isMarkdown={isMarkdown} />{file.saveButton()}</>}
-    {file.confirmations}
   </Panel>;
 }
 
@@ -313,7 +308,6 @@ function NodeFile({ path }: { path: string }) {
     </Panel>}
     {sidecarDirty && sidecarName !== validSidecar && <p className={ui.banner}>Save the open sidecar before switching files.</p>}
     {sidecarName && <SidecarFile key={sidecarName} path={path.slice(0, path.lastIndexOf("/") + 1) + sidecarName} name={sidecarName} isMarkdown={sidecarName.endsWith(".md")} onDirty={setSidecarDirty} />}
-    {file.confirmations}
     {warn}
   </Page>;
 }

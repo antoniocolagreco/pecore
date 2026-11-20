@@ -2,7 +2,6 @@ import { monotonicFactory } from "ulid";
 import { z } from "zod";
 import { TicketReply, TicketSnapshot } from "@pecore/schemas";
 import type { StoredEvent } from "@pecore/schemas";
-import { blockingImportItem } from "../definitions/confirm";
 import type { ProjectContext } from "../graph/executor";
 import type { TicketOrder } from "../jobs/plan";
 import { subjectHash } from "../runners/human";
@@ -38,13 +37,13 @@ function interval(ctx: ProjectContext): number {
 
 async function poll(ctx: ProjectContext, sink: OrderSink, rehand: Set<string>, active: () => boolean): Promise<void> {
   const source = ctx.project.source;
-  if (!source || blockingImportItem(ctx.db) !== null) return;
+  if (!source) return;
   const current = (): boolean => active() && ctx.project.source === source;
   const db = ctx.db.db;
   const warn = (error: unknown): void => console.error(`source of project ${ctx.id}:`, error);
   try {
     const listed = await runSource(ctx, { command: "list" });
-    if (listed.kind === "completed" && current()) {
+    if (current()) {
       const seen: Set<string> = new Set((db.prepare("SELECT ticket_id FROM tickets_seen WHERE source = ?").all(source.node) as { ticket_id: string }[]).map((row) => row.ticket_id));
       const fresh: NewEvent[] = [];
       for (const { id } of TicketList.parse(listed.data)) {
@@ -78,7 +77,7 @@ async function pollOrder(ctx: ProjectContext, sink: OrderSink, order: TicketOrde
 
   if (state === "received") {
     const read = await runSource(ctx, { command: "read", ticketId });
-    if (read.kind !== "completed" || !current()) return;
+    if (!current()) return;
     ticket = TicketSnapshot.parse(read.data);
     const trusted: boolean = [ticket.author, ticket.labeledBy].some((name) => name !== null && read.trusted.includes(name));
     const events: NewEvent[] = [{ jobId: null, type: "order.read", payload: { orderId, ticket, trusted } }];
@@ -104,7 +103,7 @@ async function pollOrder(ctx: ProjectContext, sink: OrderSink, order: TicketOrde
     if (!asked) return;
     const since: number = asked.payload.commentAt;
     const result = await runSource(ctx, { command: "replies", ticketId, since });
-    if (result.kind !== "completed" || !current()) return;
+    if (!current()) return;
     replies = TicketReply.array().parse(result.data).filter((reply) => Date.parse(reply.createdAt) > since);
     if (replies.length === 0) return;
     askId = asked.id;

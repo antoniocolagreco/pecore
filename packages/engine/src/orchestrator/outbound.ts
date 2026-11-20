@@ -25,8 +25,7 @@ export async function answerOutbound(ctx: ProjectContext, id: string, choice: st
   if (choice === "post") {
     const { ticketId, orderId, text } = JSON.parse(item.subject) as OutboundSubject;
     const commentAt: number = Date.now();
-    const result = await runSource(ctx, { command: "comment", ticketId, comment: text });
-    if (result.kind === "waiting") throw new HttpError("conflict", `the source needs confirmation first (queue item ${result.itemId})`);
+    await runSource(ctx, { command: "comment", ticketId, comment: text });
     ctx.db.append([
       { jobId: null, type: "order.asked", payload: { orderId, commentAt } },
       { jobId: null, type: "queue.resolved", payload: { itemId: id, state: "resolved", choice, note } },

@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 import { createProjectWithRecipes } from "../../test/project";
 import { shippedLibrary, tempDir } from "../../test/tmp";
 import { Engine } from "../main";
-import { ProjectDb } from "../store/project-db";
 import { gitApp } from "../workdir/git-as";
 import { branchHead, createLocalRepo } from "../workdir/repo";
 import { JobServices } from "./job-services";
@@ -47,7 +46,7 @@ function composeProjects(jobId: string): string {
 }
 
 describe.skipIf(!ready())("job services (4.9)", () => {
-  it("waits for confirmation of the compose file, starts it, passes the ports to nodes, and removes it at the end", async () => {
+  it("starts Compose directly, passes the ports to nodes, and removes it at the end", async () => {
     const root = await tempDir();
     const marker = join(root, "port");
     const home = join(root, "home");
@@ -79,10 +78,6 @@ describe.skipIf(!ready())("job services (4.9)", () => {
     await gitApp(repo, ["update-ref", "refs/heads/main", commit]);
 
     const id = await engine.createJob("svc", { title: "t", ticket: { text: "x" } });
-    await until(() => p.executor.job(id).waiting_reason === "confirmation");
-    const item = p.ctx.db.db.prepare("SELECT id, subject_hash, subject FROM human_queue WHERE kind = 'services' AND state = 'open'").get() as { id: string; subject_hash: string; subject: string };
-    expect(Object.keys((JSON.parse(item.subject) as { compose: { services: object } }).compose.services)).toEqual(["web"]);
-    await p.executor.answer(item.id, "confirm", null, item.subject_hash);
     await until(() => p.executor.job(id).state === "succeeded");
     expect(await readFile(marker, "utf8")).toMatch(/^127\.0\.0\.1:\d+$/);
     await until(() => composeProjects(id).trim() === "[]");
@@ -104,9 +99,9 @@ describe.skipIf(!ready())("job services (4.9)", () => {
     await createProjectWithRecipes(engine, { id: "auto", name: "Auto", repo: null }, ["noop"]);
     const p = engine.project("auto");
     await commitFile(join(p.ctx.dir, "repo.git"), "docker-compose.yml", compose);
-    await engine.createJob("auto", { title: "t", ticket: { text: "x" } });
-    const item = await until(() => p.ctx.db.db.prepare("SELECT subject FROM human_queue WHERE kind = 'services' AND state = 'open'").get() as { subject: string } | undefined);
-    expect(JSON.parse(item.subject)).toMatchObject({ path: "services/docker-compose.yml" });
+    const id: string = await engine.createJob("auto", { title: "t", ticket: { text: "x" } });
+    await until(() => p.executor.job(id).state === "succeeded");
+    expect(p.ctx.db.events(id)).toContainEqual(expect.objectContaining({ type: "job.state_changed", payload: { state: "waiting", reason: "services" } }));
     await engine.shutdown();
   }, 120_000);
 });
@@ -125,16 +120,16 @@ describe("automatic compose file (decision 78)", () => {
     const repo = join(dir, "repo.git");
     await createLocalRepo(repo, "main");
     const base = file === null ? (await branchHead(repo, "main"))! : await commitFile(repo, file, compose);
-    return { base, jobs: new JobServices(new ProjectDb(join(dir, "pecore.db")), dir, () => null, () => runtime) };
+    return { base, jobs: new JobServices(dir, () => null, () => runtime) };
   }
 
   it("starts nothing when no services runtime is set, even with a compose file", async () => {
     const { base, jobs } = await services(null, "compose.yaml");
-    expect(await jobs.ensure("j1", base, () => { throw new Error("started"); })).toEqual({ kind: "ready", env: {} });
+    expect(await jobs.ensure("j1", base, () => { throw new Error("started"); })).toEqual({});
   });
 
   it("starts nothing when the repository has no standard compose file", async () => {
     const { base, jobs } = await services("docker", "other.yaml");
-    expect(await jobs.ensure("j1", base, () => { throw new Error("started"); })).toEqual({ kind: "ready", env: {} });
+    expect(await jobs.ensure("j1", base, () => { throw new Error("started"); })).toEqual({});
   });
 });

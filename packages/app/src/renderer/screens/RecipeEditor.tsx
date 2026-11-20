@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { Background, Controls, ReactFlow } from "@xyflow/react";
 import type { Connection, Edge, Node, NodeChange, NodePositionChange, ReactFlowInstance, XYPosition } from "@xyflow/react";
 import { Name, Outcome } from "@pecore/schemas";
 import type { DefinitionEntry } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
-import { ConfirmItem } from "../components/ConfirmItem";
 import { Button, Empty, ErrorText, Field, Modal, Page, Panel, ui } from "../components/ui";
 import { Button as DsButton } from "../ds/button";
 import { TextField } from "../ds/field";
@@ -18,7 +17,6 @@ import "@xyflow/react/dist/style.css";
 import s from "./Editors.module.css";
 
 type LinkDraft = { from: string; to: string; on: string };
-type OpenRecipe = { path: string; confirmItemIds: string[] };
 const grid: [number, number] = [20, 20];
 const emptyRecipe: string = JSON.stringify({ $schema: "../../../schemas/recipe.json", name: "", description: "", nodes: {}, edges: [] }, null, 2) + "\n";
 
@@ -27,7 +25,7 @@ function position(layout: Record<string, unknown>, id: string, index: number): X
   return typeof point.x === "number" && typeof point.y === "number" ? { x: point.x, y: point.y } : { x: index % 4 * 200, y: Math.floor(index / 4) * 120 };
 }
 
-function RecipeFile({ path, project, initialConfirmations }: { path: string; project?: string; initialConfirmations: string[] }) {
+function RecipeFile({ path, project }: { path: string; project?: string }) {
   const navigate = useNavigate();
   const creation = useMemo<NewDefinition | undefined>(() => project ? {
     content: emptyRecipe,
@@ -37,12 +35,11 @@ function RecipeFile({ path, project, initialConfirmations }: { path: string; pro
     },
   } : undefined, [project]);
   const file = useDefinitionDraft(path, false, creation);
-  const [destination, setDestination] = useState<OpenRecipe>();
-  const [confirmations, setConfirmations] = useState<string[]>(initialConfirmations);
+  const [destination, setDestination] = useState<string>();
   const warn = useUnsaved(file.dirty && !destination);
   useEffect(() => {
-    const saved: string | undefined = destination?.path ?? file.savedPath;
-    if (saved) void navigate(definitionUrl("recipe", saved), { replace: true, state: { confirmItemIds: destination?.confirmItemIds ?? confirmations } });
+    const saved: string | undefined = destination ?? file.savedPath;
+    if (saved) void navigate(definitionUrl("recipe", saved), { replace: true });
   }, [destination, file.savedPath]);
   const [json, setJson] = useState(false);
   const [selected, setSelected] = useState("");
@@ -60,13 +57,12 @@ function RecipeFile({ path, project, initialConfirmations }: { path: string; pro
   const nodeTemplates = useRecipeLibrary("nodes", !!creation);
   const importRecipe = useAction(async () => {
     if (!project || !recipeTemplate || (file.dirty && !window.confirm("Replace your unsaved draft with this template?"))) return;
-    const result = await call("instantiate", { body: { kind: "recipe", name: recipeTemplate, project } });
-    setDestination({ path: `${scope}/recipes/${recipeTemplate}.json`, confirmItemIds: [...new Set([...confirmations, ...result.confirmItemIds])] });
+    await call("instantiate", { body: { kind: "recipe", name: recipeTemplate, project } });
+    setDestination(`${scope}/recipes/${recipeTemplate}.json`);
   });
   const importNode = useAction(async () => {
     if (!project || !libraryNode) return;
-    const result = await call("instantiate", { body: { kind: "node", name: libraryNode, project } });
-    setConfirmations((previous) => [...new Set([...previous, ...result.confirmItemIds])]);
+    await call("instantiate", { body: { kind: "node", name: libraryNode, project } });
     definitions.reload();
     setTemplate(libraryNode);
     setLibraryNode(null);
@@ -219,8 +215,6 @@ function RecipeFile({ path, project, initialConfirmations }: { path: string; pro
         <Button type="submit" kind="primary" disabled={!file.editable || !Outcome.safeParse(connection.on).success}>Connect</Button>
       </form>}
     </Modal>
-    {file.confirmations}
-    {confirmations.map((id) => <ConfirmItem key={id} itemId={id} onDone={() => setConfirmations((previous) => previous.filter((item) => item !== id))} />)}
     {warn}
   </Page>;
 }
@@ -240,8 +234,5 @@ function templateOptions(entries: DefinitionEntry[] | undefined): { value: strin
 
 export function RecipeEditor() {
   const { id, "*": path = "" } = useParams();
-  const { state } = useLocation();
-  const raw: unknown = object(state).confirmItemIds;
-  const confirmations: string[] = Array.isArray(raw) ? raw.filter((value): value is string => typeof value === "string") : [];
-  return <RecipeFile key={id ?? path} path={path} project={id} initialConfirmations={confirmations} />;
+  return <RecipeFile key={id ?? path} path={path} project={id} />;
 }

@@ -440,7 +440,6 @@ export class Engine extends EventEmitter {
       held: () => this.globalPause,
       agents: this.agents,
       orderAttachments: (orderId, attachmentIds) => this.orchestrator.jobAttachments(orderId, attachmentIds),
-      rejectImport: (resolve) => this.deleteProject(id, resolve),
       setupEnded: (state) => this.setupEnded(id, state),
       forgeAccount: (accountId) => this.accounts.accounts.find((a): a is ForgeAccount => a.kind === "forge" && a.id === accountId),
       global: () => ({ profiles: this.profiles, tiers: this.tiers }),
@@ -455,11 +454,7 @@ export class Engine extends EventEmitter {
         if (e.type.startsWith("job.") && e.jobId !== null) this.live({ type: "job.updated", projectId: id, jobId: e.jobId });
         if (e.type === "queue.added" || e.type === "queue.resolved") this.live({ type: "queue.updated", projectId: id, itemId: e.payload.itemId });
         if (e.type === "queue.resolved" && e.jobId === null && e.payload.choice === "confirm") {
-          const project: LoadedProject | undefined = this.projects.get(id);
-          const imported: unknown = ctx.db.db.prepare("SELECT 1 FROM human_queue WHERE id = ? AND kind = 'import'").get(e.payload.itemId);
-          if (imported) {
-            void resumeOrders(ctx).then((orders) => project?.sourcePolling?.wake(orders)).catch((error: unknown) => console.error(`orders of project ${id}:`, error));
-          } else project?.sourcePolling?.wake();
+          this.projects.get(id)?.sourcePolling?.wake();
         }
       }
     };
@@ -564,7 +559,7 @@ export class Engine extends EventEmitter {
   }
 
   async createProject(input: ProjectInput): Promise<void> {
-    const project = await beginProject(this.opts.home, input, this.createOptions(), this.opts.library);
+    const project = await beginProject(this.opts.home, input, this.createOptions());
     await this.continueCreation(project.id);
   }
 
@@ -630,7 +625,7 @@ export class Engine extends EventEmitter {
     this.setCreating(id, null);
   }
 
-  async deleteProject(id: string, resolveImport?: () => void): Promise<void> {
+  async deleteProject(id: string): Promise<void> {
     const p: LoadedProject = this.project(id);
     if (p.deleting) throw new Error(`project ${id} is being deleted`);
     const running = p.executor.jobs().filter((j) => j.state === "running");
@@ -642,7 +637,6 @@ export class Engine extends EventEmitter {
       for (const j of jobs) if (!isFinal(j.state)) await p.executor.stop(j.id);
       for (const j of jobs) await p.executor.services.down(j.id).catch((e: unknown) => console.error("services:", e));
       await p.executor.close();
-      resolveImport?.();
       p.ctx.db.close();
       this.projects.delete(id);
       this.projectErrors.delete(id);

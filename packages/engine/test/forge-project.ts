@@ -55,19 +55,10 @@ export async function forgeHome() {
   return { forge, home, library };
 }
 
-export function autoConfirm(engine: Engine, projectId: string): () => void {
-  const p = engine.project(projectId);
-  const timer = setInterval(() => {
-    const open = p.ctx.db.db.prepare("SELECT id, subject_hash FROM human_queue WHERE state = 'open' AND kind = 'engine-node'").all() as { id: string; subject_hash: string }[];
-    for (const item of open) void p.executor.answer(item.id, "confirm", null, item.subject_hash).catch(() => undefined);
-  }, 50);
-  return () => clearInterval(timer);
-}
-
 export async function forgeProject() {
   const h = await forgeHome();
   await h.forge.createRepo("acme/shop");
   const engine = await Engine.start({ home: h.home, library: h.library });
   await createProjectWithRecipes(engine, { id: "shop", name: "Shop", repo: { url: "https://github.com/acme/shop.git", account: forgeAccount.id } }, ["deliver"]);
-  return { ...h, engine, stopConfirm: autoConfirm(engine, "shop") };
+  return { ...h, engine };
 }

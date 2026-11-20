@@ -101,15 +101,12 @@ describe("pecore CLI over the local API", () => {
     expect(bad.err[0]).toBe("invalid account mapping nope. Use --account <from>=<to> once per source account.");
     const dup = capture();
     expect(await run(["project", "import", out], dup.io, env)).toBe(1);
-    expect(dup.err[0]).toBe("conflict: project demo already exists");
+    expect(dup.err.at(-1)).toBe("conflict: project demo already exists");
     const i = capture();
     expect(await run(["project", "import", out, "--id", "copy"], i.io, env)).toBe(0);
-    const itemId = (await call("listQueue", { query: { project: "copy" } })).find((q) => q.kind === "import")?.id;
-    expect(i.out).toEqual([
-      "This project was written by someone else. Its scripts and prompts run on this computer with your accounts: a script can read your logins and send them anywhere, and a prompt can tell an agent to do the same. Confirm only after you have read every script and prompt.",
-      `The import waits for confirmation in the Inbox (item ${itemId}).`,
-      "copy",
-    ]);
+    expect(i.out).toEqual(["copy"]);
+    expect(i.err).toEqual([expect.stringContaining("Review every script and prompt")]);
+    expect(await call("listQueue", { query: { project: "copy", state: "open" } })).toEqual([]);
     expect((await call("getProject", { params: { id: "copy" } })).project?.id).toBe("copy");
     await close();
   }, 60000);

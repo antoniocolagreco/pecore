@@ -192,8 +192,6 @@ describe("stacked jobs (4.6, decision 10)", () => {
   it("merge detection moves the children to the parent's target with base at its head (decision 10)", async () => {
     const { marker, engine, p, repo, job, openItem } = await setup();
     const parent = await engine.createJob("demo", { title: "parent", ticket: { text: "x" }, recipe: "delivered" });
-    const confirm = await until(() => openItem(null, "engine-node"));
-    await p.executor.answer(confirm.id, "confirm", null, confirm.subject_hash);
     await until(() => job(parent).state === "succeeded");
     const child = await engine.createJob("demo", { title: "child", ticket: { text: "y" }, recipe: "reviewed", parentJobId: parent });
     await until(() => openItem(child));

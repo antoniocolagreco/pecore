@@ -64,7 +64,7 @@ describe("system routes", () => {
   });
 
   it("recheck of a forge account releases the job waiting with auth; a tool login streams progress", async () => {
-    const { forge, engine, stopConfirm } = await forgeProject();
+    const { forge, engine } = await forgeProject();
     const api = await startApi(engine, { handlers: handlers("t"), validateResponses: true });
     const call = apiClient({ port: api.port, token: api.token });
     const p = engine.project("shop");
@@ -83,7 +83,6 @@ describe("system routes", () => {
     expect(await call("startAccountLogin", { params: { id: "gh-test" } })).toEqual({ loginId: "tool:gh-test" });
     await until(() => messages.some((m) => m.type === "login.progress" && m.loginId === "tool:gh-test" && m.done));
     expect((await forge.state()).calls).toContain("auth login --hostname github.com --web --git-protocol https");
-    stopConfirm();
     await api.close();
     await engine.shutdown();
   });

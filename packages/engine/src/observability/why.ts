@@ -1,5 +1,4 @@
 import type { WhyReason, WhyView } from "@pecore/schemas";
-import { blockingImportItem } from "../definitions/confirm";
 import type { JobRow, ProjectContext } from "../graph/executor";
 
 type WaitingRun = {
@@ -22,8 +21,6 @@ const reason = (r: Partial<WhyReason> & Pick<WhyReason, "reason" | "text">): Why
 });
 
 function queuedReason(ctx: ProjectContext, job: JobRow, globalPause: boolean): WhyReason {
-  const importItem: string | null = blockingImportItem(ctx.db);
-  if (importItem !== null) return reason({ reason: "confirmation", text: "The project waits for import confirmation in the Inbox", queueItemId: importItem });
   const parent = job.parent_job_id ? (ctx.db.db.prepare("SELECT id, title, state FROM jobs WHERE id = ?").get(job.parent_job_id) as Pick<JobRow, "id" | "title" | "state"> | undefined) : undefined;
   const account = ctx.project.repo?.account ?? null;
   switch (job.waiting_reason) {
@@ -39,10 +36,6 @@ function queuedReason(ctx: ProjectContext, job: JobRow, globalPause: boolean): W
       return reason({ reason: "network", text: `Could not fetch ${job.target} from the forge: no network or the forge is down; retrying`, account });
     case "auth":
       return reason({ reason: "auth", text: `Could not fetch ${job.target}: the login of account ${account ?? "?"} expired or does not match; log in and recheck`, account });
-    case "confirmation": {
-      const created = ctx.db.events(job.id).find((event) => event.type === "job.created");
-      return reason({ reason: "confirmation", text: "The job waits for confirmation of its recipe change", queueItemId: created?.payload.recipeConfirmationId ?? null });
-    }
     default:
       return globalPause ? reason({ reason: "global_pause", text: "The global pause is on: queued jobs do not start" }) : reason({ reason: "scheduler", text: "Waits for the scheduler" });
   }
@@ -71,8 +64,6 @@ function runReason(ctx: ProjectContext, r: WaitingRun): WhyReason {
       return reason({ ...base, account, reason: "network", text: `Node ${n} cannot reach the forge: no network or the forge is down; retrying` });
     case "auth":
       return reason({ ...base, account, reason: "auth", text: `Node ${n}: the login of account ${account ?? "?"}${r.auth_os_user ? ` for user ${r.auth_os_user}` : ""} expired or does not match; log in and recheck` });
-    case "confirmation":
-      return reason({ ...base, reason: "confirmation", text: `Node ${n} waits for your confirmation in the Inbox` });
     case "disk":
       return reason({ ...base, reason: "disk", text: `Node ${n}: free disk is below ${ctx.settings.minFreeDiskGb} GB` });
     default:

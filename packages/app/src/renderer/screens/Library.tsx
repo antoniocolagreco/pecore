@@ -4,7 +4,6 @@ import type { DefinitionEntry, RouteResult } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
-import { ConfirmItem } from "../components/ConfirmItem";
 import { Button, Empty, ErrorText, Field, Modal, Page, Panel, ui } from "../components/ui";
 import { DefinitionErrors, definitionUrl, object, string } from "./NodeEditor";
 
@@ -26,7 +25,7 @@ export function Library() {
   const instantiate = useAction(async () => {
     if (!target) return;
     const next = await call("instantiate", { body: { ...target, project } });
-    setResult((previous) => ({ ...next, confirmItemIds: [...new Set([...(previous?.confirmItemIds ?? []), ...next.confirmItemIds])] }));
+    setResult(next);
     setTarget(undefined);
   });
 
@@ -66,7 +65,6 @@ export function Library() {
       <h2>Instantiation result</h2>
       <p>Created</p>{result.created.length ? <ul>{result.created.map((path) => <li key={path}><code>{path}</code></li>)}</ul> : <p>None</p>}
       <p>Kept</p>{result.kept.length ? <ul>{result.kept.map((path) => <li key={path}><code>{path}</code></li>)}</ul> : <p>None</p>}
-      {result.confirmItemIds.map((id) => <ConfirmItem key={id} itemId={id} onDone={() => setResult((previous) => previous && { ...previous, confirmItemIds: previous.confirmItemIds.filter((item) => item !== id) })} />)}
     </Panel>}
     <Modal open={!!target} onClose={() => { if (!instantiate.busy) setTarget(undefined); }} title="Instantiate into project">
       <p>{target?.name}</p>

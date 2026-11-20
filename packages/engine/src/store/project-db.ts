@@ -203,11 +203,6 @@ export class ProjectDb {
         });
         return;
       case "confirmation.recorded":
-        run("INSERT INTO confirmed_hashes (path, sha256, confirmed_at) VALUES (@path, @sha, @at) ON CONFLICT (path) DO UPDATE SET sha256 = @sha, confirmed_at = @at", {
-          path: e.payload.path,
-          sha: e.payload.sha256,
-          at,
-        });
         return;
       case "ticket.seen":
         run("INSERT OR IGNORE INTO tickets_seen (source, ticket_id, seen_at, order_id) VALUES (@source, @ticket, @at, @orderId)", { source: e.payload.source, ticket: e.payload.ticketId, at, orderId: e.payload.orderId });

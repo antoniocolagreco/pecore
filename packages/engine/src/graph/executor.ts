@@ -7,8 +7,6 @@ import type { AgentNode, Artifact, ArtifactType, DeliveryArtifact, FailureReason
 import { Recipe, SpecArtifact } from "@pecore/schemas";
 import { spawnFor } from "../accounts/agents";
 import type { AgentServices } from "../accounts/agents";
-import { blockingImportItem, ensureConfirmed, needsConfirmation, recordConfirmation, subjectSha } from "../definitions/confirm";
-import type { ConfirmSubject, ImportSubject } from "../definitions/confirm";
 import type { Definitions } from "../definitions/load";
 import { effectRecorder } from "../jobs/effects";
 import type { JobAttachment } from "../jobs/create";
@@ -33,8 +31,7 @@ import type { GitRecord } from "../workdir/content-state";
 import { gitAppResult, gitWork } from "../workdir/git-as";
 import { writeFileAs } from "../workdir/fs-as";
 import { setupJobId } from "../projects/create";
-import { JobServices, recordServicesConfirmation } from "../services/job-services";
-import type { ServicesSubject } from "../services/job-services";
+import { JobServices } from "../services/job-services";
 import { branchHead, jobBranch } from "../workdir/repo";
 import { addWorktree, recreateWorktree, removeWorktree, workdirOf } from "../workdir/worktrees";
 import { assertTransition, isFinal } from "./job-machine";
@@ -96,7 +93,6 @@ export type ProjectContext = {
   global(): { profiles: Profiles; tiers: Tiers };
   live?: (attemptId: string, line: RawLine) => void;
   orderAttachments?: (orderId: string, attachmentIds: string[]) => Promise<JobAttachment[]>;
-  rejectImport?: (resolve: () => void) => Promise<void>;
 };
 
 type AttemptExtra = { usage?: Usage; model?: string; cost?: number | null; log: string };
@@ -139,19 +135,29 @@ export class JobExecutor {
   private readonly timers = new Map<string, NodeJS.Timeout>();
   private readonly networkFailures = new Map<string, number>();
   private closing = false;
-  private rejectingImport = false;
 
   readonly services: JobServices;
 
   constructor(readonly ctx: ProjectContext) {
-    this.services = new JobServices(ctx.db, ctx.dir, () => ctx.project.services, () => ctx.settings.servicesRuntime);
-    const requests = ctx.db.db.prepare("SELECT id, job_id FROM human_queue WHERE kind = 'budget' AND state = 'open'").all() as { id: string; job_id: string | null }[];
-    const runs = ctx.db.db.prepare("SELECT id, job_id FROM node_runs WHERE state = 'waiting' AND waiting_reason = 'budget'").all() as { id: string; job_id: string }[];
-    const jobs = ctx.db.db.prepare("SELECT id FROM jobs WHERE state = 'waiting' AND waiting_reason = 'budget'").all() as { id: string }[];
+    this.services = new JobServices(ctx.dir, () => ctx.project.services, () => ctx.settings.servicesRuntime);
+    const requests = ctx.db.db.prepare("SELECT id, job_id FROM human_queue WHERE kind IN ('budget', 'engine-node', 'source-node', 'recipe-change', 'services', 'import') AND state = 'open'").all() as { id: string; job_id: string | null }[];
+    const runs = ctx.db.db.prepare("SELECT id, job_id FROM node_runs WHERE state = 'waiting' AND waiting_reason IN ('budget', 'confirmation')").all() as { id: string; job_id: string }[];
+    const jobs = ctx.db.db.prepare("SELECT id FROM jobs WHERE state = 'waiting' AND waiting_reason IN ('budget', 'confirmation')").all() as { id: string }[];
+    const queued = ctx.db.db.prepare(`SELECT j.id FROM jobs j WHERE j.state = 'queued' AND (
+      EXISTS (SELECT 1 FROM events e LEFT JOIN human_queue q ON q.id = json_extract(e.payload, '$.recipeConfirmationId')
+        WHERE e.job_id = j.id AND e.type = 'job.created' AND json_type(e.payload, '$.recipeConfirmationId') = 'text'
+        AND (q.id IS NULL OR q.state <> 'resolved' OR q.choice IS NOT 'confirm')) OR
+      EXISTS (SELECT 1 FROM human_queue WHERE kind = 'import' AND state = 'open')
+    )`).all() as { id: string }[];
+    const stopped: Set<string> = new Set(queued.map(({ id }) => id));
+    const children: JobRow[] = stopped.size > 0 ? this.jobs().filter(({ id, state, parent_job_id }) =>
+      state === "queued" && parent_job_id !== null && stopped.has(parent_job_id) && !stopped.has(id)) : [];
     const events: NewEvent[] = [
-      ...requests.map(({ id, job_id }): NewEvent => ({ jobId: job_id, type: "queue.resolved", payload: { itemId: id, state: "cancelled", choice: null, note: "Project budgets were removed" } })),
+      ...requests.map(({ id, job_id }): NewEvent => ({ jobId: job_id, type: "queue.resolved", payload: { itemId: id, state: "cancelled", choice: null, note: "This check was removed" } })),
       ...runs.map(({ id, job_id }): NewEvent => ({ jobId: job_id, type: "node_run.state_changed", payload: { nodeRunId: id, state: "waiting", waitingReason: "concurrency" } })),
       ...jobs.map(({ id }): NewEvent => ({ jobId: id, type: "job.state_changed", payload: { state: "paused", reason: "quit" } })),
+      ...queued.map(({ id }): NewEvent => ({ jobId: id, type: "job.state_changed", payload: { state: "stopped", reason: null } })),
+      ...children.map(({ id }): NewEvent => ({ jobId: id, type: "job.state_changed", payload: { state: "queued", reason: "parent_failed" } })),
     ];
     if (events.length) ctx.db.append(events);
   }
@@ -309,16 +315,6 @@ export class JobExecutor {
   }
 
   private async startJob(job: JobRow): Promise<boolean> {
-    if (blockingImportItem(this.ctx.db) !== null) {
-      this.setState(job.id, "queued", "confirmation");
-      return false;
-    }
-    const decision = this.recipeConfirmation(job.id);
-    if (decision === "rejected") {
-      this.setState(job.id, "stopped", null);
-      this.ended(job.id);
-      return false;
-    }
     if (job.waiting_reason === "parent_job" || job.waiting_reason === "parent_failed") return false;
     if (job.waiting_reason === "confirmation" && job.parent_job_id) {
       const parent: JobRow = this.job(job.parent_job_id);
@@ -326,10 +322,6 @@ export class JobExecutor {
         this.setState(job.id, "queued", isFinal(parent.state) && parent.state !== "succeeded" ? "parent_failed" : "parent_job");
         return false;
       }
-    }
-    if (decision === "waiting") {
-      this.setState(job.id, "queued", "confirmation");
-      return false;
     }
     if (job.waiting_reason === "confirmation") this.setState(job.id, "queued", null);
     if (job.id !== setupJobId && this.ctx.held?.()) return false;
@@ -343,15 +335,6 @@ export class JobExecutor {
     this.setState(job.id, "running", null);
     await this.copyAttachments(job.id, wd);
     return true;
-  }
-
-  private recipeConfirmation(jobId: string): "allowed" | "waiting" | "rejected" {
-    const row = this.ctx.db.db.prepare(`SELECT q.state, q.choice FROM events e
-      LEFT JOIN human_queue q ON q.id = json_extract(e.payload, '$.recipeConfirmationId')
-      WHERE e.job_id = ? AND e.type = 'job.created' AND json_type(e.payload, '$.recipeConfirmationId') = 'text'`)
-      .get(jobId) as { state: string | null; choice: string | null } | undefined;
-    if (!row || (row.state === "resolved" && row.choice === "confirm")) return "allowed";
-    return row.state === "open" ? "waiting" : "rejected";
   }
 
   private async freshBase(job: JobRow): Promise<string | null> {
@@ -436,7 +419,7 @@ export class JobExecutor {
     for (const child of this.children(parentId)) {
       if (child.state !== "queued") continue;
       if (parent.state === "succeeded") void this.startChild(parentId, child.id);
-      else if (child.waiting_reason !== "parent_failed" && blockingImportItem(this.ctx.db) === null) {
+      else if (child.waiting_reason !== "parent_failed") {
         this.ctx.db.append([{ jobId: child.id, type: "job.state_changed", payload: { state: "queued", reason: "parent_failed" } }]);
         this.ctx.changed(child.id);
         this.ctx.notify({ kind: "needs-user", title: child.title, body: `its parent job ended ${parent.state}`, jobId: child.id });
@@ -491,12 +474,12 @@ export class JobExecutor {
     await this.exclusive(jobId, async () => {
       const job = this.job(jobId);
       const request = this.pendingBaseChange(jobId);
-      if (!request || !this.idle(job) || blockingImportItem(this.ctx.db) !== null) return;
+      if (!request || !this.idle(job)) return;
       const repo = join(this.ctx.dir, "repo.git");
       const base = request.base ?? (request.target.startsWith(jobBranch("")) ? await branchHead(repo, request.target) : await fetchBase(this.ctx, request.target));
       if (!base) throw new Error(`branch ${request.target} not found`);
       const changed = { jobId, type: "job.base_changed" as const, payload: { cause: request.cause, base, oldBase: job.base, target: request.target } };
-      if (job.state === "queued" || this.recipeConfirmation(jobId) !== "allowed" || this.recipe(job).onBaseChanged === undefined) {
+      if (job.state === "queued" || this.recipe(job).onBaseChanged === undefined) {
         this.ctx.db.append([changed]);
         this.ctx.changed(jobId);
         return;
@@ -523,7 +506,6 @@ export class JobExecutor {
   async checkMerge(jobId: string): Promise<boolean> {
     const job = this.job(jobId);
     if (job.merged_at !== null) return true;
-    if (blockingImportItem(this.ctx.db) !== null) return false;
     const delivery: string | null = await this.mergedDelivery(job);
     if (delivery === null) return false;
     await this.deliveryMerged(job, delivery);
@@ -539,8 +521,6 @@ export class JobExecutor {
     const nodeId = producer.payload.nodeRunId.split("/")[1]!.split("#")[0]!;
     const node = this.nodeFor(this.recipe(parent), nodeId);
     if (node.kind !== "command" || !node.mergedCheck) return null;
-    const confirmed = await ensureConfirmed(this.ctx.db, parent.id, join(this.ctx.dir, "nodes"), node);
-    if (!confirmed.confirmed) return null;
     const env: Record<string, string> = {};
     for (const a of toolAccounts(node.credentials, this.ctx.project.repo?.account, this.ctx.forgeAccount)) Object.assign(env, await forgeEnv(a));
     const result = await runMergedCheck({
@@ -550,7 +530,6 @@ export class JobExecutor {
       context: await this.placeholderContext(parent),
       inputs: [{ type: "delivery", path: join(this.ctx.dir, delivery.path) }],
       extraEnv: env,
-      scripts: confirmed.scripts,
     });
     if (result !== "done") return null;
     const artifact: DeliveryArtifact = JSON.parse(await readFile(join(this.ctx.dir, delivery.path), "utf8")) as DeliveryArtifact;
@@ -634,35 +613,12 @@ export class JobExecutor {
     }
     if (node.kind === "source") throw new Error("source nodes cannot run in a recipe");
 
-    let confirmedScripts: Record<string, string> | undefined;
-    if (needsConfirmation(node)) {
-      const c = await ensureConfirmed(this.ctx.db, job.id, join(this.ctx.dir, "nodes"), node);
-      if (!c.confirmed) {
-        if (run.waiting_reason !== "confirmation") {
-          this.setRun(job.id, run.id, "waiting", "confirmation", { queueItemId: c.itemId });
-          this.ctx.notify({ kind: "needs-user", title: job.title, body: `${recipeNode.use} waits for your confirmation`, jobId: job.id });
-        }
-        this.setState(job.id, "waiting", "confirmation");
-        return false;
-      }
-      confirmedScripts = c.scripts;
-    }
-
     let servicesEnv: Record<string, string> = {};
     if (job.id !== setupJobId) {
-      const s = await this.services.ensure(job.id, job.base, () => {
+      servicesEnv = await this.services.ensure(job.id, job.base, () => {
         this.setRun(job.id, run.id, "waiting", "services");
         this.setState(job.id, "waiting", "services");
       });
-      if (s.kind === "confirm") {
-        if (run.waiting_reason !== "confirmation") {
-          this.setRun(job.id, run.id, "waiting", "confirmation", { queueItemId: s.itemId });
-          this.ctx.notify({ kind: "needs-user", title: job.title, body: "a new compose file waits for your confirmation", jobId: job.id });
-        }
-        this.setState(job.id, "waiting", "confirmation");
-        return false;
-      }
-      servicesEnv = s.env;
       if (this.job(job.id).state === "waiting") this.setState(job.id, "running", null);
     }
 
@@ -751,7 +707,6 @@ export class JobExecutor {
                 inputs,
                 cleanTree: node.cleanCheckout ? before : null,
                 extraEnv: { ...servicesEnv, ...toolEnv },
-                ...(confirmedScripts ? { scripts: confirmedScripts } : {}),
                 onStart,
                 effect: effectRecorder(this.ctx.db, job.id, run.id, run.node),
               })
@@ -1059,46 +1014,9 @@ export class JobExecutor {
     if (!item) throw new Error(`queue item ${itemId} not found`);
     if (item.state !== "open" || item.subject_hash !== hash) throw new Error("the item changed or was resolved");
     if (!(JSON.parse(item.choices) as string[]).includes(choice)) throw new Error(`${choice} is not a choice of this item`);
-    if (item.kind === "import") {
-      if (this.rejectingImport) throw new Error("the import is being rejected");
-      const events: NewEvent[] = [{ jobId: null, type: "queue.resolved", payload: { itemId, state: "resolved", choice, note } }];
-      if (choice === "reject") {
-        if (!this.ctx.rejectImport) throw new Error("the project cannot be removed");
-        this.rejectingImport = true;
-        try {
-          await this.ctx.rejectImport(() => { this.ctx.db.append(events); });
-        } finally {
-          this.rejectingImport = false;
-        }
-        return;
-      }
-      const { nodes }: ImportSubject = JSON.parse(item.subject) as ImportSubject;
-      for (const { path, definition, files } of nodes) {
-        if (definition.kind === "command" && (needsConfirmation(definition) || definition.mergedCheck)) {
-          events.push({ jobId: null, type: "confirmation.recorded", payload: { path, sha256: subjectSha({ definition, scripts: files }) } });
-        }
-      }
-      this.ctx.db.append(events);
-      if (blockingImportItem(this.ctx.db) === null) {
-        for (const job of this.jobs()) if (job.state === "queued" && job.waiting_reason === "confirmation") await this.release(job.id, ["confirmation"]);
-      }
-      return;
-    }
     if (item.kind === "ticket") {
       const { orderId } = JSON.parse(item.subject) as { orderId: string };
       resolveTicketOrder(this.ctx, itemId, orderId, choice, note);
-      return;
-    }
-    if (item.kind === "engine-node" || item.kind === "source-node") {
-      this.ctx.db.append([{ jobId: null, type: "queue.resolved", payload: { itemId, state: "resolved", choice, note } }]);
-      if (choice === "confirm") recordConfirmation(this.ctx.db, JSON.parse(item.subject) as ConfirmSubject);
-      for (const j of this.jobs()) if (j.state === "waiting" && j.waiting_reason === "confirmation") await this.release(j.id, ["confirmation"]);
-      return;
-    }
-    if (item.kind === "services") {
-      this.ctx.db.append([{ jobId: null, type: "queue.resolved", payload: { itemId, state: "resolved", choice, note } }]);
-      if (choice === "confirm") recordServicesConfirmation(this.ctx.db, JSON.parse(item.subject) as ServicesSubject);
-      for (const j of this.jobs()) if (j.state === "waiting" && j.waiting_reason === "confirmation") await this.release(j.id, ["confirmation"]);
       return;
     }
     const jobId = item.job_id;
@@ -1196,8 +1114,6 @@ export class JobExecutor {
       const job = this.job(jobId);
       if (job.state !== "failed" && job.state !== "stopped") throw new Error(`job ${jobId} is ${job.state}`);
       if (job.archived) throw new Error(`job ${jobId} is archived`);
-      if (blockingImportItem(this.ctx.db) !== null) throw new Error("The project waits for import confirmation in the Inbox");
-      if (this.recipeConfirmation(jobId) !== "allowed") throw new Error("the job's recipe change was not confirmed");
       const wd = workdirOf(this.ctx.dir, jobId);
       const exists = await gitWork(this.ctx.user, this.ctx.dir, [`--git-dir=${join(this.ctx.dir, "repo.git")}`, "worktree", "list", "--porcelain"]);
       if (!exists.includes(`worktree ${wd}\n`)) await recreateWorktree(this.ctx.user, this.ctx.dir, jobId);

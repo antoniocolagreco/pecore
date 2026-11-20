@@ -70,7 +70,7 @@ function remapHistory(db: ProjectDb["db"], dir: string): void {
   }
 }
 
-export function resetHistory(project: ProjectDb, dir: string, events: NewEvent[]): void {
+export function resetHistory(project: ProjectDb, dir: string): void {
   const db: ProjectDb["db"] = project.db;
   const count: number = activeJobCount(db);
   if (count > 0) throw new InvalidArchive(`pecore.db contains ${count} active ${count === 1 ? "job" : "jobs"}`);
@@ -96,11 +96,9 @@ export function resetHistory(project: ProjectDb, dir: string, events: NewEvent[]
     remapHistory(db, dir);
     const obsolete = db.prepare("SELECT id, job_id FROM human_queue WHERE state = 'open' OR (kind = 'import' AND state = 'resolved' AND choice = 'reject')").all() as { id: string; job_id: string | null }[];
     db.prepare("DELETE FROM events WHERE type = 'confirmation.recorded'").run();
-    db.prepare("DELETE FROM confirmed_hashes").run();
     db.prepare("UPDATE node_runs SET state = 'interrupted', pgid = NULL, os_user = NULL WHERE state = 'running'").run();
     project.append([
       ...obsolete.map(({ id, job_id }): NewEvent => ({ jobId: job_id, type: "queue.resolved", payload: { itemId: id, state: "cancelled", choice: null, note: "the project was imported" } })),
-      ...events,
     ]);
   })();
 }

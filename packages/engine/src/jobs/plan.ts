@@ -1,6 +1,5 @@
 import { OrderPlan } from "@pecore/schemas";
 import type { Recipe, StoredEvent } from "@pecore/schemas";
-import { blockingImportItem } from "../definitions/confirm";
 import { hasCommitNode } from "../definitions/recipe-check";
 import type { ProjectContext } from "../graph/executor";
 import { createJob, JobCreateError, jobRecipeName, recipeForJob } from "./create";
@@ -37,10 +36,8 @@ function validatePlan(ctx: ProjectContext, plan: OrderPlan): PlannedOrder["plan"
       if (!hasCommitNode(parent, ctx.defs.nodes)) throw new JobCreateError(`the recipe for parent key ${parentKey} has no commit node`);
     }
     const recipe: string = jobRecipeName(ctx, entry.recipe);
-    const pending = ctx.db.db.prepare(`SELECT id FROM human_queue WHERE state = 'open' AND kind = 'recipe-change'
-      AND json_extract(subject, '$.path') = ? ORDER BY id DESC LIMIT 1`).get(`projects/${ctx.id}/recipes/${recipe}.json`) as { id: string } | undefined;
-    recipes.set(entry.key, recipeForJob(ctx, recipe, pending?.id));
-    return { ...entry, recipe, ...(pending ? { recipeConfirmationId: pending.id } : {}) };
+    recipes.set(entry.key, recipeForJob(ctx, recipe));
+    return { ...entry, recipe };
   });
 }
 
@@ -64,7 +61,6 @@ async function createMissing(ctx: ProjectContext, { orderId, plan }: PlannedOrde
         orderId,
         orderKey: entry.key,
         ...(attachmentIds.length ? { attachments: await ctx.orderAttachments!(orderId, attachmentIds) } : {}),
-        recipeConfirmationId: entry.recipeConfirmationId,
       });
       ids.set(entry.key, id);
       if (ticket) ctx.notify({ kind: "ticket-job-started", title: entry.title, body: `Job created from ticket ${ticket.ticket_id}`, jobId: id });
@@ -107,7 +103,6 @@ export async function planOrder(ctx: ProjectContext, orderId: string, plan: Orde
 }
 
 export async function resumeOrders(ctx: ProjectContext): Promise<TicketOrder[]> {
-  if (blockingImportItem(ctx.db) !== null) return [];
   const orders = ctx.db.db.prepare("SELECT order_id, source, ticket_id, state FROM tickets_seen WHERE state IN ('received', 'handed', 'planned') AND order_id IS NOT NULL ORDER BY order_id").all() as TicketOrder[];
   for (const order of orders) {
     if (order.state !== "planned") continue;

@@ -5,8 +5,7 @@ import type { DefinitionEntry, DefinitionFile, ProjectView } from "@pecore/schem
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
-import { ConfirmItem } from "../components/ConfirmItem";
-import { Button, Empty, ErrorText, Field, Page, Panel, ui } from "../components/ui";
+import { Button, Empty, ErrorText, Field, Page, ui } from "../components/ui";
 import { Button as DsButton } from "../ds/button";
 import { Tabs } from "../ds/data";
 import { Alert, Card, Spinner } from "../ds/feedback";
@@ -93,12 +92,9 @@ function Definitions({ id, kind }: { id: string; kind: "node" | "recipe" }) {
   const navigate = useNavigate();
   const [name, setName] = useState<string>("");
   const [page, setPage] = useState<number>(0);
-  const [confirmIds, setConfirmIds] = useState<string[]>([]);
-  const [confirmPage, setConfirmPage] = useState<number>(0);
   const [result, setResult] = useState<string>("");
   const instantiate = useAction(async () => {
     const response = await call("instantiate", { body: { kind, name, project: id } });
-    setConfirmIds((ids) => [...new Set([...ids, ...response.confirmItemIds])]);
     setResult(response.created.length === 0 ? "Template files already exist." : "Template instantiated.");
     entries.reload();
   });
@@ -139,13 +135,6 @@ function Definitions({ id, kind }: { id: string; kind: "node" | "recipe" }) {
       </div>}
       <ErrorText error={instantiate.error} />
       {result && <p role="status">{result}</p>}
-      {confirmIds.length > 0 && <div className={ui.stack}>
-        {confirmIds.slice(confirmPage * 10, (confirmPage + 1) * 10).map((itemId) => <Panel key={itemId}><ConfirmItem itemId={itemId} /></Panel>)}
-        {confirmIds.length > 10 && <div className={ui.row}>
-          <Button disabled={!connected || confirmPage === 0} onClick={() => setConfirmPage(confirmPage - 1)}>Previous</Button>
-          <Button disabled={!connected || (confirmPage + 1) * 10 >= confirmIds.length} onClick={() => setConfirmPage(confirmPage + 1)}>Show more</Button>
-        </div>}
-      </div>}
     </div>
   );
 }

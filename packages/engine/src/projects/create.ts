@@ -7,9 +7,7 @@ import { promisify } from "node:util";
 import { Project } from "@pecore/schemas";
 import type { Accounts, ForgeAccount, ProjectInput } from "@pecore/schemas";
 import { protectedUser } from "../accounts/agents";
-import { readSubject, recordConfirmation, subjectSha } from "../definitions/confirm";
 import { instantiateNode } from "../definitions/instantiate";
-import { loadNodeFile } from "../definitions/load";
 import { commitDefinition, commitMessage } from "../home/git-commit";
 import { homePaths, projectPaths } from "../home/layout";
 import { checkHome } from "../osuser/home-check";
@@ -124,7 +122,7 @@ function check<T>(step: number, r: { errors: { file: string; path: string; messa
   return r;
 }
 
-export async function beginProject(home: string, input: ProjectInput, opts: CreateOptions, bundledLibrary: string): Promise<Project> {
+export async function beginProject(home: string, input: ProjectInput, opts: CreateOptions): Promise<Project> {
   const parsed = Project.safeParse({ $schema: "../../schemas/project.json", ...input });
   if (!parsed.success) throw new ProjectCreateError(1, parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
   const project: Project = { ...parsed.data, folder: await checkFolder(parsed.data.folder, parsed.data) };
@@ -147,22 +145,7 @@ export async function beginProject(home: string, input: ProjectInput, opts: Crea
     }
     if (project.createRepo !== null) check(3, await instantiateNode(library, dir, project.createRepo));
     await writeFile(p.project, JSON.stringify(project, null, 2) + "\n");
-    const db = new ProjectDb(p.db);
-    try {
-      if (account && (account.forge === "github" || account.forge === "gitlab") && project.createRepo === `${account.forge}-create-repo`) {
-        const shippedDir: string = join(bundledLibrary, "nodes");
-        const shipped = await loadNodeFile(join(shippedDir, `${project.createRepo}.json`));
-        const installed = await loadNodeFile(join(p.nodes, `${project.createRepo}.json`));
-        if (shipped.value?.kind === "command" && installed.value?.kind === "command") {
-          const trusted = await readSubject(shippedDir, shipped.value);
-          const subject = await readSubject(p.nodes, installed.value);
-          const definition = { ...(trusted.definition as Record<string, unknown>), $schema: "../../../schemas/node.json" };
-          if (subjectSha({ ...trusted, definition }) === subjectSha(subject)) recordConfirmation(db, subject);
-        }
-      }
-    } finally {
-      db.close();
-    }
+    new ProjectDb(p.db).close();
     await writeCreation(dir, 3);
     return project;
   } catch (e) {

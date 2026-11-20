@@ -22,7 +22,6 @@ describe("definition routes", () => {
     await expect(call("saveDefinition", { params: { path: "projects/demo/project.json" }, body: { content: edited, baseSha256: "0".repeat(64) } })).rejects.toMatchObject({ status: 409 });
     await expect(call("saveDefinition", { params: { path: "projects/demo/project.json" }, body: { content: "{", baseSha256: file.sha256 } })).rejects.toMatchObject({ status: 400 });
     const saved = await call("saveDefinition", { params: { path: "projects/demo/project.json" }, body: { content: edited, baseSha256: file.sha256 } });
-    expect(saved.confirmItemIds).toEqual([]);
     expect((await call("getProject", { params: { id: "demo" } })).project?.name).toBe("Demo renamed");
     expect((await git(home, ["log", "-1", "--format=%s"])).trim()).toBe("project demo: edited");
     expect(live).toContainEqual({ type: "definition.changed", path: "projects/demo/project.json", sha256: saved.sha256 });
@@ -40,13 +39,11 @@ describe("definition routes", () => {
     await close();
   });
 
-  it("instantiates an engine node with its script and returns its confirmation item", async () => {
+  it("instantiates an engine node and its script without creating a queue item", async () => {
     const { engine, call, close } = await apiProject();
     const r = await call("instantiate", { body: { kind: "node", name: "github-pr", project: "demo" } });
     expect(r.created).toEqual(expect.arrayContaining(["projects/demo/nodes/github-pr.json", "projects/demo/nodes/github-pr.sh"]));
-    expect(r.confirmItemIds).toHaveLength(1);
-    const [item] = await call("listQueue", { query: { state: "open" } });
-    expect(item).toMatchObject({ id: r.confirmItemIds[0], kind: "engine-node" });
+    expect(await call("listQueue", { query: { state: "open" } })).toEqual([]);
     expect(engine.project("demo").ctx.defs.nodes.has("github-pr")).toBe(true);
     const again = await call("instantiate", { body: { kind: "node", name: "github-pr", project: "demo" } });
     expect(again).toMatchObject({ created: [], kept: ["projects/demo/nodes/github-pr.json"] });
@@ -59,9 +56,9 @@ describe("definition routes", () => {
     await expect(call("instantiate", { body: { kind: "recipe", name: "feature", project: "demo" } })).rejects.toThrow(refusal);
     expect(existsSync(join(engine.projectDir("demo"), "recipes", "feature.json"))).toBe(false);
     expect(existsSync(join(engine.projectDir("demo"), "nodes", "git-push.json"))).toBe(false);
-    const staged = await definitionOperations(engine).stageInstantiation({ kind: "recipe", name: "feature", project: "demo" });
-    expect(staged.errors?.map(({ message }) => message)).toContain(refusal);
-    expect((await call("listQueue", { query: { state: "open" } })).filter(({ kind }) => kind === "recipe-change")).toEqual([]);
+    const result = await definitionOperations(engine).instantiate({ kind: "recipe", name: "feature", project: "demo" });
+    expect(result.errors.map(({ message }) => message)).toContain(refusal);
+    expect(await call("listQueue", { query: { state: "open" } })).toEqual([]);
     await call("instantiate", { body: { kind: "node", name: "git-push", project: "demo" } });
     const content = JSON.stringify({ name: "push", description: "commit and push", start: "commit", successOutcomes: ["push:pushed"],
       nodes: { commit: { use: "git-commit" }, push: { use: "git-push" } }, edges: [{ from: "commit", on: "done", to: "push" }] });

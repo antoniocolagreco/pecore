@@ -1,8 +1,7 @@
 import { appendFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { autoConfirm, forgeHome, forgeProject, until } from "../../test/forge-project";
-import { ensureConfirmed } from "../definitions/confirm";
+import { forgeHome, forgeProject, until } from "../../test/forge-project";
 import { Engine } from "../main";
 import { createProjectWithRecipes } from "../../test/project";
 import { tempDir } from "../../test/tmp";
@@ -17,7 +16,7 @@ const exists = (path: string) => stat(path).then(
 
 describe("project creation with a remote (section Project creation, decision 13)", () => {
   it("clones an existing remote into repo.git with the PeCore config and origin", async () => {
-    const { forge, engine, stopConfirm } = await forgeProject();
+    const { forge, engine } = await forgeProject();
     const p = engine.project("shop");
     const repo = join(p.ctx.dir, "repo.git");
     expect(await branchHead(repo, "main")).toBe(forge.remoteHead("acme/shop", "main"));
@@ -25,7 +24,6 @@ describe("project creation with a remote (section Project creation, decision 13)
     expect((await gitApp(repo, ["config", "core.sharedRepository"])).trim()).toBe("group");
     expect(await exists(join(p.ctx.dir, "creating.json"))).toBe(false);
     expect(await exists(join(p.ctx.dir, "nodes", "github-pr.json"))).toBe(true);
-    stopConfirm();
     await engine.shutdown();
   });
 
@@ -35,14 +33,12 @@ describe("project creation with a remote (section Project creation, decision 13)
     await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "github-create-repo" });
     const p = engine.project("fresh");
     expect(JSON.parse(await readFile(join(p.ctx.dir, "creating.json"), "utf8"))).toMatchObject({ step: 3 });
-    const stop = autoConfirm(engine, "fresh");
     await until(async () => !(await exists(join(p.ctx.dir, "creating.json"))));
     const repo = join(p.ctx.dir, "repo.git");
     expect(forge.remoteHead("acme/fresh", "main")).toBe(await branchHead(repo, "main"));
     expect((await gitApp(repo, ["config", "remote.origin.url"])).trim()).toBe("https://github.com/acme/fresh.git");
     expect(await branchHead(repo, "factory/project-setup")).toBeNull();
     expect(engine.creating.has("fresh")).toBe(false);
-    stop();
     await engine.shutdown();
   });
 
@@ -51,25 +47,22 @@ describe("project creation with a remote (section Project creation, decision 13)
     const engine = await Engine.start({ home, library });
     await engine.createProject({ id: "dev", name: "Dev", repo: { url: "https://github.com/acme/dev.git", account: "gh-test" }, baseBranch: "develop", createRepo: "github-create-repo" });
     const p = engine.project("dev");
-    const stop = autoConfirm(engine, "dev");
     await until(async () => !(await exists(join(p.ctx.dir, "creating.json"))));
     expect(forge.remoteHead("acme/dev", "develop")).toBe(await branchHead(join(p.ctx.dir, "repo.git"), "develop"));
     expect(forge.remoteHead("acme/dev", "main")).toBeNull();
-    stop();
     await engine.shutdown();
   });
 
-  it("asks for confirmation when the repository setup script differs from the shipped script", async () => {
+  it("runs a customized repository setup script without approval", async () => {
     const { forge, home, library } = await forgeHome();
     const engine = await Engine.start({ home, library });
     try {
       await appendFile(join(home, "library", "nodes", "github-create-repo.sh"), "\nprintf 'custom setup\\n'\n");
       await engine.createProject({ id: "custom", name: "Custom", repo: { url: "https://github.com/acme/custom.git", account: "gh-test" }, createRepo: "github-create-repo" });
       const { ctx } = engine.project("custom");
-      const node = ctx.defs.nodes.get("github-create-repo")!;
-      expect(await ensureConfirmed(ctx.db, "project-setup", join(ctx.dir, "nodes"), node)).toMatchObject({ confirmed: false });
-      expect(ctx.db.db.prepare("SELECT sha256 FROM confirmed_hashes WHERE path = ?").get("nodes/github-create-repo.json")).toBeUndefined();
-      expect((await forge.state()).repos).not.toContain("acme/custom");
+      await until(async () => !(await exists(join(ctx.dir, "creating.json"))));
+      expect(ctx.db.db.prepare("SELECT id FROM human_queue WHERE kind = 'engine-node'").get()).toBeUndefined();
+      expect((await forge.state()).repos).toContain("acme/custom");
     } finally {
       await engine.shutdown();
     }
@@ -81,9 +74,7 @@ describe("project creation with a remote (section Project creation, decision 13)
     const engine = await Engine.start({ home, library });
     await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "github-create-repo" });
     const p = engine.project("fresh");
-    const stop = autoConfirm(engine, "fresh");
     await until(() => p.executor.job("project-setup").waiting_reason === "network");
-    stop();
     const dir = p.ctx.dir;
     await engine.cancelCreation("fresh");
     expect(await exists(dir)).toBe(false);
@@ -115,7 +106,7 @@ describe("project creation with a remote (section Project creation, decision 13)
     const engine = await Engine.start({ home, library });
     await createProjectWithRecipes(engine, { id: "one", name: "One", repo: null }, ["empty"]);
     const id = await engine.createJob("one", { title: "Nothing", ticket: { text: "nothing" } });
-    expect(engine.project("one").executor.job(id).recipe).toBe("empty");
+    expect(JSON.parse(engine.project("one").executor.job(id).recipe)).toMatchObject({ name: "empty" });
     await createProjectWithRecipes(engine, { id: "two", name: "Two", repo: null }, ["empty", "local-only"]);
     await expect(engine.createJob("two", { title: "Nothing", ticket: { text: "nothing" } })).rejects.toThrow("project two has 2 recipes; choose one");
     await engine.shutdown();
@@ -227,12 +218,10 @@ describe("project folder (decision 75)", () => {
     const engine = await Engine.start({ home, library });
     await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "github-create-repo", folder });
     const p = engine.project("fresh");
-    const stop = autoConfirm(engine, "fresh");
     await until(async () => !(await exists(join(p.ctx.dir, "creating.json"))));
     expect(forge.remoteHead("acme/fresh", "main")).toBe(head);
     expect((await gitAppIn(folder, ["config", "remote.origin.url"])).trim()).toBe("https://github.com/acme/fresh.git");
     expect((await gitApp(join(p.ctx.dir, "repo.git"), ["config", "remote.origin.url"])).trim()).toBe("https://github.com/acme/fresh.git");
-    stop();
     await engine.shutdown();
   });
 
@@ -243,11 +232,9 @@ describe("project folder (decision 75)", () => {
     await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "github-create-repo", folder });
     const p = engine.project("fresh");
     expect(await exists(folder)).toBe(false);
-    const stop = autoConfirm(engine, "fresh");
     await until(async () => !(await exists(join(p.ctx.dir, "creating.json"))));
     expect(await folderHead(folder, "main")).toBe(forge.remoteHead("acme/fresh", "main"));
     expect((await gitAppIn(folder, ["config", "remote.origin.url"])).trim()).toBe("https://github.com/acme/fresh.git");
-    stop();
     await engine.shutdown();
   });
 });

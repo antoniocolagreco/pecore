@@ -12,8 +12,7 @@ function creationView(engine: Engine, id: string): CreationView | null {
   if (!c) return null;
   const p = engine.projects.get(id);
   const job = p?.ctx.db.db.prepare("SELECT state, waiting_reason FROM jobs WHERE id = ?").get(setupJobId) as { state: JobState; waiting_reason: string | null } | undefined;
-  const item = p?.ctx.db.db.prepare("SELECT id FROM human_queue WHERE job_id = ? AND state = 'open' ORDER BY id DESC LIMIT 1").get(setupJobId) as { id: string } | undefined;
-  return { step: c.step, error: c.error, setupJob: job ? { state: job.state, waitingReason: job.waiting_reason } : null, setupItemId: item?.id ?? null };
+  return { step: c.step, error: c.error, setupJob: job ? { state: job.state, waitingReason: job.waiting_reason } : null };
 }
 
 function projectView(engine: Engine, id: string): ProjectView {
@@ -69,7 +68,7 @@ export function projectHandlers(engine: Engine) {
     },
     getCreation: async ({ params }) => {
       known(engine, params.id);
-      return creationView(engine, params.id) ?? { step: 6, error: null, setupJob: null, setupItemId: null };
+      return creationView(engine, params.id) ?? { step: 6, error: null, setupJob: null };
     },
     retryCreation: async ({ params }) => {
       if (!engine.creating.has(params.id)) throw new HttpError("conflict", `project ${params.id} is not being created`);

@@ -72,13 +72,12 @@ async function command(call: ApiClient, home: string, args: string[], out: Out):
       }
       accounts.set(from, to);
     }
+    out.error("Review every script and prompt in the archive before importing. They can contain malicious code and run with access to your accounts.");
     const result: ImportProjectResult = await call("importProject", { body: { path: resolve(id), ...(values.id === undefined ? {} : { id: values.id }), accounts: Object.fromEntries(accounts) } });
     if (result.state === "needs-accounts") {
       out.error(table([["ACCOUNT", "KIND"], ...result.accounts.map((a) => [a.id, a.kind])]));
       return 1;
     }
-    out.log(result.warning);
-    out.log(`The import waits for confirmation in the Inbox (item ${result.itemId}).`);
     out.log(result.id);
     return 0;
   }

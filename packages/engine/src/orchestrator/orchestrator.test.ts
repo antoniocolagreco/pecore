@@ -562,7 +562,6 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       expect((await t.call("getChat")).actions.at(-1)?.target).toMatchObject({ state: "approved", creating: true });
       expect(t.engine.project("fresh").ctx.project).toMatchObject({ createRepo: "github-create-repo", baseBranch: "develop" });
       const db = t.engine.project("fresh").ctx.db.db;
-      expect(db.prepare("SELECT sha256 FROM confirmed_hashes WHERE path = ?").get("nodes/github-create-repo.json")).toBeDefined();
       expect(db.prepare("SELECT id FROM human_queue WHERE job_id = ? AND kind = 'engine-node'").get("project-setup")).toBeUndefined();
     } finally {
       m.close();
@@ -571,7 +570,7 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     }
   }, 30_000);
 
-  it("passes no token on the command line, binds create_jobs to the message order, stages recipe changes, caps read_artifact, and stores the reply", async () => {
+  it("passes no token on the command line, binds create_jobs to the order, saves recipe changes, caps read_artifact and stores the reply", async () => {
     const t = await setup((root) => [[
       ...init(),
       { expect: "session/new" },
@@ -615,15 +614,10 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     expect(logText.length).toBeLessThan(210_000);
 
     const recipeFile = join(t.engine.projectDir("demo"), "recipes", "reviewed.json");
-    const before = await readFile(recipeFile, "utf8");
     const changed = JSON.stringify({ ...reviewed, description: "changed by the orchestrator" }, null, 2) + "\n";
-    const staged = await m.tool("write_instance", { path: "projects/demo/recipes/reviewed.json", content: changed });
-    expect(staged.error).toBeUndefined();
-    expect(await readFile(recipeFile, "utf8")).toBe(before);
-    const item = await until(() => ctx.db.db.prepare("SELECT id, subject_hash, choices FROM human_queue WHERE kind = 'recipe-change' AND state = 'open'").get() as { id: string; subject_hash: string; choices: string } | undefined);
+    const saved = await m.tool("write_instance", { path: "projects/demo/recipes/reviewed.json", content: changed });
+    expect(saved.result?.isError).toBeUndefined();
     m.close();
-    const confirm = (JSON.parse(item.choices) as string[]).find((c) => c === "confirm") ?? "confirm";
-    await t.call("answerQueue", { params: { id: item.id }, body: { choice: confirm, note: null, hash: item.subject_hash } });
     expect(JSON.parse(await readFile(recipeFile, "utf8"))).toMatchObject({ description: "changed by the orchestrator" });
 
     await writeFile(join(t.root, "done"), "");
@@ -666,9 +660,7 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     try {
       const system: { kind: string; title: string; body: string }[] = [];
       t.engine.on("notify", (n: { kind: string; title: string; body: string }) => system.push(n));
-      const { ctx, executor } = t.engine.project("demo");
-      const sourceItem = await until(() => ctx.db.db.prepare("SELECT id, subject_hash FROM human_queue WHERE state = 'open' AND kind = 'source-node'").get() as { id: string; subject_hash: string } | undefined);
-      await executor.answer(sourceItem.id, "confirm", null, sourceItem.subject_hash);
+      const { ctx } = t.engine.project("demo");
       await until(() => existsSync(join(t.root, "intake.json")));
       const m = mcp(tokenFileOf(intakeChat(t)));
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
@@ -711,9 +703,6 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       ],
     });
     try {
-      const { ctx, executor } = t.engine.project("demo");
-      const sourceItem = await until(() => ctx.db.db.prepare("SELECT id, subject_hash FROM human_queue WHERE state = 'open' AND kind = 'source-node'").get() as { id: string; subject_hash: string } | undefined);
-      await executor.answer(sourceItem.id, "confirm", null, sourceItem.subject_hash);
       await until(() => existsSync(join(t.root, "compact.json")));
       expect((JSON.parse(await readFile(join(t.root, "compact.json"), "utf8")) as { params: { prompt: unknown } }).params.prompt).toEqual([{ type: "text", text: "/compact" }]);
       expect(t.engine.global().settings.assistant.compaction.max).toBe(256_000);
@@ -730,9 +719,7 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     try {
       const comments = join(t.root, "comments");
       const posted = async (): Promise<number> => existsSync(comments) ? (await readFile(comments, "utf8")).trim().split("\n").length : 0;
-      const { ctx, executor } = t.engine.project("demo");
-      const sourceItem = await until(() => ctx.db.db.prepare("SELECT id, subject_hash FROM human_queue WHERE state = 'open' AND kind = 'source-node'").get() as { id: string; subject_hash: string } | undefined);
-      await executor.answer(sourceItem.id, "confirm", null, sourceItem.subject_hash);
+      const { ctx } = t.engine.project("demo");
       await until(() => existsSync(join(t.root, "intake.json")));
       const m = mcp(tokenFileOf(intakeChat(t)));
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
@@ -778,9 +765,7 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
 
   it("hands a trusted ticket to the project's intake chat as untrusted data; create_jobs uses the ticket order", async () => {
     const t = await setup((root) => [[...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "prompt.json") }, { waitFile: join(root, "done") }, ...replyWith("Planned.")]], { source: true });
-    const { ctx, executor } = t.engine.project("demo");
-    const sourceItem = await until(() => ctx.db.db.prepare("SELECT id, subject_hash FROM human_queue WHERE state = 'open' AND kind = 'source-node'").get() as { id: string; subject_hash: string } | undefined);
-    await executor.answer(sourceItem.id, "confirm", null, sourceItem.subject_hash);
+    const { ctx } = t.engine.project("demo");
     await until(() => existsSync(join(t.root, "prompt.json")));
     const promptText = JSON.stringify(JSON.parse(await readFile(join(t.root, "prompt.json"), "utf8")));
     expect(promptText).toContain("the login button does nothing");

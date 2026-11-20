@@ -40,7 +40,7 @@ export type ImportProjectBody = z.infer<typeof ImportProjectBody>;
 
 export const ImportProjectResult = z.discriminatedUnion("state", [
   z.object({ state: z.literal("needs-accounts"), accounts: z.array(z.object({ id: z.string(), kind: z.enum(["model", "forge", "service"]) })) }),
-  z.object({ state: z.literal("imported"), id: ProjectId, itemId: z.ulid(), warning: z.string() }),
+  z.object({ state: z.literal("imported"), id: ProjectId }),
 ]);
 export type ImportProjectResult = z.infer<typeof ImportProjectResult>;
 
@@ -195,7 +195,6 @@ export const CreationView = z.object({
   step: z.number().int().min(0).max(6),
   error: z.string().nullable(),
   setupJob: z.object({ state: JobState, waitingReason: z.string().nullable() }).nullable(),
-  setupItemId: z.string().nullable(),
 });
 export type CreationView = z.infer<typeof CreationView>;
 
@@ -329,14 +328,14 @@ export type DefinitionEntry = z.infer<typeof DefinitionEntry>;
 export const SaveDefinitionBody = z.object({ content: z.string(), baseSha256: Sha.nullable() }).strict();
 export type SaveDefinitionBody = z.infer<typeof SaveDefinitionBody>;
 
-export const SaveDefinitionResult = z.object({ sha256: Sha, confirmItemIds: z.array(z.string()) });
+export const SaveDefinitionResult = z.object({ sha256: Sha });
 
 export const ValidateDefinitionBody = z.object({ path: z.string().min(1), content: z.string() }).strict();
 
 export const InstantiateBody = z.object({ kind: z.enum(["node", "recipe"]), name: Name, project: ProjectId }).strict();
 export type InstantiateBody = z.infer<typeof InstantiateBody>;
 
-export const InstantiateResult = z.object({ created: z.array(z.string()), kept: z.array(z.string()), confirmItemIds: z.array(z.string()) });
+export const InstantiateResult = z.object({ created: z.array(z.string()), kept: z.array(z.string()) });
 
 const globalFile = <S extends z.ZodType>(name: string, schema: S) =>
   ({

@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { lstatSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { zstdCompressSync, zstdDecompressSync } from "node:zlib";
 import { list } from "tar";
@@ -15,7 +15,7 @@ import { handlers } from "../api/handlers";
 import { startApi } from "../api/server";
 import { Engine } from "../main";
 import type { OrderSink } from "../sources/poll";
-import { beginImport, importWarning } from "./import";
+import { beginImport } from "./import";
 
 const secret = "ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8";
 let savedPath: string | undefined;
@@ -187,14 +187,13 @@ describe("project export (share/, section 8)", () => {
 });
 
 describe("project import (share/, CUJ 7)", () => {
-  it("a local project with history: no trust carried over, jobs wait until every imported node is confirmed, then run", async () => {
+  it("imports history and runs new jobs with the recipe's human review only", async () => {
     const gl = await fakeGitleaks();
     process.env.PATH = `${gl.bin}:${savedPath}`;
     const p = await apiProject();
     const done = await finishedJob(p);
     const src = p.engine.project("demo").ctx.db;
     src.append([{ jobId: null, type: "confirmation.recorded", payload: { path: "nodes/git-commit.json", sha256: "a".repeat(64) } }]);
-    expect(src.db.prepare("SELECT count(*) AS n FROM confirmed_hashes").get()).toEqual({ n: 1 });
     const out = join(await tempDir(), "demo.tar.zst");
     await p.call("exportProject", { params: { id: "demo" }, body: { path: out, history: true, logs: true } });
     const library = join(dirname(p.home), "library");
@@ -202,8 +201,7 @@ describe("project import (share/, CUJ 7)", () => {
 
     const b = await secondHome(library);
     const result = await b.call("importProject", { body: { path: out } });
-    expect(result).toEqual({ state: "imported", id: "demo", itemId: expect.any(String), warning: importWarning });
-    expect(importWarning).toBe("This project was written by someone else. Its scripts and prompts run on this computer with your accounts: a script can read your logins and send them anywhere, and a prompt can tell an agent to do the same. Confirm only after you have read every script and prompt.");
+    expect(result).toEqual({ state: "imported", id: "demo" });
     const dir = b.engine.projectDir("demo");
     expect(lstatSync(join(dir, "repo.git")).isDirectory()).toBe(true);
     expect(lstatSync(join(dir, "creating.json"), { throwIfNoEntry: false })).toBeUndefined();
@@ -213,7 +211,6 @@ describe("project import (share/, CUJ 7)", () => {
     expect(copied).toEqual([{ id: expect.any(String), state: "succeeded" }]);
     const old = copied[0]!.id;
     expect(old).not.toBe(done);
-    expect(ctx.db.db.prepare("SELECT count(*) AS n FROM confirmed_hashes").get()).toEqual({ n: 0 });
     expect(ctx.db.db.prepare("SELECT count(*) AS n FROM events WHERE type = 'confirmation.recorded'").get()).toEqual({ n: 0 });
     expect(readdirSync(join(dir, "artifacts"))).toEqual([old]);
     const logs = ctx.db.db.prepare("SELECT id, log_path FROM attempts").all() as { id: string; log_path: string }[];
@@ -230,23 +227,8 @@ describe("project import (share/, CUJ 7)", () => {
       expect((await b.call("getArtifact", { params: { job: job!, run: run!, name: name! } })).artifact.path).toBe(a.path);
     }
 
-    const imported = items(b.engine, "demo");
-    expect(imported.map((i) => [i.id, i.state])).toEqual([[result.state === "imported" ? result.itemId : "", "open"]]);
-    const subject = JSON.parse(imported[0]!.subject) as { projectId: string; warning: string; nodes: { path: string; files: Record<string, string> }[]; recipes: { path: string }[]; knowledge: string[] };
-    expect(subject).toMatchObject({ projectId: "demo", warning: importWarning, knowledge: [] });
-    const nodeFiles = (await readdir(join(dir, "nodes"))).filter((f) => f.endsWith(".json")).map((f) => `nodes/${f}`).sort();
-    expect(subject.nodes.map((n) => n.path).sort()).toEqual(nodeFiles);
-    expect(subject.nodes.find((n) => n.path === "nodes/git-commit.json")!.files["git-commit.sh"]).toBe(await readFile(join(dir, "nodes", "git-commit.sh"), "utf8"));
-    expect(subject.recipes.map((r) => r.path)).toContain("recipes/reviewed.json");
-
+    expect(items(b.engine, "demo", "import")).toEqual([]);
     const { id } = await b.call("createJob", { body: { project: "demo", title: "After import", ticket: { text: "x" } } });
-    await until(async () => (await b.call("getJob", { params: { id } })).job.state === "queued");
-    expect((await b.call("getJob", { params: { id } })).job.waitingReason).toBe("confirmation");
-    expect((await b.call("whyJob", { params: { id } })).reasons[0]).toMatchObject({ reason: "confirmation", text: "The project waits for import confirmation in the Inbox" });
-    await new Promise((r) => setTimeout(r, 300));
-    expect((await b.call("getJob", { params: { id } })).job.state).toBe("queued");
-
-    await executor.answer(imported[0]!.id, "confirm", null, imported[0]!.subject_hash);
     await until(async () => (await b.call("getJob", { params: { id } })).job.state === "waiting");
     const human = items(b.engine, "demo", "human-node").find((i) => i.state === "open")!;
     await executor.answer(human.id, "approve", null, human.subject_hash);
@@ -284,14 +266,13 @@ describe("project import (share/, CUJ 7)", () => {
     await p.close();
   }, 120000);
 
-  it("rejecting the import removes the project, and the archive can be imported again", async () => {
+  it("the project can be deleted and the archive imported again", async () => {
     const p = await apiProject();
     const out = join(await tempDir(), "demo.tar.zst");
     await p.call("exportProject", { params: { id: "demo" }, body: { path: out } });
     await p.call("importProject", { body: { path: out, id: "copy" } });
     const dir = p.engine.projectDir("copy");
-    const [item] = items(p.engine, "copy");
-    await p.engine.project("copy").executor.answer(item!.id, "reject", null, item!.subject_hash);
+    await p.call("deleteProject", { params: { id: "copy" } });
     await expect(p.call("getProject", { params: { id: "copy" } })).rejects.toMatchObject({ status: 404 });
     expect(lstatSync(dir, { throwIfNoEntry: false })).toBeUndefined();
     expect(execFileSync("git", ["-C", p.home, "log", "-1", "--format=%s"], { encoding: "utf8" })).toContain("copy");
@@ -299,31 +280,7 @@ describe("project import (share/, CUJ 7)", () => {
     await p.close();
   }, 60000);
 
-  it("an open import blocks new jobs and the resume of an old one", async () => {
-    const p = await apiProject();
-    const { id: old } = await p.call("createJob", { body: { project: "demo", title: "Old", ticket: { text: "x" } } });
-    await until(async () => (await p.call("getJob", { params: { id: old } })).job.state === "waiting");
-    await p.call("stopJob", { params: { id: old } });
-    const gl = await fakeGitleaks();
-    process.env.PATH = `${gl.bin}:${savedPath}`;
-    const out = join(await tempDir(), "demo.tar.zst");
-    await p.call("exportProject", { params: { id: "demo" }, body: { path: out, history: true } });
-    const library = join(dirname(p.home), "library");
-    await p.close();
-
-    const b = await secondHome(library);
-    await b.call("importProject", { body: { path: out, id: "copy" } });
-    const [copied] = b.engine.project("copy").executor.jobs();
-    expect(copied).toMatchObject({ state: "stopped" });
-    expect(copied!.id).not.toBe(old);
-    const { id } = await b.call("createJob", { body: { project: "copy", title: "New", ticket: { text: "x" } } });
-    await new Promise((r) => setTimeout(r, 300));
-    expect((await b.call("getJob", { params: { id } })).job).toMatchObject({ state: "queued", waitingReason: "confirmation" });
-    await expect(b.call("resumeJob", { params: { id: copied!.id } })).rejects.toMatchObject({ message: expect.stringContaining("The project waits for import confirmation in the Inbox") });
-    await b.close();
-  }, 90000);
-
-  it("a child job created while the project is blocked still waits for its parent once the gate opens", async () => {
+  it("a child job in an imported project still waits for its parent", async () => {
     const p = await apiProject();
     const out = join(await tempDir(), "demo.tar.zst");
     await p.call("exportProject", { params: { id: "demo" }, body: { path: out } });
@@ -334,8 +291,6 @@ describe("project import (share/, CUJ 7)", () => {
     const parent = await b.engine.createJob("demo", { title: "Parent", ticket: { text: "x" } });
     const child = await b.engine.createJob("demo", { title: "Child", ticket: { text: "x" }, parentJobId: parent });
     const { executor } = b.engine.project("demo");
-    expect([executor.job(parent), executor.job(child)].map((j) => [j.state, j.waiting_reason])).toEqual([["queued", "confirmation"], ["queued", "confirmation"]]);
-    for (const item of items(b.engine, "demo")) await executor.answer(item.id, "confirm", null, item.subject_hash);
     await until(() => executor.job(parent).state === "waiting");
     await until(() => executor.job(child).waiting_reason === "parent_job");
     expect(executor.job(child).state).toBe("queued");
@@ -348,7 +303,6 @@ describe("project import (share/, CUJ 7)", () => {
 
   it("a forge project asks for its accounts, checks the target, rewrites the ids and clones with the mapped account", async () => {
     const f = await forgeProject();
-    f.stopConfirm();
     const dir = f.engine.projectDir("shop");
     const pr = JSON.parse(await readFile(join(dir, "nodes", "github-pr.json"), "utf8")) as Record<string, unknown>;
     await writeFile(join(dir, "nodes", "pr-explicit.json"), JSON.stringify({ ...pr, name: "pr-explicit", credentials: [forgeAccount.id] }));
@@ -371,9 +325,7 @@ describe("project import (share/, CUJ 7)", () => {
     expect(project.folder).toBeNull();
     expect((JSON.parse(await readFile(join(nd, "nodes", "pr-explicit.json"), "utf8")) as { credentials: string[] }).credentials).toEqual(["gh-mine"]);
     expect((JSON.parse(await readFile(join(nd, "nodes", "github-pr.json"), "utf8")) as { credentials: string[] }).credentials).toEqual(["project.account"]);
-    const subject = JSON.parse(items(b.engine, "shop")[0]!.subject) as { project: { repo: { account: string } }; nodes: { path: string; definition: { credentials: string[] } }[] };
-    expect(subject.project.repo.account).toBe("gh-mine");
-    expect(subject.nodes.find((n) => n.path === "nodes/pr-explicit.json")!.definition.credentials).toEqual(["gh-mine"]);
+    expect(items(b.engine, "shop", "import")).toEqual([]);
     expect(execFileSync("git", ["--git-dir", join(nd, "repo.git"), "config", "--get", "remote.origin.url"], { encoding: "utf8" }).trim()).toBe("https://github.com/acme/shop.git");
     expect(execFileSync("git", ["--git-dir", join(nd, "repo.git"), "rev-parse", "--verify", "main"], { encoding: "utf8" }).trim()).toMatch(/^[a-f\d]{40}$/);
     await b.close();
@@ -438,18 +390,18 @@ describe("project import (share/, CUJ 7)", () => {
     await (await Engine.start({ home, library })).shutdown();
     expect(await beginImport(home, { path: out }, { accounts: { accounts: [] }, knownProject: () => false })).toMatchObject({ state: "imported", id: "demo" });
     const dir = join(home, "projects", "demo");
-    expect(JSON.parse(await readFile(join(dir, "creating.json"), "utf8"))).toEqual({ step: 3, recipes: [] });
+    expect(JSON.parse(await readFile(join(dir, "creating.json"), "utf8"))).toEqual({ step: 3 });
 
     const engine = await Engine.start({ home, library });
     expect(engine.creating.has("demo")).toBe(true);
     await engine.continueCreation("demo");
     expect(engine.creating.has("demo")).toBe(false);
     expect(lstatSync(join(dir, "repo.git")).isDirectory()).toBe(true);
-    expect(items(engine, "demo").every((i) => i.state === "open")).toBe(true);
+    expect(items(engine, "demo", "import")).toEqual([]);
     await engine.shutdown();
   }, 60000);
 
-  it("the source waits for the import gate: no poll and no source confirmation until the import is confirmed", async () => {
+  it("starts the configured source on import without creating an approval item", async () => {
     const p = await apiProject();
     const dir = p.engine.projectDir("demo");
     const fakeSource = {
@@ -474,14 +426,8 @@ describe("project import (share/, CUJ 7)", () => {
     const hands: string[] = [];
     const b = await secondHome(library, { hand: async (_p, order) => void hands.push(order.ticket.id) });
     await b.call("importProject", { body: { path: out } });
-    await new Promise((r) => setTimeout(r, 2500));
+    expect(items(b.engine, "demo", "import")).toEqual([]);
     expect(items(b.engine, "demo", "source-node")).toEqual([]);
-    expect(hands).toEqual([]);
-    const { executor } = b.engine.project("demo");
-    for (const item of items(b.engine, "demo")) await executor.answer(item.id, "confirm", null, item.subject_hash);
-    const source = await until(() => items(b.engine, "demo", "source-node").find((i) => i.state === "open"), 10000);
-    expect(hands).toEqual([]);
-    await executor.answer(source.id, "confirm", null, source.subject_hash);
     await until(() => hands.length === 1, 10000);
     expect(hands).toEqual(["1"]);
     await b.close();

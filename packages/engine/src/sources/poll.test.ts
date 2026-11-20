@@ -51,11 +51,8 @@ describe("ticket intake (section 7, Phase 6 decision 1)", () => {
     const { ctx, executor } = engine.project("demo");
     const open = (kind: string) => () => ctx.db.db.prepare("SELECT id, subject_hash FROM human_queue WHERE state = 'open' AND kind = ?").get(kind) as { id: string; subject_hash: string } | undefined;
 
-    const sourceItem = await until(open("source-node"));
-    expect(hands).toEqual([]);
-    await executor.answer(sourceItem.id, "confirm", null, sourceItem.subject_hash);
-
     await until(() => hands.length === 1);
+    expect(open("source-node")()).toBeUndefined();
     expect(hands).toEqual([{ projectId: "demo", ticketId: "1", author: "alice" }]);
     const ticketItem = await until(open("ticket"));
     expect(ctx.db.db.prepare("SELECT ticket_id, state FROM tickets_seen ORDER BY ticket_id").all()).toEqual([
