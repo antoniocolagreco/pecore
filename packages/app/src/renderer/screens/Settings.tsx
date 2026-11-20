@@ -1,20 +1,40 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 import { ApiError, Accounts as AccountsSchema, Profiles as ProfilesSchema, Settings as SettingsSchema, Tiers as TiersSchema } from "@pecore/schemas";
-import type { Account, LiveMessage, Profile, RouteResult, Settings as SettingsValue, TierName } from "@pecore/schemas";
+import type { Account, ForgeAccount, LiveMessage, Profile, RouteResult, Settings as SettingsValue, TierName } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
-import { Button, Empty, ErrorText, Field, Modal, Page, Panel, ui } from "../components/ui";
+import { ErrorText, Field, Page, ui } from "../components/ui";
+import { Button } from "../ds/button";
+import { Switch } from "../ds/choice";
+import { Alert, Badge, Card, EmptyState, Spinner } from "../ds/feedback";
+import { TextArea, TextField } from "../ds/field";
+import { CheckCircleIcon, AlertIcon, PlusIcon, TrashIcon } from "../ds/icons";
+import { Dialog } from "../ds/overlay";
+import { MultiCombobox, Select } from "../ds/select";
+import { NumberField, Segmented } from "../ds/values";
 import { themeChoice } from "../theme/ThemeLoader";
 import { DefinitionErrors, settingUrl, useDefinitionDraft, useUnsaved } from "./NodeEditor";
-import s from "./Editors.module.css";
+import s from "./Settings.module.css";
 
 type Snapshot<T> = { value: T; sha256: string };
 type LoginProgress = Extract<LiveMessage, { type: "login.progress" }>;
 type Progress = { lines: string[]; url: string | null; done: boolean };
 type ModelOptions = RouteResult<"accountOptions">;
+
+const sections: { id: string; title: string }[] = [
+  { id: "accounts", title: "Accounts" },
+  { id: "tiers", title: "Models" },
+  { id: "orchestrator", title: "Orchestrator" },
+  { id: "limits", title: "Limits" },
+  { id: "protectedMode", title: "Protected mode" },
+  { id: "notifications", title: "Notifications" },
+  { id: "appearance", title: "Appearance" },
+  { id: "advanced", title: "Advanced" },
+  { id: "prerequisites", title: "Diagnostics" },
+];
 
 function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (body: { value: T; baseSha256: string }) => Promise<{ sha256: string }>) {
   const connected: boolean = useConnected();
@@ -41,8 +61,7 @@ function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (b
       throw error;
     }
   });
-  const reset = (): void => {
-    if (!window.confirm("Discard your edits and reload this file?")) return;
+  const discard = (): void => {
     setDraft(undefined);
     setSaved(undefined);
     setRevision((value) => value + 1);
@@ -51,37 +70,40 @@ function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (b
   };
   return {
     value: snapshot?.value, current: remote.data?.value, editKey: (snapshot?.sha256 ?? "") + ":" + revision, reload: remote.reload, saving: save.busy,
+    dirty: draft !== undefined, discard,
     update(value: T): void { if (snapshot) setDraft({ ...snapshot, value }); },
     feedback: <>
-      {remote.loading && <p className={ui.muted}>Loading…</p>}
+      {remote.loading && !remote.data && <Spinner />}
       <ErrorText error={save.error ?? remote.error} />
-      {draft && <Button disabled={!connected || save.busy} onClick={reset}>Reload {name}</Button>}
     </>,
     button(label: string, invalid = false): ReactNode {
-      return <Button kind="primary" disabled={!connected || save.busy || !draft || invalid} onClick={() => { if (draft) void save.run(draft.value); }}>{label}</Button>;
+      return <Button variant="primary" loading={save.busy} disabled={!connected || !draft || invalid} onClick={() => { if (draft) void save.run(draft.value); }}>{label}</Button>;
     },
   };
 }
 
-function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
-  return <section id={id} className={s.section}><Panel><h2>{title}</h2>{children}</Panel></section>;
+function Section({ id, title, description, children }: { id: string; title: string; description?: ReactNode; children: ReactNode }) {
+  return (
+    <section id={id} className={s.section}>
+      <h2 className={s.sectionTitle}>{title}</h2>
+      {description && <p className={s.sectionText}>{description}</p>}
+      <Card padded>{children}</Card>
+    </section>
+  );
 }
 
 function JsonField({ label, value, onValue, onInvalid }: { label: string; value: unknown; onValue(value: unknown): void; onInvalid(invalid: boolean): void }) {
   const [text, setText] = useState<string>();
   const [invalid, setInvalid] = useState(false);
-  return <Field label={label}>
-    <textarea className={s.smallJson} spellCheck={false} aria-invalid={invalid} value={text ?? JSON.stringify(value, null, 2)} onChange={(event) => {
-      setText(event.target.value);
-      let parsed: unknown;
-      try { parsed = JSON.parse(event.target.value); }
-      catch { setInvalid(true); onInvalid(true); return; }
-      setInvalid(false);
-      onInvalid(false);
-      onValue(parsed);
-    }} />
-    <ErrorText error={invalid ? "Invalid JSON." : null} />
-  </Field>;
+  return <TextArea label={label} mono value={text ?? JSON.stringify(value, null, 2)} error={invalid ? "Invalid JSON." : undefined} onValueChange={(next) => {
+    setText(next);
+    let parsed: unknown;
+    try { parsed = JSON.parse(next); }
+    catch { setInvalid(true); onInvalid(true); return; }
+    setInvalid(false);
+    onInvalid(false);
+    onValue(parsed);
+  }} />;
 }
 
 function Issues({ issues }: { issues: { path: PropertyKey[]; message: string }[] | undefined }) {
@@ -98,13 +120,26 @@ function LoginOutput({ id, progress, running }: { id: string; progress?: Progres
   const url: string | undefined = progress?.url && progress.url.startsWith("https://") ? progress.url : undefined;
   return <>
     {url && connected && <a href={url} target="_blank" rel="noreferrer">Open login URL</a>}
-    {!!progress?.lines.length && <pre className={s.loginLog} aria-label="Login progress">{progress.lines.join("\n")}</pre>}
+    {!!progress?.lines.length && <pre className={s.log} aria-label="Login progress">{progress.lines.join("\n")}</pre>}
     {running && <form className={ui.row} onSubmit={(event) => { event.preventDefault(); if (connected && !send.busy && code.trim()) void send.run(); }}>
       <Field label="Login code"><input type="password" autoComplete="off" disabled={!connected || send.busy} value={code} onChange={(event) => setCode(event.target.value)} /></Field>
-      <Button type="submit" disabled={!connected || send.busy || !code.trim()}>Send code</Button>
+      <Button type="submit" size="sm" disabled={!connected || send.busy || !code.trim()}>Send code</Button>
     </form>}
     <ErrorText error={send.error} />
   </>;
+}
+
+function accountDetail(account: Account): string {
+  if (account.kind === "model") return `${account.provider} · ${account.connector}`;
+  if (account.kind === "forge") return `${account.forge} · ${account.host} · ${account.user}`;
+  return `${account.service} · ${account.tool}`;
+}
+
+function stateBadge(state: string): ReactNode {
+  const text: string = state.replaceAll("_", " ");
+  if (state === "logged_in") return <Badge tone="success" dot>{text}</Badge>;
+  if (state === "logged_out" || state === "error") return <Badge tone="danger" dot>{text}</Badge>;
+  return <Badge>{text}</Badge>;
 }
 
 function LoginControls({ accounts, protectedOnly = false }: { accounts: Account[]; protectedOnly?: boolean }) {
@@ -155,66 +190,110 @@ function LoginControls({ accounts, protectedOnly = false }: { accounts: Account[
   });
   const visible = accounts.filter((account) => !protectedOnly || account.kind === "model");
   const locked: boolean = !connected || start.busy || recheck.busy;
-  return <div className={ui.stack}>
+  return <div className={s.accounts}>
     <ErrorText error={start.error ?? recheck.error ?? logins.error} />
-    {!visible.length && <Empty>No {protectedOnly ? "model " : ""}accounts configured.</Empty>}
+    {!visible.length && <EmptyState title={`No ${protectedOnly ? "model " : ""}accounts yet`}>Log in to Claude Code, Codex or OpenCode and PeCore adds them.</EmptyState>}
     {visible.map((account) => {
       const items = logins.data?.filter((login) => login.account === account.id && (protectedOnly ? login.osUser === "pecore-agent" : login.osUser !== "pecore-agent")) ?? [];
       const id: string | undefined = toolRuns[account.id];
       const output: Progress | undefined = id ? progress[id] : undefined;
-      return <div key={account.id} className={ui.stack}>
-        <strong>{account.id} · {account.kind}</strong>
+      return <div key={account.id} className={s.account}>
+        <div className={s.accountHead}>
+          <span className={s.accountName}>{account.id}</span>
+          <Badge tone={account.kind === "model" ? "accent" : "neutral"}>{account.kind}</Badge>
+          <span className={s.accountDetail}>{accountDetail(account)}</span>
+        </div>
         {account.kind === "model" ? <>
           {!items.length && <span className={ui.muted}>{logins.loading ? "Loading logins…" : "No login found for this user."}</span>}
           {items.map((login) => {
             const current: Progress | undefined = progress[login.id];
             const running: boolean = current ? !current.done : login.running;
-            return <div key={login.id}>
-              <div className={ui.row}>
-                <span>{login.osUser} · {login.state.replaceAll("_", " ")}{login.email && " · " + login.email}{login.plan && " · " + login.plan}</span>
+            return <div key={login.id} className={s.login}>
+              <div className={s.loginRow}>
+                {stateBadge(login.state)}
+                <span className={ui.muted}>{login.osUser}{login.email && " · " + login.email}{login.plan && " · " + login.plan}</span>
+                <span className={s.spacer} />
                 {login.defaultDir
                   ? <span className={ui.muted} title="The first account of each harness uses the login you already have; log in with the harness itself if needed.">your existing login</span>
-                  : <Button disabled={locked || running} onClick={() => void start.run(account, login.osUser, login.id)}>Login</Button>}
-                <Button disabled={locked || running} onClick={() => void recheck.run(login.id, true)}>Recheck login</Button>
+                  : <Button size="sm" disabled={locked || running} onClick={() => void start.run(account, login.osUser, login.id)}>Login</Button>}
+                <Button size="sm" variant="ghost" disabled={locked || running} onClick={() => void recheck.run(login.id, true)}>Recheck login</Button>
               </div>
               <LoginOutput id={login.id} progress={current} running={running} />
             </div>;
           })}
-        </> : <>
-          <div className={ui.row}>
-            <span>{(toolStates[account.id] ?? "unchecked").replaceAll("_", " ")}</span>
-            {account.kind === "forge" && <Button disabled={locked || (!!id && !output?.done)} onClick={() => {
+        </> : <div className={s.login}>
+          <div className={s.loginRow}>
+            {stateBadge(toolStates[account.id] ?? "unchecked")}
+            <span className={s.spacer} />
+            {account.kind === "forge" && <Button size="sm" disabled={locked || (!!id && !output?.done)} onClick={() => {
               if (id) setProgress((old) => { const next = { ...old }; delete next[id]; return next; });
               void start.run(account);
             }}>Login</Button>}
             {account.kind === "service" && <span className={ui.muted}>Log in with {account.tool}.</span>}
-            <Button disabled={locked || (!!id && !output?.done)} onClick={() => void recheck.run(account.id, false)}>Recheck</Button>
+            <Button size="sm" variant="ghost" disabled={locked || (!!id && !output?.done)} onClick={() => void recheck.run(account.id, false)}>Recheck</Button>
           </div>
           {id && <LoginOutput id={id} progress={output} running={!output?.done} />}
-        </>}
+        </div>}
       </div>;
     })}
   </div>;
 }
 
-function ProfileFields({ profile, update, accounts }: { profile: Profile; update(value: Profile): void; accounts: Account[] }) {
-  const optionId: string = useId();
+const forgeHosts: Record<"github" | "gitlab", { host: string; tool: "gh" | "glab"; label: string }> = {
+  github: { host: "github.com", tool: "gh", label: "GitHub" },
+  gitlab: { host: "gitlab.com", tool: "glab", label: "GitLab" },
+};
+
+function AddForgeAccount({ open, onClose, onAdd, taken }: { open: boolean; onClose(): void; onAdd(account: ForgeAccount): void; taken: string[] }) {
+  const [forge, setForge] = useState<"github" | "gitlab">("github");
+  const [host, setHost] = useState("");
+  const [user, setUser] = useState("");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const base = forgeHosts[forge];
+  const id: string = `${base.tool}-${user || "account"}`.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+  const valid: boolean = !!user.trim() && !!name.trim() && /^[^@\s]+@[^@\s]+$/.test(email) && !taken.includes(id);
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => !o && onClose()}
+      title="Add a forge account"
+      description="PeCore uses it to push branches and open pull requests. You log in right after with the forge's own tool."
+      width={480}
+      footer={<>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button variant="primary" disabled={!valid} onClick={() => {
+          onAdd({ id, kind: "forge", forge, host: host.trim() || base.host, tool: base.tool, user: user.trim(), author: { name: name.trim(), email: email.trim() } });
+          onClose();
+        }}>Add account</Button>
+      </>}
+    >
+      <Segmented value={forge} onValueChange={(v) => setForge(v as "github" | "gitlab")} options={[{ value: "github", label: "GitHub" }, { value: "gitlab", label: "GitLab" }]} />
+      <TextField label="Username" value={user} onValueChange={setUser} placeholder={`your ${base.label} username`} autoFocus />
+      <TextField label="Host" value={host} onValueChange={setHost} placeholder={base.host} description="Change it only for a self-hosted server." mono />
+      <div className={s.pair}>
+        <TextField label="Commit author name" value={name} onValueChange={setName} />
+        <TextField label="Commit author email" value={email} onValueChange={setEmail} type="email" />
+      </div>
+      {taken.includes(id) && <ErrorText error={`An account called ${id} already exists.`} />}
+    </Dialog>
+  );
+}
+
+function ProfileFields({ profile, update, remove, accounts }: { profile: Profile; update(value: Profile): void; remove(): void; accounts: Account[] }) {
   const options = useData(() => profile.account ? call("accountOptions", { params: { id: profile.account } }) : Promise.resolve<ModelOptions>(null), [profile.account], (message) => message.type === "login.progress" && message.done);
-  const models: string[] = options.data?.models ?? [];
-  const efforts: string[] = options.data?.efforts ?? [];
-  const modelList: string = optionId + "-models";
-  const effortList: string = optionId + "-efforts";
-  return <div className={ui.row}>
-    <Field label="Profile ID"><input value={profile.id} onChange={(event) => update({ ...profile, id: event.target.value })} /></Field>
-    <Field label="Model account"><select value={profile.account} onChange={(event) => update({ ...profile, account: event.target.value })}>
-      <option value="">Select</option>
-      {profile.account && !accounts.some(({ id }) => id === profile.account) && <option>{profile.account}</option>}
-      {accounts.map(({ id }) => <option key={id}>{id}</option>)}
-    </select></Field>
-    <Field label="Model"><input list={modelList} value={profile.model} onChange={(event) => update({ ...profile, model: event.target.value })} /></Field>
-    <datalist id={modelList}>{models.map((model) => <option key={model} value={model} />)}</datalist>
-    <Field label="Effort"><input list={effortList} value={profile.effort ?? ""} onChange={(event) => update({ ...profile, effort: event.target.value || null })} /></Field>
-    <datalist id={effortList}>{efforts.map((effort) => <option key={effort} value={effort} />)}</datalist>
+  const models: string[] = [...new Set([...(options.data?.models ?? []), ...(profile.model ? [profile.model] : [])])];
+  const efforts: string[] = [...new Set([...(options.data?.efforts ?? []), ...(profile.effort ? [profile.effort] : [])])];
+  return <div className={s.profile}>
+    <TextField label="Profile ID" mono value={profile.id} onValueChange={(id) => update({ ...profile, id })} size="sm" />
+    <Select label="Model account" value={profile.account || null} onValueChange={(account) => update({ ...profile, account: account ?? "" })}
+      options={[...accounts.map(({ id }) => ({ value: id, label: id })), ...(profile.account && !accounts.some(({ id }) => id === profile.account) ? [{ value: profile.account, label: profile.account }] : [])]} />
+    {models.length > 0
+      ? <Select label="Model" value={profile.model || null} onValueChange={(model) => update({ ...profile, model: model ?? "" })} options={models.map((m) => ({ value: m, label: m }))} />
+      : <TextField label="Model" mono value={profile.model} onValueChange={(model) => update({ ...profile, model })} size="sm" />}
+    <Select label="Effort" value={profile.effort ?? "default"} onValueChange={(effort) => update({ ...profile, effort: !effort || effort === "default" ? null : effort })}
+      options={[{ value: "default", label: "Default" }, ...efforts.map((e) => ({ value: e, label: e }))]} />
+    <Button variant="ghost" icon={<TrashIcon />} aria-label="Remove profile" onClick={remove} className={s.removeProfile} />
   </div>;
 }
 
@@ -224,83 +303,40 @@ function ConnectorFile({ path, close }: { path: string; close(): void }) {
   const dismiss = (): void => {
     if (!file.dirty || window.confirm("Discard your unsaved connector changes?")) close();
   };
-  return <Modal open onClose={dismiss} title={path.split("/").at(-1) ?? "Connector"}>
+  return <Dialog open onOpenChange={(o) => !o && dismiss()} title={path.split("/").at(-1) ?? "Connector"} width={720} footer={<>{file.saveButton}<Button disabled={!file.connected} onClick={dismiss}>Close</Button></>}>
     {file.feedback}
-    {file.ready && <div className={ui.stack}>
-      <Field label="Connector JSON"><textarea className={s.json} value={file.content} disabled={!file.editable} onChange={(event) => file.update(event.target.value)} /></Field>
+    {file.ready && <>
+      <TextArea label="Connector JSON" mono value={file.content} disabled={!file.editable} onValueChange={(v) => file.update(v)} />
       <DefinitionErrors errors={file.errors} />
-      <div className={ui.row}>{file.saveButton}<Button disabled={!file.connected} onClick={dismiss}>Close</Button></div>
-    </div>}
+    </>}
     {warn}
-  </Modal>;
+  </Dialog>;
 }
 
 function Connectors() {
   const connected: boolean = useConnected();
   const [open, setOpen] = useState("");
   const connectors = useData(() => call("listDefinitions", { query: { dir: "connectors" } }), [], (message) => message.type === "definition.changed" && message.path.startsWith("connectors/"));
-  return <Section id="connectors" title="Connectors">
+  return <div className={ui.stack}>
+    <span className={s.label}>Connector files</span>
     <ErrorText error={connectors.error} />
-    {connectors.loading && <p className={ui.muted}>Loading connectors…</p>}
-    {connectors.data?.length === 0 && <Empty>No connector files.</Empty>}
+    {connectors.loading && <Spinner />}
+    {connectors.data?.length === 0 && <span className={ui.muted}>No custom connectors. Built-in ones cover Claude Code, Codex and OpenCode.</span>}
     {connectors.data?.map((item) => <div key={item.path}>
-      <Button disabled={!connected} onClick={() => setOpen(item.path)}>{item.path.split("/").at(-1)}</Button>
+      <Button size="sm" disabled={!connected} onClick={() => setOpen(item.path)}>{item.path.split("/").at(-1)}</Button>
       <DefinitionErrors errors={item.errors} />
     </div>)}
     {open && <ConnectorFile key={open} path={open} close={() => setOpen("")} />}
-  </Section>;
+  </div>;
 }
 
 const tiersList: TierName[] = ["frontier", "strong", "standard", "cheap"];
-
-function SettingsFields({ value, update, profiles, dirtyJson, savedKey, markJson }: { value: SettingsValue; update(value: SettingsValue): void; profiles: Profile[]; dirtyJson: string[]; savedKey: string; markJson(key: string, invalid: boolean): void }) {
-  const connected: boolean = useConnected();
-  const themes = useData(() => call("listThemes"), [], (message) => message.type === "definition.changed" && message.path.startsWith("themes/"));
-  const theme: string = themeChoice(value.ui);
-  const jsonField = (key: "prices" | "projectPaths" | "programPaths", label: string): ReactNode => <JsonField key={savedKey + key} label={label} value={value[key]} onValue={(data) => update({ ...value, [key]: data })} onInvalid={(invalid) => markJson(key, invalid)} />;
-  const number = (label: string, value: number | null, min: number, set: (value: number | null) => void, step = 1): ReactNode => <Field label={label}><input type="number" min={min} step={step} value={value ?? ""} onChange={(event) => set(event.target.value === "" ? null : Number(event.target.value))} /></Field>;
-  return <>
-    <Section id="orchestrator" title="Orchestrator">
-      <Field label="Profile"><select value={value.orchestrator?.profile ?? ""} onChange={(event) => update({ ...value, orchestrator: event.target.value ? { profile: event.target.value } : null })}>
-        <option value="">None</option>
-        {value.orchestrator && !profiles.some(({ id }) => id === value.orchestrator?.profile) && <option>{value.orchestrator.profile}</option>}
-        {profiles.map(({ id }) => <option key={id}>{id}</option>)}
-      </select></Field>
-    </Section>
-    <Section id="limits" title="Limits and disk threshold">
-      {number("Concurrent jobs (blank for automatic)", value.limits.jobs, 1, (jobs) => update({ ...value, limits: { ...value.limits, jobs } }))}
-      {number("Concurrent agents", value.limits.agents, 1, (agents) => update({ ...value, limits: { ...value.limits, agents: agents ?? 0 } }))}
-      <JsonField key={savedKey + "providers"} label="Concurrent agents by provider (JSON)" value={value.limits.providers} onValue={(data) => update({ ...value, limits: { ...value.limits, providers: data as SettingsValue["limits"]["providers"] } })} onInvalid={(invalid) => markJson("providers", invalid)} />
-      {number("Minimum free disk (GB)", value.minFreeDiskGb, 0, (gb) => update({ ...value, minFreeDiskGb: gb ?? 0 }), 0.1)}
-    </Section>
-    <Section id="servicesRuntime" title="Services runtime">
-      <Field label="Compose runtime"><select value={value.servicesRuntime ?? ""} onChange={(event) => update({ ...value, servicesRuntime: (event.target.value || null) as SettingsValue["servicesRuntime"] })}>
-        <option value="">None</option>{["docker", "podman", "colima", "orbstack"].map((runtime) => <option key={runtime}>{runtime}</option>)}
-      </select></Field>
-    </Section>
-    <Section id="mergeCheckSec" title="Merge check interval">{number("Seconds", value.mergeCheckSec, 1, (seconds) => update({ ...value, mergeCheckSec: seconds ?? 0 }))}</Section>
-    <Section id="prices" title="Prices">{jsonField("prices", "Prices by model (JSON)")}</Section>
-    <Section id="projectPaths" title="Project paths">{jsonField("projectPaths", "Paths by project (JSON)")}</Section>
-    <Section id="programPaths" title="Program paths">{jsonField("programPaths", "Absolute paths by tool (JSON)")}</Section>
-    <Section id="notifications" title="Notifications and quiet hours">
-      <label><input type="checkbox" checked={value.quietHours !== null} onChange={(event) => update({ ...value, quietHours: event.target.checked ? { from: "", to: "" } : null })} /> Quiet hours</label>
-      {value.quietHours && <div className={ui.row}>
-        {(["from", "to"] as const).map((key) => <Field key={key} label={key === "from" ? "From" : "To"}><input type="time" value={value.quietHours?.[key]} onChange={(event) => { if (value.quietHours) update({ ...value, quietHours: { ...value.quietHours, [key]: event.target.value } }); }} /></Field>)}
-      </div>}
-    </Section>
-    <Section id="appearance" title="Appearance">
-      <Field label="Theme"><select value={theme} onChange={(event) => update({ ...value, ui: { ...value.ui, theme: event.target.value } })}>
-        <option value="builtin:system">System</option><option value="builtin:light">Light</option><option value="builtin:dark">Dark</option>
-        {!theme.startsWith("builtin:") && !themes.data?.some(({ file }) => file === theme) && <option value={theme}>{theme} (missing)</option>}
-        {themes.data?.map((item) => <option key={item.file} value={item.file} disabled={!item.theme}>{item.theme?.name ?? item.file}</option>)}
-      </select></Field>
-      <ErrorText error={themes.error} />
-      {themes.data?.filter((item) => item.errors.length).map((item) => <div key={item.file}><strong>{item.file}</strong><DefinitionErrors errors={item.errors} /></div>)}
-    </Section>
-    {!!dirtyJson.length && <ErrorText error="Fix invalid JSON before saving." />}
-    {!connected && <p className={ui.muted}>Settings may be stale.</p>}
-  </>;
-}
+const tierText: Record<TierName, string> = {
+  frontier: "The most capable model, for planning and hard problems.",
+  strong: "Everyday coding.",
+  standard: "Routine steps.",
+  cheap: "Quick checks and summaries.",
+};
 
 export function Settings() {
   const connected: boolean = useConnected();
@@ -310,10 +346,13 @@ export function Settings() {
   const profiles = useGlobalFile("profiles", () => call("getProfiles"), (body) => call("putProfiles", { body }));
   const tiers = useGlobalFile("tiers", () => call("getTiers"), (body) => call("putTiers", { body }));
   const status = useData(() => call("getStatus"), []);
+  const themes = useData(() => call("listThemes"), [], (message) => message.type === "definition.changed" && message.path.startsWith("themes/"));
   const [checks, setChecks] = useState<RouteResult<"checkPrerequisites">>();
   const [disableDialog, setDisableDialog] = useState(false);
+  const [addForge, setAddForge] = useState(false);
   const [invalidAccounts, setInvalidAccounts] = useState(false);
   const [invalidJson, setInvalidJson] = useState<string[]>([]);
+  const [active, setActive] = useState<string>(sections[0]!.id);
   const actualProtected: boolean = settings.current?.protectedMode ?? false;
   const check = useAction(async () => setChecks(await call("checkPrerequisites")));
   const protect = useAction(async (on: boolean, removeUser: boolean = false) => {
@@ -326,6 +365,17 @@ export function Settings() {
   const accountsResult = AccountsSchema.safeParse(accounts.value);
   const profilesResult = ProfilesSchema.safeParse(profiles.value);
   const tiersResult = TiersSchema.safeParse(tiers.value);
+  const value: SettingsValue | undefined = settings.value;
+  const update = settings.update;
+  const modelAccounts: Account[] = (accounts.current?.accounts ?? []).filter(({ kind }) => kind === "model");
+  const profileIds: string[] = (profiles.current?.profiles ?? []).map(({ id }) => id);
+  const markJson = (key: string, invalid: boolean): void => {
+    if (invalid && settings.value) settings.update(settings.value);
+    setInvalidJson((old) => invalid ? [...new Set([...old, key])] : old.filter((item) => item !== key));
+  };
+  const jsonField = (key: "prices" | "projectPaths" | "programPaths", label: string): ReactNode => value &&
+    <JsonField key={settings.editKey + key} label={label} value={value[key]} onValue={(data) => update({ ...value, [key]: data })} onInvalid={(invalid) => markJson(key, invalid)} />;
+  const theme: string = themeChoice(value?.ui);
 
   useEffect(() => { setInvalidAccounts(false); }, [accounts.editKey]);
   useEffect(() => { setInvalidJson([]); }, [settings.editKey]);
@@ -334,93 +384,178 @@ export function Settings() {
     if (id) document.getElementById(id)?.scrollIntoView({ block: "start" });
   }, [search, !!settings.value, !!accounts.value, !!tiers.value]);
 
+  const go = (id: string): void => {
+    setActive(id);
+    document.getElementById(id)?.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
+
   return <Page title="Settings">
-    <Section id="prerequisites" title="Prerequisites">
-      <Button disabled={!connected || check.busy} onClick={() => void check.run()}>Recheck prerequisites</Button>
-      <ErrorText error={check.error} />
-      {checks && <ul>{checks.map((item) => <li key={item.tool}>
-        {item.tool}{item.version && " · " + item.version} · {item.ok ? "Ready" : item.problem ?? "Check failed"}
-        {item.setting && connected && <> · <Link to={settingUrl(item.setting)}>Open setting</Link></>}
-      </li>)}</ul>}
-    </Section>
-    <Section id="home" title="PECORE_HOME permissions">
-      <ErrorText error={status.error} />
-      {status.loading && <p className={ui.muted}>Checking permissions…</p>}
-      {status.data?.homeFindings.length === 0 && <p>No permission problems found.</p>}
-      {status.data?.homeFindings.map((finding) => <div key={finding.path}><ErrorText error={finding.path + " can be read by other users."} /><pre className={s.loginLog}>{finding.fix.join(" ")}</pre></div>)}
-      <Button disabled={!connected || status.loading} onClick={status.reload}>Recheck permissions</Button>
-    </Section>
-    <Section id="accounts" title="Accounts">
-      {accounts.feedback}
-      {accounts.value && <>
-        <fieldset className={s.fields} disabled={!connected || accounts.saving}>
-          <JsonField key={accounts.editKey} label="Accounts list (model, forge and service JSON)" value={accounts.value.accounts} onValue={(data) => {
-            if (accounts.value) accounts.update({ ...accounts.value, accounts: data as Account[] });
-          }} onInvalid={(invalid) => {
-            if (invalid && accounts.value) accounts.update(accounts.value);
-            setInvalidAccounts(invalid);
-          }} />
-          <Issues issues={accountsResult.error?.issues} />
-        </fieldset>
-        {accounts.button("Save accounts", invalidAccounts || !accountsResult.success)}
-      </>}
-      <LoginControls accounts={accounts.current?.accounts ?? []} />
-    </Section>
-    <Section id="protectedMode" title="Protected mode">
-      <p>Agents cannot read your files or logins. Log in once per model account as pecore-agent. Agents can read all pecore-agent logins.</p>
-      <label><input type="checkbox" role="switch" checked={actualProtected} disabled={!connected || protect.busy || settings.saving || !settings.current}
-        onChange={(event) => { if (event.target.checked) void protect.run(true); else setDisableDialog(true); }} /> Protected mode</label>
-      <ErrorText error={protect.error} />
-      {actualProtected && <LoginControls accounts={accounts.current?.accounts ?? []} protectedOnly />}
-    </Section>
-    <Modal open={disableDialog} onClose={() => { if (!protect.busy) setDisableDialog(false); }} title="Turn off protected mode">
-      <p>Also remove the pecore-agent user?</p>
-      <ErrorText error={protect.error} />
-      <div className={ui.row}>
-        <Button disabled={!connected || protect.busy} onClick={() => void protect.run(false)}>Keep user</Button>
-        <Button kind="danger" disabled={!connected || protect.busy} onClick={() => void protect.run(false, true)}>Remove user</Button>
+    <div className={s.layout}>
+      <nav className={s.nav} aria-label="Settings sections">
+        {sections.map((section) => <button key={section.id} type="button" className={s.navItem} aria-current={active === section.id ? "true" : undefined} onClick={() => go(section.id)}>{section.title}</button>)}
+      </nav>
+      <div className={s.content}>
+        <Section id="accounts" title="Accounts" description="AI tools, Git forges and services PeCore works with. AI tools you are logged in to are added on their own.">
+          {accounts.feedback}
+          <LoginControls accounts={accounts.current?.accounts ?? []} />
+          <div className={s.sectionActions}>
+            <Button icon={<PlusIcon />} disabled={!connected || !accounts.value} onClick={() => setAddForge(true)}>Add GitHub or GitLab account</Button>
+          </div>
+          {accounts.value && <details className={s.advanced}>
+            <summary>Edit accounts as JSON</summary>
+            <div className={ui.stack}>
+              <JsonField key={accounts.editKey} label="Accounts list (model, forge and service JSON)" value={accounts.value.accounts} onValue={(data) => {
+                if (accounts.value) accounts.update({ ...accounts.value, accounts: data as Account[] });
+              }} onInvalid={(invalid) => {
+                if (invalid && accounts.value) accounts.update(accounts.value);
+                setInvalidAccounts(invalid);
+              }} />
+              <Issues issues={accountsResult.error?.issues} />
+            </div>
+          </details>}
+          {accounts.dirty && <div className={s.sectionActions}>
+            <Button onClick={accounts.discard}>Discard</Button>
+            {accounts.button("Save accounts", invalidAccounts || !accountsResult.success)}
+          </div>}
+        </Section>
+        <AddForgeAccount open={addForge} onClose={() => setAddForge(false)} taken={(accounts.value?.accounts ?? []).map(({ id }) => id)}
+          onAdd={(account) => { if (accounts.value) accounts.update({ ...accounts.value, accounts: [...accounts.value.accounts, account] }); }} />
+
+        <Section id="tiers" title="Models" description="Profiles pair an account with a model and an effort. Recipes ask for a tier, and PeCore picks a profile from it.">
+          {profiles.feedback}
+          {profiles.value && <div className={ui.stack}>
+            {profiles.value.profiles.length === 0 && <span className={ui.muted}>No profiles yet.</span>}
+            {profiles.value.profiles.map((profile, index) => <ProfileFields key={index} profile={profile} accounts={modelAccounts}
+              update={(next) => { if (profiles.value) profiles.update({ ...profiles.value, profiles: profiles.value.profiles.map((item, at) => at === index ? next : item) }); }}
+              remove={() => { if (profiles.value) profiles.update({ ...profiles.value, profiles: profiles.value.profiles.filter((_, at) => at !== index) }); }} />)}
+            <Issues issues={profilesResult.error?.issues} />
+            <div className={s.sectionActions}>
+              <Button icon={<PlusIcon />} onClick={() => {
+                if (profiles.value) profiles.update({ ...profiles.value, profiles: [...profiles.value.profiles, { id: "", account: "", model: "", effort: null }] });
+              }}>Add profile</Button>
+              {profiles.dirty && <Button onClick={profiles.discard}>Discard</Button>}
+              {profiles.button("Save profiles", !profilesResult.success)}
+            </div>
+          </div>}
+          <div className={s.divider} />
+          {tiers.feedback}
+          {tiers.value && <div className={ui.stack}>
+            {tiersList.map((tier) => <MultiCombobox key={tier + tiers.editKey} label={tier[0]!.toUpperCase() + tier.slice(1)} description={tierText[tier]}
+              options={[...new Set([...profileIds, ...(tiers.value?.tiers[tier] ?? [])])].map((id) => ({ value: id, label: id }))}
+              value={tiers.value?.tiers[tier] ?? []} placeholder="Add profiles"
+              onValueChange={(ids) => { if (tiers.value) tiers.update({ ...tiers.value, tiers: { ...tiers.value.tiers, [tier]: ids } }); }} />)}
+            <Issues issues={tiersResult.error?.issues} />
+            <div className={s.sectionActions}>
+              {tiers.dirty && <Button onClick={tiers.discard}>Discard</Button>}
+              {tiers.button("Save tiers", !tiersResult.success)}
+            </div>
+          </div>}
+        </Section>
+
+        {settings.feedback}
+        {value && <>
+          <Section id="orchestrator" title="Orchestrator" description="The model that talks with you and plans the jobs.">
+            <Select label="Profile" value={value.orchestrator?.profile ?? "none"} disabled={!connected}
+              onValueChange={(profile) => update({ ...value, orchestrator: profile && profile !== "none" ? { profile } : null })}
+              options={[{ value: "none", label: "None" }, ...[...new Set([...profileIds, ...(value.orchestrator ? [value.orchestrator.profile] : [])])].map((id) => ({ value: id, label: id }))]} />
+          </Section>
+
+          <Section id="limits" title="Limits" description="How much PeCore runs at the same time.">
+            <div className={s.grid}>
+              <NumberField label="Concurrent jobs" value={value.limits.jobs} min={1} onValueChange={(jobs) => update({ ...value, limits: { ...value.limits, jobs } })} description="Blank for automatic." />
+              <NumberField label="Concurrent agents" value={value.limits.agents} min={1} onValueChange={(agents) => update({ ...value, limits: { ...value.limits, agents: agents ?? 0 } })} />
+              <NumberField label="Minimum free disk" unit="GB" value={value.minFreeDiskGb} min={0} step={0.5} onValueChange={(gb) => update({ ...value, minFreeDiskGb: gb ?? 0 })} />
+            </div>
+            <div className={s.grid} id="mergeCheckSec">
+              <NumberField label="Seconds" value={value.mergeCheckSec} min={1} onValueChange={(seconds) => update({ ...value, mergeCheckSec: seconds ?? 0 })} description="How often PeCore checks whether a pull request was merged." />
+              <div id="servicesRuntime">
+                <Select label="Services runtime" value={value.servicesRuntime ?? "none"}
+                  onValueChange={(runtime) => update({ ...value, servicesRuntime: (runtime && runtime !== "none" ? runtime : null) as SettingsValue["servicesRuntime"] })}
+                  options={[{ value: "none", label: "None" }, ...["docker", "podman", "colima", "orbstack"].map((r) => ({ value: r, label: r }))]} />
+              </div>
+            </div>
+          </Section>
+
+          <Section id="protectedMode" title="Protected mode" description="Agents run as a separate user, so they cannot read your files or your logins.">
+            <Switch label="Protected mode" detail="You log in once per AI account as pecore-agent." checked={actualProtected} disabled={!connected || protect.busy || settings.saving || !settings.current}
+              onCheckedChange={(checked) => { if (checked) void protect.run(true); else setDisableDialog(true); }} />
+            <ErrorText error={protect.error} />
+            {actualProtected && <div className={s.nested}><LoginControls accounts={accounts.current?.accounts ?? []} protectedOnly /></div>}
+          </Section>
+          <Dialog open={disableDialog} onOpenChange={(o) => { if (!o && !protect.busy) setDisableDialog(false); }} title="Turn off protected mode" description="Also remove the pecore-agent user?" width={420}
+            footer={<>
+              <Button disabled={!connected || protect.busy} onClick={() => void protect.run(false)}>Keep user</Button>
+              <Button variant="dangerSolid" disabled={!connected || protect.busy} onClick={() => void protect.run(false, true)}>Remove user</Button>
+            </>}>
+            <ErrorText error={protect.error} />
+          </Dialog>
+
+          <Section id="notifications" title="Notifications" description="Quiet hours hold system notifications; they stay in the bell.">
+            <Switch label="Quiet hours" checked={value.quietHours !== null} onCheckedChange={(checked) => update({ ...value, quietHours: checked ? { from: "22:00", to: "08:00" } : null })} />
+            {value.quietHours && <div className={s.grid}>
+              {(["from", "to"] as const).map((key) => <Field key={key} label={key === "from" ? "From" : "To"}><input type="time" value={value.quietHours?.[key]} onChange={(event) => { if (value.quietHours) update({ ...value, quietHours: { ...value.quietHours, [key]: event.target.value } }); }} /></Field>)}
+            </div>}
+          </Section>
+
+          <Section id="appearance" title="Appearance">
+            <div className={ui.stack}>
+              <span className={s.label}>Theme</span>
+              <Segmented label="Theme" value={theme.startsWith("builtin:") ? theme : "custom"}
+                onValueChange={(choice) => { if (choice !== "custom") update({ ...value, ui: { ...value.ui, theme: choice } }); }}
+                options={[
+                  { value: "builtin:system", label: "System" },
+                  { value: "builtin:light", label: "Light" },
+                  { value: "builtin:dark", label: "Dark" },
+                  ...(themes.data?.length ? [{ value: "custom", label: "Custom" }] : []),
+                ]} />
+              {!!themes.data?.length && <Select label="Custom theme" value={theme.startsWith("builtin:") ? null : theme} placeholder="Choose a theme file"
+                onValueChange={(file) => file && update({ ...value, ui: { ...value.ui, theme: file } })}
+                options={themes.data.map((item) => ({ value: item.file, label: item.theme?.name ?? item.file, disabled: !item.theme }))} />}
+              <ErrorText error={themes.error} />
+              {themes.data?.filter((item) => item.errors.length).map((item) => <div key={item.file}><strong>{item.file}</strong><DefinitionErrors errors={item.errors} /></div>)}
+            </div>
+          </Section>
+
+          <Section id="advanced" title="Advanced" description="Rarely needed. Each field takes JSON.">
+            <div className={ui.stack}>
+              <div id="providers"><JsonField key={settings.editKey + "providers"} label="Concurrent agents by provider" value={value.limits.providers}
+                onValue={(data) => update({ ...value, limits: { ...value.limits, providers: data as SettingsValue["limits"]["providers"] } })} onInvalid={(invalid) => markJson("providers", invalid)} /></div>
+              <div id="prices">{jsonField("prices", "Prices by model")}</div>
+              <div id="projectPaths">{jsonField("projectPaths", "Paths by project")}</div>
+              <div id="programPaths">{jsonField("programPaths", "Absolute paths by tool")}</div>
+              <div className={s.divider} />
+              <Connectors />
+            </div>
+          </Section>
+        </>}
+
+        <Section id="prerequisites" title="Diagnostics">
+          <div className={ui.stack}>
+            <div className={s.sectionActions} style={{ justifyContent: "flex-start" }}>
+              <Button loading={check.busy} disabled={!connected} onClick={() => void check.run()}>Recheck prerequisites</Button>
+              <Button disabled={!connected || status.loading} onClick={status.reload}>Recheck permissions</Button>
+            </div>
+            <ErrorText error={check.error ?? status.error} />
+            {checks && <ul className={s.checks}>{checks.map((item) => <li key={item.tool}>
+              {item.ok ? <CheckCircleIcon className={s.ok} /> : <AlertIcon className={s.bad} />}
+              <span><strong>{item.tool}</strong>{item.version && " " + item.version} · {item.ok ? "Ready" : item.problem ?? "Check failed"}</span>
+              {item.setting && connected && <Link to={settingUrl(item.setting)}>Open setting</Link>}
+            </li>)}</ul>}
+            <div id="home">
+              {status.data?.homeFindings.length === 0 && <span className={ui.muted}>PECORE_HOME permissions are fine.</span>}
+              {status.data?.homeFindings.map((finding) => <Alert key={finding.path} tone="warning" title={finding.path + " can be read by other users."}><pre className={s.log}>{finding.fix.join(" ")}</pre></Alert>)}
+            </div>
+          </div>
+        </Section>
       </div>
-    </Modal>
-    <Section id="tiers" title="Profiles and tiers">
-      {profiles.feedback}
-      {profiles.value && <fieldset className={s.fields} disabled={!connected || profiles.saving}>
-        {profiles.value.profiles.map((profile, index) => <div key={index} className={ui.stack}>
-          <ProfileFields profile={profile} accounts={(accounts.current?.accounts ?? []).filter(({ kind }) => kind === "model")} update={(value) => {
-            if (profiles.value) profiles.update({ ...profiles.value, profiles: profiles.value.profiles.map((item, at) => at === index ? value : item) });
-          }} />
-          <div><Button onClick={() => {
-            if (profiles.value) profiles.update({ ...profiles.value, profiles: profiles.value.profiles.filter((_, at) => at !== index) });
-          }}>Remove profile</Button></div>
-        </div>)}
-        <div><Button onClick={() => {
-          if (profiles.value) profiles.update({ ...profiles.value, profiles: [...profiles.value.profiles, { id: "", account: "", model: "", effort: null }] });
-        }}>Add profile</Button></div>
-        <Issues issues={profilesResult.error?.issues} />
-        <div>{profiles.button("Save profiles", !profilesResult.success)}</div>
-      </fieldset>}
-      {tiers.feedback}
-      {tiers.value && <fieldset className={s.fields} disabled={!connected || tiers.saving}>
-        {tiersList.map((tier) => <Field key={tier} label={tier + " profiles (comma separated)"}>
-          <input value={tiers.value?.tiers[tier].join(",")} onChange={(event) => {
-            if (tiers.value) tiers.update({ ...tiers.value, tiers: { ...tiers.value.tiers, [tier]: event.target.value ? event.target.value.split(",") : [] } });
-          }} />
-        </Field>)}
-        <Issues issues={tiersResult.error?.issues} />
-        <div>{tiers.button("Save tiers", !tiersResult.success)}</div>
-      </fieldset>}
-    </Section>
-    <Connectors />
-    {settings.feedback}
-    {settings.value && <>
-      <fieldset className={s.fields} disabled={!connected || settings.saving || protect.busy}>
-        <SettingsFields value={settings.value} update={settings.update} profiles={profiles.current?.profiles ?? []} savedKey={settings.editKey} dirtyJson={invalidJson}
-          markJson={(key, invalid) => {
-            if (invalid && settings.value) settings.update(settings.value);
-            setInvalidJson((old) => invalid ? [...new Set([...old, key])] : old.filter((item) => item !== key));
-          }} />
-      </fieldset>
+    </div>
+    {settings.dirty && <div className={s.saveBar} role="region" aria-label="Unsaved settings">
+      <span>You have unsaved changes.</span>
+      {!!invalidJson.length && <ErrorText error="Fix invalid JSON before saving." />}
       <Issues issues={settingsResult.error?.issues} />
-      <div>{settings.button("Save settings", !settingsResult.success || !!invalidJson.length || protect.busy)}</div>
-    </>}
+      <span className={s.spacer} />
+      <Button onClick={settings.discard}>Discard</Button>
+      {settings.button("Save settings", !settingsResult.success || !!invalidJson.length || protect.busy)}
+    </div>}
   </Page>;
 }
