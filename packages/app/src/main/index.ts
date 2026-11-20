@@ -161,7 +161,10 @@ async function main(): Promise<void> {
     engine = await startEngine(
       { home, resources: await resourcesDir(), version: app.getVersion(), devOrigin: devUrl ? new URL(devUrl).origin : null },
       {
-        notify: (n) => new Notification({ title: n.title, body: n.body }).show(),
+        notify: (n) => {
+          if (win && !win.isDestroyed() && win.isFocused()) return;
+          new Notification({ title: n.title, body: n.body }).show();
+        },
         exited: (code) => {
           if (quitting) return;
           console.error(`PeCore engine exited with code ${code}`);
