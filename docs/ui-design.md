@@ -56,7 +56,7 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 |---|---|---|
 | IA1 | Global pause and play | G17 |
 | IA2 | Notifications counter | 4.3, 8 |
-| IA3 | Notifications: job finished, needs the user, budget reached, login expired, parent failed, auto-setup changes, what the Orchestrator did on a ticket (jobs created, question waiting for approval). Assistant replies only as a system notification (decisions 25, 27, 44) | 6, 7, 9 |
+| IA3 | Notifications: job finished, needs the user, login expired, parent failed, auto-setup changes, what the Orchestrator did on a ticket (jobs created, question waiting for approval). Assistant replies only as a system notification (decisions 25, 27, 44) | 6, 7, 9 |
 | IA4 | Withdrawn: engine status line (decision 35); only the disconnected banner stays | 1, "Fixed implementation choices" |
 | IA5 | Withdrawn: project filter (decision 30) | 3.5 |
 | IA6 | Tray icon | "Engine and main process messages" |
@@ -102,7 +102,7 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 | ID5 | Confirmation of a new compose file version | `services` | 4.9 |
 | ID6 | Untrusted ticket | `ticket` | 7 |
 | ID7 | Round limit reached | `round-limit` | 4.2 |
-| ID8 | Budget reached | `budget` | 4.7 |
+| ID8 | Withdrawn: budget reached; projects have no budgets (decision 71) | | 4.7 |
 | ID9 | Request to post outside the app (a question or comment on a ticket that no recipe prescribes) | `outbound` | decision 39 |
 
 ### E. Recipes and nodes
@@ -276,7 +276,7 @@ The prototype is normative only for: the gradients, Notifications as a list plus
 
 Pages: Inputs, Create, Confirm. Create runs the tasks of design.md "Project creation" in order; the project exists when Create ends.
 
-1.  **Inputs:** id (`^[a-z][a-z0-9-]{0,23}$`), name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, base branch, starting recipes (the shipped ones, with delivery nodes for the project's forge; each can be unchecked).
+1.  **Inputs:** name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, base branch, starting recipes (the shipped ones, with delivery nodes for the project's forge; each can be unchecked). The id comes from the name (decision 70).
 2.  **Create:** the tasks of "Project creation" (validation, project directory, clone or repo creation, `repo.git` setup and home check, access for `pecore-agent` in protected mode, commit), each with its state. The creation request approves the shipped GitHub or GitLab repo setup node. Custom and modified nodes ask for confirmation inside the task (UI17). A failed task undoes the tasks before it, says why, and returns to Inputs with the values kept. A repo created on the forge is never deleted by the undo: the page lists it as left on the forge.
 3.  **Confirm:** the engine nodes of the starting recipes and the project's `source` node, if any, on one screen, so the first job does not wait with reason `confirmation`. Can be skipped: the items stay in Notifications.
 4.  No logins page: logins belong to the user, not to the project (Settings > Accounts).
@@ -377,7 +377,7 @@ Goal: minimum friction. The user opens PeCore and it works, with no setting to f
 | Label | Engine state | Color |
 |---|---|---|
 | Working | `running` | `status-running`, with pulse |
-| Needs you | `waiting` with reason `human`, `confirmation`, `round_limit`, `budget` or `auth`; `queued` with reason `parent_failed` | `status-warning` |
+| Needs you | `waiting` with reason `human`, `confirmation`, `round_limit` or `auth`; `queued` with reason `parent_failed` | `status-warning` |
 | Waiting | `waiting` for any other reason (`concurrency`, `quota`, `rate_limit`, `services`, `network`, `disk`); reason and, when known, time shown ("Quota until 15:40") | `status-warning` |
 | Queued | `queued` with reason `parent_job`, `concurrency` or `disk` | `status-warning` |
 | Paused | `paused`; "Paused (app quit)" or "Paused by you" | `status-inactive` |
@@ -388,7 +388,7 @@ Goal: minimum friction. The user opens PeCore and it works, with no setting to f
 
 Clicking a job labelled Needs you opens:
 
-*   `human`, `confirmation`, `round_limit`, `budget`: the item to decide recorded on the node run (`queue_item_id`); an `agent-question` opens its conversation.
+*   `human`, `confirmation`, `round_limit`: the item to decide recorded on the node run (`queue_item_id`); an `agent-question` opens its conversation.
 *   `auth`: the account recorded on the node run; a harness login opens Settings > Accounts (in protected mode, Settings > Protected mode), a tool login opens Settings > Accounts.
 *   `parent_failed`: the parent job.
 
@@ -453,7 +453,7 @@ Every size lives in `ds/tokens.css`; components use only these variables, never 
 | UI2 | Factory is a summary dashboard; every function has its own page with the full detail. |
 | UI2b | Withdrawn: the Assistant chat is always on the right of every screen, with no page of its own (decisions 32, 36). |
 | UI3 | Dark green base and translucent panels, as in the prototype. |
-| UI4 | Themes: every color is a CSS variable. Settings > Appearance has a mode (System, Light, Dark) and a theme for light and one for dark; System follows the operating system (decision 60). Shipped: Default, Autumn, Spring, Summer, Winter and Monochrome (decision 66), each in a light and a dark version, as variable blocks in `ds/tokens.css`; Summer is a summer version of Everforest (decision 65). The user can add a theme as a JSON file of tokens in `PECORE_HOME/themes/`, validated by a JSON Schema; missing tokens fall back to the default theme; values must be colors; the file is offered as a light or dark theme by its background. |
+| UI4 | Themes: every color is a CSS variable. Settings > Appearance has a mode (System, Light, Dark) and one theme; the mode picks the theme's light or dark version, and System follows the operating system (decision 67). Shipped: Default, Autumn, Spring, Summer, Winter and Monochrome (decision 66), each in a light and a dark version, as variable blocks in `ds/tokens.css`; Summer is a summer version of Everforest (decision 65). The user can add a theme as a JSON file of tokens in `PECORE_HOME/themes/`, validated by a JSON Schema; missing tokens fall back to the default theme; values must be colors; the file applies only in the mode that matches its background. |
 | UI5 | No images. The background is a fixed gradient of `bg-gradient-1` and `bg-gradient-2`, with no animation. |
 | UI6 | Animation only on running state (pulse); off with `prefers-reduced-motion` or Settings > Appearance > Reduced motion. No progress percentages: an agent node shows state, duration, round and attempts. |
 | UI7 | Components: Base UI (unstyled, behaviour and accessibility); styles: CSS Modules with the theme's CSS variables. |
