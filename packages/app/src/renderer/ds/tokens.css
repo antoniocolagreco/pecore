@@ -219,44 +219,45 @@
 }
 
 :root[data-palette="woodlands-light"] {
-  --accent: #1e7656;
-  --accent-hover: #185f45;
-  --accent-fill: #c9e39a;
-  --accent-fill-hover: #bcdb88;
-  --on-accent: #33402f;
+  --accent: #197a4d;
+  --accent-hover: #156540;
+  --accent-fill: #1e7047;
+  --accent-fill-hover: #185e3a;
+  --on-accent: #ffffff;
+  --bubble-user: linear-gradient(135deg, color-mix(in srgb, var(--accent-fill) 90%, white), var(--accent-fill));
   --danger: #c4372f;
   --warning: #8f6200;
   --success: #5f7300;
 
-  --bg: #f2ecd0;
-  --surface: #fcfaf3;
+  --bg: #eae5df;
+  --surface: #f8f5f2;
   --text: #4f5b62;
   --text-2: #627079;
   --text-3: #7f8a7a;
-  --separator: #dcd8cb;
+  --separator: #ddd6cf;
 
-  --control-border: #d6d1c2;
-  --control-border-hover: #aaa592;
-  --fill: #e9e5d9;
-  --fill-strong: #dedacc;
-  --knob: #fffdf6;
+  --control-border: #d6cfc7;
+  --control-border-hover: #aaa096;
+  --fill: #ece7e2;
+  --fill-strong: #e1dad3;
+  --knob: #fdfbf9;
 
-  --material: rgb(252 250 243 / 0.94);
-  --material-border: #dcd8cb;
+  --material: rgb(248 245 242 / 0.94);
+  --material-border: #ddd6cf;
 }
 
 :root[data-palette="woodlands-dark"] {
-  --accent: #b5cc86;
-  --accent-hover: #93c9a0;
-  --accent-fill: #4f7243;
-  --accent-fill-hover: #5a7d4b;
+  --accent: #86c6a6;
+  --accent-hover: #a0d8bb;
+  --accent-fill: #286445;
+  --accent-fill-hover: #2d6f4d;
   --on-accent: #fdf6e3;
   --danger: #ec8a84;
   --warning: #e5c07b;
-  --success: #b5cc86;
+  --success: #86c6a6;
 
-  --bg: #232b2a;
-  --surface: #282b2a;
+  --bg: #202625;
+  --surface: #303533;
   --text: #ddd0b2;
   --text-2: #a7b2a5;
   --text-3: #848d80;
@@ -268,7 +269,7 @@
   --fill-strong: #434846;
   --knob: #ddd0b2;
 
-  --material: rgb(40 43 42 / 0.94);
+  --material: rgb(48 53 51 / 0.94);
   --material-border: #434846;
 }
 
