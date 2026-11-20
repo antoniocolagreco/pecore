@@ -63,6 +63,10 @@ Format: decision. **Why:** Antonio's reason. **Replaces:** what it changes, if a
 45. Notifications and the Inbox are one page, Notifications, in the menu: first what waits for a decision, then the notification log. The bell in the top bar is removed. **Why:** "Fai scrivere in Inbox. Rinomina Inbox, chiamalo Messages o altro di più intuitivo"; Notifications chosen over Messages, which is confused with the chat. **Replaces:** the Inbox page and the notification popover (IA3).
 46. Saving a recipe or node in an editor counts as the user's approval (decision 40); only changes written by an agent wait for approval. **Why:** chosen option "Save vale come approvazione".
 47. Fetching tickets will become a recipe run on a schedule, so the ticket source needs no separate confirmation. Planned for later. **Why:** "Gestiamo il reperimento di tickets con un sistema di scheduling. Dunque creeremo una recipe e la mettiamo in scheduling. Dopo."
+48. In a Provider, Model and Effort picker, Effort is locked until a model is chosen. **Why:** "se non si seleziona prima un modello, non si deve poter scegliere l'effort".
+49. Settings save by themselves as soon as a value changes; there is no save bar, Save or Discard button. A value that is not valid is not saved and the problem is shown. A provider with no model yet is not saved. **Why:** "Il salvataggio deve essere continuo, non deve esserci questo pannello con 'save settings'". **Replaces:** the Save settings bar.
+50. The models of each AI tool are read once when the app starts, not every time Settings opens. A small refresh button next to Model reads them again. **Why:** "La ricerca dei modelli deve avvenire solo all'avvio, non ogni volta che torno in settings. Aggiungi un piccolo pulsante invece per rifare il check forzato, refresh."
+51. Every working account shows "Logged in", OpenCode and a private Git server included. **Why:** "metti 'logged in' per tutti". **Replaces:** "Ready" for OpenCode (decision 12) and for a private Git server.
 
 ## Open
 

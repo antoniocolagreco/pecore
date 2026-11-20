@@ -8,7 +8,7 @@ import { removeAs } from "./workdir/fs-as";
 import { BuiltInHarness, defaultJobLimit, roleProfile, withForgeHosts } from "@pecore/schemas";
 import { listOptions, satisfies } from "@pecore/agents";
 import type { LoginState } from "@pecore/agents";
-import type { Account, Accounts, ForgeAccount, JobState, LiveMessage, LoginView, NotificationTarget, Profiles, ProjectInput, Settings, SetupView, Tiers, WhyView } from "@pecore/schemas";
+import type { Account, AccountOptions, Accounts, ForgeAccount, JobState, LiveMessage, LoginView, NotificationTarget, Profiles, ProjectInput, Settings, SetupView, Tiers, WhyView } from "@pecore/schemas";
 import type { ExportProjectBody, ExportProjectResult, ImportProjectBody, ImportProjectResult } from "@pecore/schemas";
 import { AgentServices, protectedUser, spawnFor } from "./accounts/agents";
 import type { AgentPaths, LoginInfo } from "./accounts/agents";
@@ -77,6 +77,7 @@ export class Engine extends EventEmitter {
   private globalFilesPending: Promise<unknown> = Promise.resolve();
   private shuttingDown: boolean = false;
   private readonly openCodeReady = new Map<string, boolean>();
+  private readonly options = new Map<string, Promise<AccountOptions | null>>();
   private setupHarnesses: SetupView["harnesses"] = BuiltInHarness.options.map((connector) => ({ connector, installed: false, version: null, loggedIn: false }));
   globalPause = false;
   private readonly loginRunner = new LoginRunner((p) => this.live({ type: "login.progress", ...p }));
@@ -142,7 +143,10 @@ export class Engine extends EventEmitter {
         for (const { executor } of this.projects.values()) await executor.checkMerges();
       },
     );
-    if (this.agents && this.opts.checkLogins !== false) void this.checkAllLogins().then(() => this.emit("logins")).catch((error: unknown) => console.error("login check:", error));
+    if (this.agents && this.opts.checkLogins !== false) {
+      void this.checkAllLogins().then(() => this.emit("logins")).catch((error: unknown) => console.error("login check:", error))
+        .then(() => { for (const { id, kind } of this.accounts.accounts) if (kind === "model") void this.accountOptions(id).catch(() => null); });
+    }
     if (this.opts.orders) {
       for (const [project, resumed] of resumedOrders) project.sourcePolling = startSourcePolling(project.ctx, this.opts.orders, resumed);
     }
@@ -356,8 +360,18 @@ export class Engine extends EventEmitter {
     return loginId;
   }
 
-  async accountOptions(id: string): Promise<{ models: string[]; efforts: string[] } | null> {
+  accountOptions(id: string, refresh: boolean = false): Promise<AccountOptions | null> {
     this.account(id);
+    const cached: Promise<AccountOptions | null> | undefined = this.options.get(id);
+    if (cached && !refresh) return cached;
+    const read: Promise<AccountOptions | null> = this.readAccountOptions(id);
+    this.options.set(id, read);
+    const forget = (): void => { if (this.options.get(id) === read) this.options.delete(id); };
+    read.then((options) => { if (!options) forget(); }, forget);
+    return read;
+  }
+
+  private async readAccountOptions(id: string): Promise<AccountOptions | null> {
     for (const l of ((await this.agents?.logins()) ?? []).filter((x) => x.account === id)) {
       const connector = await this.agents!.resolve(l.connector);
       await this.agents!.ensureProbeDir(l);

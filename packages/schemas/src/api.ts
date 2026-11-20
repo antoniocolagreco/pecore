@@ -362,6 +362,9 @@ export type LoginView = z.infer<typeof LoginView>;
 
 export const AccountState = z.enum(["logged_in", "logged_out", "unknown"]);
 
+export const AccountOptions = z.object({ models: z.array(z.string()), efforts: z.array(z.string()) });
+export type AccountOptions = z.infer<typeof AccountOptions>;
+
 export const PrerequisiteView = z.object({ tool: z.string(), ok: z.boolean(), version: z.string().nullable(), problem: z.string().nullable(), setting: z.string().nullable() });
 export type PrerequisiteView = z.infer<typeof PrerequisiteView>;
 
@@ -498,7 +501,8 @@ export const routes = {
   recheckLogin: { method: "POST", path: "/logins/:id/recheck", params: IdParams, response: LoginView },
   recheckAccount: { method: "POST", path: "/accounts/:id/recheck", params: IdParams, response: z.object({ state: AccountState }) },
   startAccountLogin: { method: "POST", path: "/accounts/:id/login", params: IdParams, response: z.object({ loginId: z.string() }) },
-  accountOptions: { method: "GET", path: "/accounts/:id/options", params: IdParams, response: z.object({ models: z.array(z.string()), efforts: z.array(z.string()) }).nullable() },
+  accountOptions: { method: "GET", path: "/accounts/:id/options", params: IdParams, response: AccountOptions.nullable() },
+  refreshAccountOptions: { method: "POST", path: "/accounts/:id/options/refresh", params: IdParams, response: AccountOptions.nullable() },
   checkPrerequisites: { method: "POST", path: "/prerequisites/check", response: z.array(PrerequisiteView) },
   getSetup: { method: "GET", path: "/setup", response: SetupView },
   startSetupLogin: { method: "POST", path: "/setup/:connector/login", params: z.object({ connector: BuiltInHarness }), response: z.object({ loginId: z.string() }) },

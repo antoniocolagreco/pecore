@@ -435,7 +435,7 @@ A node receives the latest artifact of each type in its `inputs`. The recipe val
 
 #### 3.4 Accounts, profiles and tiers
 
-*   Profiles and tiers are internal: auto-setup creates them and the GUI never shows them (decisions.md 1, 5). The user chooses a model where it is used, on each agent node (provider, model, effort) and for the Assistant and the Orchestrator (provider, model, effort in Settings, saved as the profiles `assistant` and `orchestrator`; section 6). How a shipped node picks its model when the user chose none is still open (decisions.md, Open).
+*   Profiles and tiers are internal: auto-setup creates them and the GUI never shows them (decisions.md 1, 5). The user chooses a model where it is used, on each agent node (provider, model, effort) and for the Assistant and the Orchestrator (provider, model, effort in Settings, saved as the profiles `assistant` and `background` as soon as a model is chosen; section 6). How a shipped node picks its model when the user chose none is still open (decisions.md, Open).
 *   PeCore keeps no secrets of its own. Each tool stores its login where it always does; `accounts.json` holds only references.
 *   `accounts.json` lists accounts of three kinds:
     *   `model`: provider, connector, login type (`subscription` or `api-key`, both configured inside the harness), the account's `email` (compared with the logged-in account, below), `maxParallel`.
@@ -1002,7 +1002,8 @@ Recorded ACP traffic for tests lives in `packages/agents/fixtures/<connector>/<c
 | `GET /logins`, `POST /logins` | harness logins (account and OS user, 3.4) with their state; start one (`{account, osUser}`); progress and the URL over WebSocket |
 | `POST /logins/:id/code`, `POST /logins/:id/recheck` | send the code the login command reads on stdin (5.9); re-run `checkLogin` and release runs waiting with `auth` on that login |
 | `POST /accounts/:id/login` | start a forge or service tool login; progress over WebSocket |
-| `GET /accounts/:id/options` | the models and efforts the account's connector offers (`listOptions` through any logged-in login of the account), for the profile editor |
+| `GET /accounts/:id/options` | the models and efforts the account's connector offers (`listOptions` through any logged-in login of the account), for the profile editor; read once per account after the login check at start and kept in memory (a `null` result is not kept) |
+| `POST /accounts/:id/options/refresh` | reads the models and efforts again and replaces the kept ones (decisions.md 50) |
 | `GET/POST /chats`, `POST /chats/:id/messages` | orchestrator chat; a message has text, attachments and an optional `context` of references (section 6) |
 | `GET /artifacts/:job/:run/:name`, `GET /logs/:attempt?view=events\|raw` | files; `events` returns the normalised events of the attempt (the shape of `log.line`), `raw` the JSONL lines; 410 when retention removed the log |
 

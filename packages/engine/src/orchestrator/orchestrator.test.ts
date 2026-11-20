@@ -494,6 +494,7 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       expect(system).toContainEqual({ kind: "orchestrator", title: "Demo, ticket 7", body: "The Orchestrator created the job Fix login." });
       expect((await t.call("getChat")).messages).toEqual([]);
       const open = (): number => (ctx.db.db.prepare("SELECT COUNT(*) AS n FROM human_queue WHERE state = 'open' AND kind != 'agent-question'").get() as { n: number }).n;
+      await until(async () => (await t.call("listNotifications")).some(({ kind }) => kind === "needs-user") && open() > 0);
       expect((await t.call("getStatus")).notifications).toBeGreaterThan(open());
       await t.call("markNotificationsSeen");
       expect((await t.call("listNotifications")).every(({ seen }) => seen)).toBe(true);

@@ -207,17 +207,26 @@
   color: var(--danger);
 }
 
-.saveBar {
+.withButton {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.withButton > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.problems {
   position: sticky;
   bottom: 16px;
   z-index: 5;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 6px;
   max-width: 820px;
-  margin-top: -56px;
-  padding: 10px 12px 10px 16px;
+  padding: 10px 16px;
   border-radius: 12px;
   background: var(--material);
   backdrop-filter: var(--blur);

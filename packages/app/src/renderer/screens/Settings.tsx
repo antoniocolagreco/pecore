@@ -4,10 +4,10 @@ import { Link, useLocation } from "react-router";
 import { ApiError, forgeHost, Settings as SettingsSchema } from "@pecore/schemas";
 import type { Account, BuiltInHarness, ForgeAccount, LiveMessage, Role, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { call } from "../api/client";
-import { useAction, useData } from "../api/hooks";
+import { errorText, useAction, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
 import { ErrorText, Field, Page, ui } from "../components/ui";
-import { Button } from "../ds/button";
+import { Button, IconButton } from "../ds/button";
 import { Switch } from "../ds/choice";
 import { Alert, Badge, Card, Spinner } from "../ds/feedback";
 import { TextArea, TextField } from "../ds/field";
@@ -41,49 +41,81 @@ const sections: { id: string; title: string }[] = [
   { id: "prerequisites", title: "Diagnostics" },
 ];
 
-function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (body: { value: T; baseSha256: string }) => Promise<{ sha256: string }>) {
-  const connected: boolean = useConnected();
+const saveDelayMs = 600;
+
+function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (body: { value: T; baseSha256: string }) => Promise<{ sha256: string }>, valid: (value: T) => boolean = () => true) {
   const remote = useData(get, [], (message) => message.type === "definition.changed" && message.path === name + ".json");
-  const [draft, setDraft] = useState<Snapshot<T>>();
-  const [saved, setSaved] = useState<Snapshot<T>>();
+  const [local, setLocal] = useState<T>();
   const [revision, setRevision] = useState(0);
-  const snapshot: Snapshot<T> | undefined = draft ?? saved ?? remote.data;
-  useEffect(() => { setSaved(undefined); }, [remote.data]);
-  const save = useAction(async (value: T) => {
-    if (!snapshot) return;
-    try {
-      const result = await put({ value, baseSha256: snapshot.sha256 });
-      setSaved({ value, sha256: result.sha256 });
-      setDraft(undefined);
-      remote.reload();
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 409) {
-        setDraft(snapshot);
-        remote.reload();
-        throw new Error("409: Changed elsewhere. Copy any edits you want to keep, then reload.", { cause: error });
-      }
-      if (error instanceof ApiError && error.status === 400) throw new Error("400: " + error.message, { cause: error });
-      throw error;
-    }
-  });
-  const discard = (): void => {
-    setDraft(undefined);
-    setSaved(undefined);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const shown: T | undefined = local ?? remote.data?.value;
+  const latest = useRef<T | undefined>(shown);
+  latest.current = shown;
+  const sha = useRef<string | undefined>(undefined);
+  const writes = useRef<Promise<unknown>>(Promise.resolve());
+  const inFlight = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const waiting = useRef<T | undefined>(undefined);
+  useEffect(() => {
+    if (!remote.data || inFlight.current || remote.data.sha256 === sha.current) return;
+    const first: boolean = sha.current === undefined;
+    sha.current = remote.data.sha256;
+    if (first) return;
+    setLocal(undefined);
     setRevision((value) => value + 1);
-    save.clear();
-    remote.reload();
+  }, [remote.data]);
+  const commit = (value: T): Promise<boolean> => {
+    inFlight.current += 1;
+    setSaving(true);
+    const write: Promise<boolean> = writes.current.then(async () => {
+      try {
+        const result = await put({ value, baseSha256: sha.current ?? "" });
+        sha.current = result.sha256;
+        setError(null);
+        return true;
+      } catch (failure) {
+        if (failure instanceof ApiError && failure.status === 409) {
+          sha.current = undefined;
+          setLocal(undefined);
+          setRevision((old) => old + 1);
+          remote.reload();
+          setError("Changed elsewhere, so PeCore loaded the new version. Make your last change again.");
+        } else setError(errorText(failure));
+        return false;
+      } finally {
+        inFlight.current -= 1;
+        if (!inFlight.current) setSaving(false);
+      }
+    });
+    writes.current = write;
+    return write;
   };
+  const flush = (): void => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = undefined;
+    const value: T | undefined = waiting.current;
+    waiting.current = undefined;
+    if (value !== undefined && valid(value)) void commit(value);
+  };
+  const flushOnLeave = useRef(flush);
+  flushOnLeave.current = flush;
+  useEffect(() => () => flushOnLeave.current(), []);
   return {
-    value: snapshot?.value, current: remote.data?.value, editKey: (snapshot?.sha256 ?? "") + ":" + revision, reload: remote.reload, saving: save.busy,
-    dirty: draft !== undefined, discard, commit: (value: T): Promise<boolean> => save.run(value),
-    update(value: T): void { if (snapshot) setDraft({ ...snapshot, value }); },
+    value: shown, current: remote.data?.value, editKey: String(revision), reload: remote.reload, saving, commit, error,
+    update(change: T | ((value: T) => T)): void {
+      if (latest.current === undefined) return;
+      const value: T = typeof change === "function" ? (change as (value: T) => T)(latest.current) : change;
+      latest.current = value;
+      setLocal(value);
+      waiting.current = value;
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(flush, saveDelayMs);
+    },
     feedback: <>
       {remote.loading && !remote.data && <Spinner />}
-      <ErrorText error={save.error ?? remote.error} />
+      <ErrorText error={remote.error} />
     </>,
-    button(label: string, invalid = false): ReactNode {
-      return <Button variant="primary" loading={save.busy} disabled={!connected || !draft || invalid} onClick={() => { if (draft) void save.run(draft.value); }}>{label}</Button>;
-    },
   };
 }
 
@@ -97,16 +129,15 @@ function Section({ id, title, description, plain, children }: { id: string; titl
   );
 }
 
-function JsonField({ label, value, onValue, onInvalid }: { label: string; value: unknown; onValue(value: unknown): void; onInvalid(invalid: boolean): void }) {
+function JsonField({ label, value, onValue }: { label: string; value: unknown; onValue(value: unknown): void }) {
   const [text, setText] = useState<string>();
   const [invalid, setInvalid] = useState(false);
   return <TextArea label={label} mono value={text ?? JSON.stringify(value, null, 2)} error={invalid ? "Invalid JSON." : undefined} onValueChange={(next) => {
     setText(next);
     let parsed: unknown;
     try { parsed = JSON.parse(next); }
-    catch { setInvalid(true); onInvalid(true); return; }
+    catch { setInvalid(true); return; }
     setInvalid(false);
-    onInvalid(false);
     onValue(parsed);
   }} />;
 }
@@ -134,12 +165,12 @@ function LoginOutput({ id, progress, running }: { id: string; progress?: Progres
   </>;
 }
 
-const stateText: Record<string, string> = { logged_in: "Logged in", ready: "Ready", logged_out: "Logged out", no_models: "No models", error: "Error", unknown: "Unknown", unchecked: "Checking…" };
+const stateText: Record<string, string> = { logged_in: "Logged in", logged_out: "Logged out", no_models: "No models", error: "Error", unknown: "Unknown", unchecked: "Checking…" };
 
 function stateBadge(state: string, checking: boolean): ReactNode {
   if (checking || state === "unchecked") return <Badge>Checking…</Badge>;
   const text: string = stateText[state] ?? state;
-  if (state === "logged_in" || state === "ready") return <Badge tone="success" dot>{text}</Badge>;
+  if (state === "logged_in") return <Badge tone="success" dot>{text}</Badge>;
   if (state === "logged_out" || state === "error" || state === "no_models") return <Badge tone="danger" dot>{text}</Badge>;
   return <Badge>{text}</Badge>;
 }
@@ -252,8 +283,7 @@ function LoginControls({ accounts, protectedOnly = false, kind = "model" }: { ac
             const current: Progress | undefined = progress[login.id];
             const running: boolean = current ? !current.done : login.running;
             const checked: string = login.state === "unchecked" && autoChecked.current.has(login.id) && !checking.has(login.id) ? "unknown" : login.state;
-            const noIdentity: boolean = login.connector === "opencode";
-            const state: string = noIdentity && checked === "logged_in" ? "ready" : noIdentity && checked === "unknown" ? "no_models" : checked;
+            const state: string = login.connector === "opencode" && checked === "unknown" ? "no_models" : checked;
             const detail: string = login.email
               ? login.email + (login.plan ? " · " + login.plan : "")
               : state === "no_models" ? `Open ${name} and set up a model provider, then check again.`
@@ -269,8 +299,7 @@ function LoginControls({ accounts, protectedOnly = false, kind = "model" }: { ac
         const id: string | undefined = toolRuns[account.id];
         const output: Progress | undefined = id ? progress[id] : undefined;
         const busy: boolean = !!id && !output?.done;
-        const checked: string = toolStates[account.id] ?? (autoChecked.current.has(account.id) && !checking.has(account.id) ? "unknown" : "unchecked");
-        const state: string = account.kind === "forge" && account.tool === "git" && checked === "logged_in" ? "ready" : checked;
+        const state: string = toolStates[account.id] ?? (autoChecked.current.has(account.id) && !checking.has(account.id) ? "unknown" : "unchecked");
         return <AccountRow key={account.id}
           name={account.kind === "forge" ? `${forgeLabel(account.forge)} · ${account.user}` : account.service}
           detail={account.kind === "forge" ? account.host : `Log in with ${account.tool}, then check again.`}
@@ -344,9 +373,13 @@ type ModelChoice = { account: string; model: string; effort: string | null };
 function ModelPicker({ accounts, choice, onChoice, disabled, same = false }: { accounts: Account[]; choice: ModelChoice | null; onChoice(choice: ModelChoice | null): void; disabled: boolean; same?: boolean }) {
   const account: string = choice?.account ?? "";
   const options = useData(() => account ? call("accountOptions", { params: { id: account } }) : Promise.resolve(null), [account]);
+  const refresh = useAction(async () => {
+    await call("refreshAccountOptions", { params: { id: account } });
+    options.reload();
+  });
   const models: string[] = [...new Set([...(options.data?.models ?? []), ...(choice?.model ? [choice.model] : [])])];
   const efforts: string[] = [...new Set([...(options.data?.efforts ?? []).filter((effort) => effort !== "default"), ...(choice?.effort ? [choice.effort] : [])])];
-  const loading: boolean = !!account && options.loading;
+  const loading: boolean = !!account && (options.loading || refresh.busy);
   const current: Account | undefined = accounts.find(({ id }) => id === account);
   return <div className={s.grid}>
     <Select label="Provider" value={account || (same ? sameValue : null)} disabled={disabled} placeholder="Choose a provider"
@@ -355,14 +388,17 @@ function ModelPicker({ accounts, choice, onChoice, disabled, same = false }: { a
         else if (next && next !== account) onChoice({ account: next, model: "", effort: null });
       }}
       options={[...same ? [{ value: sameValue, label: "Same as the Assistant" }] : [], ...accounts.map((item) => ({ value: item.id, label: harnessName(item, accounts) }))]} />
-    {loading
-      ? <TextField label="Model" leading={<Spinner size={13} />} value="" placeholder={`Reading models from ${current ? harnessName(current, accounts) : account}…`} readOnly />
-      : <Combobox label="Model" value={choice?.model || null} disabled={disabled || !account} placeholder="Choose a model"
-        onValueChange={(model) => { if (choice && model) onChoice({ ...choice, model }); }}
-        options={models.map((model) => ({ value: model, label: model }))} />}
+    <div className={s.withButton}>
+      {loading
+        ? <TextField label="Model" leading={<Spinner size={13} />} value="" placeholder={`Reading models from ${current ? harnessName(current, accounts) : account}…`} readOnly />
+        : <Combobox label="Model" value={choice?.model || null} disabled={disabled || !account} placeholder="Choose a model"
+          onValueChange={(model) => { if (choice && model) onChoice({ ...choice, model }); }}
+          options={models.map((model) => ({ value: model, label: model }))} />}
+      <IconButton label="Read the models again" icon={<RefreshIcon />} disabled={disabled || !account || loading} onClick={() => void refresh.run()} />
+    </div>
     {loading
       ? <TextField label="Effort" leading={<Spinner size={13} />} value="" placeholder="Reading…" readOnly />
-      : <Select label="Effort" value={choice?.effort ?? "default"} disabled={disabled || !account}
+      : <Select label="Effort" value={choice?.effort ?? "default"} disabled={disabled || !choice?.model}
         onValueChange={(effort) => { if (choice) onChoice({ ...choice, effort: !effort || effort === "default" ? null : effort }); }}
         options={[{ value: "default", label: "Default" }, ...efforts.map((effort) => ({ value: effort, label: effort }))]} />}
   </div>;
@@ -404,7 +440,7 @@ function Connectors() {
 export function Settings() {
   const connected: boolean = useConnected();
   const { search } = useLocation();
-  const settings = useGlobalFile("settings", () => call("getSettings"), (body) => call("putSettings", { body }));
+  const settings = useGlobalFile("settings", () => call("getSettings"), (body) => call("putSettings", { body }), (value) => SettingsSchema.safeParse(value).success);
   const accounts = useGlobalFile("accounts", () => call("getAccounts"), (body) => call("putAccounts", { body }));
   const profiles = useData(() => call("getProfiles"), [], (message) => message.type === "definition.changed" && message.path === "profiles.json");
   const status = useData(() => call("getStatus"), []);
@@ -412,7 +448,6 @@ export function Settings() {
   const [checks, setChecks] = useState<RouteResult<"checkPrerequisites">>();
   const [disableDialog, setDisableDialog] = useState(false);
   const [addForge, setAddForge] = useState(false);
-  const [invalidJson, setInvalidJson] = useState<string[]>([]);
   const [active, setActive] = useState<string>(sections[0]!.id);
   const actualProtected: boolean = settings.current?.protectedMode ?? false;
   const check = useAction(async () => setChecks(await call("checkPrerequisites")));
@@ -422,8 +457,8 @@ export function Settings() {
     settings.reload();
     status.reload();
   });
-  const settingsResult = SettingsSchema.safeParse(settings.value);
   const value: SettingsValue | undefined = settings.value;
+  const problems = value ? SettingsSchema.safeParse(value).error?.issues : undefined;
   const update = settings.update;
   const [choices, setChoices] = useState<Partial<Record<Role, ModelChoice | null>>>({});
   const profileChoice = (id: string | null | undefined): ModelChoice | null => {
@@ -431,10 +466,21 @@ export function Settings() {
     return profile ? { account: profile.account, model: profile.model, effort: profile.effort } : null;
   };
   const shown = (role: Role): ModelChoice | null => role in choices ? choices[role] ?? null : profileChoice(settings.current?.[role].profile);
+  const profileWrites = useRef<Promise<unknown>>(Promise.resolve());
+  const saveChoice = useAction(async (role: Role, choice: ModelChoice) => {
+    const id: string = roleProfiles[role];
+    const write: Promise<unknown> = profileWrites.current.then(async () => {
+      const file = await call("getProfiles");
+      await call("putProfiles", { body: { value: { ...file.value, profiles: [...file.value.profiles.filter((profile) => profile.id !== id), { id, ...choice }] }, baseSha256: file.sha256 } });
+    });
+    profileWrites.current = write.catch(() => undefined);
+    await write;
+    update((old) => old[role].profile === id ? old : { ...old, [role]: { ...old[role], profile: id } });
+  });
   const choose = (role: Role, choice: ModelChoice | null): void => {
-    if (!value) return;
     setChoices((old) => ({ ...old, [role]: choice }));
-    update({ ...value, [role]: { ...value[role], profile: choice && roleProfiles[role] } });
+    if (!choice) update((old) => ({ ...old, [role]: { ...old[role], profile: null } }));
+    else if (choice.model) void saveChoice.run(role, choice);
   };
   const roleSection = (role: Role, description: string): ReactNode => value &&
     <Section id={role} title={roleTitles[role]} description={description}>
@@ -447,29 +493,10 @@ export function Settings() {
           onValueChange={(max) => update({ ...value, [role]: { ...value[role], compaction: { ...value[role].compaction, max: max ?? 0 } } })} />
       </div>
     </Section>;
-  const saveAll = useAction(async () => {
-    if (!value) return;
-    const written = (Object.entries(choices) as [Role, ModelChoice | null][]).flatMap(([role, choice]) => choice ? [{ role, choice }] : []);
-    const missing = written.find(({ choice }) => !choice.model);
-    if (missing) throw new Error(`Choose a model for the ${roleTitles[missing.role]}.`);
-    if (written.length) {
-      const file = await call("getProfiles");
-      const ids: Set<string> = new Set(written.map(({ role }) => roleProfiles[role]));
-      const others = file.value.profiles.filter(({ id }) => !ids.has(id));
-      await call("putProfiles", { body: { value: { ...file.value, profiles: [...others, ...written.map(({ role, choice }) => ({ id: roleProfiles[role], ...choice }))] }, baseSha256: file.sha256 } });
-      profiles.reload();
-    }
-    if (await settings.commit(value)) setChoices({});
-  });
-  const markJson = (key: string, invalid: boolean): void => {
-    if (invalid && settings.value) settings.update(settings.value);
-    setInvalidJson((old) => invalid ? [...new Set([...old, key])] : old.filter((item) => item !== key));
-  };
   const jsonField = (key: "prices" | "projectPaths" | "programPaths", label: string): ReactNode => value &&
-    <JsonField key={settings.editKey + key} label={label} value={value[key]} onValue={(data) => update({ ...value, [key]: data })} onInvalid={(invalid) => markJson(key, invalid)} />;
+    <JsonField key={settings.editKey + key} label={label} value={value[key]} onValue={(data) => update({ ...value, [key]: data })} />;
   const theme: string = themeChoice(value?.ui);
 
-  useEffect(() => { setInvalidJson([]); }, [settings.editKey]);
   useEffect(() => {
     const id: string | null = new URLSearchParams(search).get("section");
     if (id) document.getElementById(id)?.scrollIntoView({ block: "start" });
@@ -488,6 +515,7 @@ export function Settings() {
       <div className={s.content}>
         <Section id="accounts" title="Accounts" description="The AI tools and the code hosting accounts PeCore works with." plain>
           {accounts.feedback}
+          <ErrorText error={accounts.error} />
           <div className={s.groups}>
             <Card title="AI tools">
               {(accounts.current?.accounts ?? []).some(({ kind }) => kind === "model")
@@ -539,7 +567,7 @@ export function Settings() {
             <ErrorText error={protect.error} />
           </Dialog>
 
-          <Section id="notifications" title="Notifications" description="Quiet hours hold system notifications; they stay in the bell.">
+          <Section id="notifications" title="Notifications" description="Quiet hours hold system notifications; they stay in Notifications.">
             <Switch label="Quiet hours" checked={value.quietHours !== null} onCheckedChange={(checked) => update({ ...value, quietHours: checked ? { from: "22:00", to: "08:00" } : null })} />
             {value.quietHours && <div className={s.grid}>
               {(["from", "to"] as const).map((key) => <Field key={key} label={key === "from" ? "From" : "To"}><input type="time" value={value.quietHours?.[key]} onChange={(event) => { if (value.quietHours) update({ ...value, quietHours: { ...value.quietHours, [key]: event.target.value } }); }} /></Field>)}
@@ -568,7 +596,7 @@ export function Settings() {
           <Section id="advanced" title="Advanced" description="Rarely needed. Each field takes JSON.">
             <div className={ui.stack}>
               <div id="providers"><JsonField key={settings.editKey + "providers"} label="Concurrent agents by provider" value={value.limits.providers}
-                onValue={(data) => update({ ...value, limits: { ...value.limits, providers: data as SettingsValue["limits"]["providers"] } })} onInvalid={(invalid) => markJson("providers", invalid)} /></div>
+                onValue={(data) => update({ ...value, limits: { ...value.limits, providers: data as SettingsValue["limits"]["providers"] } })} /></div>
               <div id="prices">{jsonField("prices", "Prices by model")}</div>
               <div id="projectPaths">{jsonField("projectPaths", "Paths by project")}</div>
               <div id="programPaths">{jsonField("programPaths", "Absolute paths by tool")}</div>
@@ -598,15 +626,9 @@ export function Settings() {
         </Section>
       </div>
     </div>
-    {settings.dirty && <div className={s.saveBar} role="region" aria-label="Unsaved settings">
-      <span>You have unsaved changes.</span>
-      {!!invalidJson.length && <ErrorText error="Fix invalid JSON before saving." />}
-      <Issues issues={settingsResult.error?.issues} />
-      <span className={s.spacer} />
-      <ErrorText error={saveAll.error} />
-      <Button onClick={() => { setChoices({}); saveAll.clear(); settings.discard(); }}>Discard</Button>
-      <Button variant="primary" loading={saveAll.busy || settings.saving} disabled={!connected || !settingsResult.success || !!invalidJson.length || protect.busy || Object.values(choices).some((choice) => choice && !choice.model)}
-        onClick={() => void saveAll.run()}>Save settings</Button>
+    {(problems || settings.error || saveChoice.error) && <div className={s.problems} role="alert">
+      <Issues issues={problems} />
+      <ErrorText error={settings.error ?? saveChoice.error} />
     </div>}
   </Page>;
 }

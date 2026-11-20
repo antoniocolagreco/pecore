@@ -89,6 +89,7 @@ export function systemHandlers(engine: Engine) {
     recheckAccount: async ({ params }) => ({ state: await engine.recheckAccount(params.id) }),
     startAccountLogin: async ({ params }) => ({ loginId: await conflictOn(() => engine.startAccountLogin(params.id)) }),
     accountOptions: async ({ params }) => engine.accountOptions(params.id),
+    refreshAccountOptions: async ({ params }) => engine.accountOptions(params.id, true),
     checkPrerequisites: async (): Promise<PrerequisiteView[]> => (await prerequisites(engine)).map((p) => ({ ...p, setting: prerequisiteSetting[p.tool] ?? null })),
     getSetup: async () => engine.setupView(),
     startSetupLogin: async ({ params }) => ({ loginId: await conflictOn(() => engine.startSetupLogin(params.connector)) }),

@@ -278,6 +278,20 @@ describe("auto-setup", () => {
     await app.close();
   });
 
+  it("reads an account's models once and again only when asked to refresh", async () => {
+    const s = await setup();
+    await s.harnesses.set("opencode", opencode);
+    const app = await s.start();
+    const first = { models: ["openrouter/qwen/qwen3-max", "opencode/big-pickle", "openrouter/deepseek/deepseek-v4-flash"], efforts: ["low", "high"] };
+    expect(await app.call("accountOptions", { params: { id: "opencode" } })).toEqual(first);
+    await s.harnesses.set("opencode", { ...opencode, cliModels: ["opencode/big-pickle"] });
+    expect(await app.call("accountOptions", { params: { id: "opencode" } })).toEqual(first);
+    const refreshed = { models: ["opencode/big-pickle"], efforts: ["low", "high"] };
+    expect(await app.call("refreshAccountOptions", { params: { id: "opencode" } })).toEqual(refreshed);
+    expect(await app.call("accountOptions", { params: { id: "opencode" } })).toEqual(refreshed);
+    await app.close();
+  });
+
   it("writes nothing when its own record of past writes cannot be read", async () => {
     const s = await setup();
     await s.harnesses.set("claude-code", claude);

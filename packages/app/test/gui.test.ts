@@ -252,8 +252,7 @@ describe.skipIf(gui)("phase 5 gate: G16 actions from the GUI (built app, headles
     await go("#/settings");
     const section = page.locator("#mergeCheckSec");
     await section.getByLabel("Seconds").fill("120");
-    await page.getByRole("button", { name: "Save settings" }).click();
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1500);
     await shot("settings");
     const settings = JSON.parse(await readFile(join(root, "home", "settings.json"), "utf8")) as { mergeCheckSec: number };
     if (settings.mergeCheckSec !== 120) throw new Error(`mergeCheckSec is ${settings.mergeCheckSec}`);
