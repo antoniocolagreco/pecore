@@ -266,6 +266,7 @@ The prototype is normative only for: the gradients, Notifications as a list plus
 
 *   List: name, repo (or "local only"), base branch, jobs that need the user, failed jobs, warning when a login expired.
 *   Buttons: "New project", "Import project".
+*   With no projects, "New project" appears only in the empty state, not in the page header (decision 74).
 *   Project page, configuration only, in sections:
     *   General: name, base branch, default recipe (editable); id, repo, forge account (read-only after creation).
     *   Recipes (recipe editor), Nodes (node editor), Knowledge (IF4), Services, Ticket source (`label`, `pollSec`, trusted users), Export.

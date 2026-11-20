@@ -27,7 +27,7 @@ export function Projects() {
   }
   const newProject = <Button variant="primary" icon={<PlusIcon />} disabled={!connected} onClick={() => void navigate("/projects/new")}>New project</Button>;
   return (
-    <Page title="Projects" actions={newProject}>
+    <Page title="Projects" actions={projects.data?.length === 0 ? undefined : newProject}>
       <ErrorText error={projects.error ?? jobs.error} />
       {projects.data?.length === 0 && (
         <Card padded>
