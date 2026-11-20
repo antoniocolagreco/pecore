@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { NavLink, Outlet } from "react-router";
 import { call } from "../api/client";
@@ -46,7 +46,9 @@ export function Layout() {
   const connected = useConnected();
   const [menu, setMenu] = useState<boolean>(storedMenu);
   const [peek, setPeek] = useState<boolean>(false);
+  const armed = useRef<boolean>(true);
   const toggleMenu = (): void => {
+    armed.current = !menu;
     setMenu(!menu);
     setPeek(false);
     try {
@@ -65,7 +67,7 @@ export function Layout() {
 
   return (
     <div className={s.shell}>
-      <nav className={s.sidebar} aria-label="Main" hidden={!menu && !peek} data-overlay={!menu && peek ? "" : undefined} onMouseLeave={() => setPeek(false)}>
+      <nav className={s.sidebar} aria-label="Main" hidden={!menu && !peek} data-overlay={menu ? undefined : ""} onMouseLeave={() => setPeek(false)}>
         <div className={s.brand}>
           <IconButton label={menu ? "Hide menu" : "Keep menu open"} icon={<SidebarIcon />} onClick={toggleMenu} />
           <span className={s.mark}><SparkIcon size={14} /></span>
@@ -87,7 +89,8 @@ export function Layout() {
       </nav>
       <div className={s.main}>
         <header className={s.toolbar}>
-          {!menu && <IconButton label="Show menu" icon={<SidebarIcon />} onMouseEnter={() => setPeek(true)} onClick={toggleMenu} />}
+          {!menu && <IconButton label="Show menu" icon={<SidebarIcon />} onMouseEnter={() => armed.current && setPeek(true)}
+            onMouseLeave={() => { armed.current = true; }} onClick={toggleMenu} />}
           <div className={s.spacer} />
           <CommandPalette />
           <IconButton

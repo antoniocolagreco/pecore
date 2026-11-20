@@ -30,6 +30,22 @@
   z-index: 40;
   background: color-mix(in srgb, var(--surface) 92%, var(--bg));
   box-shadow: var(--popover-shadow);
+  transition:
+    opacity 180ms ease,
+    translate 220ms var(--ease-out),
+    display 220ms allow-discrete;
+}
+
+.sidebar[data-overlay][hidden] {
+  opacity: 0;
+  translate: -16px 0;
+}
+
+@starting-style {
+  .sidebar[data-overlay]:not([hidden]) {
+    opacity: 0;
+    translate: -16px 0;
+  }
 }
 
 .brand {
