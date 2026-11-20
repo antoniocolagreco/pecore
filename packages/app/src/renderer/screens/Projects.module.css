@@ -1,6 +1,6 @@
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
   gap: 12px;
 }
 
@@ -72,8 +72,19 @@ a.card:focus-visible {
   color: var(--text-2);
 }
 
+.repo > svg {
+  flex: none;
+}
+
+.repoName {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .branch {
-  margin-left: auto;
+  max-width: 45%;
+  overflow-wrap: anywhere;
   padding: 1px 6px;
   border-radius: 5px;
   background: var(--fill);
