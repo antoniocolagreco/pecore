@@ -40,16 +40,16 @@ a:hover {
     box-shadow var(--medium) var(--ease-out);
 }
 
-:where(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"]), select, textarea):hover {
+:where(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"]):hover, select:hover, textarea:hover) {
   border-color: var(--control-border-hover);
 }
 
-:where(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"]), select, textarea):focus-visible {
+:where(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"]):focus-visible, select:focus-visible, textarea:focus-visible) {
   border-color: var(--accent);
   box-shadow: var(--control-shadow), 0 0 0 3.5px var(--ring);
 }
 
-:where(input, select, textarea):disabled {
+:where(input:disabled, select:disabled, textarea:disabled) {
   opacity: 0.55;
 }
 

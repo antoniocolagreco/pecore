@@ -20,6 +20,7 @@ type TextProps = FieldProps & {
   name?: string;
   required?: boolean;
   autoFocus?: boolean;
+  readOnly?: boolean;
   size?: "sm" | "md";
   mono?: boolean;
 };
@@ -74,6 +75,7 @@ export function TextField({ label, description, error, disabled, className, lead
           name={input.name}
           required={input.required}
           autoFocus={input.autoFocus}
+          readOnly={input.readOnly}
           spellCheck={false}
         />
         {suffix && <span className={s.affix}>{suffix}</span>}
