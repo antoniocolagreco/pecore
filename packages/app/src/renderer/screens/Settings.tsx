@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { ApiError, Settings as SettingsSchema } from "@pecore/schemas";
+import { ApiError, forgeHost, Settings as SettingsSchema } from "@pecore/schemas";
 import type { Account, BuiltInHarness, ForgeAccount, LiveMessage, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
@@ -305,7 +305,7 @@ function AddForgeAccount({ open, onClose, onAdd, taken }: { open: boolean; onClo
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const base: (typeof forges)[SupportedForge] = forges[forge];
-  const server: string = host.trim() || base.host;
+  const server: string = forgeHost(host) || base.host;
   const id: string = `${base.tool}-${user || "account"}`.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
   const valid: boolean = !!server && !!user.trim() && !!name.trim() && /^[^@\s]+@[^@\s]+$/.test(email) && !taken.includes(id);
   return (

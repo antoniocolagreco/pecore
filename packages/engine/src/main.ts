@@ -5,7 +5,7 @@ import { applyTraverseAcls } from "./osuser/acl";
 import { cpus } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { removeAs } from "./workdir/fs-as";
-import { BuiltInHarness, defaultJobLimit } from "@pecore/schemas";
+import { BuiltInHarness, defaultJobLimit, withForgeHosts } from "@pecore/schemas";
 import { listOptions, satisfies } from "@pecore/agents";
 import type { LoginState } from "@pecore/agents";
 import type { Account, Accounts, ForgeAccount, JobState, LiveMessage, LoginView, Profiles, ProjectInput, Settings, SetupView, Tiers, WhyView } from "@pecore/schemas";
@@ -103,7 +103,7 @@ export class Engine extends EventEmitter {
       throw new EngineStartError(global.errors);
     }
     this.settings = global.value.settings;
-    this.accounts = global.value.accounts;
+    this.accounts = withForgeHosts(global.value.accounts);
     this.profiles = global.value.profiles;
     this.tiers = global.value.tiers;
     if (this.opts.agents) {
@@ -244,7 +244,7 @@ export class Engine extends EventEmitter {
     const g = await loadGlobal(this.opts.home);
     if (!g.value) return g.errors;
     this.settings = g.value.settings;
-    this.accounts = g.value.accounts;
+    this.accounts = withForgeHosts(g.value.accounts);
     this.profiles = g.value.profiles;
     this.tiers = g.value.tiers;
     for (const { ctx } of this.projects.values()) ctx.settings = this.settings;

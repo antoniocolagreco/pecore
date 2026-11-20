@@ -27,6 +27,10 @@ export const ForgeAccount = z
   })
   .strict();
 
+export function forgeHost(host: string): string {
+  return host.trim().replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/^[^@/]*@/, "").split("/")[0]!.toLowerCase();
+}
+
 export const ServiceAccount = z
   .object({
     id: AccountId,
@@ -57,3 +61,7 @@ export const Accounts = z
     }
   });
 export type Accounts = z.infer<typeof Accounts>;
+
+export function withForgeHosts(file: Accounts): Accounts {
+  return { ...file, accounts: file.accounts.map((account) => account.kind === "forge" ? { ...account, host: forgeHost(account.host) } : account) };
+}
