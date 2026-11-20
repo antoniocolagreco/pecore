@@ -36,6 +36,7 @@ export default defineConfig({
   renderer: {
     root: resolve(import.meta.dirname, "src/renderer"),
     plugins: [react()],
+    server: { watch: { usePolling: true, interval: 200 } },
     build: { rollupOptions: { input: { index: resolve(import.meta.dirname, "src/renderer/index.html") } } },
   },
 });
