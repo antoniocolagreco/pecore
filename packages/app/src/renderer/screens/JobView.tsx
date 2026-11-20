@@ -180,8 +180,8 @@ function Loaded({ detail, error, reasons, whyError, reload }: { detail: JobDetai
     >
       <div className={s.meta}>
         <StateLabel info={info} />
-        <span className={s.metaItem}><FolderIcon size={13} />{job.projectId}</span>
-        <span className={s.metaItem}><code>{job.branch}</code><ArrowRightIcon size={12} /><code>{job.target}</code></span>
+        <span className={s.metaItem}><FolderIcon />{job.projectId}</span>
+        <span className={s.metaItem}><code>{job.branch}</code><ArrowRightIcon size="xs" /><code>{job.target}</code></span>
         {job.mergedAt !== null && <Badge tone="success">Merged</Badge>}
         {mergeStatus && <span role="status" className={ui.muted}>{mergeStatus}</span>}
       </div>

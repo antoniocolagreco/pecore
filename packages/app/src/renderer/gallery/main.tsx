@@ -143,9 +143,9 @@ function Gallery() {
           value={theme}
           onValueChange={(v) => setTheme(v as Theme)}
           options={[
-            { value: "system", label: <><span className={g.themeIcon}><MonitorIcon size={14} /></span>System</> },
-            { value: "light", label: <><span className={g.themeIcon}><SunIcon size={14} /></span>Light</> },
-            { value: "dark", label: <><span className={g.themeIcon}><MoonIcon size={14} /></span>Dark</> },
+            { value: "system", label: <><span className={g.themeIcon}><MonitorIcon /></span>System</> },
+            { value: "light", label: <><span className={g.themeIcon}><SunIcon /></span>Light</> },
+            { value: "dark", label: <><span className={g.themeIcon}><MoonIcon /></span>Dark</> },
           ]}
         />
       </header>
@@ -167,13 +167,13 @@ function Gallery() {
           <TextField label="Website" prefix="https://" placeholder="example.com" type="url" />
         </Example>
         <Example caption="Leading icon and suffix">
-          <TextField label="Work folder" leading={<FolderIcon size={15} />} defaultValue="~/code/pippo" suffix=".git" />
+          <TextField label="Work folder" leading={<FolderIcon />} defaultValue="~/code/pippo" suffix=".git" />
         </Example>
         <Example caption="Monospace">
           <TextField label="Branch" defaultValue="pecore/fix-login-redirect" mono />
         </Example>
         <Example caption="Small">
-          <TextField label="Tag" size="sm" leading={<LinkIcon size={13} />} placeholder="v1.2.0" />
+          <TextField label="Tag" size="sm" leading={<LinkIcon />} placeholder="v1.2.0" />
         </Example>
       </Section>
 
@@ -435,7 +435,7 @@ function MoreComponents() {
         <div className={g.wide}>
           <Card padded>
             <EmptyState
-              icon={<InboxIcon size={20} />}
+              icon={<InboxIcon />}
               title="Nothing needs you"
               action={<Button variant="primary" icon={<ArrowUpIcon />}>Give the orchestrator a task</Button>}
             >

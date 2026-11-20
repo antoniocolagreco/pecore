@@ -286,6 +286,16 @@ export class OrchestratorChats {
     this.changed(assistantChat);
   }
 
+  async clear(): Promise<void> {
+    if (this.closed || this.db.busy(assistantChat)) throw new HttpError("conflict", "the chat is unavailable or has a pending turn");
+    const attachments: ChatAttachment[] = this.db.attachments(assistantChat);
+    this.db.clearChat(assistantChat);
+    clearTimeout(this.idle.get(assistantChat));
+    this.idle.delete(assistantChat);
+    this.changed(assistantChat);
+    await Promise.all(attachments.map(({ path }) => rm(path, { force: true }).catch((error: unknown) => console.error("clear chat attachment:", error))));
+  }
+
   hand(projectId: string, order: IntakeOrder): void {
     this.requiredConfiguration("orchestrator");
     if (this.closed) throw new HttpError("conflict", "the chat is shutting down");

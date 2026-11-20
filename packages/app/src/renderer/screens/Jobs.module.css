@@ -32,8 +32,8 @@
 .disclosure {
   display: inline-grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
+  width: var(--mini-h);
+  height: var(--mini-h);
   margin-inline-end: 4px;
   border-radius: 4px;
   vertical-align: -3px;

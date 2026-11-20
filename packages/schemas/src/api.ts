@@ -470,7 +470,9 @@ export const routes = {
   getStatus: { method: "GET", path: "/status", response: StatusView },
   listNotifications: { method: "GET", path: "/notifications", response: z.array(NotificationView) },
   markNotificationsSeen: { method: "POST", path: "/notifications/seen", response: Ok },
+  deleteNotification: { method: "DELETE", path: "/notifications/:id", params: IdParams, response: Ok },
   getChat: { method: "GET", path: "/chat", response: ChatDetail },
+  clearChat: { method: "DELETE", path: "/chat", response: Ok },
   sendChatMessage: { method: "POST", path: "/chat/messages", body: SendChatMessageBody, response: ChatMessageView },
   uploadChatAttachment: {
     method: "POST",

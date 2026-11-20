@@ -19,7 +19,7 @@ function SelectItem({ option }: { option: Option }) {
   return (
     <BaseSelect.Item className={s.item} value={option.value} disabled={option.disabled}>
       <BaseSelect.ItemIndicator className={s.itemIndicator}>
-        <CheckIcon size={14} strokeWidth={2} />
+        <CheckIcon bold />
       </BaseSelect.ItemIndicator>
       <BaseSelect.ItemText className={s.itemText}>{option.label}</BaseSelect.ItemText>
       {option.detail && <span className={s.itemDetail}>{option.detail}</span>}
@@ -50,13 +50,13 @@ export function Select({
         <BaseSelect.Trigger className={s.trigger} aria-label={ariaLabel}>
           <BaseSelect.Value className={s.value} placeholder={placeholder} />
           <BaseSelect.Icon className={s.chevron}>
-            <ChevronUpDownIcon size={12} strokeWidth={2} />
+            <ChevronUpDownIcon bold />
           </BaseSelect.Icon>
         </BaseSelect.Trigger>
         <BaseSelect.Portal>
           <BaseSelect.Positioner className={s.positioner} sideOffset={6}>
             <BaseSelect.Popup className={s.popup}>
-              <BaseSelect.ScrollUpArrow className={s.scrollArrow}><ChevronUpIcon size={12} /></BaseSelect.ScrollUpArrow>
+              <BaseSelect.ScrollUpArrow className={s.scrollArrow}><ChevronUpIcon /></BaseSelect.ScrollUpArrow>
               <BaseSelect.List className={s.list}>
                 {isGroups(options)
                   ? options.map((group, i) => (
@@ -68,7 +68,7 @@ export function Select({
                     ))
                   : options.map((o) => <SelectItem key={o.value} option={o} />)}
               </BaseSelect.List>
-              <BaseSelect.ScrollDownArrow className={s.scrollArrow}><ChevronDownIcon size={12} /></BaseSelect.ScrollDownArrow>
+              <BaseSelect.ScrollDownArrow className={s.scrollArrow}><ChevronDownIcon /></BaseSelect.ScrollDownArrow>
             </BaseSelect.Popup>
           </BaseSelect.Positioner>
         </BaseSelect.Portal>
@@ -87,7 +87,7 @@ function ComboPopup({ empty }: { empty: ReactNode }) {
             {(option: Option) => (
               <BaseCombobox.Item key={option.value} value={option} className={s.item} disabled={option.disabled}>
                 <BaseCombobox.ItemIndicator className={s.itemIndicator}>
-                  <CheckIcon size={14} strokeWidth={2} />
+                  <CheckIcon bold />
                 </BaseCombobox.ItemIndicator>
                 <span className={s.itemText}>{option.label}</span>
                 {option.detail && <span className={s.itemDetail}>{option.detail}</span>}
@@ -133,10 +133,10 @@ export function Combobox({
           <BaseCombobox.Input render={<Field.Control />} className={f.input} placeholder={placeholder} spellCheck={false} />
           <span className={f.trailing}>
             {clearable && <BaseCombobox.Clear className={`${f.iconButton} ${f.clear}`} aria-label="Clear">
-              <XIcon size={10} strokeWidth={2.4} />
+              <XIcon size="xs" bold />
             </BaseCombobox.Clear>}
             <BaseCombobox.Trigger className={s.chevron} aria-label="Show options">
-              <ChevronUpDownIcon size={12} strokeWidth={2} />
+              <ChevronUpDownIcon bold />
             </BaseCombobox.Trigger>
           </span>
         </BaseCombobox.InputGroup>
@@ -177,7 +177,7 @@ export function MultiCombobox({
                   <BaseCombobox.Chip key={o.value} className={s.chip} aria-label={o.label}>
                     {o.label}
                     <BaseCombobox.ChipRemove className={s.chipRemove} aria-label={`Remove ${o.label}`}>
-                      <XIcon size={10} strokeWidth={2.2} />
+                      <XIcon size="xs" />
                     </BaseCombobox.ChipRemove>
                   </BaseCombobox.Chip>
                 ))}

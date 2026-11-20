@@ -164,7 +164,8 @@ The prototype is normative only for: the Everforest palette and gradients, Notif
 ### Navigation (left)
 
 *   Window: menu on the left, the page in the centre, the Assistant chat on the right (decision 32). The chat takes 30% of the width, between 300 and 380 px.
-*   The menu hides and shows with a button at the top left of the page (decision 34). The choice is remembered; the first time, the menu starts hidden below 1280 px of width. With the menu hidden, pointing at the button shows the menu over the page until the pointer leaves it; clicking keeps it open in its column (decision 41).
+*   The menu collapses and expands with a button at the top left (decision 34). The choice is remembered; the first time, the menu starts collapsed below 1280 px of width. Collapsed, it is a column of icons, each showing its name on pointing (decision 55).
+*   The chat panel's width changes by dragging its left edge or with the arrow keys on it (decision 56).
 *   One list, no group titles (decision 14): Notifications (counter, IA2), Factory, Jobs, Projects, Library, Usage, Settings.
 *   Under the list, the open page's own sub-navigation (decision 13): Settings sections.
 *   Note: a project's recipes, nodes and settings are reached through Projects; the node editor and the job view are detail pages, not menu items.
@@ -230,7 +231,7 @@ The prototype is normative only for: the Everforest palette and gradients, Notif
 
 ### Notifications
 
-*   One list, all projects (decision 45). First the items to decide, oldest first, each marked with a dot: kind label ("Human review", "Engine node", ...), project, the job when the item has one, age. Then the notification log (`GET /notifications`), newest first: title, text, age; a row opens its job or item to decide. Opening the page marks the notifications seen.
+*   One list, all projects (decision 45). First the items to decide, oldest first, each marked with a dot: kind label ("Human review", "Engine node", ...), project, the job when the item has one, age. Then the notification log (`GET /notifications`), newest first: title, text, age; a row opens its job or item to decide, and its trash button deletes it (decision 58). Opening the page marks the notifications seen.
 *   The detail pane appears only when an item to decide is open.
 *   Empty: "Nothing new".
 *   Every detail renders the item's `subject` snapshot, never a file read at decision time, and shows its sha256. The decision is sent with that hash. Items never change: a definition edited while its item is open cancels the item and creates a new one (design.md `confirm.ts`). If `queue.updated` reports the open item resolved or cancelled (for example a review cancelled by a base change), the detail locks with a banner and a button that opens the new item, if any.
@@ -248,8 +249,9 @@ The prototype is normative only for: the Everforest palette and gradients, Notif
 
 ### Assistant chat (right panel)
 
-*   One chat for the whole app, always on the right of every screen (decisions 32, 36). No conversation list, no page of its own. Its header has only the Compact button.
+*   One chat for the whole app, always on the right of every screen (decisions 32, 36). No conversation list, no page of its own. Its header has two icon buttons: Compact, and Clear, which after a confirmation deletes the conversation and starts a new Assistant session (decision 57).
 *   The user talks only to the Assistant. The Orchestrator, which works in the background on new issues of linked projects, never chats and never writes in this chat: what it does arrives as a notification, for example "Shop, ticket 42: The Orchestrator created the job Fix login." (decisions 38, 44).
+*   The user's messages sit in a bubble that keeps the accent colour at the bottom-right corner and fades towards the top-left to a lighter shade in light themes, a darker one in dark themes (`--bubble-user`); the Assistant's replies have no bubble (decision 59).
 *   The reply appears while it is written (decision 20). Until it starts, animated dots under the user's message show the Assistant is working (decision 23).
 *   After sending, the cursor stays in the message box (decision 22).
 *   Compaction (decision 24): the Compact button, or `/compact` typed as a message, sends the harness's own compaction command to the chat's session. The chat shows a divider ("Compacting the conversation…", then "Conversation compacted"), no reply.
@@ -433,6 +435,21 @@ Color is never the only signal: every state also has an icon and its label.
 
 Status tokens need at least 3:1 contrast against `surface` in every theme.
 
+## Size tokens
+
+Every size lives in `ds/tokens.css`; components use only these variables, never a written number for text, control, row or icon size (decision 54). The scale follows Claude web for readability.
+
+| Token | Value | Use |
+|---|---|---|
+| `--text-size-xs`, `-sm`, base `--text-size`, `-md`, `-lg`, `-xl` | 12, 13, 14, 15, 17, 24 px | captions and badges, secondary text, body, chat messages and emphasis, section and dialog titles, page titles |
+| `--line-height` | 1.5 | body text |
+| `--control-h-lg`, `--control-h`, `--control-h-sm` | 42, 36, 30 px | buttons, fields, selects |
+| `--row-h-lg`, `--row-h`, `--row-h-sm` | 44, 34, 30 px | table rows, menu and list rows, popup and menu items |
+| `--mini-h`, `--tag-h` | 24, 22 px | small buttons inside fields and chips; badges, counters, key hints |
+| `--icon-button-size`, `-sm` | 32, 28 px | buttons with only an icon |
+| `--icon-size`, `-sm`, `-xs` | 20, 16, 12 px | icon `size="md"` (icon buttons, menu), default `sm` (next to text), `xs` (arrows and crosses inside fields) |
+| `--icon-stroke`, `-bold` | 1.5, 2 px | icon line width at every icon size |
+
 ## Decisions
 
 | # | Decision |
@@ -441,7 +458,7 @@ Status tokens need at least 3:1 contrast against `surface` in every theme.
 | UI2 | Factory is a summary dashboard; every function has its own page with the full detail. |
 | UI2b | Withdrawn: the Assistant chat is always on the right of every screen, with no page of its own (decisions 32, 36). |
 | UI3 | Dark green base and translucent panels, as in the prototype. |
-| UI4 | Themes: every color is a CSS variable; a theme is a JSON file of tokens in `PECORE_HOME/themes/`, validated by a JSON Schema; missing tokens fall back to the default theme; values must be colors. Shipped: dark green (default) and light. The user can add themes. |
+| UI4 | Themes: every color is a CSS variable. Settings > Appearance has a mode (System, Light, Dark) and a theme for light and one for dark; System follows the operating system (decision 60). Shipped: Default Light, Default Dark, Everforest Light, Everforest Dark, as variable blocks in `ds/tokens.css`. The user can add a theme as a JSON file of tokens in `PECORE_HOME/themes/`, validated by a JSON Schema; missing tokens fall back to the default theme; values must be colors; the file is offered as a light or dark theme by its background. |
 | UI5 | No images. The background is a fixed gradient of `bg-gradient-1` and `bg-gradient-2`, with no animation. |
 | UI6 | Animation only on running state (pulse); off with `prefers-reduced-motion` or Settings > Appearance > Reduced motion. No progress percentages: an agent node shows state, duration, round and attempts. |
 | UI7 | Components: Base UI (unstyled, behaviour and accessibility); styles: CSS Modules with the theme's CSS variables. |

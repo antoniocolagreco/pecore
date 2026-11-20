@@ -31,7 +31,7 @@ export function Projects() {
       <ErrorText error={projects.error ?? jobs.error} />
       {projects.data?.length === 0 && (
         <Card padded>
-          <EmptyState icon={<FolderIcon size={20} />} title="No projects yet" action={newProject}>
+          <EmptyState icon={<FolderIcon size="md" />} title="No projects yet" action={newProject}>
             A project is a repository PeCore works on. It can live only on this computer or on GitHub and GitLab.
           </EmptyState>
         </Card>
@@ -43,11 +43,11 @@ export function Projects() {
           const body = (
             <>
               <span className={s.head}>
-                <span className={s.icon}><FolderIcon size={16} /></span>
+                <span className={s.icon}><FolderIcon /></span>
                 <span className={s.name}>{project?.name ?? id}</span>
               </span>
               <span className={s.repo}>
-                {project?.repo ? <><LinkIcon size={12} />{project.repo.url.replace(/^https?:\/\//, "").replace(/\.git$/, "")}</> : "Local only"}
+                {project?.repo ? <><LinkIcon size="xs" />{project.repo.url.replace(/^https?:\/\//, "").replace(/\.git$/, "")}</> : "Local only"}
                 {project && <span className={s.branch}>{project.baseBranch}</span>}
               </span>
               <span className={s.badges}>

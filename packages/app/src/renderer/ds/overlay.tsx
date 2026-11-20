@@ -88,12 +88,12 @@ function ToastList() {
   return toasts.map((toast) => (
     <Toast.Root key={toast.id} toast={toast} className={s.toast} swipeDirection={["right", "down"]}>
       <Toast.Content className={s.toastContent}>
-        <span className={s.toastIcon}><BellIcon size={15} /></span>
+        <span className={s.toastIcon}><BellIcon /></span>
         <div className={s.toastText}>
           <Toast.Title className={s.toastTitle} />
           <Toast.Description className={s.toastDescription} />
         </div>
-        <Toast.Close className={s.toastClose} aria-label="Dismiss"><XIcon size={12} /></Toast.Close>
+        <Toast.Close className={s.toastClose} aria-label="Dismiss"><XIcon size="xs" /></Toast.Close>
       </Toast.Content>
     </Toast.Root>
   ));

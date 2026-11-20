@@ -18,7 +18,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button ref={ref} type="button" className={classes} disabled={disabled || loading} aria-busy={loading || undefined} {...rest}>
       {icon && <span className={s.icon}>{icon}</span>}
       {children && <span>{children}</span>}
-      {loading && <span className={s.spinner}><Spinner size={14} /></span>}
+      {loading && <span className={s.spinner}><Spinner /></span>}
     </button>
   );
 });

@@ -26,7 +26,7 @@ export function SidebarItem({ to, onClick, active, trailing, children }: { to?: 
   const content: ReactNode = <><span className={s.subLabel}>{children}</span>{trailing}</>;
   return <li>
     {to !== undefined
-      ? <Link className={className} to={to} aria-current={active ? "page" : undefined}>{content}</Link>
+      ? <Link className={className} to={to} draggable={false} aria-current={active ? "page" : undefined}>{content}</Link>
       : <button type="button" className={className} aria-current={active ? "true" : undefined} onClick={onClick}>{content}</button>}
   </li>;
 }

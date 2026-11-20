@@ -10,7 +10,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 34px;
+  height: var(--row-h);
   padding: 0 10px;
   border: 0;
   background: transparent;
@@ -77,19 +77,19 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  height: 32px;
+  height: var(--row-h-sm);
   padding: 0 12px;
   border-bottom: 1px solid var(--separator);
   background: var(--surface);
   color: var(--text-3);
-  font-size: 11.5px;
+  font-size: var(--text-size-xs);
   font-weight: 600;
   text-align: left;
   white-space: nowrap;
 }
 
 .table td {
-  height: 42px;
+  height: var(--row-h-lg);
   padding: 0 12px;
   border-bottom: 1px solid var(--separator);
   vertical-align: middle;
@@ -139,7 +139,7 @@
 
 .mono {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--text-size-sm);
 }
 
 .truncate {
@@ -188,7 +188,7 @@ button.stat:active {
 }
 
 .statValue {
-  font-size: 22px;
+  font-size: var(--text-size-xl);
   font-weight: 650;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;

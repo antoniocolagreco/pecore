@@ -21,7 +21,7 @@
 
 .title {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--text-size-xl);
   font-weight: 650;
   letter-spacing: -0.01em;
 }
@@ -41,7 +41,7 @@
 
 .sectionTitle {
   margin: 0 0 4px;
-  font-size: 15px;
+  font-size: var(--text-size-lg);
   font-weight: 600;
 }
 
@@ -64,7 +64,7 @@
 }
 
 .caption {
-  font-size: 11px;
+  font-size: var(--text-size-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;

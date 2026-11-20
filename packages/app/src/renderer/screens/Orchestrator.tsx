@@ -11,7 +11,7 @@ import type { StateInfo } from "../components/states";
 import { ErrorText, dateTime, time } from "../components/ui";
 import { Button, IconButton } from "../ds/button";
 import { Alert, Spinner } from "../ds/feedback";
-import { ArrowUpIcon, ClipIcon, SparkIcon, XIcon } from "../ds/icons";
+import { ArrowUpIcon, ClipIcon, CompactIcon, SparkIcon, TrashIcon, XIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { definitionUrl, object, settingUrl, string } from "./NodeEditor";
 import s from "./Orchestrator.module.css";
@@ -79,7 +79,7 @@ function ActionCard({ action, connected }: { action: ChatActionView; connected: 
   return (
     <div className={s.action}>
       <div className={s.actionHead}>
-        <SparkIcon size={13} />
+        <SparkIcon />
         <span className={s.tool}>{action.tool.replaceAll("_", " ")}</span>
         {project && <span className={s.actionMeta}>{project}</span>}
         {state && <span className={s.actionMeta}>{state}</span>}
@@ -126,10 +126,10 @@ function Message({ message, attachments, actions, connected, reload }: {
     reload();
   });
   const user: boolean = message.role === "user";
-  const state: StateInfo | null = messageStates[message.state];
+  const state: StateInfo | null = user && message.state === "running" ? null : messageStates[message.state];
   return (
     <article className={`${s.message} ${user ? s.user : s.assistant}`}>
-      {!user && <span className={s.avatar} aria-hidden><SparkIcon size={14} /></span>}
+      {!user && <span className={s.avatar} aria-hidden><SparkIcon /></span>}
       <div className={s.body}>
         <div className={s.meta}>
           <span className={s.author}>{user ? "You" : "Assistant"}</span>
@@ -166,7 +166,7 @@ function Compaction({ message }: { message: ChatMessageView }) {
       : message.state === "failed" ? "Compaction failed" : "Compaction interrupted";
   return (
     <div className={s.compaction} role="status">
-      <span className={s.compactionLabel}>{pending && <Spinner size={12} />}{label}</span>
+      <span className={s.compactionLabel}>{pending && <Spinner size="xs" />}{label}</span>
       <ErrorText error={message.error} />
     </div>
   );
@@ -175,7 +175,7 @@ function Compaction({ message }: { message: ChatMessageView }) {
 function Activity({ actions, connected, working }: { actions: ChatActionView[]; connected: boolean; working: boolean }) {
   return (
     <article className={`${s.message} ${s.assistant}`}>
-      <span className={s.avatar} aria-hidden><SparkIcon size={14} /></span>
+      <span className={s.avatar} aria-hidden><SparkIcon /></span>
       <div className={s.body}>
         <div className={s.meta}><span className={s.author}>Assistant</span></div>
         {working && <div className={s.thinking} role="status" aria-label="The Assistant is working on a reply"><span /><span /><span /></div>}
@@ -243,7 +243,7 @@ function Composer({ supportsImages, connected, ready, reload, autoFocus }: {
         {images.length > 0 && <ul className={s.chips} aria-label="Selected images">
           {images.map(({ key, file }) => <li key={key} className={s.chip}>
             {file.name} · {fileSize(file.size)}
-            <IconButton size="sm" label={`Remove ${file.name}`} icon={<XIcon size={11} />} disabled={disabled} onClick={() => setImages((pending) => pending.filter((image) => image.key !== key))} />
+            <IconButton size="sm" label={`Remove ${file.name}`} icon={<XIcon />} disabled={disabled} onClick={() => setImages((pending) => pending.filter((image) => image.key !== key))} />
           </li>)}
         </ul>}
         <textarea
@@ -278,9 +278,9 @@ function Composer({ supportsImages, connected, ready, reload, autoFocus }: {
               event.currentTarget.value = "";
             }}
           />
-          <IconButton size="sm" label={imageReason} icon={<ClipIcon size={15} />} disabled={disabled || supportsImages !== true} onClick={() => fileInput.current?.click()} />
+          <IconButton label={imageReason} icon={<ClipIcon />} disabled={disabled || supportsImages !== true} onClick={() => fileInput.current?.click()} />
           <span className={s.composerHint}>{send.busy ? "Sending…" : "Enter to send · Shift Enter for a new line"}</span>
-          <Button type="submit" variant="primary" className={s.send} aria-label="Send" disabled={!canSend} icon={send.busy ? <Spinner size={14} /> : <ArrowUpIcon size={15} strokeWidth={2.2} />} />
+          <Button type="submit" variant="primary" className={s.composerAction} aria-label="Send" disabled={!canSend} icon={send.busy ? <Spinner /> : <ArrowUpIcon bold />} />
         </div>
       </form>
       {(imageError || send.error) && <div className={s.footnote}><ErrorText error={imageError ?? send.error} /></div>}
@@ -320,11 +320,15 @@ export function ChatPanel() {
     await call("sendChatMessage", { body: { text: chatCompactCommand, attachmentIds: [] } });
     detail.reload();
   });
-  const last: ChatMessageView | undefined = chat?.messages.at(-1);
-  const turnPending: boolean = last?.role === "user" && (last.state === "queued" || last.state === "running");
+  const clear = useAction(async () => {
+    await call("clearChat");
+    detail.reload();
+  });
+  const turnPending: boolean = chat?.messages.some(({ state }) => state === "queued" || state === "running") ?? false;
   const replied: Set<string> = new Set(chat?.messages.flatMap(({ replyTo }) => replyTo ? [replyTo] : []) ?? []);
   const pending: ChatMessageView | undefined = chat?.messages.find((message) => message.role === "user" && (message.state === "running" || message.state === "queued") && !isCompaction(message));
-  const canCompact: boolean = connected && !compact.busy && !turnPending && !!chat?.messages.some((message) => message.state === "completed" && !isCompaction(message));
+  const canManage: boolean = connected && !compact.busy && !clear.busy && !turnPending;
+  const canCompact: boolean = canManage && !!chat?.messages.some((message) => message.state === "completed" && !isCompaction(message));
 
   useEffect(() => {
     const update = (): void => setActive(document.visibilityState === "visible" && document.hasFocus());
@@ -366,12 +370,14 @@ export function ChatPanel() {
   const pendingActions: ChatActionView[] = pending ? actions.get(pending.id) ?? [] : [];
   return (
     <aside className={s.panel} aria-label="Assistant"><section className={s.pane}>
-      <header className={s.paneHeader}>
-        <Button size="sm" className={s.headerAction} disabled={!canCompact} loading={compact.busy}
-          title="Summarize the conversation so far, so the Assistant keeps its context short" onClick={() => void compact.run()}>Compact</Button>
-      </header>
+      <div className={s.toolbar} role="group" aria-label="Conversation controls">
+        <IconButton label="Compact conversation" icon={<CompactIcon />} disabled={!canCompact} loading={compact.busy} onClick={() => void compact.run()} />
+        <IconButton label="Clear conversation" icon={<TrashIcon />} disabled={!canManage || !chat?.messages.length} loading={clear.busy} onClick={() => {
+          if (window.confirm("Delete this conversation and start a new Assistant session?")) void clear.run();
+        }} />
+      </div>
+      {(compact.error || clear.error) && <div className={s.footnote}><ErrorText error={compact.error ?? clear.error} /></div>}
       {detail.error && <div className={s.footnote}><ErrorText error={detail.error} /></div>}
-      {compact.error && <div className={s.footnote}><ErrorText error={compact.error} /></div>}
       {markRead.error && <div className={s.footnote}><Alert tone="danger" actions={<Button size="sm" disabled={!connected || markRead.busy} onClick={() => void markRead.run()}>Mark as read</Button>}>{markRead.error}</Alert></div>}
       <div ref={history} className={s.history} role="log" aria-label="Conversation messages" tabIndex={0} onScroll={(event) => {
         const pane: HTMLDivElement = event.currentTarget;
@@ -401,7 +407,7 @@ export function ChatPanel() {
           </Alert>
         </div>
       )}
-      {chat && <Composer connected={connected} ready={ready === true} supportsImages={chat.supportsImages} reload={detail.reload} autoFocus />}
+      {chat && <Composer connected={connected} ready={ready === true && !clear.busy} supportsImages={chat.supportsImages} reload={detail.reload} autoFocus />}
       {definition && <DefinitionPreview key={definition} path={definition} onClose={() => setQuery({}, { replace: true })} />}
     </section></aside>
   );

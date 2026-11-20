@@ -1,12 +1,8 @@
 import { useEffect, useState } from "react";
 import { call } from "../api/client";
 import { useData } from "../api/hooks";
-import { applyTheme, systemMode } from "./themes";
-import type { Mode } from "./themes";
-
-export function themeChoice(ui: Record<string, unknown> | undefined): string {
-  return typeof ui?.theme === "string" ? ui.theme : "builtin:system";
-}
+import { applyTheme, systemMode, themePrefs } from "./themes";
+import type { Mode, ThemePrefs } from "./themes";
 
 function useSystemMode(): Mode {
   const [mode, setMode] = useState<Mode>(systemMode);
@@ -23,12 +19,12 @@ export function ThemeLoader() {
   const settings = useData(() => call("getSettings"), [], (m) => m.type === "definition.changed" && (m.path === "settings.json" || m.path.startsWith("themes/")));
   const files = useData(() => call("listThemes"), [], (m) => m.type === "definition.changed" && m.path.startsWith("themes/"));
   const system = useSystemMode();
-  const choice = themeChoice(settings.data?.value.ui);
+  const prefs: ThemePrefs = themePrefs(settings.data?.value.ui);
+  const mode: Mode = prefs.mode === "system" ? system : prefs.mode;
+  const choice: string = prefs[mode];
   useEffect(() => {
-    if (choice === "builtin:light") return applyTheme("light", null);
-    if (choice === "builtin:dark") return applyTheme("dark", null);
     const file = choice.startsWith("builtin:") ? undefined : files.data?.find((f) => f.file === choice);
-    return applyTheme(system, file?.theme ?? null);
-  }, [choice, files.data, system]);
+    return applyTheme(mode, choice, file?.theme ?? null);
+  }, [mode, choice, files.data]);
   return null;
 }

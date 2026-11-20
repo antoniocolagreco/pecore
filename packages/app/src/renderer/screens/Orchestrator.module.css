@@ -1,5 +1,5 @@
 .panel {
-  grid-column: 3;
+  grid-area: 1 / 3;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -16,14 +16,13 @@
   min-height: 0;
 }
 
-.paneHeader {
+.toolbar {
   display: flex;
-  flex: none;
+  flex: 0 0 52px;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
-  height: 52px;
   padding: 0 12px;
-  border-bottom: 1px solid var(--separator);
 }
 
 .history {
@@ -85,7 +84,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11.5px;
+  font-size: var(--text-size-xs);
   color: var(--text-3);
 }
 
@@ -95,19 +94,15 @@
 }
 
 .reads {
-  font-size: 11.5px;
+  font-size: var(--text-size-xs);
   color: var(--text-3);
-}
-
-.headerAction {
-  margin-left: auto;
 }
 
 .thinking {
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 22px;
+  height: var(--tag-h);
 }
 
 .thinking span {
@@ -145,7 +140,7 @@
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  font-size: 11.5px;
+  font-size: var(--text-size-xs);
   color: var(--text-3);
 }
 
@@ -167,14 +162,16 @@
 .bubble {
   padding: 9px 13px;
   border-radius: 16px;
-  line-height: 1.5;
+  font-size: var(--text-size-md);
+  line-height: var(--line-height);
   overflow-wrap: anywhere;
 }
 
 .user .bubble {
-  border-bottom-right-radius: 5px;
-  background: var(--accent);
-  color: var(--on-accent);
+  border-bottom-right-radius: 6px;
+  background: var(--bubble-user);
+  box-shadow: inset 0 0 0 1px var(--bubble-user-border);
+  color: var(--bubble-user-text);
 }
 
 .user .bubble a {
@@ -202,7 +199,7 @@
 }
 
 .bubble code {
-  font-size: 12px;
+  font-size: var(--text-size-sm);
 }
 
 .chips {
@@ -218,11 +215,11 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 24px;
+  min-height: var(--mini-h);
   padding: 0 4px 0 9px;
   border-radius: 7px;
   background: var(--fill);
-  font-size: 12px;
+  font-size: var(--text-size-sm);
   color: var(--text-2);
   animation: chip-in var(--spring-time) var(--spring);
 }
@@ -253,7 +250,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12.5px;
+  font-size: var(--text-size-sm);
 }
 
 .actionHead svg {
@@ -287,7 +284,7 @@
   margin: 0 -6px;
   border-radius: 6px;
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--text-size-xs);
 }
 
 .links a:hover {
@@ -328,7 +325,7 @@
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  font-size: 14px;
+  font-size: var(--text-size-md);
   line-height: 1.45;
   resize: none;
   field-sizing: content;
@@ -348,14 +345,11 @@
 
 .composerHint {
   flex: 1;
-  font-size: 11.5px;
+  font-size: var(--text-size-xs);
   color: var(--text-3);
 }
 
-.send {
-  width: 30px;
-  height: 30px;
-  padding: 0;
+.composerAction {
   border-radius: 50%;
 }
 
@@ -369,7 +363,7 @@
 
 .footnote {
   padding: 6px 12px 0;
-  font-size: 12px;
+  font-size: var(--text-size-sm);
 }
 
 .definition {

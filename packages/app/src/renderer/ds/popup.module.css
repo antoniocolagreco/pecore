@@ -5,7 +5,7 @@
   gap: 8px;
   width: 100%;
   height: var(--control-h);
-  padding: 0 4px 0 10px;
+  padding: 0 5px 0 12px;
   border: 1px solid var(--control-border);
   border-radius: var(--radius);
   background: var(--control-bg);
@@ -61,11 +61,11 @@
   display: grid;
   place-items: center;
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: var(--mini-h);
+  height: var(--mini-h);
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   background: var(--accent);
   color: var(--on-accent);
   box-shadow: inset 0 0.5px 0 rgb(255 255 255 / 0.25), 0 1px 1.5px rgb(0 0 0 / 0.15);
@@ -138,10 +138,10 @@
   display: grid;
   grid-template-columns: 16px 1fr auto;
   align-items: center;
-  gap: 6px;
-  min-height: 26px;
-  padding: 3px 10px 3px 6px;
-  border-radius: 6px;
+  gap: 8px;
+  min-height: var(--row-h-sm);
+  padding: 4px 12px 4px 8px;
+  border-radius: 7px;
   font-size: var(--text-size);
   cursor: default;
   user-select: none;
@@ -186,8 +186,8 @@
 }
 
 .groupLabel {
-  padding: 6px 10px 3px 28px;
-  font-size: 11px;
+  padding: 8px 12px 4px 32px;
+  font-size: var(--text-size-xs);
   font-weight: 600;
   color: var(--text-3);
   user-select: none;
@@ -204,7 +204,7 @@
   justify-content: center;
   align-items: center;
   width: 100%;
-  height: 18px;
+  height: var(--tag-h);
   color: var(--text-2);
   cursor: default;
 }
@@ -234,8 +234,8 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  height: 22px;
-  padding: 0 2px 0 8px;
+  height: var(--mini-h);
+  padding: 0 3px 0 9px;
   border-radius: 6px;
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--text);
@@ -254,8 +254,8 @@
 .chipRemove {
   display: grid;
   place-items: center;
-  width: 16px;
-  height: 16px;
+  width: calc(var(--mini-h) - 6px);
+  height: calc(var(--mini-h) - 6px);
   padding: 0;
   border: 0;
   border-radius: 4px;
@@ -273,7 +273,7 @@
 .chipInput {
   flex: 1;
   min-width: 80px;
-  height: 22px;
+  height: var(--mini-h);
   padding: 0 4px;
   border: 0;
   border-radius: 0;

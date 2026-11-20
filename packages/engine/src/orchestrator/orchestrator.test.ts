@@ -250,6 +250,29 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     }
   });
 
+  it("clears the Assistant history and starts a fresh session on the next message", async () => {
+    const t = await setup((root) => [
+      init(),
+      [...init(), ...newSession, { expect: "session/prompt" }, ...replyWith("Before clear.")],
+      [...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "after-clear.json") }, ...replyWith("After clear.")],
+    ]);
+    try {
+      await t.call("getChat");
+      await t.call("sendChatMessage", { body: { text: "Previous conversation" } });
+      await until(async () => (await t.call("getChat")).messages.length === 2);
+      expect(await t.call("clearChat")).toEqual({ ok: true });
+      expect(await t.call("getChat")).toMatchObject({ messages: [], streamingReply: null, unread: 0 });
+
+      await t.call("sendChatMessage", { body: { text: "New conversation" } });
+      await until(async () => (await t.call("getChat")).messages.length === 2);
+      const prompt: string = await readFile(join(t.root, "after-clear.json"), "utf8");
+      expect(prompt).toContain("New conversation");
+      expect(prompt).not.toContain("Previous conversation");
+    } finally {
+      await t.close();
+    }
+  });
+
   it("compacts at once when the context passes the maximum threshold", async () => {
     const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
     const t = await setup((root) => [

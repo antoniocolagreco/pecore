@@ -14,7 +14,15 @@
   list-style: none;
 }
 
+.row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .item {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -71,7 +79,7 @@
 
 .age {
   flex: none;
-  font-size: 11.5px;
+  font-size: var(--text-size-xs);
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
@@ -80,7 +88,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--text-size-sm);
   color: var(--text-2);
 }
 

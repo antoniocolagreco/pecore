@@ -48,8 +48,8 @@ export function NumberField({
           <BaseNumberField.Input className={`${f.input} ${s.numberInput}`} />
           {unit && <span className={s.unit}>{unit}</span>}
           <span className={s.stepper}>
-            <BaseNumberField.Increment className={s.step} aria-label="Increase"><ChevronUpIcon size={10} strokeWidth={2.2} /></BaseNumberField.Increment>
-            <BaseNumberField.Decrement className={s.step} aria-label="Decrease"><ChevronDownIcon size={10} strokeWidth={2.2} /></BaseNumberField.Decrement>
+            <BaseNumberField.Increment className={s.step} aria-label="Increase"><ChevronUpIcon size="xs" bold /></BaseNumberField.Increment>
+            <BaseNumberField.Decrement className={s.step} aria-label="Decrease"><ChevronDownIcon size="xs" bold /></BaseNumberField.Decrement>
           </span>
         </BaseNumberField.Group>
       </BaseNumberField.Root>
@@ -109,13 +109,14 @@ export function Slider({
 }
 
 export function Segmented({
-  options, value, defaultValue, onValueChange, label,
+  options, value, defaultValue, onValueChange, label, accent,
 }: {
   options: { value: string; label: ReactNode }[];
   value?: string;
   defaultValue?: string;
   onValueChange?: (value: string) => void;
   label?: string;
+  accent?: boolean;
 }) {
   const [own, setOwn] = useState(defaultValue ?? options[0]?.value ?? "");
   const current = value ?? own;
@@ -140,6 +141,7 @@ export function Segmented({
     <ToggleGroup
       ref={root}
       className={s.segmented}
+      data-accent={accent ? "" : undefined}
       value={[current]}
       aria-label={label}
       onValueChange={(next) => {

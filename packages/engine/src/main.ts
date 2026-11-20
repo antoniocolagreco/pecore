@@ -548,6 +548,10 @@ export class Engine extends EventEmitter {
     this.live({ type: "notify", kind: "seen", title: "", body: "" });
   }
 
+  deleteNotification(id: string): void {
+    if (this.chats.deleteNotification(id)) this.live({ type: "notify", kind: "deleted", title: "", body: "" });
+  }
+
   private kick(): void {
     for (const { executor } of this.projects.values()) void executor.kick();
   }

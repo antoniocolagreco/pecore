@@ -6,7 +6,7 @@
   gap: 6px;
   flex: none;
   height: var(--control-h);
-  padding: 0 13px;
+  padding: 0 14px;
   border: 1px solid transparent;
   border-radius: var(--radius);
   font-size: var(--text-size);
@@ -39,15 +39,15 @@
 
 .sm {
   height: var(--control-h-sm);
-  padding: 0 10px;
+  padding: 0 11px;
   border-radius: var(--radius-sm);
   font-size: var(--text-size-sm);
 }
 
 .lg {
-  height: 38px;
-  padding: 0 18px;
-  font-size: 14px;
+  height: var(--control-h-lg);
+  padding: 0 20px;
+  font-size: var(--text-size-md);
 }
 
 .primary {
@@ -108,17 +108,34 @@
   margin-left: -2px;
 }
 
+.icon svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
 .iconOnly {
-  width: var(--control-h);
+  width: var(--icon-button-size);
+  height: var(--icon-button-size);
   padding: 0;
 }
 
 .iconOnly.sm {
-  width: var(--control-h-sm);
+  width: var(--icon-button-size-sm);
+  height: var(--icon-button-size-sm);
 }
 
 .iconOnly .icon {
   margin: 0;
+}
+
+.iconOnly .icon svg {
+  width: var(--icon-size);
+  height: var(--icon-size);
+}
+
+.iconOnly.sm .icon svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
 }
 
 .loading > :not(.spinner) {

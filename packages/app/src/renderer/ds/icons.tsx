@@ -1,11 +1,13 @@
 import type { ComponentProps, ReactElement } from "react";
 
-type IconProps = ComponentProps<"svg"> & { size?: number };
+export type IconSize = "xs" | "sm" | "md";
+
+type IconProps = ComponentProps<"svg"> & { size?: IconSize; bold?: boolean };
 
 function icon(path: ReactElement, viewBox = "0 0 16 16") {
-  return function Icon({ size = 16, ...props }: IconProps) {
+  return function Icon({ size = "sm", bold = false, ...props }: IconProps) {
     return (
-      <svg width={size} height={size} viewBox={viewBox} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden {...props}>
+      <svg data-icon={size} data-bold={bold || undefined} viewBox={viewBox} fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" aria-hidden {...props}>
         {path}
       </svg>
     );
@@ -44,7 +46,8 @@ export const MoreIcon = icon(<><circle cx="3.5" cy="8" r="1.1" fill="currentColo
 export const SidebarIcon = icon(<><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2" /><path d="M6 2.75v10.5" /></>);
 export const ArrowRightIcon = icon(<path d="M3 8h10M9 4l4 4-4 4" />);
 export const ArrowUpIcon = icon(<path d="M8 13V3M4 7l4-4 4 4" />);
-export const ClipIcon = icon(<path d="m13.5 7.5-5.25 5.25a3.18 3.18 0 0 1-4.5-4.5l5.5-5.5a2.12 2.12 0 0 1 3 3l-5.5 5.5a1.06 1.06 0 0 1-1.5-1.5l5-5" />);
+export const CompactIcon = icon(<path d="M1.5 8h4.75m-2.5-2.5L6.25 8l-2.5 2.5M14.5 8H9.75m2.5-2.5L9.75 8l2.5 2.5" />);
+export const ClipIcon = icon(<path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551" />, "0 0 24 24");
 export const TrashIcon = icon(<path d="M2.75 4.25h10.5M6.25 4.25V2.75h3.5v1.5M4 4.25l.6 8.6c.05.66.6 1.15 1.25 1.15h4.3c.66 0 1.2-.5 1.25-1.15l.6-8.6M6.75 7v4.5M9.25 7v4.5" />);
 export const RefreshIcon = icon(<><path d="M13.25 8A5.25 5.25 0 1 1 11.6 4.2" /><path d="M13.25 2.5v3h-3" /></>);
 export const InfoIcon = icon(<><circle cx="8" cy="8" r="6.25" /><path d="M8 7.25V11" /><circle cx="8" cy="5" r="0.4" fill="currentColor" /></>);

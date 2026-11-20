@@ -99,7 +99,7 @@
   flex: 1;
   min-width: 0;
   height: calc(var(--control-h) - 2px);
-  padding: 0 10px;
+  padding: 0 12px;
   border: 0;
   outline: 0;
   background: transparent;
@@ -125,15 +125,15 @@
   height: auto;
   min-height: calc(3lh + 14px);
   max-height: 240px;
-  padding: 6px 10px;
-  line-height: 1.45;
+  padding: 8px 12px;
+  line-height: 1.5;
   resize: none;
   field-sizing: content;
 }
 
 .mono {
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: var(--text-size-sm);
 }
 
 .leading {
@@ -181,8 +181,8 @@
 .iconButton {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: var(--mini-h);
+  height: var(--mini-h);
   padding: 0;
   border: 0;
   border-radius: 6px;
@@ -217,8 +217,8 @@
 }
 
 .clear {
-  width: 16px;
-  height: 16px;
+  width: calc(var(--mini-h) - 6px);
+  height: calc(var(--mini-h) - 6px);
   border-radius: 50%;
   background: var(--fill-strong);
   color: var(--surface);
@@ -259,11 +259,11 @@
 .kbd {
   display: inline-flex;
   align-items: center;
-  height: 18px;
-  padding: 0 5px;
+  height: var(--tag-h);
+  padding: 0 6px;
   margin-right: 2px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: var(--text-size-xs);
   color: var(--text-3);
   background: var(--fill);
   transition: opacity var(--fast) ease;

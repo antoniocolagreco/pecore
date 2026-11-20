@@ -46,7 +46,7 @@ export function FieldFrame({ label, description, error, disabled, className, foo
       {label && <Field.Label className={s.label}>{label}</Field.Label>}
       {children}
       <Field.Error className={s.error} match={Boolean(error)}>
-        <AlertIcon size={13} />
+        <AlertIcon />
         <span>{shown.current}</span>
       </Field.Error>
       {(description || footer) && (
@@ -167,7 +167,7 @@ export function SearchField({ label, description, error, disabled, className, sh
   return (
     <FieldFrame label={label} description={description} error={error} disabled={disabled} className={className}>
       <div className={cx(s.shell, size === "sm" && s.sm)}>
-        <span className={s.leading}><SearchIcon size={15} /></span>
+        <span className={s.leading}><SearchIcon /></span>
         <Field.Control
           ref={ref}
           className={s.input}
@@ -197,7 +197,7 @@ export function SearchField({ label, description, error, disabled, className, sh
             }}
             aria-label="Clear search"
           >
-            <XIcon size={10} strokeWidth={2.4} />
+            <XIcon size="xs" bold />
           </button>
         </span>
       </div>

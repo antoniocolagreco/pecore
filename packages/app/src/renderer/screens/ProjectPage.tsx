@@ -318,7 +318,7 @@ function ProjectDetails({ id }: { id: string }) {
     <Page title={project?.name ?? id} actions={jobsLink}>
       {project && (
         <div className={s.meta}>
-          <span className={s.metaItem}><LinkIcon size={13} />{project.repo?.url ?? "Local only"}</span>
+          <span className={s.metaItem}><LinkIcon />{project.repo?.url ?? "Local only"}</span>
           {project.repo && <span className={s.metaItem}>Account {project.repo.account}</span>}
           <span className={s.metaItem}>ID <code>{id}</code></span>
         </div>

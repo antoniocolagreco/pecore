@@ -14,10 +14,10 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 20px;
-  padding: 0 8px;
-  border-radius: 10px;
-  font-size: 11.5px;
+  height: var(--tag-h);
+  padding: 0 9px;
+  border-radius: 11px;
+  font-size: var(--text-size-xs);
   font-weight: 550;
   white-space: nowrap;
   color: var(--tone);
@@ -86,11 +86,11 @@
 .count {
   display: inline-grid;
   place-items: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  font-size: 11px;
+  min-width: var(--tag-h);
+  height: var(--tag-h);
+  padding: 0 6px;
+  border-radius: 10px;
+  font-size: var(--text-size-xs);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   background: var(--accent);
@@ -107,9 +107,10 @@
 
 .alert {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--tone) 10%, var(--surface));
   box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--tone) 35%, transparent);
@@ -119,7 +120,7 @@
 
 .alert > svg {
   flex: none;
-  margin-top: 1px;
+  margin-top: 2px;
   color: var(--tone);
 }
 
@@ -127,7 +128,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  flex: 1;
+  flex: 1 1 200px;
   min-width: 0;
 }
 
@@ -144,6 +145,7 @@
   flex-wrap: wrap;
   gap: 6px;
   align-self: center;
+  margin-left: auto;
 }
 
 @keyframes alert-in {
@@ -166,8 +168,8 @@
 .emptyIcon {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   margin-bottom: 6px;
   border-radius: 12px;
   background: var(--fill);
@@ -175,7 +177,7 @@
 }
 
 .emptyTitle {
-  font-size: 14px;
+  font-size: var(--text-size-md);
   font-weight: 600;
 }
 
@@ -195,7 +197,7 @@
 }
 
 .cardPadded {
-  padding: 16px 18px;
+  padding: 18px 20px;
 }
 
 .cardHeader {
@@ -203,29 +205,29 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 44px;
-  padding: 10px 18px;
+  min-height: calc(var(--control-h) + 12px);
+  padding: 10px 20px;
   border-bottom: 1px solid var(--separator);
 }
 
 .cardTitle {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-size-md);
   font-weight: 600;
 }
 
 .cardBody {
-  padding: 14px 18px 16px;
+  padding: 16px 20px 18px;
 }
 
 .kbd {
   display: inline-flex;
   align-items: center;
-  height: 18px;
-  padding: 0 5px;
+  height: var(--tag-h);
+  padding: 0 6px;
   border-radius: 4px;
   font-family: var(--font);
-  font-size: 11px;
+  font-size: var(--text-size-xs);
   color: var(--text-2);
   background: var(--fill);
   box-shadow: inset 0 -1px 0 var(--separator);

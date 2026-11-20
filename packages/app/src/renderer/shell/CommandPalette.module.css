@@ -5,8 +5,8 @@
 
 .command :global([cmdk-input]) {
   width: 100%;
-  height: 40px;
-  font-size: 15px;
+  height: var(--control-h-lg);
+  font-size: var(--text-size-lg);
 }
 
 .results {
@@ -26,7 +26,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 32px;
+  min-height: var(--row-h);
   padding: 4px 10px;
   border-radius: 7px;
   cursor: default;

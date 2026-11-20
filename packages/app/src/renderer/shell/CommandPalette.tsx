@@ -111,7 +111,7 @@ export function CommandPalette() {
   }, [connected]);
   return <>
     <button type="button" className={layout.search} disabled={!connected} onClick={() => setOpen(true)} aria-keyshortcuts="Control+k Meta+k">
-      <SearchIcon size={14} />
+      <SearchIcon />
       <span className={layout.searchLabel}>Search</span>
       <Kbd>Ctrl K</Kbd>
     </button>

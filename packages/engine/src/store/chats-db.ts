@@ -69,6 +69,14 @@ export class ChatsDb {
     this.db.prepare("UPDATE chats SET last_read_message_id = (SELECT id FROM messages WHERE chat_id = chats.id ORDER BY rowid DESC LIMIT 1) WHERE id = ?").run(id);
   }
 
+  clearChat(id: string): void {
+    this.db.transaction(() => {
+      this.db.prepare("DELETE FROM attachments WHERE chat_id = ?").run(id);
+      this.db.prepare("DELETE FROM messages WHERE chat_id = ?").run(id);
+      this.db.prepare("UPDATE chats SET session_id = NULL, session_key = NULL, context_tokens = NULL, last_read_message_id = NULL WHERE id = ?").run(id);
+    })();
+  }
+
   session(id: string): ChatSession {
     return this.db.prepare("SELECT session_id AS sessionId, session_key AS sessionKey FROM chats WHERE id = ?").get(id) as ChatSession;
   }
@@ -183,5 +191,9 @@ export class ChatsDb {
 
   markNotificationsSeen(): void {
     this.db.prepare("UPDATE notifications SET seen = 1 WHERE seen = 0").run();
+  }
+
+  deleteNotification(id: string): boolean {
+    return this.db.prepare("DELETE FROM notifications WHERE id = ?").run(id).changes > 0;
   }
 }

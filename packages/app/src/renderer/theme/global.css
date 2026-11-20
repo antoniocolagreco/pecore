@@ -28,7 +28,7 @@ a:hover {
 
 :where(input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"]), select, textarea) {
   min-height: var(--control-h);
-  padding: 5px 10px;
+  padding: 6px 11px;
   border: 1px solid var(--control-border);
   border-radius: var(--radius);
   background: var(--control-bg);
@@ -69,11 +69,36 @@ button:focus-visible {
 code,
 pre {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--text-size-sm);
 }
 
 kbd {
   font-family: var(--font);
+}
+
+svg[data-icon] {
+  flex: none;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  stroke-width: var(--icon-stroke);
+}
+
+svg[data-icon="xs"] {
+  width: var(--icon-size-xs);
+  height: var(--icon-size-xs);
+}
+
+svg[data-icon="md"] {
+  width: var(--icon-size);
+  height: var(--icon-size);
+}
+
+svg[data-icon][data-bold] {
+  stroke-width: var(--icon-stroke-bold);
+}
+
+svg[data-icon] * {
+  vector-effect: non-scaling-stroke;
 }
 
 ::-webkit-scrollbar {
@@ -101,7 +126,7 @@ kbd {
 
 .react-flow__edge-text {
   fill: var(--text-2);
-  font-size: 11px;
+  font-size: var(--text-size-xs);
 }
 
 .react-flow__edge-path {

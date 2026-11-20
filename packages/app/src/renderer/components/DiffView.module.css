@@ -48,14 +48,14 @@
   border: 1px solid var(--status-warning);
   color: var(--status-warning);
   font-family: var(--font);
-  font-size: 12px;
+  font-size: var(--text-size-sm);
 }
 
 .table {
   width: 100%;
   border-collapse: collapse;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: var(--text-size-sm);
   line-height: 1.55;
   table-layout: fixed;
 }

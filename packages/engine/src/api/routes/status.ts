@@ -24,6 +24,10 @@ export function statusHandlers(engine: Engine, version: string) {
       engine.markNotificationsSeen();
       return { ok: true as const };
     },
+    deleteNotification: async ({ params }) => {
+      engine.deleteNotification(params.id);
+      return { ok: true as const };
+    },
     getLog: async ({ params, query }) => {
       for (const { ctx } of engine.projects.values()) {
         const row = ctx.db.db.prepare("SELECT log_path FROM attempts WHERE id = ?").get(params.id) as { log_path: string } | undefined;

@@ -75,7 +75,7 @@ function CreationTasks({ creation, pending }: { creation: CreationView | undefin
         return (
           <li key={name} className={w.step} data-state={state}>
             <span className={w.stepIcon}>
-              {state === "Done" ? <CheckIcon size={12} strokeWidth={2.4} /> : state === "Failed" ? <AlertIcon size={13} /> : state === "In progress" ? <Spinner size={13} /> : step}
+              {state === "Done" ? <CheckIcon bold /> : state === "Failed" ? <AlertIcon /> : state === "In progress" ? <Spinner /> : step}
             </span>
             <span className={w.stepBody}>
               <span className={w.stepName}>{name}</span>

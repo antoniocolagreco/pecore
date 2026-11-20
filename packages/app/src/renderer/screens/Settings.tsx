@@ -17,7 +17,8 @@ import { Combobox, Select } from "../ds/select";
 import { NumberField, Segmented } from "../ds/values";
 import { install } from "../shell/SetupBanner";
 import { SidebarItem, SidebarSection } from "../shell/sidebar";
-import { themeChoice } from "../theme/ThemeLoader";
+import { builtInThemes, themeMode, themePrefs } from "../theme/themes";
+import type { ThemePrefs } from "../theme/themes";
 import { DefinitionErrors, settingUrl, useDefinitionDraft, useUnsaved } from "./NodeEditor";
 import s from "./Settings.module.css";
 
@@ -393,14 +394,14 @@ function ModelPicker({ accounts, choice, onChoice, disabled, same = false }: { a
       options={[...same ? [{ value: sameValue, label: "Same as the Assistant" }] : [], ...accounts.map((item) => ({ value: item.id, label: harnessName(item, accounts) }))]} />
     <div className={s.withButton}>
       {loading
-        ? <TextField label="Model" leading={<Spinner size={13} />} value="" placeholder={`Reading models from ${current ? harnessName(current, accounts) : account}…`} readOnly />
+        ? <TextField label="Model" leading={<Spinner />} value="" placeholder={`Reading models from ${current ? harnessName(current, accounts) : account}…`} readOnly />
         : <Combobox label="Model" value={choice?.model || null} disabled={disabled || !account} placeholder="Choose a model"
           onValueChange={(next) => { if (choice && next && next !== model) onChoice({ ...choice, model: next, effort: null }); }}
           options={models.map((model) => ({ value: model, label: model }))} />}
       <IconButton label="Read the models again" icon={<RefreshIcon />} disabled={disabled || !account || loading} onClick={() => void refresh.run()} />
     </div>
     {loading || readingEfforts
-      ? <TextField label="Effort" leading={<Spinner size={13} />} value="" placeholder="Reading…" readOnly />
+      ? <TextField label="Effort" leading={<Spinner />} value="" placeholder="Reading…" readOnly />
       : <Select label="Effort" value={choice?.effort ?? "default"} disabled={disabled || !choice?.model}
         onValueChange={(effort) => { if (choice) onChoice({ ...choice, effort: !effort || effort === "default" ? null : effort }); }}
         options={[{ value: "default", label: "Default" }, ...efforts.map((effort) => ({ value: effort, label: effort }))]} />}
@@ -498,7 +499,7 @@ export function Settings() {
     </Section>;
   const jsonField = (key: "prices" | "projectPaths" | "programPaths", label: string): ReactNode => value &&
     <JsonField key={settings.editKey + key} label={label} value={value[key]} onValue={(data) => update({ ...value, [key]: data })} />;
-  const theme: string = themeChoice(value?.ui);
+  const prefs: ThemePrefs = themePrefs(value?.ui);
 
   useEffect(() => {
     const id: string | null = new URLSearchParams(search).get("section");
@@ -570,20 +571,18 @@ export function Settings() {
             <ErrorText error={protect.error} />
           </Dialog>
 
-          <Section id="appearance" title="Appearance">
+          <Section id="appearance" title="Appearance" description="The look of PeCore in light and dark mode.">
             <div className={ui.stack}>
-              <span className={s.label}>Theme</span>
-              <Segmented label="Theme" value={theme.startsWith("builtin:") ? theme : "custom"}
-                onValueChange={(choice) => { if (choice !== "custom") update({ ...value, ui: { ...value.ui, theme: choice } }); }}
-                options={[
-                  { value: "builtin:system", label: "System" },
-                  { value: "builtin:light", label: "Light" },
-                  { value: "builtin:dark", label: "Dark" },
-                  ...(themes.data?.length ? [{ value: "custom", label: "Custom" }] : []),
-                ]} />
-              {!!themes.data?.length && <Select label="Custom theme" value={theme.startsWith("builtin:") ? null : theme} placeholder="Choose a theme file"
-                onValueChange={(file) => file && update({ ...value, ui: { ...value.ui, theme: file } })}
-                options={themes.data.map((item) => ({ value: item.file, label: item.theme?.name ?? item.file, disabled: !item.theme }))} />}
+              <span className={s.label}>Mode</span>
+              <Segmented accent label="Mode" value={prefs.mode}
+                onValueChange={(mode) => update({ ...value, ui: { ...value.ui, mode } })}
+                options={[{ value: "system", label: "System" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} />
+              <div className={s.grid}>
+                {(["light", "dark"] as const).map((mode) => <Select key={mode} label={mode === "light" ? "Light theme" : "Dark theme"} value={prefs[mode]}
+                  onValueChange={(choice) => choice && update({ ...value, ui: { ...value.ui, [mode === "light" ? "lightTheme" : "darkTheme"]: choice } })}
+                  options={[...builtInThemes[mode], ...(themes.data ?? []).filter((item) => item.theme && (themeMode(item.theme) ?? mode) === mode)
+                    .map((item) => ({ value: item.file, label: item.theme?.name ?? item.file }))]} />)}
+              </div>
               <ErrorText error={themes.error} />
               {themes.data?.filter((item) => item.errors.length).map((item) => <div key={item.file}><strong>{item.file}</strong><DefinitionErrors errors={item.errors} /></div>)}
             </div>

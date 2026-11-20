@@ -576,7 +576,8 @@ describe.skipIf(gui)("phase 6: orchestrator chat from the GUI (fake agent)", () 
     const prompt = JSON.parse(await readFile(join(root, "turn1.json"), "utf8")) as { params: { prompt: { type: string; mimeType?: string }[] } };
     if (!prompt.params.prompt.some((b) => b.type === "image" && b.mimeType === "image/png")) throw new Error("no image block in the prompt");
     const log = page.getByRole("log", { name: "Conversation messages" });
-    await visible(log.getByText("Running"));
+    await visible(log.getByLabel("The Assistant is working on a reply"));
+    await log.getByText("Running", { exact: true }).waitFor({ state: "hidden" });
     await visible(log.getByLabel("Message attachments").getByText(/image\/png/));
     await shot("running");
 

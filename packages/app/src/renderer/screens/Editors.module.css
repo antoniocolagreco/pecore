@@ -76,6 +76,16 @@
   fill: var(--text);
 }
 
+.graph :global(.react-flow__controls-button) {
+  width: var(--icon-button-size);
+  height: var(--icon-button-size);
+}
+
+.graph :global(.react-flow__controls-button) svg {
+  max-width: var(--icon-size);
+  max-height: var(--icon-size);
+}
+
 @media (max-width: 850px) {
   .workspace {
     grid-template-columns: 1fr;

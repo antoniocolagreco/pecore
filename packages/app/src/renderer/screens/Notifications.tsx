@@ -3,12 +3,13 @@ import type { ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import type { NotificationView, QueueItemView } from "@pecore/schemas";
 import { call } from "../api/client";
-import { useData } from "../api/hooks";
+import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { ConfirmItem, queueKindLabel } from "../components/ConfirmItem";
 import { ErrorText, Page, duration } from "../components/ui";
+import { IconButton } from "../ds/button";
 import { Card, EmptyState, Skeleton } from "../ds/feedback";
-import { BellIcon } from "../ds/icons";
+import { BellIcon, TrashIcon } from "../ds/icons";
 import s from "./Notifications.module.css";
 
 function notificationLink({ target }: NotificationView): string | null {
@@ -17,9 +18,36 @@ function notificationLink({ target }: NotificationView): string | null {
   return null;
 }
 
-function Row({ to, current, children }: { to: string | null; current?: boolean; children: ReactNode }) {
+function Row({ to, current, children, action, error }: { to: string | null; current?: boolean; children: ReactNode; action?: ReactNode; error?: string | null }) {
   const connected: boolean = useConnected();
-  return <li>{connected && to ? <Link className={s.item} to={to} aria-current={current ? "page" : undefined}>{children}</Link> : <span className={s.item}>{children}</span>}</li>;
+  return (
+    <li>
+      <div className={s.row}>
+        {connected && to ? <Link className={s.item} to={to} aria-current={current ? "page" : undefined}>{children}</Link> : <span className={s.item}>{children}</span>}
+        {action}
+      </div>
+      <ErrorText error={error} />
+    </li>
+  );
+}
+
+function NotificationRow({ notification, current, connected, reload }: { notification: NotificationView; current: boolean; connected: boolean; reload(): void }) {
+  const remove = useAction(async () => {
+    await call("deleteNotification", { params: { id: notification.id } });
+    reload();
+  });
+  return (
+    <Row to={notificationLink(notification)} current={current} error={remove.error} action={
+      <IconButton size="sm" label={`Delete notification: ${notification.title}`} icon={<TrashIcon />} disabled={!connected}
+        loading={remove.busy} onClick={() => void remove.run()} />
+    }>
+      <span className={s.itemHead}>
+        <span className={s.title}>{notification.title}</span>
+        <span className={s.age}>{duration(Date.now() - notification.createdAt)}</span>
+      </span>
+      <span className={s.itemMeta}>{notification.body}</span>
+    </Row>
+  );
 }
 
 export function Notifications() {
@@ -47,7 +75,7 @@ export function Notifications() {
       <ErrorText error={queue.error ?? notifications.error ?? projects.error ?? jobs.error} />
       {!loading && items.length === 0 && log.length === 0 && !id ? (
         <Card padded>
-          <EmptyState icon={<BellIcon size={20} />} title="Nothing new">
+          <EmptyState icon={<BellIcon size="md" />} title="Nothing new">
             Decisions you need to make and updates from PeCore show up here.
           </EmptyState>
         </Card>
@@ -65,15 +93,8 @@ export function Notifications() {
                   <span className={s.itemMeta}>{names.get(item.projectId) ?? item.projectId}{jobTitle(item) && ` · ${jobTitle(item)}`}</span>
                 </Row>
               ))}
-              {log.map((n) => (
-                <Row key={n.id} to={notificationLink(n)} current={!!id && n.target?.item === id}>
-                  <span className={s.itemHead}>
-                    <span className={s.title}>{n.title}</span>
-                    <span className={s.age}>{duration(Date.now() - n.createdAt)}</span>
-                  </span>
-                  <span className={s.itemMeta}>{n.body}</span>
-                </Row>
-              ))}
+              {log.map((n) => <NotificationRow key={n.id} notification={n} current={!!id && n.target?.item === id}
+                connected={connected} reload={notifications.reload} />)}
             </ul>
           </Card>
           {id && <Card padded className={s.detail}><ConfirmItem itemId={id} onDone={queue.reload} /></Card>}

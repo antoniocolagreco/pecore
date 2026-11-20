@@ -85,7 +85,7 @@ function Row({ row, factory, collapsed, toggle, now }: { row: JobRow; factory: b
       <td style={{ paddingInlineStart: 8 + depth * 16 }}>
         {!factory && hasChildren && (
           <button type="button" className={s.disclosure} aria-label={collapsed ? "Expand stacked jobs" : "Collapse stacked jobs"} aria-expanded={!collapsed} disabled={!connected} onClick={(event) => { event.stopPropagation(); toggle(); }}>
-            {collapsed ? <ChevronDownIcon size={13} style={{ rotate: "-90deg" }} /> : <ChevronDownIcon size={13} />}
+            {collapsed ? <ChevronDownIcon style={{ rotate: "-90deg" }} /> : <ChevronDownIcon />}
           </button>
         )}
         <button type="button" className={s.titleLink} disabled={!connected || open.busy} onClick={(event) => { event.stopPropagation(); openRow(); }}>{job.title}</button>
