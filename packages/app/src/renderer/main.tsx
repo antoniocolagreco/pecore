@@ -18,8 +18,6 @@ const router = createHashRouter([
       { path: "/jobs/:id", element: <screens.JobView /> },
       { path: "/inbox", element: <screens.Inbox /> },
       { path: "/inbox/:id", element: <screens.Inbox /> },
-      { path: "/orchestrator", element: <screens.Orchestrator /> },
-      { path: "/orchestrator/:id", element: <screens.Orchestrator /> },
       { path: "/projects", element: <screens.Projects /> },
       { path: "/projects/new", element: <screens.NewProjectWizard /> },
       { path: "/projects/:id", element: <screens.ProjectPage /> },

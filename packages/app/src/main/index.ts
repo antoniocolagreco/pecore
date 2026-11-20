@@ -77,9 +77,10 @@ function showWindow(): void {
 }
 
 function createWindow(): void {
+  const [width, height] = (!app.isPackaged && process.env.PECORE_SCREENSHOT_SIZE?.split("x").map(Number)) || [1400, 900];
   win = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    width,
+    height,
     minWidth: 960,
     minHeight: 600,
     title: "PeCore",
@@ -114,7 +115,7 @@ function createWindow(): void {
       }, Number(process.env.PECORE_SCREENSHOT_DELAY ?? 4000));
     });
   }
-  const route: string = (shot && process.env.PECORE_SCREENSHOT_ROUTE) || "#/orchestrator";
+  const route: string = (shot && process.env.PECORE_SCREENSHOT_ROUTE) || "#/";
   void win.loadURL(`${devUrl ?? "app://pecore/"}${route}`);
 }
 

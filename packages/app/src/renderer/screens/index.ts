@@ -2,7 +2,7 @@ export { Factory } from "./Factory";
 export { Jobs } from "./Jobs";
 export { JobView } from "./JobView";
 export { Inbox } from "./Inbox";
-export { Orchestrator } from "./Orchestrator";
+export { ChatPanel } from "./Orchestrator";
 export { Projects } from "./Projects";
 export { ProjectPage } from "./ProjectPage";
 export { NewProjectWizard } from "./NewProjectWizard";

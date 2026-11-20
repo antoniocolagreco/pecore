@@ -44,6 +44,10 @@ Format: decision. **Why:** Antonio's reason. **Replaces:** what it changes, if a
 32. Layout: menu on the left, orchestrator chat always on screen on the right. The Orchestrator page goes away. **Why:** "la pagina orchestrator è inutile effettivamente. Voglio la chat dell'orchestratore sempre on screen." **Replaces:** the Orchestrator page and the mini chat closed by default (ui-design.md UI2b).
 33. The app must work in a 1024×720 window. **Why:** "Altrimenti nel MacBook NEO non entra." **Replaces:** no minimum size was set (the window could shrink to 960×600 with no layout rules).
 
+34. The left menu can be hidden and shown with a button, as in modern apps. **Why:** "Il menu a sinistra deve essere a scomparsa come in tutte le app moderne."
+
+35. The app is minimal: nothing on screen that the user does not need to act or decide. The engine status line at the bottom of the menu is removed. **Why:** "era solo cringe. Non ho capito a cosa serve per l'utente. QUESTA APP SARÀ MINIMALE ANTISLOP". **Replaces:** IA4 engine status in the menu (the disconnected banner stays).
+
 ## Open
 
 - Shipped nodes default to "Automatic" with an optional explicit model (A, recommended), or always need an explicit model (B).

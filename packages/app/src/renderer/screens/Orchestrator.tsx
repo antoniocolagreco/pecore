@@ -1,8 +1,9 @@
 import { ChatImageMime, chatAttachmentMaxBytes, chatCompactCommand } from "@pecore/schemas";
-import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatMessageView, ChatView } from "@pecore/schemas";
+import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatMessageView } from "@pecore/schemas";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
@@ -10,11 +11,10 @@ import { StateLabel } from "../components/states";
 import type { StateInfo } from "../components/states";
 import { ErrorText, dateTime, time } from "../components/ui";
 import { Button, IconButton } from "../ds/button";
-import { Alert, Count, EmptyState, Spinner } from "../ds/feedback";
-import { TextField } from "../ds/field";
-import { ArrowUpIcon, ChatIcon, ClipIcon, PlusIcon, SparkIcon, XIcon } from "../ds/icons";
+import { Alert, Spinner } from "../ds/feedback";
+import { ArrowUpIcon, ClipIcon, PlusIcon, SparkIcon, XIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
-import { SidebarItem, SidebarSection } from "../shell/sidebar";
+import { Select } from "../ds/select";
 import { definitionUrl, object, settingUrl, string } from "./NodeEditor";
 import s from "./Orchestrator.module.css";
 
@@ -28,10 +28,6 @@ const messageStates: Record<ChatMessageView["state"], StateInfo | null> = {
   interrupted: { label: "Interrupted", tone: "inactive", icon: "", detail: null, pulse: false },
   failed: { label: "Failed", tone: "failed", icon: "", detail: null, pulse: false },
 };
-
-function conversationUrl(id: string): string {
-  return `/orchestrator/${encodeURIComponent(id)}`;
-}
 
 function fileSize(bytes: number): string {
   if (bytes >= 1_000_000) return `${+(bytes / 1_000_000).toFixed(2)} MB`;
@@ -312,7 +308,7 @@ function DefinitionPreview({ path, onClose }: { path: string; onClose(): void })
   );
 }
 
-function Conversation({ id, connected }: { id: string; connected: boolean }) {
+function Conversation({ id, connected, switcher }: { id: string; connected: boolean; switcher: ReactNode }) {
   const detail = useData(() => call("getChat", { params: { id } }), [id], (event) =>
     (event.type === "chat.message" || event.type === "chat.streaming" || event.type === "chat.action" || event.type === "chat.updated") && event.chatId === id);
   const [query, setQuery] = useSearchParams();
@@ -379,8 +375,8 @@ function Conversation({ id, connected }: { id: string; connected: boolean }) {
   return (
     <section className={s.pane}>
       <header className={s.paneHeader}>
-        <h2 className={s.paneTitle}>{chat?.chat.title ?? ""}</h2>
-        {chat && !manual && <span className={s.actionMeta}>Ticket intake · read only</span>}
+        {switcher}
+        {chat && !manual && <span className={s.actionMeta}>Read only</span>}
         {chat && manual && <Button size="sm" className={s.headerAction} disabled={!canCompact} loading={compact.busy}
           title="Summarize the conversation so far, so the orchestrator keeps its context short" onClick={() => void compact.run()}>Compact</Button>}
       </header>
@@ -393,7 +389,6 @@ function Conversation({ id, connected }: { id: string; connected: boolean }) {
       }}>
         <div className={s.thread}>
           {detail.loading && !chat && <Spinner />}
-          {chat?.messages.length === 0 && <EmptyState icon={<ChatIcon size={18} />} title="No messages yet">Tell the orchestrator what you want: it plans the work and creates the jobs.</EmptyState>}
           {chat?.messages.map((message) => {
             if (isCompaction(message)) return <Compaction key={message.id} message={message} />;
             const own: ChatActionView[] = message.role === "assistant" ? message.replyTo ? actions.get(message.replyTo) ?? [] : [] : actions.get(message.id) ?? [];
@@ -415,83 +410,52 @@ function Conversation({ id, connected }: { id: string; connected: boolean }) {
   );
 }
 
-function Start({ connected, ready, onCreated }: { connected: boolean; ready: boolean | null; onCreated(chatId: string): void }) {
+function Start({ connected, ready, onCreated, switcher }: { connected: boolean; ready: boolean | null; onCreated(chatId: string): void; switcher: ReactNode }) {
   return (
     <section className={s.pane}>
-      <div className={s.start}>
-        <div className={s.startHead}>
-          <span className={s.startIcon}><SparkIcon size={22} /></span>
-          <h2 className={s.startTitle}>What should PeCore build?</h2>
-          <p className={s.startText}>Describe a feature, a bug or a whole project. The orchestrator plans it, creates the jobs and keeps you posted here.</p>
+      <header className={s.paneHeader}>{switcher}</header>
+      <div className={s.history} />
+      {ready === false && connected && (
+        <div className={s.footnote}>
+          <Alert tone="warning" title="No orchestrator yet" actions={<Link to={settingUrl("orchestrator")}>Choose one in Settings</Link>}>
+            Log in to Claude Code, Codex or OpenCode and PeCore picks one for you.
+          </Alert>
         </div>
-        {ready === false && connected && (
-          <div className={s.footnote}>
-            <Alert tone="warning" title="No orchestrator yet" actions={<Link to={settingUrl("orchestrator")}>Choose one in Settings</Link>}>
-              Log in to Claude Code, Codex or OpenCode and PeCore picks one for you.
-            </Alert>
-          </div>
-        )}
-        <Composer id={null} connected={connected} ready={ready === true} supportsImages={null} reload={onCreated} autoFocus />
-      </div>
+      )}
+      <Composer id={null} connected={connected} ready={ready === true} supportsImages={null} reload={onCreated} autoFocus />
     </section>
   );
 }
 
-export function Orchestrator() {
-  const { id } = useParams();
-  const navigate: ReturnType<typeof useNavigate> = useNavigate();
+export function ChatPanel() {
   const connected: boolean = useConnected();
   const chats = useData(() => call("listChats"), [], (event) => event.type === "chat.message" || event.type === "chat.updated");
   const settings = useData(() => call("getSettings"), [], (event) => event.type === "definition.changed" && event.path === "settings.json");
-  const [creating, setCreating] = useState<boolean>(false);
-  const [title, setTitle] = useState<string>("");
-  const create = useAction(async () => {
-    const chat: ChatView = await call("createChat", { body: { title } });
-    setCreating(false);
-    setTitle("");
-    chats.reload();
-    void navigate(conversationUrl(chat.id));
-  });
-  const canCreate: boolean = connected && !create.busy && !!title.trim();
-  function closeCreate(): void {
-    if (create.busy) return;
-    setCreating(false);
-    setTitle("");
-    create.clear();
-  }
+  const [id, setId] = useState<string | null>(null);
   const ready: boolean | null = settings.data ? settings.data.value.orchestrator !== null : null;
-  return (
-    <div className={s.root}>
-      <SidebarSection title="Conversations" action={<IconButton size="sm" label="New conversation" icon={<PlusIcon />} disabled={!connected} onClick={() => setCreating(true)} />}>
-        {chats.error && <li><ErrorText error={chats.error} /></li>}
-        {chats.data?.length === 0 && <li className={s.actionMeta} style={{ padding: "6px 10px" }}>No conversations yet</li>}
-        {chats.data?.map((chat) => <SidebarItem key={chat.id} to={connected ? conversationUrl(chat.id) : undefined} active={chat.id === id}
-          trailing={<Count value={chat.unread} label={`${chat.unread} unread`} />}>{chat.title}</SidebarItem>)}
-      </SidebarSection>
-      {id
-        ? <Conversation key={id} id={id} connected={connected} />
-        : <Start connected={connected} ready={ready} onCreated={(chatId) => {
-          chats.reload();
-          void navigate(conversationUrl(chatId));
-        }} />}
-      <Dialog
-        open={creating}
-        onOpenChange={(open) => !open && closeCreate()}
-        title="New conversation"
-        width={420}
-        footer={<>
-          <Button disabled={create.busy} onClick={closeCreate}>Cancel</Button>
-          <Button type="submit" form="new-conversation" variant="primary" disabled={!canCreate} loading={create.busy}>Create conversation</Button>
-        </>}
-      >
-        <form id="new-conversation" onSubmit={(event) => {
-          event.preventDefault();
-          if (canCreate) void create.run();
-        }}>
-          <TextField label="Title" value={title} onValueChange={setTitle} disabled={!connected || create.busy} autoFocus placeholder="e.g. Checkout redesign" />
-        </form>
-        <ErrorText error={create.error} />
-      </Dialog>
+  const switcher: ReactNode = (
+    <div className={s.switcher}>
+      <Select
+        className={s.chatSelect}
+        ariaLabel="Conversation"
+        placeholder="New conversation"
+        value={id}
+        disabled={!connected || !chats.data?.length}
+        onValueChange={setId}
+        options={(chats.data ?? []).map((chat) => ({ value: chat.id, label: chat.title, detail: chat.unread ? `${chat.unread} new` : undefined }))}
+      />
+      <IconButton size="sm" label="New conversation" icon={<PlusIcon />} disabled={!connected || id === null} onClick={() => setId(null)} />
     </div>
+  );
+  return (
+    <aside className={s.panel} aria-label="Orchestrator">
+      <ErrorText error={chats.error} />
+      {id
+        ? <Conversation key={id} id={id} connected={connected} switcher={switcher} />
+        : <Start connected={connected} ready={ready} switcher={switcher} onCreated={(chatId) => {
+          chats.reload();
+          setId(chatId);
+        }} />}
+    </aside>
   );
 }
