@@ -6,8 +6,14 @@ import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { ArtifactView } from "./ArtifactView";
-import { Button, Empty, ErrorText, Field, ui } from "./ui";
+import { Button } from "../ds/button";
+import { Alert } from "../ds/feedback";
+import { TextArea } from "../ds/field";
+import { Empty, ErrorText, ui } from "./ui";
 import s from "./ConfirmItem.module.css";
+
+const positive: ReadonlySet<string> = new Set(["approve", "confirm", "accept", "yes", "continue", "retry", "allow", "start"]);
+const negative: ReadonlySet<string> = new Set(["reject", "deny", "stop", "no", "abort", "cancel", "fail"]);
 
 export const queueKindLabel: Record<QueueItemView["kind"], string> = {
   "human-node": "Human review",
@@ -165,30 +171,34 @@ function ItemDetail({ item, replacement, reload, onDone }: {
   return (
     <div className={ui.stack}>
       {locked && (
-        <div className={ui.banner} role="status">
+        <Alert
+          tone={item.state === "cancelled" ? "neutral" : "success"}
+          actions={replacement && connected && <Link to={`/inbox/${replacement.id}`}>Open newest item</Link>}
+        >
           {item.state === "cancelled" ? "Item cancelled." : `Item resolved${item.choice ?? submitted ? ` (${item.choice ?? submitted})` : ""}.`}
           {item.note && <div>{item.note}</div>}
-          {replacement && connected && <> <Link to={`/inbox/${replacement.id}`}>Open newest item</Link></>}
-        </div>
+        </Alert>
       )}
-      <strong>{queueKindLabel[item.kind]}</strong>
+      <h2 className={s.kind}>{queueKindLabel[item.kind]}</h2>
       <Subject item={item} connected={connected} />
       <div className={s.hash}>SHA-256 <code>{item.subjectHash}</code></div>
       {!locked && (
-        <>
-          {acceptsNote && (
-            <Field label="Note">
-              <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} disabled={!connected || answer.busy} />
-            </Field>
-          )}
+        <div className={s.answer}>
+          {acceptsNote && <TextArea label="Note" value={note} onValueChange={setNote} disabled={!connected || answer.busy} placeholder="Optional: what should change, or why" />}
           <div className={ui.row}>
             {item.choices.map((choice) => (
-              <Button key={choice} disabled={!connected || answer.busy} onClick={() => void answer.run(choice)}>
+              <Button
+                key={choice}
+                className={s.choice}
+                variant={positive.has(choice) ? "primary" : negative.has(choice) ? "danger" : "secondary"}
+                disabled={!connected || answer.busy}
+                onClick={() => void answer.run(choice)}
+              >
                 {choice}
               </Button>
             ))}
           </div>
-        </>
+        </div>
       )}
       <ErrorText error={answer.error} />
     </div>

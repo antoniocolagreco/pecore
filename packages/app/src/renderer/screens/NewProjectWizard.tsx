@@ -7,7 +7,13 @@ import { errorText, useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { ConfirmItem } from "../components/ConfirmItem";
 import { reasonLabel } from "../components/states";
-import { Button, Empty, ErrorText, Field, Page, Panel, ui } from "../components/ui";
+import { Button, Empty, ErrorText, Page, Panel, ui } from "../components/ui";
+import { Checkbox, RadioGroup } from "../ds/choice";
+import { Alert, Card, Spinner } from "../ds/feedback";
+import { TextField } from "../ds/field";
+import { AlertIcon, CheckIcon } from "../ds/icons";
+import { Select } from "../ds/select";
+import w from "./NewProjectWizard.module.css";
 
 type RepoMode = "existing" | "new" | "local";
 type Inputs = { id: string; name: string; mode: RepoMode; url: string; account: string; baseBranch: string; recipes: string[] };
@@ -32,7 +38,7 @@ function ConfirmProject({ id }: { id: string }) {
   const start: number = Math.min(page, Math.max(0, Math.ceil(items.length / 10) - 1)) * 10;
   const finish = () => void navigate(`/projects/${id}`);
   return (
-    <Page title="New project · Confirm">
+    <Page title="New project: confirm its nodes">
       <ErrorText error={queue.error} />
       {queue.loading && !queue.data && <Empty>Loading confirmations…</Empty>}
       {queue.data && items.length === 0 && <Empty>No open node confirmations</Empty>}
@@ -60,17 +66,23 @@ function CreationTasks({ creation, pending }: { creation: CreationView | undefin
   const report: string | null | undefined = creation?.error;
   const failedStep: number = Number(/^step (\d):/.exec(report ?? "")?.[1]) || finished + 1;
   return (
-    <ol className={ui.stack}>
+    <ol className={w.steps}>
       {tasks.map((name, index) => {
         const step: number = index + 1;
         const state: string = report && step === failedStep ? "Failed" :
           step <= finished ? "Done" : !report && step === finished + 1 && (pending || creation) ? "In progress" : "Pending";
         const setup: CreationView["setupJob"] | undefined = step === 4 ? creation?.setupJob : null;
         return (
-          <li key={name}>
-            <strong>{name}</strong> · {state}
-            {setup?.waitingReason && <div>{reasonLabel(setup.waitingReason)}</div>}
-            {step === 4 && creation?.setupItemId && <Panel><ConfirmItem itemId={creation.setupItemId} /></Panel>}
+          <li key={name} className={w.step} data-state={state}>
+            <span className={w.stepIcon}>
+              {state === "Done" ? <CheckIcon size={12} strokeWidth={2.4} /> : state === "Failed" ? <AlertIcon size={13} /> : state === "In progress" ? <Spinner size={13} /> : step}
+            </span>
+            <span className={w.stepBody}>
+              <span className={w.stepName}>{name}</span>
+              <span className={w.stepState}>{state}</span>
+              {setup?.waitingReason && <span className={ui.muted}>{reasonLabel(setup.waitingReason)}</span>}
+              {step === 4 && creation?.setupItemId && <Panel><ConfirmItem itemId={creation.setupItemId} /></Panel>}
+            </span>
           </li>
         );
       })}
@@ -84,6 +96,7 @@ export function NewProjectWizard() {
   const resume: string | null = params.get("resume");
   const connected: boolean = useConnected();
   const [inputs, setInputs] = useState<Inputs>(initialInputs);
+  const [idEdited, setIdEdited] = useState<boolean>(false);
   const [creationId, setCreationId] = useState<string | null>(resume);
   const [restoring, setRestoring] = useState<boolean>(resume !== null);
   const accounts = useData(() => call("getAccounts"), [], (m) => m.type === "login.progress" && m.done);
@@ -167,9 +180,9 @@ export function NewProjectWizard() {
   if (creationId || create.busy) {
     const busy: boolean = create.busy || retry.busy || cancel.busy;
     return (
-      <Page title="New project · Create">
+      <Page title="New project">
         <Panel>
-          <h2 className={ui.title}>{creationId ?? inputs.id}</h2>
+          <h2 className={w.creating}>Creating {creationId ?? inputs.id}</h2>
           <CreationTasks creation={creationId ? creation.data : undefined} pending={create.busy} />
           <ErrorText error={creation.data?.error ?? creation.error ?? create.error} />
           <ErrorText error={retry.error ?? cancel.error} />
@@ -184,68 +197,72 @@ export function NewProjectWizard() {
     );
   }
 
+  const idError: string | undefined = inputs.id && !ProjectId.safeParse(inputs.id).success ? "Use up to 24 lowercase letters, digits or dashes, starting with a letter." : undefined;
   return (
-    <Page title="New project · Inputs">
-      <Panel>
-        <form className={ui.stack} onSubmit={(e) => { e.preventDefault(); if (connected && valid) void create.run(); }}>
-          <Field label="Project ID">
-            <input required pattern="[a-z][a-z0-9\x2d]{0,23}" maxLength={24} title="Up to 24 lowercase letters, digits, or dashes, starting with a letter"
-              disabled={!connected} value={inputs.id} onChange={(e) => update({ id: e.target.value })} />
-          </Field>
-          <Field label="Name">
-            <input required disabled={!connected} value={inputs.name} onChange={(e) => update({ name: e.target.value })} />
-          </Field>
-          <fieldset disabled={!connected}>
-            <legend>Repository</legend>
-            <div className={ui.row}>
-              <label><input type="radio" name="repo-mode" checked={inputs.mode === "existing"} onChange={() => update({ mode: "existing" })} /> Existing repository</label>
-              <label><input type="radio" name="repo-mode" checked={inputs.mode === "new"} onChange={() => update({ mode: "new" })} /> New repository</label>
-              <label><input type="radio" name="repo-mode" checked={inputs.mode === "local"} onChange={() => update({ mode: "local" })} /> Local only</label>
-            </div>
-          </fieldset>
+    <Page title="New project">
+      <Card padded className={w.card}>
+        <form className={w.form} onSubmit={(e) => { e.preventDefault(); if (connected && valid) void create.run(); }}>
+          <div className={w.pair}>
+            <TextField label="Name" required disabled={!connected} value={inputs.name} placeholder="e.g. Space game" autoFocus
+              onValueChange={(name) => update(idEdited ? { name } : { name, id: slug(name) })} />
+            <TextField label="Project ID" required mono disabled={!connected} value={inputs.id} error={idError} description="Used for folders and branches."
+              onValueChange={(id) => { setIdEdited(true); update({ id }); }} />
+          </div>
+          <RadioGroup
+            label="Repository"
+            value={inputs.mode}
+            disabled={!connected}
+            onValueChange={(mode) => update({ mode: mode as RepoMode })}
+            options={[
+              { value: "local", label: "Local only", detail: "PeCore keeps the repository on this computer." },
+              { value: "existing", label: "Existing repository", detail: "Jobs push branches and open pull requests there." },
+              { value: "new", label: "New repository", detail: "PeCore creates it on GitHub or GitLab." },
+            ]}
+          />
           {inputs.mode !== "local" && (
-            <>
-              <Field label={inputs.mode === "new" ? "New repository URL" : "Repository URL"}>
-                <input required disabled={!connected} value={inputs.url} onChange={(e) => update({ url: e.target.value })} />
-              </Field>
-              <Field label="Forge account">
-                <select required disabled={!connected || available.length === 0} value={account?.id ?? ""} onChange={(e) => update({ account: e.target.value })}>
-                  <option value="">Select an account</option>
-                  {available.map((entry) => <option key={entry.id} value={entry.id}>{entry.id} · {entry.host}</option>)}
-                </select>
-              </Field>
+            <div className={w.indent}>
+              <TextField label={inputs.mode === "new" ? "New repository URL" : "Repository URL"} required mono disabled={!connected} value={inputs.url}
+                placeholder="https://github.com/owner/name.git" onValueChange={(url) => update({ url })} />
+              <Select
+                label="Forge account"
+                disabled={!connected || available.length === 0}
+                value={account?.id ?? null}
+                onValueChange={(id) => update({ account: id ?? "" })}
+                options={available.map((entry) => ({ value: entry.id, label: `${entry.id} · ${entry.host}` }))}
+                placeholder="Select an account"
+              />
               <ErrorText error={accounts.error} />
-              {accounts.data && available.length === 0 && <div>
+              {accounts.data && available.length === 0 && <Alert tone="warning">
                 {inputs.mode === "new" ? "Add a GitHub or GitLab account in " : "Add a forge account in "}
                 {connected ? <Link to="/settings">Settings</Link> : "Settings"}.
-              </div>}
-              {createRepo && <div>Repository creation node <code>{createRepo}</code></div>}
-            </>
-          )}
-          <Field label="Base branch">
-            <input required disabled={!connected} value={inputs.baseBranch} onChange={(e) => update({ baseBranch: e.target.value })} />
-          </Field>
-          <fieldset disabled={!connected}>
-            <legend>Starting recipes</legend>
-            <div className={ui.row}>
-              {recipes.map((name) => (
-                <label key={name}>
-                  <input type="checkbox" checked={inputs.recipes.includes(name)} onChange={(e) => {
-                    const selected: string[] = recipes.filter((recipe) => recipe === name ? e.target.checked : inputs.recipes.includes(recipe));
-                    update({ recipes: selected });
-                  }} />
-                  {name}{defaultRecipe === name ? " (default)" : ""}
-                </label>
-              ))}
+              </Alert>}
+              {createRepo && <span className={ui.muted}>Repository creation node <code>{createRepo}</code></span>}
             </div>
-          </fieldset>
+          )}
+          <TextField label="Base branch" required mono disabled={!connected} value={inputs.baseBranch} onValueChange={(baseBranch) => update({ baseBranch })} />
+          <div className={w.group} role="group" aria-label="Starting recipes">
+            <span className={w.groupLabel}>Starting recipes</span>
+            {recipes.map((name) => (
+              <Checkbox
+                key={name}
+                label={`${name}${defaultRecipe === name ? " (default)" : ""}`}
+                disabled={!connected}
+                checked={inputs.recipes.includes(name)}
+                onCheckedChange={(checked) => update({ recipes: recipes.filter((recipe) => recipe === name ? checked : inputs.recipes.includes(recipe)) })}
+              />
+            ))}
+          </div>
           <ErrorText error={create.error} />
-          <div className={ui.row}>
+          <div className={w.actions}>
             <Button disabled={!connected} onClick={() => void navigate("/projects")}>Cancel</Button>
             <Button kind="primary" type="submit" disabled={!connected || !valid}>Create project</Button>
           </div>
         </form>
-      </Panel>
+      </Card>
     </Page>
   );
+}
+
+function slug(name: string): string {
+  return name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^[^a-z]+/, "").replace(/-+$/, "").slice(0, 24).replace(/-+$/, "");
 }

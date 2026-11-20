@@ -1,0 +1,122 @@
+.card {
+  max-width: 680px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.indent {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-left: 24px;
+  animation: reveal var(--medium) var(--ease-out);
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.groupLabel {
+  font-weight: 500;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.creating {
+  margin: 0 0 14px;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.stepIcon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--fill);
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 600;
+  transition:
+    background-color var(--medium) ease,
+    color var(--medium) ease,
+    scale var(--spring-time) var(--spring-bouncy);
+}
+
+.step[data-state="Done"] .stepIcon {
+  background: var(--success);
+  color: #fff;
+}
+
+.step[data-state="Failed"] .stepIcon {
+  background: var(--danger);
+  color: #fff;
+}
+
+.step[data-state="In progress"] .stepIcon {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+.stepBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.stepName {
+  font-weight: 500;
+}
+
+.step[data-state="Pending"] .stepName {
+  color: var(--text-2);
+}
+
+.stepState {
+  font-size: 12px;
+  color: var(--text-3);
+}

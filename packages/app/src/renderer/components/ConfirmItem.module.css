@@ -2,13 +2,32 @@
   overflow: auto;
   max-height: 30rem;
   margin: 4px 0;
-  padding: 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface-raised);
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--fill);
+  font-size: 12px;
 }
 
 .hash {
   overflow-wrap: anywhere;
-  color: var(--text-muted);
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.kind {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.answer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--separator);
+}
+
+.choice {
+  text-transform: capitalize;
 }

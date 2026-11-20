@@ -120,7 +120,7 @@ describe.skipIf(gui)("phase 5 gate: G16 actions from the GUI (built app, headles
     await go("#/projects/new");
     await page.getByLabel("Project ID").fill("demo");
     await page.getByLabel("Name").fill("Demo");
-    await page.getByLabel("Local only").check();
+    await page.getByRole("radio", { name: /^Local only/ }).check();
     for (const r of ["feature", "bugfix"]) await page.getByRole("checkbox", { name: new RegExp(`^${r}`) }).uncheck();
     await page.getByRole("button", { name: "Create project" }).click();
     await visible(page.getByRole("button", { name: /Finish|Skip/ }).first(), 30_000);
@@ -423,9 +423,9 @@ describe.skipIf(gui)("phase 5 gate: forge actions from the GUI (fake gh)", () =>
     await go("#/projects/new");
     await page.getByLabel("Project ID").fill("shop");
     await page.getByLabel("Name").fill("Shop");
-    await page.getByLabel("New repository").check();
+    await page.getByRole("radio", { name: /^New repository/ }).check();
     await page.getByLabel("New repository URL").fill("https://github.com/acme/shop.git");
-    await page.getByLabel("Forge account").selectOption("gh-test");
+    await choose(page.getByLabel("Forge account"), "gh-test · github.com");
     for (const r of ["feature", "bugfix"]) await page.getByRole("checkbox", { name: new RegExp(`^${r}`) }).uncheck();
     await shot("wizard");
     await page.getByRole("button", { name: "Create project" }).click();
@@ -547,7 +547,7 @@ describe.skipIf(gui)("phase 6: orchestrator chat from the GUI (fake agent)", () 
     await go("#/projects/new");
     await page.getByLabel("Project ID").fill("demo");
     await page.getByLabel("Name").fill("Demo");
-    await page.getByLabel("Local only").check();
+    await page.getByRole("radio", { name: /^Local only/ }).check();
     for (const r of ["feature", "bugfix"]) await page.getByRole("checkbox", { name: new RegExp(`^${r}`) }).uncheck();
     await page.getByRole("button", { name: "Create project" }).click();
     await visible(page.getByRole("button", { name: /Finish|Skip/ }).first(), 30_000);

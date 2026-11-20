@@ -1,7 +1,7 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { CSSProperties } from "react";
 import { BaseEdge, MarkerType, Position, ReactFlow } from "@xyflow/react";
-import type { Edge, EdgeProps, Node } from "@xyflow/react";
+import type { Edge, EdgeProps, Node, ReactFlowInstance } from "@xyflow/react";
 import { Node as NodeDefinition, Recipe } from "@pecore/schemas";
 import type { JobView, NodeRunView } from "@pecore/schemas";
 import { call } from "../api/client";
@@ -136,10 +136,19 @@ export function JobGraph({ recipe, definitions, runs, selected, onSelect }: {
     selectable: false,
     focusable: false,
   }));
+  const box = useRef<HTMLDivElement>(null);
+  const flow = useRef<ReactFlowInstance | null>(null);
+  useEffect(() => {
+    if (!box.current) return;
+    const observer = new ResizeObserver(() => void flow.current?.fitView({ maxZoom: 1, duration: 220 }));
+    observer.observe(box.current);
+    return () => observer.disconnect();
+  }, []);
   if (!nodes.length) return <Empty>This recipe has no nodes.</Empty>;
   return (
-    <div className={s.graph}>
+    <div ref={box} className={s.graph}>
       <ReactFlow
+        onInit={(instance) => { flow.current = instance; }}
         nodes={nodes}
         edges={edges}
         edgeTypes={edgeTypes}
