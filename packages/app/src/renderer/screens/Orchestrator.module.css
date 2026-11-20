@@ -1,72 +1,8 @@
 .root {
   display: grid;
-  grid-template-columns: 264px 1fr;
+  grid-template-columns: minmax(0, 1fr);
   height: 100%;
   min-height: 0;
-}
-
-.list {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  border-right: 1px solid var(--separator);
-}
-
-.listHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 52px;
-  padding: 0 10px 0 18px;
-}
-
-.listTitle {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 650;
-}
-
-.items {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0;
-  padding: 0 8px 12px;
-  overflow-y: auto;
-  list-style: none;
-}
-
-.item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 38px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  color: var(--text);
-  text-decoration: none;
-  transition: background-color var(--fast) ease;
-}
-
-.item:hover {
-  background: var(--fill);
-  text-decoration: none;
-}
-
-.item[aria-current="page"] {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-}
-
-.itemTitle {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.item[aria-current="page"] .itemTitle {
-  font-weight: 600;
 }
 
 .pane {

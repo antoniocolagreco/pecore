@@ -14,14 +14,17 @@ export function Panel({ children, className }: { children: ReactNode; className?
   return <section className={[s.panel, className ?? ""].join(" ")}>{children}</section>;
 }
 
-export function Page({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
+export function Page({ title, actions, width, children }: { title: string; actions?: ReactNode; width?: number; children: ReactNode }) {
+  const content: ReactNode = <>
+    <header className={s.pageHeader}>
+      <h1 className={s.title}>{title}</h1>
+      <div className={s.row}>{actions}</div>
+    </header>
+    <div className={s.stack}>{children}</div>
+  </>;
   return (
     <div className={s.page}>
-      <header className={s.pageHeader}>
-        <h1 className={s.title}>{title}</h1>
-        <div className={s.row}>{actions}</div>
-      </header>
-      <div className={s.stack}>{children}</div>
+      {width ? <div className={s.pageInner} style={{ maxWidth: width }}>{content}</div> : content}
     </div>
   );
 }

@@ -16,6 +16,7 @@ import { Dialog } from "../ds/overlay";
 import { MultiCombobox, Select } from "../ds/select";
 import { NumberField, Segmented } from "../ds/values";
 import { install } from "../shell/SetupBanner";
+import { SidebarItem, SidebarSection } from "../shell/sidebar";
 import { themeChoice } from "../theme/ThemeLoader";
 import { DefinitionErrors, settingUrl, useDefinitionDraft, useUnsaved } from "./NodeEditor";
 import s from "./Settings.module.css";
@@ -322,7 +323,7 @@ function AddForgeAccount({ open, onClose, onAdd, taken }: { open: boolean; onClo
       <Select label="Service" value={forge} onValueChange={(v) => { if (v) setForge(v as SupportedForge); }}
         options={Object.entries(forges).map(([value, { label }]) => ({ value, label }))} />
       <TextField label="Username" value={user} onValueChange={setUser} placeholder={`your ${base.label} username`} autoFocus />
-      <TextField label="Host" value={host} onValueChange={setHost} placeholder={base.host} description="Change it only for a self-hosted server." mono />
+      <TextField label="Server" value={host} onValueChange={setHost} placeholder={base.host} description="For a company or self-hosted server, enter its address, for example git.example.com." mono />
       <div className={s.pair}>
         <TextField label="Commit author name" value={name} onValueChange={setName} />
         <TextField label="Commit author email" value={email} onValueChange={setEmail} type="email" />
@@ -438,13 +439,13 @@ export function Settings() {
     document.getElementById(id)?.scrollIntoView({ block: "start", behavior: "smooth" });
   };
 
-  return <Page title="Settings">
-    <div className={s.layout}>
-      <nav className={s.nav} aria-label="Settings sections">
-        {sections.map((section) => <button key={section.id} type="button" className={s.navItem} aria-current={active === section.id ? "true" : undefined} onClick={() => go(section.id)}>{section.title}</button>)}
-      </nav>
+  return <Page title="Settings" width={820}>
+    <SidebarSection title="Settings" label="Settings sections">
+      {sections.map((section) => <SidebarItem key={section.id} active={active === section.id} onClick={() => go(section.id)}>{section.title}</SidebarItem>)}
+    </SidebarSection>
+    <div>
       <div className={s.content}>
-        <Section id="accounts" title="Accounts" plain>
+        <Section id="accounts" title="Accounts" description="The AI tools and the code hosting accounts PeCore works with." plain>
           {accounts.feedback}
           <div className={s.groups}>
             <Card title="AI tools">
@@ -455,7 +456,7 @@ export function Settings() {
             <Card title="Git hosting" actions={<Button size="sm" icon={<PlusIcon />} disabled={!connected || !accounts.value || accounts.saving} onClick={() => setAddForge(true)}>Add account</Button>}>
               {(accounts.current?.accounts ?? []).some(({ kind }) => kind !== "model")
                 ? <LoginControls accounts={accounts.current?.accounts ?? []} kind="tool" />
-                : <p className={s.groupText}>Add an account to push branches and open pull requests.</p>}
+                : <p className={s.groupText}>Add an account, on a public service or on your own server, to push branches and open pull requests.</p>}
             </Card>
           </div>
         </Section>

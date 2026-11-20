@@ -13,6 +13,7 @@ import { CommandPalette } from "./CommandPalette";
 import { useProjectFilter } from "./filter";
 import { Notifications } from "./Notifications";
 import { SetupBanner } from "./SetupBanner";
+import { SidebarSlot } from "./sidebar";
 import s from "./Layout.module.css";
 
 type Badge = "inbox" | "orchestrator";
@@ -26,13 +27,9 @@ const nav: { group: string | null; items: { to: string; label: string; icon: Rea
       { to: "/", label: "Factory", icon: <FactoryIcon /> },
       { to: "/jobs", label: "Jobs", icon: <ListIcon /> },
       { to: "/projects", label: "Projects", icon: <FolderIcon /> },
-    ],
-  },
-  {
-    group: "Build",
-    items: [
       { to: "/library", label: "Library", icon: <BookIcon /> },
       { to: "/usage", label: "Usage", icon: <ChartIcon /> },
+      { to: "/settings", label: "Settings", icon: <GearIcon /> },
     ],
   },
 ];
@@ -46,6 +43,7 @@ export function Layout() {
   const unread: number = chats.data?.reduce((total, chat) => total + chat.unread, 0) ?? 0;
   const projects = useData(() => call("listProjects"), [], (m) => m.type === "project.updated");
   const [newJob, setNewJob] = useState(false);
+  const [slot, setSlot] = useState<HTMLDivElement | null>(null);
   const pause = useAction(() => (status.data?.globalPause ? call("playAll") : call("pauseAll")).then(status.reload));
   const st = status.data;
   const counts: Record<Badge, { value: number; label: string }> = {
@@ -72,11 +70,8 @@ export function Layout() {
             ))}
           </div>
         ))}
+        <div ref={setSlot} className={s.slot} />
         <div className={s.footer}>
-          <NavLink to="/settings" className={({ isActive }) => [s.link, isActive ? s.active : ""].join(" ")}>
-            <GearIcon />
-            <span className={s.linkLabel}>Settings</span>
-          </NavLink>
           <div className={s.engine} role="status">
             <span className={s.engineDot} data-off={connected ? undefined : ""} />
             {connected ? "Engine running" : "Disconnected"}
@@ -124,7 +119,9 @@ export function Layout() {
           )}
         </div>
         <main className={s.content} aria-disabled={!connected}>
-          <Outlet />
+          <SidebarSlot.Provider value={slot}>
+            <Outlet />
+          </SidebarSlot.Provider>
         </main>
       </div>
       <NewJobModal open={newJob} onClose={() => setNewJob(false)} onCreated={(id) => navigate(`/jobs/${id}`)} />

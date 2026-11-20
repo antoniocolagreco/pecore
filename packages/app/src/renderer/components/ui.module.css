@@ -121,6 +121,10 @@
   }
 }
 
+.pageInner {
+  margin: 0 auto;
+}
+
 .pageHeader {
   display: flex;
   align-items: center;

@@ -14,6 +14,7 @@ import { Alert, Count, EmptyState, Spinner } from "../ds/feedback";
 import { TextField } from "../ds/field";
 import { ArrowUpIcon, ChatIcon, ClipIcon, PlusIcon, SparkIcon, XIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
+import { SidebarItem, SidebarSection } from "../shell/sidebar";
 import { definitionUrl, object, settingUrl, string } from "./NodeEditor";
 import s from "./Orchestrator.module.css";
 
@@ -382,25 +383,12 @@ export function Orchestrator() {
   const ready: boolean | null = settings.data ? settings.data.value.orchestrator !== null : null;
   return (
     <div className={s.root}>
-      <aside className={s.list}>
-        <header className={s.listHeader}>
-          <h1 className={s.listTitle}>Conversations</h1>
-          <IconButton label="New conversation" icon={<PlusIcon />} disabled={!connected} onClick={() => setCreating(true)} />
-        </header>
-        <ErrorText error={chats.error} />
-        <ul className={s.items}>
-          {chats.data?.length === 0 && <li className={s.actionMeta} style={{ padding: "8px 10px" }}>No conversations yet</li>}
-          {chats.data?.map((chat) => <li key={chat.id}>
-            {connected
-              ? <Link className={s.item} to={conversationUrl(chat.id)} aria-current={chat.id === id ? "page" : undefined}>
-                <ChatIcon size={14} />
-                <span className={s.itemTitle}>{chat.title}</span>
-                <Count value={chat.unread} label={`${chat.unread} unread`} />
-              </Link>
-              : <span className={s.item}><span className={s.itemTitle}>{chat.title}</span></span>}
-          </li>)}
-        </ul>
-      </aside>
+      <SidebarSection title="Conversations" action={<IconButton size="sm" label="New conversation" icon={<PlusIcon />} disabled={!connected} onClick={() => setCreating(true)} />}>
+        {chats.error && <li><ErrorText error={chats.error} /></li>}
+        {chats.data?.length === 0 && <li className={s.actionMeta} style={{ padding: "6px 10px" }}>No conversations yet</li>}
+        {chats.data?.map((chat) => <SidebarItem key={chat.id} to={connected ? conversationUrl(chat.id) : undefined} active={chat.id === id}
+          trailing={<Count value={chat.unread} label={`${chat.unread} unread`} />}>{chat.title}</SidebarItem>)}
+      </SidebarSection>
       {id
         ? <Conversation key={id} id={id} connected={connected} />
         : <Start connected={connected} ready={ready} onCreated={(chatId) => {
