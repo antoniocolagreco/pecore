@@ -4,7 +4,7 @@
 *   **Status:** Approved (EGM stages 5-8 applied; stage 9 not applicable; reports in [reviews/ui/](reviews/ui/)). The `packages/app` table of design.md matches the Screens table below.
 *   **Date:** 2026-11-18
 *   **Related:** [design.md](design.md), [concepts-brief.md](concepts-brief.md)
-*   **Overridden by:** [decisions.md](decisions.md) wherever the two disagree.
+*   **Decision history:** [decisions.md](decisions.md). This document always describes the current state; every decision there is applied here in the same change.
 
 ## Problem Statement
 
@@ -53,9 +53,9 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 |---|---|---|
 | IA1 | Global pause and play | G17 |
 | IA2 | Inbox counter | 4.3, 8 |
-| IA3 | Notifications: job finished, needs the user, budget reached, login expired, parent failed, job started from a ticket, orchestrator replied (added by this document) | 6, 7, 9 |
+| IA3 | Notifications: job finished, needs the user, budget reached, login expired, parent failed, job started from a ticket, auto-setup changes. Orchestrator replies only as a system notification (decisions 25, 27) | 6, 7, 9 |
 | IA4 | Engine status (running, error, disconnected) and app version | 1, "Fixed implementation choices" |
-| IA5 | Project filter | 3.5 |
+| IA5 | Withdrawn: project filter (decision 30) | 3.5 |
 | IA6 | Tray icon | "Engine and main process messages" |
 | IA7 | Command palette | added by this document |
 
@@ -66,7 +66,8 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 | IB1 | Conversation list | 6 |
 | IB2 | Messages, with attachments (text, links, images) | G1, 6 |
 | IB3 | Input field with attachment upload | G1 |
-| IB4 | Cards for what the orchestrator did (from `chats.db` `actions`) | 6, "Data model" |
+| IB4 | What the orchestrator did (from `chats.db` `actions`), under its reply: a card for each action that changes something, one line for reads (decision 28) | 6, "Data model" |
+| IB7 | Live reply while it is written, working indicator, compaction (decisions 20, 23, 24) | added by decisions.md |
 | IB5 | Unread marker | 6, 7 |
 | IB6 | Answers to agent questions (`agent-question` items) | 6 |
 
@@ -83,7 +84,7 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 | IC7 | Artifact viewer: spec, diff, findings, risk, check log, delivery link | 3.3 |
 | IC8 | "Why is it waiting" text (same as `pecore job why`) | 9 |
 | IC9 | Base change notice | 4.2 |
-| IC10 | New job | "Local API", "Job creation" |
+| IC10 | Withdrawn: New job form; jobs start from the orchestrator chat (decision 31) | "Local API", "Job creation" |
 
 ### D. Inbox items
 
@@ -124,12 +125,12 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 
 | Id | Element | Source |
 |---|---|---|
-| IG1 | Accounts: model, forge, service | 3.4 |
-| IG2 | Profiles and tiers | 3.4 |
+| IG1 | Accounts: AI tools (found by themselves), Git hosting (public services and private Git servers), services | 3.4 |
+| IG2 | Withdrawn: profiles and tiers; models are chosen on each node and for the orchestrator (decisions 5, 6) | 3.4 |
 | IG3 | Global limits, services runtime, disk threshold, merge check interval, prices, project paths | 4.7, 4.9, "Risks & Limits" |
 | IG4 | Usage: tokens and cost per account, project, day (a top-level page) | 4.7 |
 | IG5 | First run | G14 |
-| IG6 | Orchestrator: profile | 6 |
+| IG6 | Orchestrator: provider, model, effort (decision 7) | 6 |
 | IG7 | Connector files, auto-update | 5, "Fixed implementation choices" |
 | IG8 | Notifications and quiet hours | 9, `src/settings.ts` |
 | IG9 | Appearance: theme, reduced motion | UI4, UI6 |
@@ -138,8 +139,8 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 
 | Screen | Placement | Inventory |
 |---|---|---|
-| Factory | centre | IA2, IC1, IC10 |
-| Jobs | centre | IC1-IC4, IC10 |
+| Factory | centre | IA2, IC1 |
+| Jobs | centre | IC1-IC4 |
 | Job view | detail page | IC3-IC9 |
 | Inbox | centre | ID1-ID8 |
 | Orchestrator | centre, plus mini chat on the right | IB1-IB6 |
@@ -147,7 +148,7 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 | Recipe editor, node editor | detail page | IE1-IE3, IE5 |
 | Library | centre | IE4 |
 | Usage | centre | IG4 |
-| Settings | centre | IG1-IG3, IG6-IG9 |
+| Settings | centre | IG1, IG3, IG6-IG9 |
 | First run | full screen | IG5 |
 
 ## Proposed Design
@@ -156,17 +157,19 @@ The prototype is normative only for: the Everforest palette and gradients, the I
 
 ### Navigation (left)
 
-*   Workspace: Factory, Orchestrator (unread badge), Jobs, Inbox (counter, IA2), Projects, Usage.
-*   Build: Library.
-*   System: Settings.
+*   One list, no group titles (decision 14): Orchestrator (unread badge), Inbox (counter, IA2), Factory, Jobs, Projects, Library, Usage, Settings.
+*   Under the list, the open page's own sub-navigation (decision 13): Settings sections, or the conversations of the Orchestrator with a "New conversation" button.
+*   Orchestrator reopens the last conversation opened in this run of the app; clicking it while in the Orchestrator opens a new conversation (decision 26).
 *   Bottom: engine status (IA4), with warnings from the home check and identity checks.
 *   Note: a project's recipes, nodes and settings are reached through Projects; the node editor and the job view are detail pages, not menu items.
+*   Page content is centred, with a maximum width (decision 15).
 
 ### Top bar
 
-*   Project filter (IA5), global pause and play (IA1), "New job" (IC10), notifications (IA3), command palette button.
+*   Command palette button, global pause and play (IA1), notifications (IA3).
 *   While the global pause is on, a banner says so, with Play.
-*   The notification list shows the notification log (`GET /notifications`), so notifications that arrived while the user was away survive a restart.
+*   The notification list shows the notification log (`GET /notifications`), so notifications that arrived while the user was away survive a restart. Orchestrator replies are not in it (decision 27).
+*   A system notification is shown only when the PeCore window is not focused (decision 25).
 
 ### Tray (IA6)
 
@@ -185,15 +188,10 @@ The prototype is normative only for: the Everforest palette and gradients, the I
 
 ### Jobs
 
-*   Every job. Filters (IC2): state label, archived, text search on title; the project comes from the top bar filter.
+*   Every job. Filters (IC2): text search on title, project, state label, archived. "Jobs of this project" on a project page opens Jobs with that project selected.
 *   Columns: title, project, state, current node or final outcome, waiting reason, duration (from creation to end or to now, waits included), updated.
 *   Stacked jobs as a collapsible tree.
 *   Row actions on hover, following the controls table.
-
-### New job (modal, IC10)
-
-*   Fields: title (required), project, recipe (default recipe preselected), ticket text or reference, base branch (project default preselected), optional parent job.
-*   Opened from the top bar, Factory and Jobs.
 
 ### Job view
 
@@ -227,7 +225,7 @@ The prototype is normative only for: the Everforest palette and gradients, the I
 
 ### Inbox
 
-*   List: one row per item with a kind label ("Human review", "Engine node", ...), project, the job when the item has one, age. Oldest first. All projects by default (UI13), with an optional project filter of its own.
+*   List: one row per item with a kind label ("Human review", "Engine node", ...), project, the job when the item has one, age. Oldest first. All projects.
 *   Every detail renders the item's `subject` snapshot, never a file read at decision time, and shows its sha256. The decision is sent with that hash. Items never change: a definition edited while its item is open cancels the item and creates a new one (design.md `confirm.ts`). If `queue.updated` reports the open item resolved or cancelled (for example a review cancelled by a base change), the detail locks with a banner and a button that opens the new item, if any.
 *   Inline confirmations (UI17: wizard, import, node editor, Library) use the same component on the same queue item, with the same snapshot and hash.
 *   Detail by kind:
@@ -242,12 +240,15 @@ The prototype is normative only for: the Everforest palette and gradients, the I
 
 ### Orchestrator page and mini chat
 
-*   Page: conversation list, full history, attachments, unread markers.
+*   Page: the conversation list is in the main sidebar (decision 13); the page shows one conversation with its full history, attachments and unread markers. With no conversation open, the page is a new conversation with the message box ready.
+*   The reply appears while it is written (decision 20). Until it starts, animated dots under the user's message show the orchestrator is working (decision 23).
+*   After sending, the cursor stays in the message box; opening a conversation puts it there (decision 22).
+*   Compaction (decision 24): a Compact button in the conversation header, or `/compact` typed as a message, sends the harness's own compaction command to the conversation's session. The chat shows a divider ("Compacting the conversation…", then "Conversation compacted"), no reply.
 *   Mini chat on the right of the job view, recipe editor, node editor, Library and project page; closed by default. It shows the last conversation used, with a "New" button and a link to the page. "Ask the AI" (IE5) opens it.
 *   Context chip: one at a time, a reference with its scope (for example "Job: Fix login timeout", "Recipe feature (project progetto-1)", "Template recipe feature"). It shows the object of the current screen and changes on navigation; pinning keeps it; removing it sends the next message with no context.
-*   Cards for the orchestrator's actions (IB4) link to the job, definition or Inbox item.
+*   What the orchestrator did (IB4) appears under its reply, never under the user's message (decision 28). Actions that change something (create jobs, answer a job's question, add a node or recipe to a project, comment on a ticket) get a card that links to the job, definition or Inbox item. Reads (projects, recipes, ticket, ticket replies, job status, job output, library templates, definition check) become one grey line: "Read: projects, job status".
 *   Agent questions (IB6) appear in the conversation with an answer field.
-*   A reply that arrives while the user is not looking at that conversation sets the unread badge and sends a notification.
+*   A reply that arrives while the user is not looking at that conversation sets the unread badge. A system notification is shown only when the PeCore window is not focused; replies never go to the notification list (decisions 25, 27).
 
 ### Projects
 
@@ -257,7 +258,7 @@ The prototype is normative only for: the Everforest palette and gradients, the I
     *   General: name, base branch, default recipe (editable); id, repo, forge account (read-only after creation).
     *   Recipes (recipe editor), Nodes (node editor), Knowledge (IF4), Services, Ticket source (`label`, `pollSec`, trusted users), Limits and budget, Export.
     *   Danger zone: Delete project (IF7).
-*   A link "Jobs of this project" sets the top bar filter and opens Jobs.
+*   A link "Jobs of this project" opens Jobs with this project selected.
 
 ### New project wizard (full page)
 
@@ -314,8 +315,13 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 ### Settings
 
-*   Sections: Accounts (IG1), Protected mode (IF6), Profiles and tiers (IG2), Orchestrator (IG6), Limits and disk threshold, Services runtime, Merge check interval, Prices, Project paths (IG3), Connectors and Updates (IG7), Notifications and quiet hours (IG8), Appearance (IG9).
-*   Each account shows its login state and a Login button. Forge and service tool logins (`gh`, `glab`, `acli`) run in the GUI like harness logins: the device code or URL is shown, then the account is rechecked (design.md `accounts/login.ts`). "Recheck login" re-runs the identity check.
+*   Sections: Accounts (IG1), Protected mode (IF6), Orchestrator (IG6), Limits and disk threshold, Services runtime, Merge check interval, Prices, Project paths (IG3), Connectors and Updates (IG7), Notifications and quiet hours (IG8), Appearance (IG9). No Models section (decision 6).
+*   The section list is in the main sidebar (decision 13). Sections adapt to the window width, and each has a one-line description under its title (decisions 2, 16).
+*   No text or JSON editing and no user-typed IDs; raw validation errors are never shown (decisions 1, 3).
+*   Accounts has two lists:
+    *   AI tools: every installed harness appears by itself (decision 4). A row shows the tool, the account, its state, a Check button that looks clickable, and Log in only when needed (decision 8). OpenCode is Ready when it lists at least one model; with none, the row says to set up a model provider in OpenCode (decision 12).
+    *   Git hosting: an "Add account" button for a public service or the user's own server (decisions 9, 11). Texts never name a hosting service. Forge tool logins (`gh`, `glab`) run in the GUI like harness logins: the device code or URL is shown, then the account is rechecked (design.md `accounts/login.ts`). A private Git server account uses the user's own Git credentials and has no Log in button.
+*   Orchestrator: Provider, Model and Effort selects, filled from what the harness reports (decision 7).
 *   Protected mode (IF6): one switch with a short explanation (agents cannot read your files and logins; one login per harness account for `pecore-agent`; agents can read all `pecore-agent` logins). Turning it on opens the admin prompt; if it cannot (no polkit agent), the page shows the exact script with a Copy button and "I ran it, recheck". Then the page lists each model account with a Login button for `pecore-agent`, showing the URL or code. Turning it off asks whether to also remove `pecore-agent`.
 *   "Recheck prerequisites", with a link to the setting each failed check points to.
 
@@ -325,7 +331,7 @@ Goal: minimum friction. The user opens PeCore and it works, with no setting to f
 
 *   No location window: `PECORE_HOME` is `~/.pecore` unless a location is already stored. Moving it from Settings is a later feature.
 *   No first run screen and no `firstRunDone`. The app opens on the Orchestrator page, with a new conversation ready.
-*   At every engine start, auto-setup runs (design.md "Auto-setup"). It finds the installed harnesses, adds an account for each one the user is logged in to, creates profiles from the models each harness reports, fills the tiers and sets the orchestrator profile. It only adds what is missing and never changes what the user set.
+*   At every engine start, auto-setup runs (design.md "Auto-setup"). It finds the installed harnesses, adds an account for each one the user is logged in to, creates profiles from the models each harness reports, fills the tiers and sets the orchestrator profile. Profiles and tiers are internal and never shown (decision 5). It only adds what is missing and never changes what the user set.
 *   When no harness is installed and logged in, a banner on every page says so, with the install link of each supported harness and a Log in button for the installed ones. Nothing is disabled that can work without it.
 *   git stays required, because `PECORE_HOME` is a git repository: without it the app shows an error with the install instruction. Other missing prerequisites (Compose, gitleaks, gh, glab) are warnings on the feature that needs them, as in "Missing configuration and warnings" below, never a blocking step.
 
@@ -334,7 +340,11 @@ Goal: minimum friction. The user opens PeCore and it works, with no setting to f
 ### Empty, loading and disconnected states
 
 *   Empty lists say what fills them, with the action: "No projects: New project", "Inbox empty: nothing waits for you".
-*   Loading: lists keep their layout with placeholder rows; no spinners over the whole screen.
+*   Loading: lists keep their layout with placeholder rows; no spinners over the whole screen. A field whose options are loading shows a spinner and a "Reading…" text and never looks disabled (decision 19).
+
+### Controls
+
+*   A select and a combobox look the same: same arrow, no clear button. A focused field shows one focus ring (decision 19).
 *   Engine or WebSocket disconnected: a banner "Disconnected, reconnecting", every control disabled, data marked stale. On reconnect the GUI refetches every open view.
 
 ### Missing configuration and warnings
@@ -427,7 +437,7 @@ Status tokens need at least 3:1 contrast against `surface` in every theme.
 | UI10 | A recipe change proposed by the orchestrator is shown as a diff on the graph before the user confirms it (ID3). |
 | UI11 | Every value shown comes from engine state, an artifact, a persisted definition, or a deterministic computation on these. A value with no source is shown as missing; the UI never asks an LLM to fill it. |
 | UI12 | Factory shows only what needs the user and the state of unfinished work. Every other function is one navigation click away. |
-| UI13 | The project filter applies to Factory (except the Inbox counter), Jobs, Projects and Usage. It never applies to the Inbox counter, the Inbox or notifications. |
+| UI13 | Withdrawn: there is no global project filter (decisions.md 30). Jobs has a project filter of its own. |
 | UI14 | The mini chat sends references, never content (design.md section 6). |
 | UI15a | Closing the window keeps jobs running in the tray. |
 | UI15b | Quit asks for confirmation and shows how many jobs it interrupts. |
