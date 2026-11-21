@@ -1,12 +1,14 @@
+import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { call } from "../api/client";
 import { useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { needsYou } from "../components/states";
-import { ErrorText, Page } from "../components/ui";
+import { ErrorText, Page, ui } from "../components/ui";
 import { Button } from "../ds/button";
 import { Badge, Card, EmptyState, Skeleton } from "../ds/feedback";
 import { FolderIcon, LinkIcon, PlusIcon } from "../ds/icons";
+import { ProjectImportDialog } from "./ProjectShareDialogs";
 import s from "./Projects.module.css";
 
 type JobCounts = { attention: number; failed: number; running: number; auth: boolean };
@@ -14,6 +16,7 @@ type JobCounts = { attention: number; failed: number; running: number; auth: boo
 export function Projects() {
   const navigate = useNavigate();
   const connected: boolean = useConnected();
+  const [importing, setImporting] = useState<boolean>(false);
   const projects = useData(() => call("listProjects"), [], (m) => m.type === "project.updated" || m.type === "definition.changed");
   const jobs = useData(() => call("listJobs", { query: { archived: "false" } }), [], (m) => m.type === "job.updated" || m.type === "project.updated");
   const counts: Map<string, JobCounts> = new Map();
@@ -25,13 +28,20 @@ export function Projects() {
     if (job.state === "waiting" && job.waitingReason === "auth") stats.auth = true;
     counts.set(job.projectId, stats);
   }
-  const newProject = <Button variant="primary" icon={<PlusIcon />} disabled={!connected} onClick={() => void navigate("/projects/new")}>New project</Button>;
+  const actions = <div className={ui.row}>
+    <Button variant="primary" icon={<PlusIcon />} disabled={!connected} onClick={() => void navigate("/projects/new")}>New project</Button>
+    <Button disabled={!connected} onClick={() => setImporting(true)}>Import</Button>
+  </div>;
   return (
-    <Page title="Projects" actions={projects.data?.length === 0 ? undefined : newProject}>
+    <Page title="Projects" actions={projects.data?.length === 0 ? undefined : actions}>
+      {importing && <ProjectImportDialog onClose={() => setImporting(false)} onImported={(id) => {
+        setImporting(false);
+        void navigate(`/projects/${encodeURIComponent(id)}`);
+      }} />}
       <ErrorText error={projects.error ?? jobs.error} />
       {projects.data?.length === 0 && (
         <Card padded>
-          <EmptyState icon={<FolderIcon size="md" />} title="No projects yet" action={newProject}>
+          <EmptyState icon={<FolderIcon size="md" />} title="No projects yet" action={actions}>
             A project is a repository PeCore works on. It can live only on this computer or on GitHub and GitLab.
           </EmptyState>
         </Card>

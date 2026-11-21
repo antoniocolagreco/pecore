@@ -7,4 +7,4 @@ const home = process.env.PECORE_HOME;
 const resources = process.env.PECORE_RESOURCES;
 if (!home || !resources) throw new Error("PECORE_HOME and PECORE_RESOURCES must be set");
 
-void host(parentPort, { home, resources, version: process.env.PECORE_APP_VERSION ?? "0.0.0", devOrigin: process.env.PECORE_DEV_ORIGIN });
+void host(parentPort, { home, resources, version: process.env.PECORE_APP_VERSION ?? "0.0.0", devOrigin: process.env.PECORE_DEV_ORIGIN, downloads: process.env.PECORE_DOWNLOADS });

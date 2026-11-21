@@ -3,7 +3,13 @@ import type { ApiClient } from "@pecore/schemas";
 
 declare global {
   interface Window {
-    pecore: { api(): Promise<{ port: number; token: string }>; pickFolder(): Promise<string | null>; pickFile(defaultPath: string | null): Promise<string | null> };
+    pecore: {
+      api(): Promise<{ port: number; token: string }>;
+      pickFolder(): Promise<string | null>;
+      pickFile(defaultPath: string | null): Promise<string | null>;
+      pickProjectExport(source: "archive" | "folder"): Promise<string | null>;
+      saveProjectExport(id: string): Promise<string | null>;
+    };
   }
 }
 

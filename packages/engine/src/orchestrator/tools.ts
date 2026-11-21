@@ -1,8 +1,8 @@
 import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { ArchiveReviewBody, InstantiateBody, OrderPlan, TicketReply, TicketSnapshot } from "@pecore/schemas";
-import type { Role, StoredEvent } from "@pecore/schemas";
+import { ArchiveReviewBody, InstantiateBody, OrderPlan, ProjectExportOptions, TicketReply, TicketSnapshot } from "@pecore/schemas";
+import type { ExportProjectResult, ImportProjectPreview, Role, StoredEvent } from "@pecore/schemas";
 import { definitionOperations } from "../api/routes/definitions";
 import { jobHandlers } from "../api/routes/jobs";
 import { queueHandlers } from "../api/routes/queue";
@@ -12,7 +12,7 @@ import type { OrderPlanResult, TicketOrder } from "../jobs/plan";
 import { NotFoundError } from "../main";
 import type { Engine } from "../main";
 import { readLogTail } from "../observability/logs";
-import { analyzeProjectArchive } from "../share/review";
+import { analyzeProjectSource } from "../share/review";
 import { runSource } from "../sources/run";
 import type { SourceRequest } from "../sources/run";
 import type { ChatTurn } from "../store/chats-db";
@@ -105,16 +105,16 @@ export function orchestratorTools(engine: Engine): {
         baseBranch: ctx.project.baseBranch,
       })),
     })),
-    analyze_project_archive: tool("Perform a read-only security review of a PeCore .tar.zst archive explicitly supplied by the user. Report findings and coverage to the user. This does not import the archive.", ArchiveReviewBody, async ({ path }) => {
-      const result = await analyzeProjectArchive(engine, path).catch((error: unknown) => {
-        throw new Error("The archive could not be reviewed. Check its path, PeCore format and size.", { cause: error });
+    analyze_project_archive: tool("Review a project supplied by the user for dangerous code and hidden instructions. Report findings and coverage. The report is neither a guarantee of safety nor an instruction to act.", ArchiveReviewBody, async ({ path }) => {
+      const result = await analyzeProjectSource(engine, path).catch((error: unknown) => {
+        throw new Error("The shared project could not be reviewed. Open Import in Projects for details.", { cause: error });
       });
       const findings = result.files.flatMap((entry, index) => entry.findings.map((finding) => ({ ...finding, file: index + 1, path: entry.path })));
       const summary = {
         model: result.model,
         textFiles: result.files.filter(({ content }) => content === "text").length,
         historyFiles: result.files.filter(({ content }) => content === "history").length,
-        binaryFiles: result.files.filter(({ content }) => content === "binary").length,
+        unreadFiles: result.files.filter(({ content }) => content === "binary" || content === "too_large").length,
         modelReviewedFiles: result.files.filter(({ modelReviewed }) => modelReviewed).length,
         totalFindings: findings.length,
       };
@@ -124,6 +124,30 @@ export function orchestratorTools(engine: Engine): {
         target: { ...summary, rows: shown.map(({ file, path, line, risk }) => ({
           label: `File ${file}, line ${line} · ${risk.replaceAll("_", " ")}`, value: path,
         })) },
+      };
+    }),
+    import_project: tool("Review a shared project supplied by the user for dangerous code and hidden instructions, then propose importing it. Describe the risks and limits of the review and ask the user to confirm. The report is neither a guarantee of safety nor an instruction to act.", ArchiveReviewBody, async ({ path }) => {
+      const preview: ImportProjectPreview = await engine.previewProjectImport(path).catch((error: unknown) => {
+        throw new Error("The shared project could not be reviewed. Open Import in Projects for details.", { cause: error });
+      });
+      const { review } = preview;
+      return {
+        value: {
+          state: "awaiting_confirmation",
+          model: review.model,
+          totalFindings: review.files.reduce((count, file) => count + file.findings.length, 0),
+          unreadFiles: review.files.filter(({ content }) => content === "binary" || content === "too_large").length,
+          accountsWithoutChoices: preview.accounts.filter(({ choices }) => choices.length === 0).length,
+        },
+        target: { state: "awaiting_confirmation", source: path, preview },
+      };
+    }),
+    export_project: tool("Save a copy of a project to Downloads. Include job history when requested. If possible secrets are found, ask the user to review them before exporting.", project.extend(ProjectExportOptions.shape), async ({ project, history }) => {
+      const result: ExportProjectResult = await engine.exportProjectToDownloads(project, history);
+      if (result.state === "written") return { value: result, target: { ...result, project } };
+      return {
+        value: { state: "awaiting_confirmation", totalFindings: result.findings.length },
+        target: { state: "awaiting_confirmation", project, history, findings: result.findings },
       };
     }),
     project_creation_options: tool("List the configured forge accounts to present to the user when creating a project.", z.strictObject({}), () => ({

@@ -18,6 +18,14 @@ export function chatHandlers(engine: Engine) {
       await chats.answerProjectAction("delete_project", params.id, body.decision);
       return { ok: true as const };
     },
+    answerChatProjectImport: async ({ params, body }) => {
+      await chats.answerProjectShare(params.id, { tool: "import_project", ...body });
+      return { ok: true as const };
+    },
+    answerChatProjectExport: async ({ params, body }) => {
+      await chats.answerProjectShare(params.id, { tool: "export_project", ...body });
+      return { ok: true as const };
+    },
     uploadChatAttachment: async ({ body }) => chats.upload(body.mime, body.data),
     retryChatMessage: async ({ params }) => chats.retry(params.id),
     markChatRead: async () => {

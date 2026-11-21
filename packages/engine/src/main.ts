@@ -1,15 +1,15 @@
 import { EventEmitter } from "node:events";
 import { createHash } from "node:crypto";
-import { readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { applyTraverseAcls } from "./osuser/acl";
-import { cpus } from "node:os";
+import { cpus, homedir } from "node:os";
 import { join, relative } from "node:path";
 import { removeAs } from "./workdir/fs-as";
 import { BuiltInHarness, defaultJobLimit, roleProfile, withForgeHosts } from "@pecore/schemas";
 import { listOptions, satisfies } from "@pecore/agents";
 import type { LoginState } from "@pecore/agents";
 import type { Account, AccountOptions, Accounts, ForgeAccount, JobState, LiveMessage, LoginView, NotificationTarget, Profiles, ProjectInput, Settings, SetupView, Tiers, WhyView } from "@pecore/schemas";
-import type { ExportProjectBody, ExportProjectResult, ImportProjectBody, ImportProjectResult } from "@pecore/schemas";
+import type { CompleteProjectImportBody, ExportProjectBody, ExportProjectResult, ImportProjectBody, ImportProjectPreview, ImportProjectResult } from "@pecore/schemas";
 import { AgentServices, protectedUser, spawnFor } from "./accounts/agents";
 import type { AgentPaths, LoginInfo } from "./accounts/agents";
 import { LoginRunner } from "./accounts/login";
@@ -44,9 +44,11 @@ import type { OrderSink } from "./sources/poll";
 import { OrchestratorChats } from "./orchestrator/chat";
 import { intakeSink } from "./orchestrator/intake";
 import { exportProject } from "./share/export";
-import { beginImport } from "./share/import";
+import { InvalidArchive } from "./share/archive";
+import { beginImport, previewImport } from "./share/import";
+import { reviewProjectContents } from "./share/review";
 
-export type EngineOptions = { home: string; library: string; agents?: AgentPaths; checkLogins?: boolean; admin?: (script: string) => Promise<void>; orders?: OrderSink; notify?: (notification: Pick<Notification, "kind" | "title" | "body">) => void };
+export type EngineOptions = { home: string; library: string; downloads?: string; agents?: AgentPaths; checkLogins?: boolean; admin?: (script: string) => Promise<void>; orders?: OrderSink; notify?: (notification: Pick<Notification, "kind" | "title" | "body">) => void };
 
 export class EngineStartError extends Error {
   constructor(readonly errors: DefinitionError[]) {
@@ -569,13 +571,34 @@ export class Engine extends EventEmitter {
     return exportProject(project.ctx, input);
   }
 
+  async exportProjectToDownloads(id: string, history: boolean, acceptFindings: string[] = []): Promise<ExportProjectResult> {
+    const downloads: string = this.opts.downloads ?? join(homedir(), "Downloads");
+    await mkdir(downloads, { recursive: true });
+    return this.exportProject(id, { path: join(downloads, `${id}.tar.zst`), history, logs: false, acceptFindings });
+  }
+
   async importProject(input: ImportProjectBody): Promise<ImportProjectResult> {
-    const result: ImportProjectResult = await beginImport(this.opts.home, input, {
-      accounts: this.accounts,
-      knownProject: (id) => this.projects.has(id) || this.creating.has(id) || this.projectErrors.has(id),
-    });
+    const result: ImportProjectResult = await beginImport(this.opts.home, input, this.importOptions());
     if (result.state === "imported") await this.continueCreation(result.id);
     return result;
+  }
+
+  previewProjectImport(path: string): Promise<ImportProjectPreview> {
+    return previewImport(this.opts.home, path, this.importOptions(), (dir, manifest) => reviewProjectContents(this, dir, manifest));
+  }
+
+  async completeProjectImport({ digest, ...input }: CompleteProjectImportBody): Promise<{ id: string }> {
+    const result: ImportProjectResult = await beginImport(this.opts.home, input, this.importOptions(), digest);
+    if (result.state !== "imported") throw new InvalidArchive("Choose a local forge account for each account the project needs.");
+    await this.continueCreation(result.id);
+    return { id: result.id };
+  }
+
+  private importOptions() {
+    return {
+      accounts: this.accounts,
+      knownProject: (id: string) => this.projects.has(id) || this.creating.has(id) || this.projectErrors.has(id),
+    };
   }
 
   async continueCreation(id: string): Promise<void> {

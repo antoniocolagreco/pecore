@@ -3,7 +3,7 @@ import type { Engine } from "../../main";
 import { NotFoundError } from "../../main";
 import { ProjectCreateError, setupJobId } from "../../projects/create";
 import { InvalidArchive, ShareConflict } from "../../share/archive";
-import { analyzeProjectArchive } from "../../share/review";
+import { analyzeProjectSource } from "../../share/review";
 import { HttpError } from "../server";
 import type { Handlers } from "../server";
 import { definitionOperations } from "./definitions";
@@ -60,9 +60,26 @@ export function projectHandlers(engine: Engine) {
     },
     analyzeArchive: async ({ body }) => {
       try {
-        return await analyzeProjectArchive(engine, body.path);
+        return await analyzeProjectSource(engine, body.path);
       } catch (error) {
         if (error instanceof InvalidArchive) throw new HttpError("bad_request", error.message);
+        throw error;
+      }
+    },
+    previewProjectImport: async ({ body }) => {
+      try {
+        return await engine.previewProjectImport(body.path);
+      } catch (error) {
+        if (error instanceof InvalidArchive) throw new HttpError("bad_request", error.message);
+        throw error;
+      }
+    },
+    completeProjectImport: async ({ body }) => {
+      try {
+        return await engine.completeProjectImport(body);
+      } catch (error) {
+        if (error instanceof ShareConflict) throw new HttpError("conflict", error.message);
+        if (error instanceof InvalidArchive || error instanceof ProjectCreateError) throw new HttpError("bad_request", error.message);
         throw error;
       }
     },

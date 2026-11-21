@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { extname, join, normalize, resolve } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, Notification, protocol, session, Tray } from "electron";
 import { pathToFileURL } from "node:url";
-import { apiClient } from "@pecore/schemas";
+import { ProjectId, apiClient } from "@pecore/schemas";
 import { startEngine } from "./engine";
 import type { EngineHandle } from "./engine";
 
@@ -160,7 +160,7 @@ async function main(): Promise<void> {
   const home = await homeLocation();
   try {
     engine = await startEngine(
-      { home, resources: await resourcesDir(), version: app.getVersion(), devOrigin: devUrl ? new URL(devUrl).origin : null },
+      { home, resources: await resourcesDir(), version: app.getVersion(), devOrigin: devUrl ? new URL(devUrl).origin : null, downloads: app.getPath("downloads") },
       {
         notify: (n) => {
           if (win && !win.isDestroyed() && win.isFocused()) return;
@@ -193,6 +193,29 @@ async function main(): Promise<void> {
     const owner: BrowserWindow | null = BrowserWindow.fromWebContents(event.sender);
     const picked: Electron.OpenDialogReturnValue = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options);
     return picked.canceled ? null : picked.filePaths[0] ?? null;
+  });
+  ipcMain.handle("pecore:pick-project-export", async (event, source: unknown) => {
+    if (source !== "archive" && source !== "folder") throw new Error("Invalid project import source");
+    const options: Electron.OpenDialogOptions = source === "folder"
+      ? { title: "Choose an extracted project", properties: ["openDirectory"] }
+      : { title: "Choose a PeCore export", properties: ["openFile"], filters: [{ name: "PeCore export", extensions: ["zst"] }] };
+    const owner: BrowserWindow | null = BrowserWindow.fromWebContents(event.sender);
+    const picked: Electron.OpenDialogReturnValue = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options);
+    return picked.canceled ? null : picked.filePaths[0] ?? null;
+  });
+  ipcMain.handle("pecore:save-project-export", async (event, id: unknown) => {
+    const project: string = ProjectId.parse(id);
+    const downloads: string = app.getPath("downloads");
+    await mkdir(downloads, { recursive: true });
+    const options: Electron.SaveDialogOptions = {
+      title: "Export project",
+      defaultPath: join(downloads, `${project}.tar.zst`),
+      filters: [{ name: "PeCore export", extensions: ["zst"] }],
+    };
+    const owner: BrowserWindow | null = BrowserWindow.fromWebContents(event.sender);
+    const picked: Electron.SaveDialogReturnValue = owner ? await dialog.showSaveDialog(owner, options) : await dialog.showSaveDialog(options);
+    if (picked.canceled || !picked.filePath) return null;
+    return picked.filePath.endsWith(".tar.zst") ? picked.filePath : `${picked.filePath.replace(/\.zst$/, "")}.tar.zst`;
   });
   serveRenderer(engine.port);
   tray = new Tray(nativeImage.createFromPath(iconPath()).resize({ width: 22, height: 22 }));

@@ -14,6 +14,7 @@ import { PlusIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
 import { JobTable, useJobs } from "./Jobs";
+import { ProjectExportDialog } from "./ProjectShareDialogs";
 import s from "./ProjectPage.module.css";
 
 const pageSize: number = 100;
@@ -190,7 +191,7 @@ function Knowledge({ id }: { id: string }) {
 
 type SettingsForm = { name: string; baseBranch: string; services: string };
 
-function ProjectSettings({ id, onSaved, deleteAction, deleteNotice }: { id: string; onSaved(): void; deleteAction: ReactNode; deleteNotice: ReactNode }) {
+function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: string; onSaved(): void; projectActions: ReactNode; deleteNotice: ReactNode }) {
   const connected: boolean = useConnected();
   const path: string = `projects/${id}/project.json`;
   const file = useData(() => call("getDefinition", { params: { path } }), [path], (m) => m.type === "definition.changed" && m.path === path);
@@ -257,7 +258,7 @@ function ProjectSettings({ id, onSaved, deleteAction, deleteNotice }: { id: stri
       <ErrorText error={save.error} />
       {deleteNotice}
       <div className={s.formActions}>
-        <span className={s.grow}>{deleteAction}</span>
+        <div className={`${s.grow} ${ui.row}`}>{projectActions}</div>
         {savedAt && !dirty && <span className={ui.muted} role="status">Saved</span>}
         <DsButton disabled={!dirty || disabled} onClick={() => setForm(null)}>Discard</DsButton>
         <DsButton type="submit" variant="primary" disabled={!dirty || !value.name.trim() || !value.baseBranch.trim()} loading={save.busy}>Save settings</DsButton>
@@ -304,6 +305,7 @@ function ProjectDetails({ id }: { id: string }) {
   const navigate = useNavigate();
   const [query] = useSearchParams();
   const [deleting, setDeleting] = useState<boolean>(false);
+  const [exporting, setExporting] = useState<boolean>(false);
   const [creatingJob, setCreatingJob] = useState<boolean>(false);
   const data = useData(() => call("getProject", { params: { id } }), [id], (m) =>
     (m.type === "project.updated" && m.projectId === id) || (m.type === "definition.changed" && m.path.startsWith(`projects/${id}/`)),
@@ -320,6 +322,7 @@ function ProjectDetails({ id }: { id: string }) {
     <Page title={project?.name ?? id} actions={project && !view?.creating &&
       <DsButton variant="primary" icon={<PlusIcon />} disabled={!connected} onClick={() => setCreatingJob(true)}>New job</DsButton>}>
       {creatingJob && <NewJobDialog id={id} onClose={() => setCreatingJob(false)} />}
+      {exporting && <ProjectExportDialog id={id} onClose={() => setExporting(false)} />}
       <ErrorText error={data.error} />
       {data.loading && !view && <Spinner />}
       {view?.errors.map(({ file, path, message }, index) => <ErrorText key={index} error={`${file}${path ? ` · ${path}` : ""}: ${message}`} />)}
@@ -341,7 +344,10 @@ function ProjectDetails({ id }: { id: string }) {
                     <ProjectSettings
                       id={id}
                       onSaved={data.reload}
-                      deleteAction={<DsButton variant="danger" disabled={!connected || !jobs.data || !!jobs.error || running} onClick={() => setDeleting(true)}>Delete project</DsButton>}
+                      projectActions={<>
+                        <DsButton variant="danger" disabled={!connected || !jobs.data || !!jobs.error || running} onClick={() => setDeleting(true)}>Delete project</DsButton>
+                        <DsButton disabled={!connected} onClick={() => setExporting(true)}>Export</DsButton>
+                      </>}
                       deleteNotice={<>
                         <ErrorText error={jobs.error} />
                         {running && <span className={ui.muted}>Stop the running jobs, in the Jobs tab, before deleting this project.</span>}

@@ -1,29 +1,36 @@
-import { createReadStream, lstatSync, renameSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { Transform } from "node:stream";
+import { createHash } from "node:crypto";
+import { constants, createReadStream, lstatSync, renameSync } from "node:fs";
+import { lstat, mkdir, mkdtemp, open, opendir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { createZstdDecompress } from "node:zlib";
 import { Unpack } from "tar";
-import { ImportProjectBody } from "@pecore/schemas";
-import type { Accounts, ImportProjectResult, Project } from "@pecore/schemas";
+import { ImportProjectBody, projectIdCandidate } from "@pecore/schemas";
+import type { Accounts, ImportProjectPreview, ImportProjectResult, Project } from "@pecore/schemas";
 import { loadProject } from "../definitions/load";
 import { homePaths } from "../home/layout";
-import { forgeAccountOf, writeCreation } from "../projects/create";
+import { forgeAccountOf, repoHost, writeCreation } from "../projects/create";
 import { ProjectDb } from "../store/project-db";
 import { archivePath, definitionDirs, InvalidArchive, Manifest, ShareConflict } from "./archive";
 import { migrateHistory, resetHistory } from "./history";
 
 type AccountMapping = NonNullable<ImportProjectBody["accounts"]>;
 
-type ArchiveLimits = { entries: number; bytes: number };
+type ImportOptions = { accounts: Accounts; knownProject(id: string): boolean };
+type LoadedProject = Awaited<ReturnType<typeof loadProject>> & { project: Project };
 
-async function unpack(path: string, dir: string, limits?: ArchiveLimits): Promise<Set<string>> {
+function allowedEntry(name: string, directory: boolean): boolean {
+  const [root, ...parts]: string[] = name.split("/");
+  if ((root === "nodes" || root === "recipes") && parts.length > 1 && name.endsWith(".json")) return false;
+  if (definitionDirs.includes(root!) || root === "artifacts" || root === "logs") return parts.length > 0 || directory;
+  return ["manifest.json", "project.json", "pecore.db"].includes(root!) && parts.length === 0 && !directory;
+}
+
+async function unpack(path: string, dir: string): Promise<Set<string>> {
   const entries: Set<string> = new Set();
   const roots: Set<string> = new Set();
   let invalid: InvalidArchive | undefined;
-  let bytes: number = 0;
-  const decoder = createZstdDecompress();
   const archive: Unpack = new Unpack({
     cwd: dir,
     preserveOwner: false,
@@ -32,25 +39,14 @@ async function unpack(path: string, dir: string, limits?: ArchiveLimits): Promis
     filter: (path, entry) => {
       if (invalid || !("type" in entry)) return false;
       const name: string | null = archivePath(path);
-      const [root, ...parts]: string[] = name?.split("/") ?? [];
       const directory: boolean = entry.type === "Directory";
       const file: boolean = entry.type === "File" || entry.type === "OldFile";
-      const allowed: boolean = root !== undefined && (definitionDirs.includes(root) || root === "artifacts" || root === "logs"
-        ? parts.length > 0 || directory
-        : ["manifest.json", "project.json", "pecore.db"].includes(root) && parts.length === 0 && file);
-      const nestedDefinition: boolean = (root === "nodes" || root === "recipes") && parts.length > 1 && name?.endsWith(".json") === true;
-      if (name === null || !allowed || nestedDefinition || entry.linkpath || !(directory || file) || entries.has(name)) {
+      if (name === null || !allowedEntry(name, directory) || entry.linkpath || !(directory || file) || entries.has(name)) {
         invalid ??= new InvalidArchive(`invalid archive entry ${JSON.stringify(path)} (${entry.type})`);
         return false;
       }
-      bytes += entry.size ?? 0;
-      if (limits && (entries.size >= limits.entries || bytes > limits.bytes)) {
-        invalid = new InvalidArchive("The archive exceeds the security review size limit");
-        decoder.destroy(invalid);
-        return false;
-      }
       entries.add(name);
-      roots.add(root!);
+      roots.add(name.split("/")[0]!);
       entry.mode = directory ? 0o700 : 0o600 | ((entry.mode ?? 0) & 0o100);
       return true;
     },
@@ -61,31 +57,79 @@ async function unpack(path: string, dir: string, limits?: ArchiveLimits): Promis
   archive.on("ignoredEntry", () => {
     invalid ??= new InvalidArchive("archive contains an unsupported entry");
   });
-  if (limits) {
-    let decompressed: number = 0;
-    const limit = new Transform({ transform(chunk: Buffer, _encoding, callback) {
-      decompressed += chunk.length;
-      if (decompressed > limits.bytes + 8 * 1024 * 1024) callback(new InvalidArchive("The archive exceeds the security review size limit"));
-      else callback(null, chunk);
-    } });
-    await pipeline(createReadStream(path), decoder, limit, archive);
-  } else {
-    await pipeline(createReadStream(path), decoder, archive);
-  }
+  await pipeline(createReadStream(path), createZstdDecompress(), archive);
   if (invalid) throw invalid;
   return roots;
 }
 
-function checkId(dir: string, id: string, knownProject: (id: string) => boolean): void {
-  if (knownProject(id) || lstatSync(dir, { throwIfNoEntry: false })) throw new ShareConflict(`project ${id} already exists`);
+async function copyFolder(path: string, dir: string): Promise<Set<string>> {
+  const root: string = await realpath(path);
+  const roots: Set<string> = new Set();
+  const visit = async (prefix: string): Promise<void> => {
+    const from: string = join(root, prefix);
+    if (await realpath(from) !== from) throw new InvalidArchive("The project folder changed while it was being read");
+    for await (const entry of await opendir(from)) {
+      const name: string = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const source: string = join(root, name);
+      const destination: string = join(dir, name);
+      const info = await lstat(source);
+      if (archivePath(name) !== name || !allowedEntry(name, info.isDirectory()) || !(info.isDirectory() || (info.isFile() && info.nlink === 1))) {
+        throw new InvalidArchive(`invalid project entry ${JSON.stringify(name)}`);
+      }
+      if (!prefix) roots.add(name);
+      if (info.isDirectory()) {
+        await mkdir(destination, { mode: 0o700 });
+        await visit(name);
+        continue;
+      }
+      const handle = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      try {
+        const opened = await handle.stat();
+        if (!opened.isFile() || opened.nlink !== 1 || opened.ino !== info.ino || opened.dev !== info.dev || await realpath(source) !== source) {
+          throw new InvalidArchive("The project folder changed while it was being read");
+        }
+        const content: Buffer = Buffer.alloc(opened.size + 1);
+        let offset: number = 0;
+        while (offset < content.length) {
+          const { bytesRead } = await handle.read(content, offset, content.length - offset, offset);
+          if (bytesRead === 0) break;
+          offset += bytesRead;
+        }
+        if (offset !== opened.size) throw new InvalidArchive("The project folder changed while it was being read");
+        await writeFile(destination, content.subarray(0, offset), { mode: 0o600 | (opened.mode & 0o100), flag: "wx" });
+      } finally {
+        await handle.close();
+      }
+    }
+  };
+  await visit("");
+  return roots;
 }
 
-export async function withProjectArchive<T>(home: string, path: string, use: (dir: string, manifest: Manifest) => Promise<T>, limits?: ArchiveLimits): Promise<T> {
+async function unpackSource(path: string, dir: string): Promise<Set<string>> {
+  const expanded: string = path.startsWith("~/") ? join(homedir(), path.slice(2)) : path;
+  if (!isAbsolute(expanded)) throw new InvalidArchive("Choose a local PeCore export");
+  const source: string = resolve(expanded);
+  const info = await lstat(source).catch(() => null);
+  if (info?.isDirectory()) return copyFolder(source, dir);
+  if (!info?.isFile() || !source.endsWith(".tar.zst")) throw new InvalidArchive("Choose a PeCore export file or its extracted folder");
+  return unpack(source, dir);
+}
+
+function idTaken(dir: string, id: string, knownProject: ImportOptions["knownProject"]): boolean {
+  return knownProject(id) || lstatSync(dir, { throwIfNoEntry: false }) !== undefined;
+}
+
+function checkId(dir: string, id: string, knownProject: ImportOptions["knownProject"]): void {
+  if (idTaken(dir, id, knownProject)) throw new ShareConflict(`project ${id} already exists`);
+}
+
+export async function withProjectArchive<T>(home: string, path: string, use: (dir: string, manifest: Manifest) => Promise<T>, source: "archive" | "local" = "archive"): Promise<T> {
   const stage: string = await mkdtemp(join(home, ".pecore-import-"));
   try {
     const dir: string = join(stage, "project");
     await mkdir(dir, { mode: 0o700 });
-    const roots: Set<string> = await unpack(path, dir, limits);
+    const roots: Set<string> = source === "local" ? await unpackSource(path, dir) : await unpack(path, dir);
     const manifest: Manifest = Manifest.parse(JSON.parse(await readFile(join(dir, "manifest.json"), "utf8")));
     if (manifest.history !== roots.has("pecore.db") || (!manifest.history && roots.has("artifacts")) || (!manifest.logs && roots.has("logs"))) {
       throw new InvalidArchive("archive files do not match the manifest's history and logs flags");
@@ -101,24 +145,79 @@ export async function withProjectArchive<T>(home: string, path: string, use: (di
   }
 }
 
-export async function beginImport(home: string, input: ImportProjectBody, options: { accounts: Accounts; knownProject(id: string): boolean }): Promise<ImportProjectResult> {
+async function loadImport(dir: string): Promise<LoadedProject> {
+  const loaded = await loadProject(dir);
+  if (loaded.errors.length > 0 || !loaded.project) throw new InvalidArchive(loaded.errors.map(({ file, path, message }) => `${file.slice(dir.length + 1)} ${path}: ${message}`).join("; "));
+  return { ...loaded, project: loaded.project };
+}
+
+function requiredAccounts(loaded: LoadedProject): Set<string> {
+  const ids: Set<string> = new Set();
+  if (loaded.project.repo) ids.add(loaded.project.repo.account);
+  for (const node of loaded.nodes.values()) {
+    if (node.kind !== "command" && node.kind !== "source") continue;
+    for (const credential of node.credentials) {
+      if (credential !== "project.account") ids.add(credential);
+      else if (!loaded.project.repo) throw new InvalidArchive(`node ${node.name} uses project.account without a repo`);
+    }
+  }
+  return ids;
+}
+
+function accountChoices(ids: Set<string>, project: Project, accounts: Accounts): ImportProjectPreview["accounts"] {
+  const repoAccount: string | undefined = project.repo?.account;
+  const host: string | null = project.repo ? repoHost(project.repo.url) : null;
+  return [...ids].sort().map((id) => ({
+    id,
+    choices: accounts.accounts.flatMap((account) => account.kind === "forge" && (repoAccount !== id || account.host === host)
+      ? [{ id: account.id, label: `${account.id} · ${account.host}` }] : []),
+  }));
+}
+
+async function sourceDigest(dir: string): Promise<string> {
+  const hash = createHash("sha256");
+  const paths: string[] = (await readdir(dir, { recursive: true })).sort();
+  for (const path of paths) {
+    const entry: string = join(dir, path);
+    const info = await lstat(entry);
+    const content: string | null = info.isFile() ? createHash("sha256").update(await readFile(entry)).digest("hex") : null;
+    hash.update(JSON.stringify([path.split(sep).join("/"), info.mode & 0o100, content]));
+  }
+  return hash.digest("hex");
+}
+
+export async function previewImport(
+  home: string,
+  path: string,
+  options: ImportOptions,
+  review: (dir: string, manifest: Manifest) => Promise<ImportProjectPreview["review"]>,
+): Promise<ImportProjectPreview> {
+  return withProjectArchive(home, path, async (dir, manifest) => {
+    const loaded: LoadedProject = await loadImport(dir);
+    const accounts: ImportProjectPreview["accounts"] = accountChoices(requiredAccounts(loaded), loaded.project, options.accounts);
+    const digest: string = await sourceDigest(dir);
+    const projects: string = homePaths(home).projects;
+    let suggestedId: string | null = null;
+    if (idTaken(join(projects, manifest.projectId), manifest.projectId, options.knownProject)) {
+      let index: number = 2;
+      do {
+        suggestedId = projectIdCandidate(manifest.projectId, index++);
+      } while (idTaken(join(projects, suggestedId), suggestedId, options.knownProject));
+    }
+    return { review: await review(dir, manifest), digest, suggestedId, accounts };
+  }, "local");
+}
+
+export async function beginImport(home: string, input: ImportProjectBody, options: ImportOptions, digest?: string): Promise<ImportProjectResult> {
   const body: ImportProjectBody = ImportProjectBody.parse(input);
   return withProjectArchive(home, body.path, async (original, manifest) => {
-    const loaded = await loadProject(original);
-    if (loaded.errors.length > 0 || !loaded.project) throw new InvalidArchive(loaded.errors.map(({ file, path, message }) => `${file.slice(original.length + 1)} ${path}: ${message}`).join("; "));
+    if (digest !== undefined && await sourceDigest(original) !== digest) throw new ShareConflict("The shared project changed. Review it again before importing.");
+    const loaded: LoadedProject = await loadImport(original);
     const project: Project = loaded.project;
     const id: string = body.id ?? manifest.projectId;
     const dest: string = join(homePaths(home).projects, id);
     checkId(dest, id, options.knownProject);
-    const ids: Set<string> = new Set();
-    if (project.repo) ids.add(project.repo.account);
-    for (const node of loaded.nodes.values()) {
-      if (node.kind !== "command" && node.kind !== "source") continue;
-      for (const credential of node.credentials) {
-        if (credential !== "project.account") ids.add(credential);
-        else if (!project.repo) throw new InvalidArchive(`node ${node.name} uses project.account without a repo`);
-      }
-    }
+    const ids: Set<string> = requiredAccounts(loaded);
     const accounts: AccountMapping = body.accounts ?? {};
     const missing: { id: string; kind: "forge" }[] = [...ids].filter((id) => !Object.hasOwn(accounts, id)).sort().map((id) => ({ id, kind: "forge" }));
     if (missing.length > 0) return { state: "needs-accounts", accounts: missing };
@@ -152,5 +251,5 @@ export async function beginImport(home: string, input: ImportProjectBody, option
     checkId(dest, id, options.knownProject);
     renameSync(original, dest);
     return { state: "imported", id };
-  });
+  }, digest === undefined ? "archive" : "local");
 }

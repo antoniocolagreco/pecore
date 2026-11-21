@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { cp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { apiClient } from "@pecore/schemas";
 import type { ChatDetail, LiveMessage } from "@pecore/schemas";
 import { FakeForge, forgeAccount } from "../../test/fake-forge";
+import { fakeGitleaks } from "../../test/fake-gitleaks";
 import { createProjectWithRecipes } from "../../test/project";
 import { shippedLibrary, tempDir } from "../../test/tmp";
 import { handlers } from "../api/handlers";
@@ -438,6 +439,81 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       await t.close();
     }
   });
+
+  it("exports and imports projects through chat cards that only the user can confirm", async () => {
+    const t = await setup((root) => [[
+      ...init(), ...newSession, { expect: "session/prompt" },
+      { dump: join(root, "share-prompt.json") }, { waitFile: join(root, "done") }, ...replyWith("Check the cards."),
+    ]]);
+    const tokenFile: string = tokenFileOf("assistant");
+    const m = mcp(tokenFile);
+    const path: string | undefined = process.env.PATH;
+    try {
+      await t.call("sendChatMessage", { body: { text: "Export and import Demo." } });
+      await until(() => existsSync(join(t.root, "share-prompt.json")));
+      await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+      const last = async () => (await t.call("getChat")).actions.at(-1)!;
+      const archive: string = join(process.env.HOME!, "Downloads", "demo.tar.zst");
+
+      expect(JSON.parse((await m.tool("export_project", { project: "demo" })).result?.content?.[0]?.text ?? "")).toEqual({ state: "written", path: archive });
+      expect(existsSync(archive)).toBe(true);
+      expect((await last()).target).toEqual({ state: "written", path: archive, project: "demo" });
+
+      const importAnswer = (id: string, body: object) => t.call("answerChatProjectImport", { params: { id }, body: body as { decision: "cancel" } });
+      const proposeImport = async (): Promise<string> => {
+        expect(JSON.parse((await m.tool("import_project", { path: archive })).result?.content?.[0]?.text ?? "")).toMatchObject({ state: "awaiting_confirmation", totalFindings: 0, unreadFiles: 0, accountsWithoutChoices: 0 });
+        const action = await last();
+        expect(action.target).toMatchObject({ state: "awaiting_confirmation", source: archive, preview: { suggestedId: "demo-2", accounts: [] } });
+        return action.id;
+      };
+      const cancelled: string = await proposeImport();
+      const { token } = JSON.parse(await readFile(tokenFile, "utf8")) as { token: string };
+      const denied: Response = await fetch(`http://127.0.0.1:${t.api.port}/chat/actions/${cancelled}/project-import`, {
+        method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ decision: "approve", selection: { id: "demo-2", accounts: {} } }),
+      });
+      expect(denied.status).toBe(401);
+      await importAnswer(cancelled, { decision: "cancel" });
+      await expect(importAnswer(cancelled, { decision: "approve", selection: { id: "demo-2", accounts: {} } })).rejects.toThrow("no longer pending");
+      expect((await t.call("listProjects")).map(({ id }) => id)).toEqual(["demo"]);
+
+      const stale: string = await proposeImport();
+      const other: string = join(t.root, "other.tar.zst");
+      await writeFile(join(t.engine.projectDir("demo"), "knowledge", "late.md"), "Added after the review\n");
+      await t.call("exportProject", { params: { id: "demo" }, body: { path: other } });
+      await rename(other, archive);
+      await importAnswer(stale, { decision: "approve", selection: { id: "demo-2", accounts: {} } });
+      expect((await t.call("getChat")).actions.find(({ id }) => id === stale)?.target).toMatchObject({ state: "failed", error: expect.stringContaining("changed") });
+      expect((await t.call("listProjects")).map(({ id }) => id)).toEqual(["demo"]);
+
+      const approved: string = await proposeImport();
+      await importAnswer(approved, { decision: "approve", selection: { id: "demo-2", accounts: {} } });
+      expect((await t.call("getChat")).actions.find(({ id }) => id === approved)?.target).toMatchObject({ state: "approved", project: "demo-2" });
+      expect((await t.call("listProjects")).map(({ id }) => id).sort()).toEqual(["demo", "demo-2"]);
+      expect(existsSync(join(t.engine.projectDir("demo-2"), "knowledge", "late.md"))).toBe(true);
+
+      const gl = await fakeGitleaks();
+      process.env.PATH = `${gl.bin}:${path}`;
+      await rm(archive);
+      const leak: string = join(t.engine.projectDir("demo"), "artifacts", "leak");
+      await mkdir(leak, { recursive: true });
+      await writeFile(join(leak, "out.txt"), `token ${"ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"}\n`);
+      expect(JSON.parse((await m.tool("export_project", { project: "demo", history: true })).result?.content?.[0]?.text ?? "")).toEqual({ state: "awaiting_confirmation", totalFindings: 1 });
+      const card = await last();
+      expect(card.target).toMatchObject({ state: "awaiting_confirmation", project: "demo", history: true, findings: [{ file: "leak/out.txt", line: 1, rule: "github-pat" }] });
+      expect(existsSync(archive)).toBe(false);
+      const exportAnswer = (body: object) => t.call("answerChatProjectExport", { params: { id: card.id }, body: body as { decision: "cancel" } });
+      await expect(exportAnswer({ decision: "approve", fingerprints: [] })).rejects.toThrow("findings changed");
+      const { findings } = card.target as { findings: { fingerprint: string }[] };
+      await exportAnswer({ decision: "approve", fingerprints: findings.map(({ fingerprint }) => fingerprint) });
+      expect((await t.call("getChat")).actions.find(({ id }) => id === card.id)?.target).toEqual({ state: "written", path: archive, project: "demo" });
+      expect(existsSync(archive)).toBe(true);
+      await writeFile(join(t.root, "done"), "");
+    } finally {
+      process.env.PATH = path;
+      m.close();
+      await t.close();
+    }
+  }, 90000);
 
   it("updates only validated settings and deletes a project only after its chat card is confirmed", async () => {
     const t = await setup((root) => [[

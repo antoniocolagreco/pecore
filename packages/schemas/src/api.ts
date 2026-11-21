@@ -24,7 +24,8 @@ export const ExportProjectBody = z.object({
 }).strict().refine((body) => !body.logs || body.history, { path: ["logs"], message: "logs require history" });
 export type ExportProjectBody = z.infer<typeof ExportProjectBody>;
 
-const ExportFinding = z.object({ fingerprint: z.string(), file: z.string(), line: z.number().int(), rule: z.string() });
+export const ExportFinding = z.object({ fingerprint: z.string(), file: z.string(), line: z.number().int(), rule: z.string() });
+export type ExportFinding = z.infer<typeof ExportFinding>;
 export const ExportProjectResult = z.discriminatedUnion("state", [
   z.object({ state: z.literal("findings"), findings: z.array(ExportFinding) }),
   z.object({ state: z.literal("written"), path: z.string() }),
@@ -53,12 +54,37 @@ export const ArchiveReview = z.strictObject({
   files: z.array(z.strictObject({
     path: z.string(),
     bytes: z.int().nonnegative(),
-    content: z.enum(["text", "history", "binary"]),
+    content: z.enum(["text", "history", "binary", "too_large"]),
     modelReviewed: z.boolean(),
     findings: z.array(z.strictObject({ risk: ArchiveRisk, line: z.int().positive(), source: z.enum(["static", "model"]) })),
   })),
 });
 export type ArchiveReview = z.infer<typeof ArchiveReview>;
+
+export const ImportProjectPreview = z.strictObject({
+  review: ArchiveReview,
+  digest: z.string().regex(/^[0-9a-f]{64}$/),
+  suggestedId: ProjectId.nullable(),
+  accounts: z.array(z.strictObject({
+    id: z.string(),
+    choices: z.array(z.strictObject({ id: Name, label: z.string() })),
+  })),
+});
+export type ImportProjectPreview = z.infer<typeof ImportProjectPreview>;
+
+export const ImportProjectSelection = z.strictObject({
+  id: ProjectId.optional(),
+  accounts: z.record(z.string().min(1), Name),
+});
+export type ImportProjectSelection = z.infer<typeof ImportProjectSelection>;
+export const CompleteProjectImportBody = ImportProjectSelection.extend({
+  path: ArchiveReviewBody.shape.path,
+  digest: ImportProjectPreview.shape.digest,
+});
+export type CompleteProjectImportBody = z.infer<typeof CompleteProjectImportBody>;
+
+export const ProjectExportOptions = z.strictObject({ history: z.boolean().default(false) });
+export type ProjectExportOptions = z.infer<typeof ProjectExportOptions>;
 
 export const CreateJobBody = z
   .object({
@@ -447,6 +473,8 @@ export const routes = {
   exportProject: { method: "POST", path: "/projects/:id/export", params: IdParams, body: ExportProjectBody, response: ExportProjectResult },
   importProject: { method: "POST", path: "/projects/import", body: ImportProjectBody, response: ImportProjectResult },
   analyzeArchive: { method: "POST", path: "/projects/import/analysis", body: ArchiveReviewBody, response: ArchiveReview },
+  previewProjectImport: { method: "POST", path: "/projects/import/preview", body: ArchiveReviewBody, response: ImportProjectPreview },
+  completeProjectImport: { method: "POST", path: "/projects/import/complete", body: CompleteProjectImportBody, response: z.object({ id: ProjectId }) },
   getProject: { method: "GET", path: "/projects/:id", params: IdParams, response: ProjectView },
   deleteProject: { method: "DELETE", path: "/projects/:id", params: IdParams, response: Ok },
   getArtifact: {
@@ -483,6 +511,14 @@ export const routes = {
   clearChat: { method: "DELETE", path: "/chat", response: Ok },
   answerChatProjectCreation: { method: "POST", path: "/chat/actions/:id/project-creation", params: IdParams, body: z.strictObject({ decision: z.enum(["approve", "cancel"]) }), response: Ok },
   answerChatProjectDeletion: { method: "POST", path: "/chat/actions/:id/project-deletion", params: IdParams, body: z.strictObject({ decision: z.enum(["approve", "cancel"]) }), response: Ok },
+  answerChatProjectImport: { method: "POST", path: "/chat/actions/:id/project-import", params: IdParams, body: z.discriminatedUnion("decision", [
+    z.strictObject({ decision: z.literal("approve"), selection: ImportProjectSelection }),
+    z.strictObject({ decision: z.literal("cancel") }),
+  ]), response: Ok },
+  answerChatProjectExport: { method: "POST", path: "/chat/actions/:id/project-export", params: IdParams, body: z.discriminatedUnion("decision", [
+    z.strictObject({ decision: z.literal("approve"), fingerprints: z.array(z.string()) }),
+    z.strictObject({ decision: z.literal("cancel") }),
+  ]), response: Ok },
   sendChatMessage: { method: "POST", path: "/chat/messages", body: SendChatMessageBody, response: ChatMessageView },
   uploadChatAttachment: {
     method: "POST",

@@ -1,4 +1,4 @@
-import { ChatConfirmationRow, ChatImageMime, chatAttachmentMaxBytes, chatCompactCommand, roleProfile } from "@pecore/schemas";
+import { ChatConfirmationRow, ChatImageMime, ExportFinding, ImportProjectPreview, chatAttachmentMaxBytes, chatCompactCommand, roleProfile } from "@pecore/schemas";
 import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatMessageView } from "@pecore/schemas";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -7,6 +7,7 @@ import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { ChatConfirmation } from "../components/ChatConfirmation";
+import { ExportFindings, ImportSelectionFields, ProjectSecurityReview, useImportSelection } from "../components/ProjectShare";
 import { StateLabel } from "../components/states";
 import type { StateInfo } from "../components/states";
 import { ErrorText, dateTime, time } from "../components/ui";
@@ -103,21 +104,82 @@ function ProjectConfirmation({ action, rows, connected }: { action: ChatActionVi
   );
 }
 
+function ImportConfirmation({ action, preview, connected }: { action: ChatActionView; preview: ImportProjectPreview; connected: boolean }) {
+  const target: Record<string, unknown> = object(action.target);
+  const state: string = string(target.state);
+  const project: string = string(target.project);
+  const pending: boolean = state === "awaiting_confirmation";
+  const fields = useImportSelection(preview);
+  const rows: ChatConfirmationRow[] = [{ label: "Project ID", value: project || preview.review.projectId }];
+  const source: string = string(target.source);
+  if (source) rows.push({ label: "Source", value: source });
+  const answer = useAction(async (decision: "approve" | "cancel") => {
+    await call("answerChatProjectImport", { params: { id: action.id }, body: decision === "approve"
+      ? { decision, selection: fields.value } : { decision } });
+  });
+  const status: string = state === "approved" ? "Project imported"
+    : state === "importing_project" ? "Importing project…"
+    : state === "failed" ? "Import failed"
+    : state === "interrupted" ? "Import interrupted"
+    : confirmationStatuses[state] ?? "";
+  return (
+    <ChatConfirmation title="Import project" rows={rows}
+      status={status} pending={pending} disabled={!connected} busy={answer.busy} confirmDisabled={!fields.valid}
+      error={answer.error ?? (string(target.error) || null)} onDecision={(decision) => void answer.run(decision)}>
+      {state !== "approved" && state !== "cancelled" && <ProjectSecurityReview review={preview.review} />}
+      {(pending || state === "importing_project") && <ImportSelectionFields preview={preview} fields={fields} disabled={!connected || answer.busy || !pending} />}
+      {project && connected && <Link to={`/projects/${encodeURIComponent(project)}`}>Open project</Link>}
+    </ChatConfirmation>
+  );
+}
+
+function ExportConfirmation({ action, findings, connected }: { action: ChatActionView; findings: ExportFinding[]; connected: boolean }) {
+  const target: Record<string, unknown> = object(action.target);
+  const state: string = string(target.state);
+  const path: string = string(target.path);
+  const answer = useAction(async (decision: "approve" | "cancel") => {
+    await call("answerChatProjectExport", { params: { id: action.id }, body: decision === "approve"
+      ? { decision, fingerprints: findings.map(({ fingerprint }) => fingerprint) } : { decision } });
+  });
+  const status: string = state === "written" ? "Project exported"
+    : state === "exporting_project" ? "Exporting project…"
+    : state === "failed" ? "Export failed"
+    : state === "interrupted" ? "Export interrupted"
+    : confirmationStatuses[state] ?? "";
+  const rows: ChatConfirmationRow[] = [{ label: "Project ID", value: string(target.project) }];
+  if (path) rows.push({ label: "Saved to", value: path });
+  return (
+    <ChatConfirmation title="Export project" rows={rows} status={status} pending={state === "awaiting_confirmation"}
+      disabled={!connected} busy={answer.busy} confirmLabel="Export anyway"
+      error={answer.error ?? (string(target.error) || null)} onDecision={(decision) => void answer.run(decision)}>
+      {findings.length > 0 && state !== "cancelled" && <ExportFindings findings={findings} />}
+    </ChatConfirmation>
+  );
+}
+
 function ActionCard({ action, connected }: { action: ChatActionView; connected: boolean }) {
   const target: Record<string, unknown> = object(action.target);
   if (action.tool === "create_project" || action.tool === "delete_project") {
     const rows = confirmationRows.safeParse(target.rows);
     if (rows.success) return <ProjectConfirmation action={action} rows={rows.data} connected={connected} />;
   }
+  if (action.tool === "import_project") {
+    const preview = ImportProjectPreview.safeParse(target.preview);
+    if (preview.success) return <ImportConfirmation action={action} preview={preview.data} connected={connected} />;
+  }
+  if (action.tool === "export_project") {
+    const findings = ExportFinding.array().safeParse(target.findings);
+    if (findings.success || target.state === "written") return <ExportConfirmation action={action} findings={findings.data ?? []} connected={connected} />;
+  }
   if (action.tool === "analyze_project_archive") {
     const rows = ChatConfirmationRow.array().safeParse(target.rows);
-    if (rows.success && typeof target.totalFindings === "number" && typeof target.binaryFiles === "number") {
+    if (rows.success && typeof target.totalFindings === "number" && typeof target.unreadFiles === "number") {
       const state: string = string(target.model);
       const model: string = state === "complete" ? "Model review complete" : state === "partial" ? "Model reviewed part of the text" : state === "failed" ? "Model review failed" : "Static review only";
-      return <section className={s.action} aria-label="Archive security review">
-        <div className={s.actionHead}><SparkIcon /><strong>Archive security review</strong></div>
+      return <section className={s.action} aria-label="Project security review">
+        <div className={s.actionHead}><SparkIcon /><strong>Project security review</strong></div>
         <span>{target.totalFindings} findings · {model}</span>
-        {target.binaryFiles > 0 && <span>{target.binaryFiles} binary files could not be analyzed</span>}
+        {target.unreadFiles > 0 && <span>{target.unreadFiles} binary or very large files could not be analyzed</span>}
         {rows.data.length > 0 && <details>
           <summary>{rows.data.length < target.totalFindings ? `First ${rows.data.length} findings` : "Finding locations"}</summary>
           <ul className={s.links}>{rows.data.map(({ label, value }, index) => <li key={index}>{label} <code>{value}</code></li>)}</ul>

@@ -257,15 +257,14 @@ The prototype is normative only for: the gradients, Notifications as a list plus
 ### Projects
 
 *   List: name, repo (or "local only"), base branch, jobs that need the user, failed jobs, warning when a login expired.
-*   Buttons: "New project", "Import project".
-*   With no projects, "New project" appears only in the empty state, not in the page header (decision 74).
+*   "New project" and "Import" appear next to each other. When there are no projects, both buttons appear in the empty state (decisions 74, 85).
 *   Project page header: a "New job" button that opens a dialog with Title, What to do and Recipe. Recipe is chosen by itself and locked when the project has one recipe; with none, the dialog says to add one in the Recipes tab. "Create job" creates it and closes the dialog; the job appears in the Jobs tab (decision 82).
 *   Project page, full width, in tabs (decisions 79, 81):
     *   Jobs, the first tab and open by default: the project's jobs, in the same table as the Jobs page without the Project column.
     *   Settings, Recipes, Nodes and Knowledge: a panel with a maximum width, aligned to the left.
     *   Settings: at the top a details list, read-only after creation: repository, forge account, folder, id; under it the editable fields: name, base branch, services compose file. No default recipe and no `project.json` editor (decision 77). The services compose file is empty by default, meaning automatic (a standard compose file at the repository root); it can be typed or picked with "Choose…", which opens the file dialog in the project folder and keeps only files inside it, saved relative to it (decision 78).
-    *   Recipes (recipe editor), Nodes (node editor), Knowledge (IF4), Services, Ticket source (`label`, `pollSec`, trusted users), Export.
-    *   Delete project (IF7) sits at the left of the Settings actions, apart from Discard and Save.
+    *   Recipes (recipe editor), Nodes (node editor), Knowledge (IF4), Services, Ticket source (`label`, `pollSec`, trusted users).
+    *   Delete project (IF7) and Export sit at the left of the Settings actions, apart from Discard and Save.
 *   No "Jobs of this project" button (decision 79).
 
 ### New project wizard (full page)
@@ -278,14 +277,16 @@ Pages: Inputs and Create. Create runs the tasks of design.md "Project creation" 
 
 Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done.
 
-### Import project (full page)
+### Import project (dialog)
 
-*   Archive import is currently available through the CLI. Before import it warns that scripts and prompts may be malicious and asks the user to review all of them.
-*   To review an archive first, ask the Assistant with the archive's local path or run `pecore project analyze <file>`. The report shows findings and coverage without importing the archive.
+*   "Choose archive…" and "Choose folder…" open native pickers for a local PeCore export or its extracted folder. The dialog shows a warning to review every script and prompt, findings, and which content the checks could review.
+*   Map each required forge account to a local account. If only one fits, it is selected. A new project ID field appears only when the original is taken and starts with a free ID. "Import" imports the project and opens its page.
+*   In chat, the Assistant shows the same warning, findings, coverage and account choices. "Confirm" imports and gives a link to the project. "Reject" dismisses the proposal. The Assistant can also review a shared project on its own.
 
 ### Export (dialog)
 
-*   Option: include job history. When history is included, the gitleaks scan runs first; its matches are listed, and the user confirms or cancels the export (design.md section 8).
+*   Export in project Settings offers "Include job history", then opens a native save dialog with `<project id>.tar.zst` in the system's downloads folder as the default. If the export finds possible secrets, the dialog lists them and offers "Export anyway". The dialog shows the saved path.
+*   The Assistant accepts the same history option and saves to Downloads. It reports the path on success or shows each secret finding in a card with "Export anyway" and "Reject".
 
 ### Delete project (dialog)
 

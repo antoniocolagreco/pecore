@@ -14,7 +14,7 @@ export type HostPort = {
   on(event: "message", listener: (e: { data: unknown }) => void): void;
 };
 
-export type HostEnv = { home: string; resources: string; version: string; devOrigin?: string | undefined };
+export type HostEnv = { home: string; resources: string; version: string; devOrigin?: string | undefined; downloads?: string | undefined };
 
 export async function host(port: HostPort, env: HostEnv): Promise<{ engine: Engine; api: ApiServer } | null> {
   const pendingAdmin = new Map<string, { resolve: () => void; reject: (e: Error) => void }>();
@@ -64,6 +64,7 @@ export async function host(port: HostPort, env: HostEnv): Promise<{ engine: Engi
       library: join(env.resources, "library"),
       agents: { connectorsDir: join(env.resources, "connectors"), adaptersDir: homePaths(env.home).adapters, adapters: pinned.adapters },
       admin,
+      ...(env.downloads ? { downloads: env.downloads } : {}),
       notify: (n) => port.postMessage({ type: "notify", title: n.title, body: n.body, kind: n.kind }),
     });
     api = await startApi(engine, { handlers: handlers(env.version), origins: ["app://pecore", ...(env.devOrigin ? [env.devOrigin] : [])] });

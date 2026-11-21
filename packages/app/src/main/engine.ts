@@ -14,7 +14,7 @@ export type EngineHandle = {
 
 export type EngineCallbacks = { notify(n: { title: string; body: string; kind: string }): void; exited(code: number): void };
 
-export function startEngine(opts: { home: string; resources: string; version: string; devOrigin: string | null }, cb: EngineCallbacks): Promise<EngineHandle> {
+export function startEngine(opts: { home: string; resources: string; version: string; devOrigin: string | null; downloads: string }, cb: EngineCallbacks): Promise<EngineHandle> {
   const child: UtilityProcess = utilityProcess.fork(join(import.meta.dirname, "engine.js"), [], {
     serviceName: "PeCore engine",
     stdio: "inherit",
@@ -23,6 +23,7 @@ export function startEngine(opts: { home: string; resources: string; version: st
       PECORE_HOME: opts.home,
       PECORE_RESOURCES: opts.resources,
       PECORE_APP_VERSION: opts.version,
+      PECORE_DOWNLOADS: opts.downloads,
       ...(opts.devOrigin ? { PECORE_DEV_ORIGIN: opts.devOrigin } : {}),
     },
   });
