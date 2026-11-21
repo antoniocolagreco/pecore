@@ -25,7 +25,7 @@ Terms used throughout:
 
 ## Overview
 
-PeCore is an open source software factory, released under the MIT license. Work reaches PeCore as an order (in chat or as a ticket reference) or as a new ticket from a ticket source. The orchestrator, an AI agent that talks with the user and calls PeCore's tools, turns the order into one or more jobs. Each job changes the code of a project and delivers the result where the project's recipe says: a pull request on GitHub, a merge request on GitLab, a pull request on Bitbucket, a push to AWS CodeCommit or a private git server, or only a branch in the local repo.
+PeCore is an open source software factory, released under the Apache License 2.0. Work reaches PeCore as an order (in chat or as a ticket reference) or as a new ticket from a ticket source. The orchestrator, an AI agent that talks with the user and calls PeCore's tools, turns the order into one or more jobs. Each job changes the code of a project and delivers the result where the project's recipe says: a pull request on GitHub, a merge request on GitLab, a pull request on Bitbucket, a push to AWS CodeCommit or a private git server, or only a branch in the local repo.
 
 An engine written in TypeScript runs the jobs. It executes recipes. A recipe is a graph of nodes and edges. Every operation on the code or on the outside world is a node: an agent with a role, a check, a human review, a commit, a rebase, a push, a pull request. Models do the work inside agent nodes; code decides transitions, retries, limits and the order of operations.
 
@@ -1075,7 +1075,8 @@ The fake forge (`test/fake-forge/`) is a local bare repo plus scripts that imita
 | `.npmrc` | `node-linker=hoisted` for electron-builder |
 | `eslint.config.js` | lint rules for all packages |
 | `.gitignore` | ignores `node_modules/`, `dist/`, `out/` |
-| `LICENSE` | MIT (D8) |
+| `LICENSE` | Apache License 2.0 (decision 87) |
+| `NOTICE` | name and copyright notice required by Apache License 2.0 |
 | `README.md` | what PeCore is, install, first run, build from source |
 | `.github/workflows/ci.yml` | lint, typecheck and tests on Linux and macOS for every push |
 | `.github/workflows/release.yml` | on tags: builds AppImage, deb, dmg and zip; signs and notarizes the macOS build; publishes to GitHub Releases for auto-update |
