@@ -37,11 +37,6 @@ export async function reviewWithModel(engine: Engine, files: ReviewInput[]): Pro
     await chmod(cwd, 0o755);
     const connector: ResolvedConnector = {
       ...resolved,
-      reader: "claude-code",
-      command: ["{nodePath}", `{adapter:${adapter}}`],
-      env: { CLAUDE_CODE_EXECUTABLE: "{harnessPath}", ENABLE_CLAUDEAI_MCP_SERVERS: "false", DISABLE_AUTOUPDATER: "1" },
-      configDirEnv: "CLAUDE_CONFIG_DIR",
-      beforeStart: undefined,
       sessionConfig: [["model", "{model}"], ["effort", "{effort}"]],
       sessionMeta: { claudeCode: { options: {
         tools: [], plugins: [], settingSources: [], strictMcpConfig: true, persistSession: false,
