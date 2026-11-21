@@ -520,7 +520,7 @@ export function ChatPanel() {
       {ready === false && connected && (
         <div className={s.footnote}>
           <Alert tone="warning" title="No Assistant yet" actions={<Link to={settingUrl("assistant")}>Choose one in Settings</Link>}>
-            Log in to Claude Code, Codex or OpenCode and PeCore picks one for you.
+            Log in to Claude Code, Codex or OpenCode and &lt;PE/CORE&gt; picks one for you.
           </Alert>
         </div>
       )}

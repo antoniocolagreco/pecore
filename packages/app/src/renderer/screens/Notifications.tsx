@@ -81,7 +81,7 @@ export function Notifications() {
       {!loading && items.length === 0 && log.length === 0 && !id ? (
         <Card padded>
           <EmptyState icon={<BellIcon size="md" />} title="Nothing new">
-            Decisions you need to make and updates from PeCore show up here.
+            Decisions you need to make and updates from &lt;PE/CORE&gt; show up here.
           </EmptyState>
         </Card>
       ) : (

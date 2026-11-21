@@ -127,7 +127,7 @@ describe("auto-setup", () => {
     expect(app.engine.global().settings.orchestrator.profile).toBeNull();
     expect(app.engine.global().profiles.profiles).toHaveLength(12);
     expect(await s.head()).toMatch(/ auto-setup: Set up Claude Code, Codex, and OpenCode: 12 profiles added$/);
-    expect(s.notices).toEqual([{ kind: "auto-setup", title: "PeCore setup", body: "Set up Claude Code, Codex, and OpenCode: 12 profiles added" }]);
+    expect(s.notices).toEqual([{ kind: "auto-setup", title: "<PE/CORE> setup", body: "Set up Claude Code, Codex, and OpenCode: 12 profiles added" }]);
     expect(await app.call("listNotifications")).toContainEqual(expect.objectContaining({ kind: "auto-setup", body: "Set up Claude Code, Codex, and OpenCode: 12 profiles added" }));
     expect(await app.call("getSetup")).toEqual({
       harnesses: [
@@ -223,7 +223,7 @@ describe("auto-setup", () => {
     expect(messages).toContainEqual(expect.objectContaining({ type: "login.progress", loginId, url: "https://login.example.test/device" }));
     expect(await s.json("accounts.json")).toEqual({ accounts: [expect.objectContaining({ id: "claude-code", connector: "claude-code" })] });
     expect(((await s.json("profiles.json")) as { profiles: unknown[] }).profiles).toHaveLength(4);
-    expect(s.notices).toEqual([{ kind: "auto-setup", title: "PeCore setup", body: "Set up Claude Code: 4 profiles added" }]);
+    expect(s.notices).toEqual([{ kind: "auto-setup", title: "<PE/CORE> setup", body: "Set up Claude Code: 4 profiles added" }]);
     expect(await app.call("getSetup")).toEqual({
       harnesses: [
         { connector: "claude-code", installed: true, version: "2.1.400", loggedIn: true },

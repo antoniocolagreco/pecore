@@ -33,7 +33,7 @@ export function ProjectImportDialog({ onClose, onImported }: { onClose(): void; 
   const disabled: boolean = !connected || busy;
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }} title="Import project" width={600}
-      description="Choose a PeCore export file or the folder where you extracted it."
+      description="Choose a &lt;PE/CORE&gt; export file or the folder where you extracted it."
       footer={<>
         <Button disabled={busy} onClick={onClose}>Cancel</Button>
         <Button variant="primary" disabled={disabled || !fields.valid} loading={complete.busy} onClick={() => void complete.run()}>Import</Button>

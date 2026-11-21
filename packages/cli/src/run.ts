@@ -5,7 +5,9 @@ import { ApiError } from "@pecore/schemas";
 import type { ApiClient, ExportProjectResult, ImportProjectResult, WhyView } from "@pecore/schemas";
 import { connect, NotRunningError, pecoreHome } from "./connect";
 
-export const usage = `Usage:
+export const usage = `<PE/CORE>
+
+Usage:
   pecore project list
   pecore project export <id> [--out <file>] [--history] [--logs] [--accept-findings]
   pecore project import <file> [--id <new-id>] [--account <from>=<to> ...]

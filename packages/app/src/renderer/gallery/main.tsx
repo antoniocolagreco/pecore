@@ -136,7 +136,7 @@ function Gallery() {
       <header className={g.header}>
         <div>
           <h1 className={g.title}>Components</h1>
-          <p className={g.subtitle}>PeCore design system</p>
+          <p className={g.subtitle}>&lt;PE/CORE&gt; design system</p>
         </div>
         <Segmented
           label="Theme"
@@ -372,7 +372,7 @@ function MoreComponents() {
           <div className={g.stack}>
             <Alert tone="warning" title="Global pause is on" actions={<Button size="sm">Resume all</Button>}>Running jobs hold and queued jobs do not start.</Alert>
             <Alert tone="danger" title="Codex is logged out">Jobs that use it wait until you log in again.</Alert>
-            <Alert tone="success">PeCore set up Claude Code and Codex: 8 profiles added.</Alert>
+            <Alert tone="success">&lt;PE/CORE&gt; set up Claude Code and Codex: 8 profiles added.</Alert>
           </div>
         </Example>
       </Section>
@@ -449,7 +449,7 @@ function MoreComponents() {
         open={dialog}
         onOpenChange={setDialog}
         title="New project"
-        description="PeCore creates the folder and the repository for you."
+        description="&lt;PE/CORE&gt; creates the folder and the repository for you."
         footer={<><Button onClick={() => setDialog(false)}>Cancel</Button><Button variant="primary" onClick={() => setDialog(false)}>Create</Button></>}
       >
         <TextField label="Name" defaultValue="space-game" autoFocus />

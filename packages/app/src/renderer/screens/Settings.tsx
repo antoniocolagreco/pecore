@@ -77,7 +77,7 @@ function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (b
           sha.current = undefined;
           setLocal(undefined);
           remote.reload();
-          setError("Changed elsewhere, so PeCore loaded the new version. Make your last change again.");
+          setError("Changed elsewhere, so <PE/CORE> loaded the new version. Make your last change again.");
         } else setError(errorText(failure));
         return false;
       } finally {
@@ -329,7 +329,7 @@ function AddForgeAccount({ open, onClose, onAdd, taken }: { open: boolean; onClo
       open={open}
       onOpenChange={(o) => !o && onClose()}
       title="Add a Git hosting account"
-      description={forge === "git" ? "PeCore uses your configured Git credentials to push branches." : "PeCore uses it to push branches and open pull requests. You log in right after adding it."}
+      description={forge === "git" ? "<PE/CORE> uses your configured Git credentials to push branches." : "<PE/CORE> uses it to push branches and open pull requests. You log in right after adding it."}
       width={480}
       footer={<>
         <Button onClick={onClose}>Cancel</Button>
@@ -466,7 +466,7 @@ export function Settings() {
     </SidebarSection>
     <div>
       <div className={s.content}>
-        <Section id="accounts" title="Accounts" description="The AI tools and the code hosting accounts PeCore works with." plain>
+        <Section id="accounts" title="Accounts" description="The AI tools and the code hosting accounts &lt;PE/CORE&gt; works with." plain>
           {accounts.feedback}
           <ErrorText error={accounts.error} />
           <div className={s.groups}>
@@ -497,14 +497,14 @@ export function Settings() {
               action={<Button disabled={!connected} onClick={() => void window.pecore.pickFolder().then((picked) => picked && update({ ...value, projectsFolder: picked }))}>Choose…</Button>} />
           </Section>
 
-          <Section id="limits" title="Limits" description="How much PeCore runs at the same time.">
+          <Section id="limits" title="Limits" description="How much &lt;PE/CORE&gt; runs at the same time.">
             <div className={s.grid}>
               <NumberField label="Concurrent jobs" value={value.limits.jobs} min={1} onValueChange={(jobs) => update({ ...value, limits: { ...value.limits, jobs } })} description="Blank for automatic." />
               <NumberField label="Concurrent agents" value={value.limits.agents} min={1} onValueChange={(agents) => update({ ...value, limits: { ...value.limits, agents: agents ?? 0 } })} />
               <NumberField label="Minimum free disk" unit="GB" value={value.minFreeDiskGb} min={0} step={0.5} onValueChange={(gb) => update({ ...value, minFreeDiskGb: gb ?? 0 })} />
             </div>
             <div className={s.grid} id="mergeCheckSec">
-              <NumberField label="Seconds" value={value.mergeCheckSec} min={1} onValueChange={(seconds) => update({ ...value, mergeCheckSec: seconds ?? 0 })} description="How often PeCore checks whether a pull request was merged." />
+              <NumberField label="Seconds" value={value.mergeCheckSec} min={1} onValueChange={(seconds) => update({ ...value, mergeCheckSec: seconds ?? 0 })} description="How often &lt;PE/CORE&gt; checks whether a pull request was merged." />
               <div id="servicesRuntime">
                 <Select label="Services runtime" value={value.servicesRuntime ?? "none"}
                   onValueChange={(runtime) => update({ ...value, servicesRuntime: (runtime && runtime !== "none" ? runtime : null) as SettingsValue["servicesRuntime"] })}
@@ -527,7 +527,7 @@ export function Settings() {
             <ErrorText error={protect.error} />
           </Dialog>
 
-          <Section id="appearance" title="Appearance" description="The look of PeCore in light and dark mode.">
+          <Section id="appearance" title="Appearance" description="The look of &lt;PE/CORE&gt; in light and dark mode.">
             <div className={ui.stack}>
               <span className={s.label}>Mode</span>
               <Segmented accent label="Mode" value={prefs.mode}

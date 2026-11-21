@@ -13,16 +13,16 @@ function capture() {
 }
 
 describe("pecore CLI over the local API", () => {
-  it("says PeCore is not running when there is no api.json, and when its port is closed", async () => {
+  it("says <PE/CORE> is not running when there is no api.json, and when its port is closed", async () => {
     const home = join(await tempDir(), "home");
     const c = capture();
     expect(await run(["job", "list"], c.io, { PECORE_HOME: home })).toBe(1);
-    expect(c.err).toEqual(["PeCore is not running: open the app"]);
+    expect(c.err).toEqual(["<PE/CORE> is not running: open the app"]);
     const { home: live, close } = await apiProject();
     await close();
     const d = capture();
     expect(await run(["job", "list"], d.io, { PECORE_HOME: live })).toBe(1);
-    expect(d.err).toEqual(["PeCore is not running: open the app"]);
+    expect(d.err).toEqual(["<PE/CORE> is not running: open the app"]);
   });
 
   it("lists projects and jobs, explains why a job waits, stops it, and validates files", async () => {

@@ -1,6 +1,6 @@
-# PeCore
+# <PE/CORE>
 
-PeCore is a desktop software factory. It runs jobs made of agent, command and human steps on your repositories, with the coding agents you already use (Claude Code first) and your own subscriptions.
+<PE/CORE> (Product Engineering Core) is a desktop software factory. It runs jobs made of agent, command and human steps on your repositories, with the coding agents you already use (Claude Code first) and your own subscriptions.
 
 Status: in development. The design is in [docs/design.md](docs/design.md) and the UI in [docs/ui-design.md](docs/ui-design.md). Install and first-run instructions come with the first release.
 

@@ -43,7 +43,7 @@ export function SetupBanner() {
   return <aside aria-label="Harness setup">
     <Alert tone="accent" title="Connect an AI coding tool to start">
       <span className={ui.stack}>
-        <span>PeCore works through Claude Code, Codex or OpenCode. Install one, or log in to one you already have; PeCore sets up the rest.</span>
+        <span>&lt;PE/CORE&gt; works through Claude Code, Codex or OpenCode. Install one, or log in to one you already have; &lt;PE/CORE&gt; sets up the rest.</span>
         <span className={ui.row}>
           {setup.data.harnesses.map(({ connector, installed }) => installed
             ? <Button key={connector} size="sm" variant="primary" disabled={!connected || running || start.busy} onClick={() => { send.clear(); void start.run(connector); }}>Log in to {install[connector].name}</Button>

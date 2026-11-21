@@ -788,7 +788,7 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       await t.call("markNotificationsSeen");
       expect((await t.call("listNotifications")).every(({ seen }) => seen)).toBe(true);
       expect((await t.call("getStatus")).notifications).toBe(open());
-      expect(await readFile(join(t.root, "intake.json"), "utf8")).toContain("PeCore's Orchestrator");
+      expect(await readFile(join(t.root, "intake.json"), "utf8")).toContain("<PE/CORE>'s Orchestrator");
       await writeFile(join(t.root, "done"), "");
     } finally {
       await t.close();

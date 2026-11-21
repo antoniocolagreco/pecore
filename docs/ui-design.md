@@ -1,4 +1,4 @@
-# PeCore UI
+# <PE/CORE> UI
 
 *   **Author:** Antonio Colagreco
 *   **Status:** Approved (EGM stages 5-8 applied; stage 9 not applicable; reports in [reviews/ui/](reviews/ui/)). The `packages/app` table of design.md matches the Screens table below.
@@ -8,7 +8,7 @@
 
 ## Problem Statement
 
-PeCore runs many jobs at once, each through a recipe graph of agents, checks, reviews and deliveries (design.md Overview). The user leaves it working and comes back. When they come back they need two answers at once: what is waiting for them, and what was delivered. Without a UI built for that, the user digs through logs and graphs to find the one review that blocks five jobs, and cannot tell a delivered PR from a rejected spec.
+<PE/CORE> runs many jobs at once, each through a recipe graph of agents, checks, reviews and deliveries (design.md Overview). The user leaves it working and comes back. When they come back they need two answers at once: what is waiting for them, and what was delivered. Without a UI built for that, the user digs through logs and graphs to find the one review that blocks five jobs, and cannot tell a delivered PR from a rejected spec.
 
 ## Goals
 
@@ -26,7 +26,7 @@ PeCore runs many jobs at once, each through a recipe graph of agents, checks, re
 *   Translation: the UI is in English only.
 *   Invented figures: no progress percentages, no remaining subscription quota unless the connector reports it, no LLM-written summaries (UI6, UI11).
 *   A graph of stacked jobs: stacks are a tree in the lists (UI9).
-*   Project language detection: PeCore does not know a project's language.
+*   Project language detection: <PE/CORE> does not know a project's language.
 *   Actions on the forge from delete: deleting a job or a project never touches the remote (design.md 4.8).
 
 ## Terms
@@ -158,6 +158,7 @@ The prototype is normative only for: the gradients, Notifications as a list plus
 
 ### Navigation (left)
 
+*   The expanded sidebar shows "<PE/CORE>" as the product name (decision 88).
 *   Window: menu on the left, the page in the centre, the Assistant chat on the right (decision 32). The chat takes 30% of the width, between 300 and 380 px.
 *   The menu collapses and expands with a button at the top left (decision 34). The choice is remembered; the first time, the menu starts collapsed below 1280 px of width. Collapsed, it is a column of icons, each showing its name on pointing (decision 55).
 *   The chat panel's width changes by dragging its left edge or with the arrow keys on it (decision 56).
@@ -170,11 +171,11 @@ The prototype is normative only for: the gradients, Notifications as a list plus
 
 *   Command palette button, global pause and play (IA1). No notification bell: notifications are a page of the menu (decision 45).
 *   While the global pause is on, a banner says so, with Play.
-*   A system notification is shown only when the PeCore window is not focused (decision 25).
+*   A system notification is shown only when the <PE/CORE> window is not focused (decision 25).
 
 ### Tray (IA6)
 
-*   Icon with the number of running jobs and items to decide; menu with "Open PeCore" and "Quit". Closing the window keeps the app and its jobs running here (UI15).
+*   Icon with the number of running jobs and items to decide; menu with "Open <PE/CORE>" and "Quit". Closing the window keeps the app and its jobs running here (UI15).
 
 ### Command palette (IA7)
 
@@ -247,12 +248,12 @@ The prototype is normative only for: the gradients, Notifications as a list plus
 *   Compaction (decision 24): the Compact button, or `/compact` typed as a message, sends the harness's own compaction command to the chat's session. The chat shows a divider ("Compacting the conversation…", then "Conversation compacted"), no reply.
 *   Automatic compaction (decision 37): above the maximum threshold (default 256,000 tokens) the chat compacts at once; above the automatic threshold (default 128,000) it compacts after 5 minutes without use. Both thresholds are in Settings > Assistant; the Orchestrator's sessions have their own pair in Settings > Orchestrator (decision 43). The size comes from what the harness reports after each reply.
 *   An order the user gives in the chat is authorised as given (decision 39): if the user asks to comment on an issue, the Assistant posts it.
-*   The Assistant can update a project's name, base branch and services Compose path. A deletion request shows the project and what will be removed in a card with Confirm and Reject. Confirm deletes PeCore's data only, using the same operation as the project settings page.
+*   The Assistant can update a project's name, base branch and services Compose path. A deletion request shows the project and what will be removed in a card with Confirm and Reject. Confirm deletes <PE/CORE>'s data only, using the same operation as the project settings page.
 *   "Ask the AI" (IE5) puts the cursor in the chat with the current screen's object as context.
 *   Context chip: one at a time, a reference with its scope (for example "Job: Fix login timeout", "Recipe feature (project progetto-1)", "Template recipe feature"). It shows the object of the current screen and changes on navigation; pinning keeps it; removing it sends the next message with no context.
 *   What the Assistant did (IB4) appears under its reply, never under the user's message (decision 28). Actions that change something (create jobs, answer a job's question, add a node or recipe to a project, comment on a ticket) get a card that links to the job, definition or item to decide. Reads (projects, recipes, ticket, ticket replies, job status, job output, library templates, definition check) become one grey line: "Read: projects, job status".
 *   Agent questions (IB6) appear in the conversation with an answer field.
-*   A system notification for a reply or a report is shown only when the PeCore window is not focused; they never go to the notification list (decisions 25, 27).
+*   A system notification for a reply or a report is shown only when the <PE/CORE> window is not focused; they never go to the notification list (decisions 25, 27).
 
 ### Projects
 
@@ -279,7 +280,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 ### Import project (dialog)
 
-*   "Choose archive…" and "Choose folder…" open native pickers for a local PeCore export or its extracted folder. The dialog shows a warning to review every script and prompt, findings, and which content the checks could review.
+*   "Choose archive…" and "Choose folder…" open native pickers for a local <PE/CORE> export or its extracted folder. The dialog shows a warning to review every script and prompt, findings, and which content the checks could review.
 *   Map each required forge account to a local account. If only one fits, it is selected. A new project ID field appears only when the original is taken and starts with a free ID. "Import" imports the project and opens its page.
 *   In chat, the Assistant shows the same warning, findings, coverage and account choices. "Confirm" imports and gives a link to the project. "Reject" dismisses the proposal. The Assistant can also review a shared project on its own.
 
@@ -334,7 +335,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 ### Zero-config start (replaces the first run checklist)
 
-Goal: minimum friction. The user opens PeCore and it works, with no setting to fill and no file to edit.
+Goal: minimum friction. The user opens <PE/CORE> and it works, with no setting to fill and no file to edit.
 
 *   No location window: `PECORE_HOME` is `~/.pecore` unless a location is already stored. Moving it from Settings is a later feature.
 *   No first run screen and no `firstRunDone`. The app opens on Factory, with the Assistant chat on the right and the cursor in its message box.

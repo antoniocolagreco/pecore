@@ -1,7 +1,8 @@
 appId: app.pecore.desktop
+productName: PeCore
 extraMetadata:
-  author: PeCore contributors
-  description: PeCore is a desktop software factory.
+  author: "<PE/CORE> contributors"
+  description: "<PE/CORE> is a desktop software factory."
   desktopName: pecore.desktop
   license: Apache-2.0
 files:
@@ -21,3 +22,10 @@ linux:
   icon: resources/icon.png
   category: Development
   syncDesktopName: true
+  desktop:
+    entry:
+      Name: "<PE/CORE>"
+mac:
+  extendInfo:
+    CFBundleName: "<PE/CORE>"
+    CFBundleDisplayName: "<PE/CORE>"

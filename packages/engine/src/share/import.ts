@@ -108,11 +108,11 @@ async function copyFolder(path: string, dir: string): Promise<Set<string>> {
 
 async function unpackSource(path: string, dir: string): Promise<Set<string>> {
   const expanded: string = path.startsWith("~/") ? join(homedir(), path.slice(2)) : path;
-  if (!isAbsolute(expanded)) throw new InvalidArchive("Choose a local PeCore export");
+  if (!isAbsolute(expanded)) throw new InvalidArchive("Choose a local <PE/CORE> export");
   const source: string = resolve(expanded);
   const info = await lstat(source).catch(() => null);
   if (info?.isDirectory()) return copyFolder(source, dir);
-  if (!info?.isFile() || !source.endsWith(".tar.zst")) throw new InvalidArchive("Choose a PeCore export file or its extracted folder");
+  if (!info?.isFile() || !source.endsWith(".tar.zst")) throw new InvalidArchive("Choose a <PE/CORE> export file or its extracted folder");
   return unpack(source, dir);
 }
 

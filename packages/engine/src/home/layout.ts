@@ -91,7 +91,7 @@ export async function initHome(home: string, opts: { library: string }): Promise
     return { created };
   }
   await git(home, ["init", "-q", "-b", "main"]).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") throw new Error("Install Git to create PECORE_HOME, then reopen PeCore.");
+    if (error.code === "ENOENT") throw new Error("Install Git to create PECORE_HOME, then reopen <PE/CORE>.");
     throw error;
   });
   await writeFile(join(home, ".gitignore"), homeGitignore);

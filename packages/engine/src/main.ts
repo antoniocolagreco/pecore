@@ -183,7 +183,7 @@ export class Engine extends EventEmitter {
       this.setupHarnesses = harnesses;
       if (!changes) return;
       await this.reloadGlobal();
-      this.notify({ kind: "auto-setup", title: "PeCore setup", body: changes.message });
+      this.notify({ kind: "auto-setup", title: "<PE/CORE> setup", body: changes.message });
       for (const [kind, content] of Object.entries(changes.files)) {
         this.definitionChanged(`${kind}.json`, createHash("sha256").update(content).digest("hex"));
       }
@@ -362,7 +362,7 @@ export class Engine extends EventEmitter {
 
   async startAccountLogin(id: string): Promise<string> {
     const a = this.account(id);
-    if (a.kind !== "forge") throw new Error(`account ${id} has no tool login in PeCore; log in with ${a.kind === "service" ? a.tool : "the harness"} and recheck`);
+    if (a.kind !== "forge") throw new Error(`account ${id} has no tool login in <PE/CORE>; log in with ${a.kind === "service" ? a.tool : "the harness"} and recheck`);
     const loginId = `tool:${id}`;
     await this.loginRunner.tool(loginId, a, () => this.recheckAccount(id));
     return loginId;

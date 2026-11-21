@@ -365,7 +365,7 @@ function ProjectDetails({ id }: { id: string }) {
             open={deleting}
             onOpenChange={(open) => { if (!open && !remove.busy) setDeleting(false); }}
             title={`Delete ${project.name}?`}
-            description="PeCore's copy of the repository, work folders, artifacts, logs, database, definitions and service containers are removed. Your project folder and the repositories and pull requests on the forge stay."
+            description="&lt;PE/CORE&gt;'s copy of the repository, work folders, artifacts, logs, database, definitions and service containers are removed. Your project folder and the repositories and pull requests on the forge stay."
             width={460}
             footer={<>
               <Button disabled={!connected || remove.busy} onClick={() => setDeleting(false)}>Cancel</Button>

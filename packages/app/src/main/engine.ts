@@ -16,7 +16,7 @@ export type EngineCallbacks = { notify(n: { title: string; body: string; kind: s
 
 export function startEngine(opts: { home: string; resources: string; version: string; devOrigin: string | null; downloads: string }, cb: EngineCallbacks): Promise<EngineHandle> {
   const child: UtilityProcess = utilityProcess.fork(join(import.meta.dirname, "engine.js"), [], {
-    serviceName: "PeCore engine",
+    serviceName: "<PE/CORE> engine",
     stdio: "inherit",
     env: {
       ...process.env,

@@ -44,7 +44,7 @@ export function projectDeletion(engine: Engine, project: string): { identity: st
   const rows: ChatConfirmationRow[] = [
     { label: "Project", value: name },
     { label: "Project ID", value: project },
-    { label: "Data to delete", value: "PeCore’s repository copy, work folders, artifacts, logs, database, definitions and service containers." },
+    { label: "Data to delete", value: "<PE/CORE>’s repository copy, work folders, artifacts, logs, database, definitions and service containers." },
     ...(folder ? [{ label: "Project folder kept", value: folder }] : []),
     ...(repo ? [{ label: "Remote repository and pull requests kept", value: repo.url }] : []),
   ];

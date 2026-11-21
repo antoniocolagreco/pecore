@@ -6,7 +6,7 @@ import type { ApiClient } from "@pecore/schemas";
 
 export class NotRunningError extends Error {
   constructor() {
-    super("PeCore is not running: open the app");
+    super("<PE/CORE> is not running: open the app");
   }
 }
 

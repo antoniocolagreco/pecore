@@ -64,7 +64,7 @@ function PaletteContent({ close }: { close(): void }) {
   const start: number = Math.min(offset, Math.max(0, Math.ceil(options.length / 120) - 1) * 120);
   const highlightedJob: JobView | undefined = options.slice(start, start + 120).find((item) => item.path === highlighted)?.job;
 
-  return <Command key={selected ? "actions" : "search"} shouldFilter={false} label="Search PeCore" className={s.command}
+  return <Command key={selected ? "actions" : "search"} shouldFilter={false} label="Search &lt;PE/CORE&gt;" className={s.command}
     onValueChange={selected ? undefined : setHighlighted}
     onKeyDown={(event) => {
       if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && connected && !selected && highlightedJob) {

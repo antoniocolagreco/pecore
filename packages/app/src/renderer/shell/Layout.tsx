@@ -66,7 +66,7 @@ export function Layout() {
       <nav className={s.sidebar} aria-label="Main" data-collapsed={menu ? undefined : ""}>
         <div className={s.brand}>
           <IconButton label={menu ? "Hide menu" : "Show menu"} aria-expanded={menu} icon={<SidebarIcon />} onClick={toggleMenu} />
-          <span className={s.brandName}>PeCore</span>
+          <span className={s.brandName}>&lt;PE/CORE&gt;</span>
         </div>
         {nav.map((g) => (
           <div key={g.group ?? "main"} className={s.group}>

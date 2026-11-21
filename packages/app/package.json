@@ -1,6 +1,6 @@
 {
   "name": "@pecore/app",
-  "productName": "PeCore",
+  "productName": "<PE/CORE>",
   "version": "0.1.0",
   "private": true,
   "type": "module",

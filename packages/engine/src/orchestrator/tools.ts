@@ -252,7 +252,7 @@ export function orchestratorTools(engine: Engine): {
       const { bytes, truncated } = await readLogTail(join(ctx.dir, row.log_path), artifactLimit);
       return { value: { untrusted: true, attemptId: row.id, content: bytes.toString("utf8"), truncated }, target: { ...input, attemptId: row.id } };
     }),
-    answer_question: tool("Answer an open agent-question item. Read its current hash from PeCore context.", z.strictObject({ itemId: id, answer: z.string().trim().min(1), hash: z.string().regex(/^[0-9a-f]{64}$/).optional() }), async ({ itemId, answer, hash }) => {
+    answer_question: tool("Answer an open agent-question item. Read its current hash from <PE/CORE> context.", z.strictObject({ itemId: id, answer: z.string().trim().min(1), hash: z.string().regex(/^[0-9a-f]{64}$/).optional() }), async ({ itemId, answer, hash }) => {
       const { ctx, executor } = engine.findQueueItem(itemId);
       const item = ctx.db.db.prepare("SELECT kind, subject_hash, choices FROM human_queue WHERE id = ?").get(itemId) as { kind: string; subject_hash: string; choices: string };
       if (item.kind !== "agent-question") throw new Error("only agent questions can be answered");
@@ -279,7 +279,7 @@ export function orchestratorTools(engine: Engine): {
       const value = await definitions.handlers.validateDefinition({ params: undefined, query: undefined, body: { path, content } });
       return { value, target: { path }, isError: value.errors.length > 0 };
     }),
-    comment_ticket: tool("Post a clarification question on the ticket and record that the current order is waiting for replies. For a new ticket, the user approves the question before PeCore posts it.", ticket.extend({ text: z.string().trim().min(1) }), async ({ project, ticketId, text }, message) => {
+    comment_ticket: tool("Post a clarification question on the ticket and record that the current order is waiting for replies. For a new ticket, the user approves the question before <PE/CORE> posts it.", ticket.extend({ text: z.string().trim().min(1) }), async ({ project, ticketId, text }, message) => {
       const ctx: ProjectContext = projectContext(engine, project);
       const order: TicketOrder | undefined = intakeOrder(ctx, message);
       if (order && (ticketId !== order.ticket_id || order.state !== "handed")) throw new Error("only the current handed ticket can be asked");
