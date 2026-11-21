@@ -340,7 +340,7 @@ Goal: minimum friction. The user opens PeCore and it works, with no setting to f
 *   No first run screen and no `firstRunDone`. The app opens on Factory, with the Assistant chat on the right and the cursor in its message box.
 *   At every engine start, auto-setup runs (design.md "Auto-setup"). It finds the installed harnesses, adds an account for each one the user is logged in to, creates profiles from the models each harness reports, fills the tiers and sets the orchestrator profile. Profiles and tiers are internal and never shown (decision 5). It only adds what is missing and never changes what the user set.
 *   When no harness is installed and logged in, a banner on every page says so, with the install link of each supported harness and a Log in button for the installed ones. Nothing is disabled that can work without it.
-*   git stays required, because `PECORE_HOME` is a git repository: without it the app shows an error with the install instruction. Other missing prerequisites (Compose, gitleaks, gh, glab) are warnings on the feature that needs them, as in "Missing configuration and warnings" below, never a blocking step.
+*   git stays required, because `PECORE_HOME` is a git repository: without it the app shows an error with the install instruction. Other missing prerequisites (Compose, gh, glab) are warnings on the feature that needs them, as in "Missing configuration and warnings" below, never a blocking step.
 
 ## Cross-cutting behaviour
 

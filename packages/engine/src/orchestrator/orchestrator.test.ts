@@ -8,7 +8,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { apiClient } from "@pecore/schemas";
 import type { ChatDetail, LiveMessage } from "@pecore/schemas";
 import { FakeForge, forgeAccount } from "../../test/fake-forge";
-import { fakeGitleaks } from "../../test/fake-gitleaks";
 import { createProjectWithRecipes } from "../../test/project";
 import { shippedLibrary, tempDir } from "../../test/tmp";
 import { handlers } from "../api/handlers";
@@ -447,7 +446,6 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     ]]);
     const tokenFile: string = tokenFileOf("assistant");
     const m = mcp(tokenFile);
-    const path: string | undefined = process.env.PATH;
     try {
       await t.call("sendChatMessage", { body: { text: "Export and import Demo." } });
       await until(() => existsSync(join(t.root, "share-prompt.json")));
@@ -491,8 +489,6 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       expect((await t.call("listProjects")).map(({ id }) => id).sort()).toEqual(["demo", "demo-2"]);
       expect(existsSync(join(t.engine.projectDir("demo-2"), "knowledge", "late.md"))).toBe(true);
 
-      const gl = await fakeGitleaks();
-      process.env.PATH = `${gl.bin}:${path}`;
       await rm(archive);
       const leak: string = join(t.engine.projectDir("demo"), "artifacts", "leak");
       await mkdir(leak, { recursive: true });
@@ -509,7 +505,6 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       expect(existsSync(archive)).toBe(true);
       await writeFile(join(t.root, "done"), "");
     } finally {
-      process.env.PATH = path;
       m.close();
       await t.close();
     }

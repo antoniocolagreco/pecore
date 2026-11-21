@@ -1,55 +1,22 @@
-import { execFile } from "node:child_process";
 import { createReadStream, createWriteStream, linkSync } from "node:fs";
-import { cp, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
-import { promisify } from "node:util";
 import { create } from "tar";
-import { z } from "zod";
 import { createZstdCompress } from "node:zlib";
 import { ExportProjectBody } from "@pecore/schemas";
 import type { ExportProjectResult } from "@pecore/schemas";
 import type { ProjectContext } from "../graph/executor";
 import { activeJobCount, archivePath, definitionDirs, ShareConflict } from "./archive";
 import type { Manifest } from "./archive";
+import { scanSecrets } from "./secrets";
 
-const execFileP = promisify(execFile);
-
-const Report = z.array(z.object({ Fingerprint: z.string(), File: z.string(), StartLine: z.number().int(), RuleID: z.string() })).nullable();
 type Finding = Extract<ExportProjectResult, { state: "findings" }>["findings"][number];
 
 function assertIdle(ctx: ProjectContext): void {
   const count: number = activeJobCount(ctx.db.db);
   if (count > 0) throw new ShareConflict(`${count} ${count === 1 ? "job is" : "jobs are"} active: stop or archive them first`);
-}
-
-async function scan(dir: string): Promise<Finding[]> {
-  const report: string = join(dir, "gitleaks.json");
-  try {
-    await execFileP("gitleaks", ["dir", "artifacts", "--no-banner", "--report-format", "json", "--report-path", report, "--exit-code", "0"], {
-      cwd: dir,
-      env: { ...process.env, GITLEAKS_CONFIG: "", GITLEAKS_CONFIG_TOML: "[extend]\nuseDefault = true\n" },
-    });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new Error("gitleaks is not installed", { cause: error });
-    throw new Error("gitleaks could not scan artifacts", { cause: error });
-  }
-  const contents: string = await readFile(report, "utf8");
-  let data: unknown;
-  try {
-    data = JSON.parse(contents);
-  } catch {
-    throw new Error("gitleaks returned an invalid report");
-  }
-  const parsed = Report.safeParse(data);
-  if (!parsed.success) throw new Error("gitleaks returned an invalid report");
-  return (parsed.data ?? []).map(({ Fingerprint, File, StartLine, RuleID }) => {
-    const name: string = File.replace(/^\.\//, "");
-    const file: string | null = archivePath(isAbsolute(name) ? relative(join(dir, "artifacts"), name).split(sep).join("/") : name.replace(/^artifacts\//, ""));
-    if (file === null) throw new Error("gitleaks returned an invalid artifact path");
-    return { fingerprint: Fingerprint, file, line: StartLine, rule: RuleID };
-  });
 }
 
 async function copyEntry(from: string, to: string, name: string, directory: boolean): Promise<void> {
@@ -89,7 +56,7 @@ export async function exportProject(ctx: ProjectContext, input: ExportProjectBod
     for (const name of dirs) await copyEntry(ctx.dir, dir, name, true);
     if (history) {
       assertIdle(ctx);
-      const findings: Finding[] = await scan(dir);
+      const findings: Finding[] = await scanSecrets(join(dir, "artifacts"));
       assertIdle(ctx);
       const accepted: Set<string> = new Set(acceptFindings);
       if (findings.some((finding) => !accepted.has(finding.fingerprint))) return { state: "findings", findings };

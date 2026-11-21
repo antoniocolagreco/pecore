@@ -7,7 +7,6 @@ import { list } from "tar";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { apiClient } from "@pecore/schemas";
 import { apiProject } from "../../test/api-project";
-import { fakeGitleaks } from "../../test/fake-gitleaks";
 import { forgeAccount } from "../../test/fake-forge";
 import { forgeProject, until } from "../../test/forge-project";
 import { shippedLibrary, tempDir } from "../../test/tmp";
@@ -145,7 +144,7 @@ describe("project export (share/, section 8)", () => {
     await p.close();
   }, 60000);
 
-  it("with history: refused while a job is active, needs gitleaks, lists findings without the secret, and writes after they are accepted", async () => {
+  it("with history: refused while a job is active, lists findings without the secret, and writes after they are accepted", async () => {
     const p = await apiProject();
     const dir = p.engine.projectDir("demo");
     const { id: active } = await p.call("createJob", { body: { project: "demo", title: "Active", ticket: { text: "x" } } });
@@ -154,12 +153,6 @@ describe("project export (share/, section 8)", () => {
     await expect(p.call("exportProject", { params: { id: "demo" }, body: { path: out, history: true } })).rejects.toMatchObject({ status: 409, message: expect.stringContaining("1 job is active: stop or archive them first") });
     await p.call("stopJob", { params: { id: active } });
 
-    process.env.PATH = "/usr/bin:/bin";
-    await expect(p.engine.exportProject("demo", { path: out, history: true, logs: false, acceptFindings: [] })).rejects.toThrow("gitleaks is not installed");
-    process.env.PATH = savedPath;
-
-    const gl = await fakeGitleaks();
-    process.env.PATH = `${gl.bin}:${savedPath}`;
     const done = await finishedJob(p);
     const leakDir = join(dir, "artifacts", done, "leak");
     await mkdir(leakDir, { recursive: true });
@@ -169,7 +162,6 @@ describe("project export (share/, section 8)", () => {
     expect(r).toEqual({ state: "findings", findings: [{ fingerprint: expect.any(String), file: `${done}/leak/out.txt`, line: 2, rule: "github-pat" }] });
     expect(JSON.stringify(r)).not.toContain(secret);
     expect(lstatSync(out, { throwIfNoEntry: false })).toBeUndefined();
-    expect((await gl.calls())[0]).toEqual(["dir", "artifacts", "--no-banner", "--report-format", "json", "--report-path", expect.any(String), "--exit-code", "0"]);
 
     const fingerprint = r.state === "findings" ? r.findings[0]!.fingerprint : "";
     expect(await p.call("exportProject", { params: { id: "demo" }, body: { path: out, history: true, acceptFindings: [fingerprint] } })).toEqual({ state: "written", path: out });
@@ -220,8 +212,6 @@ describe("project import (share/, CUJ 7)", () => {
   });
 
   it("imports history and runs new jobs with the recipe's human review only", async () => {
-    const gl = await fakeGitleaks();
-    process.env.PATH = `${gl.bin}:${savedPath}`;
     const p = await apiProject();
     const done = await finishedJob(p);
     const src = p.engine.project("demo").ctx.db;
@@ -272,8 +262,6 @@ describe("project import (share/, CUJ 7)", () => {
   }, 120000);
 
   it("the same archive with history imported ten times gives ten independent copies, each with its own job ids, artifacts and logs", async () => {
-    const gl = await fakeGitleaks();
-    process.env.PATH = `${gl.bin}:${savedPath}`;
     const p = await apiProject();
     const done = await finishedJob(p);
     const out = join(await tempDir(), "pippo.tar.zst");

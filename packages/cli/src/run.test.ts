@@ -2,7 +2,6 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { apiProject } from "../../engine/test/api-project";
-import { fakeGitleaks } from "../../engine/test/fake-gitleaks";
 import { until } from "../../engine/test/forge-project";
 import { tempDir } from "../../engine/test/tmp";
 import { run } from "./run";
@@ -65,8 +64,7 @@ describe("pecore CLI over the local API", () => {
     await close();
   });
 
-  it("exports a project, lists gitleaks findings until accepted, and imports an archive under a new id", async () => {
-    const savedPath = process.env.PATH;
+  it("exports a project, lists secret findings until accepted, and imports an archive under a new id", async () => {
     const { home, engine, call, close } = await apiProject();
     const env = { PECORE_HOME: home };
     const out = join(await tempDir(), "demo.tar.zst");
@@ -82,8 +80,6 @@ describe("pecore CLI over the local API", () => {
     expect(busy.err[0]).toBe("conflict: 1 job is active: stop or archive them first");
     await call("stopJob", { params: { id } });
 
-    const gl = await fakeGitleaks();
-    process.env.PATH = `${gl.bin}:${savedPath}`;
     const leak = join(engine.projectDir("demo"), "artifacts", id, "leak");
     await mkdir(leak, { recursive: true });
     await writeFile(join(leak, "out.txt"), `ghp_${"x".repeat(36)}\n`);
@@ -94,7 +90,6 @@ describe("pecore CLI over the local API", () => {
     const a = capture();
     expect(await run(["project", "export", "demo", "--out", `${out}.h`, "--history", "--accept-findings"], a.io, env)).toBe(0);
     expect(a.out).toEqual([`${out}.h`]);
-    process.env.PATH = savedPath;
 
     const bad = capture();
     expect(await run(["project", "import", out, "--account", "nope"], bad.io, env)).toBe(2);
