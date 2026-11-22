@@ -65,6 +65,47 @@
   color: var(--text-2);
 }
 
+.traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.trait {
+  height: var(--mini-h);
+  padding: 0 10px;
+  border: 1px solid var(--control-border);
+  border-radius: 999px;
+  background: var(--control-bg);
+  font-size: var(--text-size-sm);
+  cursor: default;
+  transition:
+    background-color var(--fast) ease,
+    border-color var(--fast) ease,
+    color var(--fast) ease;
+}
+
+.trait:hover:not([aria-disabled="true"]) {
+  border-color: var(--control-border-hover);
+}
+
+.trait[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+
+.trait[aria-disabled="true"] {
+  color: var(--text-3);
+  background: transparent;
+}
+
+.trait:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3.5px var(--ring);
+}
+
 .rows {
   display: flex;
   flex-direction: column;

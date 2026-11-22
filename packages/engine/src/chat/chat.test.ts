@@ -510,6 +510,40 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     }
   }, 90000);
 
+  it("asks the user's name, saves it, and passes it with the chosen traits in the instructions", async () => {
+    const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
+    const t = await setup((root) => [
+      [...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "first.json") }, { waitFile: join(root, "named") }, ...replyWith("Nice to meet you, Antonio.")],
+      [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "second.json") }, ...replyWith("Done.")],
+    ]);
+    const m = mcp(tokenFileOf("assistant"));
+    try {
+      await t.call("sendChatMessage", { body: { text: "Hello" } });
+      await until(() => existsSync(join(t.root, "first.json")));
+      const first: string = await readFile(join(t.root, "first.json"), "utf8");
+      expect(first).toContain("You do not know the user's name yet");
+      expect(first).not.toContain("Your personality");
+      await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+      expect((await m.tool("set_user_name", { name: " Antonio " })).result?.isError).toBeUndefined();
+      const settings = await t.call("getSettings");
+      expect(settings.value.user).toEqual({ name: "Antonio" });
+      await t.call("putSettings", { body: { value: { ...settings.value, assistant: { ...settings.value.assistant, traits: ["pragmatic", "narrative"] } }, baseSha256: settings.sha256 } });
+      await writeFile(join(t.root, "named"), "");
+      await until(async () => (await t.call("getChat")).messages.some(({ text }) => text === "Nice to meet you, Antonio."));
+      await t.call("sendChatMessage", { body: { text: "Thanks" } });
+      await until(() => existsSync(join(t.root, "second.json")));
+      const second: string = await readFile(join(t.root, "second.json"), "utf8");
+      expect(second).toContain("The user's name is Antonio.");
+      expect(second).not.toContain("You do not know the user's name yet");
+      expect(second).toContain("Your personality, chosen by the user: Pragmatic (Direct, concrete, solution-oriented. Few words.); Narrative (Expressive, uses stories, analogies and examples.).");
+      const conflict = await t.call("getSettings");
+      await expect(t.call("putSettings", { body: { value: { ...conflict.value, assistant: { ...conflict.value.assistant, traits: ["minimalist", "narrative"] } }, baseSha256: conflict.sha256 } })).rejects.toThrow();
+    } finally {
+      m.close();
+      await t.close();
+    }
+  }, 60000);
+
   it("changes validated settings and deletes a project only after their chat cards are confirmed", async () => {
     const t = await setup((root) => [[
       ...init(), ...newSession, { expect: "session/prompt" },

@@ -324,14 +324,16 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 ### Settings
 
-*   Sections: Accounts (IG1), Protected mode (IF6), Assistant and Project Manager (IG6), Projects, Limits and disk threshold, Services runtime, Merge check interval (IG3), Updates (IG7), Appearance (IG9). No Models section and no Notifications section.
+*   Sections: You, Accounts (IG1), Protected mode (IF6), Assistant and Project Manager (IG6), Projects, Limits and disk threshold, Services runtime, Merge check interval (IG3), Updates (IG7), Appearance (IG9). No Models section and no Notifications section.
 *   The section list is in the main sidebar. Sections adapt to the window width, and each has a one-line description under its title.
 *   No text or JSON editing and no user-typed IDs; raw validation errors are never shown.
 *   Every change saves by itself, a moment after the last keystroke and at once when the page is left; there is no Save or Discard button. A value that is not valid is not saved and the problem shows at the bottom of the page.
 *   Accounts has two lists:
     *   AI tools: every installed harness appears by itself. A row shows the tool, the account, its state, a Check button that looks clickable, and Log in only when needed. A working account shows "Logged in", OpenCode and a private Git server included. OpenCode is logged in when it lists at least one model; with none, the row says to set up a model provider in OpenCode.
     *   Git hosting offers Add account for a public service or the user's own server. General copy is service-neutral. The picker and account rows name the service. Forge tool logins show the tool's device code or URL, then recheck the account. A private Git server uses the user's Git credentials and has no Log in button.
+*   You: "Your name", empty by default. The Assistant and the Project Managers get it at the start of a conversation; when it is empty the Assistant asks for it in the chat and saves it here.
 *   Assistant settings offer the provider, model and effort from the harness and the automatic and maximum compaction thresholds (128,000 and 256,000 tokens by default).
+*   Assistant > Personality: the 24 traits of `assistantTraits` (Pragmatic, Analytical, Socratic, Critical, Creative, Visionary, Philosophical, Stoic, Empathetic, Friendly, Playful, Sarcastic, Rebellious, Diplomatic, Professional, Academic, Mentor, Coach, Strategic, Investigative, Minimalist, Narrative, Protective, Bold) as round toggles, none chosen by default. Hovering a trait shows its description at once. A trait incompatible with a chosen one (`incompatibleTraits`, for example Minimalist and Narrative) is greyed out and its tooltip names the trait it does not go with. Traits apply to the Assistant only.
 *   Project Manager: Provider, Model and Effort selects, by default "Same as the Assistant", and its own pair of compaction thresholds with the same defaults.
 *   In both pickers Effort is locked until a model is chosen and lists only the levels that model offers, Default alone when it offers none; choosing another model resets it to Default. The model list is read once when the app starts, and each model's levels the first time they are needed; a small refresh button next to Model reads both again.
 *   Projects: "Projects folder", typed by hand or picked with "Choose…", default the user's home (`~`). A new project's folder starts as this folder plus the project id, in the wizard and in the chat.

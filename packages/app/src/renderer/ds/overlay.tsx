@@ -6,10 +6,10 @@ import type { CSSProperties, ReactElement, ReactNode } from "react";
 import { BellIcon, XIcon } from "./icons";
 import s from "./overlay.module.css";
 
-export function Tooltip({ content, shortcut, side = "bottom", children }: { content: ReactNode; shortcut?: string; side?: "top" | "bottom" | "left" | "right"; children: ReactElement }) {
+export function Tooltip({ content, shortcut, side = "bottom", delay, children }: { content: ReactNode; shortcut?: string; side?: "top" | "bottom" | "left" | "right"; delay?: number; children: ReactElement }) {
   return (
     <BaseTooltip.Root>
-      <BaseTooltip.Trigger render={children} />
+      <BaseTooltip.Trigger render={children} delay={delay} />
       <BaseTooltip.Portal>
         <BaseTooltip.Positioner side={side} sideOffset={6} style={{ zIndex: 70 }}>
           <BaseTooltip.Popup className={s.tooltip}>

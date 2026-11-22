@@ -4,6 +4,7 @@ import { z } from "zod";
 import { ArchiveReviewBody, freeProjectManager, InstantiateBody, OrderPlan, ProjectExportOptions, TicketReply, TicketSnapshot } from "@pecore/schemas";
 import type { ExportProjectResult, ImportProjectPreview, StoredEvent } from "@pecore/schemas";
 import { definitionOperations } from "../api/routes/definitions";
+import { globalFileHandlers } from "../api/routes/settings";
 import { jobHandlers } from "../api/routes/jobs";
 import { queueHandlers } from "../api/routes/queue";
 import type { ProjectContext } from "../graph/executor";
@@ -86,7 +87,7 @@ function definitionPath(path: string, scope: "template" | "instance" | "knowledg
 const intakeToolNames: Set<string> = new Set(["list_projects", "list_recipes", "read_ticket", "create_jobs", "job_status", "read_artifact", "comment_ticket", "read_replies"]);
 const questionToolNames: Set<string> = new Set(["list_recipes", "list_definitions", "read_definition", "read_ticket", "read_replies", "job_status", "read_artifact", "answer_question"]);
 const projectWorkToolNames: Set<string> = new Set(["create_jobs", "answer_question", "instantiate", "write_instance", "write_knowledge", "comment_ticket"]);
-const assistantOnlyToolNames: Set<string> = new Set(["analyze_project_archive", "import_project", "export_project", "project_creation_options", "create_project", "update_project", "delete_project", "write_template", "delegate_to_pm"]);
+const assistantOnlyToolNames: Set<string> = new Set(["analyze_project_archive", "import_project", "export_project", "project_creation_options", "create_project", "update_project", "delete_project", "write_template", "delegate_to_pm", "set_user_name"]);
 const definitionToolNames: Set<string> = new Set(["write_instance", "write_knowledge", "validate"]);
 const readToolNames: Set<string> = new Set(["list_definitions", "read_definition"]);
 
@@ -199,6 +200,12 @@ export function chatTools(engine: Engine): {
     delegate_to_pm: tool("Pass an order about one project's work to its Project Manager: jobs, recipes, nodes, knowledge, tickets or agent questions. Write a complete, self-contained order: the Project Manager cannot read this chat. Attachment IDs must come from the current message. The Project Manager's final reply appears in this chat by itself.", project.extend({ order: z.string().trim().min(1), attachmentIds: z.array(id).default([]) }), async ({ project, order, attachmentIds }, message) => {
       const messageId: string = await chats.delegate(project, order, attachmentIds, message);
       return { value: { state: "sent" }, target: { project, messageId, state: "sent" } };
+    }),
+    set_user_name: tool("Save the user's name in the app settings, when the user tells you their name or asks to change it.", z.strictObject({ name: z.string().trim().min(1).max(60) }), async ({ name }) => {
+      const settings = globalFileHandlers(engine);
+      const file = await settings.getSettings();
+      await settings.putSettings({ params: undefined, query: undefined, body: { value: { ...file.value, user: { name } }, baseSha256: file.sha256 } });
+      return { value: { saved: name } };
     }),
     list_definitions: tool("List the definition files in library/nodes, library/recipes, projects/<id>/nodes, projects/<id>/recipes or projects/<id>/knowledge.", z.strictObject({ dir: id }), async ({ dir }) => ({
       value: (await definitions.handlers.listDefinitions({ params: undefined, query: { dir }, body: undefined })).map(({ path, errors }) => ({ path, errors })),

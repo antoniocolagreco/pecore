@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { ApiError, forgeHost, Settings as SettingsSchema } from "@pecore/schemas";
-import type { Account, BuiltInHarness, ForgeAccount, LiveMessage, Role, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
+import { ApiError, assistantTraits, forgeHost, incompatibleTraits, Settings as SettingsSchema } from "@pecore/schemas";
+import type { Account, AssistantTraitId, BuiltInHarness, ForgeAccount, LiveMessage, Role, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { call } from "../api/client";
 import { errorText, useAction, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
@@ -12,7 +12,7 @@ import { Switch } from "../ds/choice";
 import { Alert, Badge, Card, Spinner } from "../ds/feedback";
 import { TextField } from "../ds/field";
 import { CheckCircleIcon, AlertIcon, PlusIcon, RefreshIcon } from "../ds/icons";
-import { Dialog } from "../ds/overlay";
+import { Dialog, Tooltip } from "../ds/overlay";
 import { Combobox, Select } from "../ds/select";
 import { NumberField, Segmented } from "../ds/values";
 import { install } from "../shell/SetupBanner";
@@ -31,6 +31,7 @@ const roleTitles: Record<Role, string> = { assistant: "Assistant", pm: "Project 
 const sameValue = "same";
 
 const sections: { id: string; title: string }[] = [
+  { id: "you", title: "You" },
   { id: "accounts", title: "Accounts" },
   { id: "assistant", title: "Assistant" },
   { id: "pm", title: "Project Manager" },
@@ -392,6 +393,29 @@ function ModelPicker({ accounts, choice, onChoice, disabled, same = false }: { a
   </div>;
 }
 
+function Traits({ value, disabled, onChange }: { value: AssistantTraitId[]; disabled: boolean; onChange(traits: AssistantTraitId[]): void }) {
+  return (
+    <div className={s.nested}>
+      <span className={s.label}>Personality</span>
+      <p className={s.groupText}>Traits that shape how the Assistant talks. Traits that do not go together cannot be picked at the same time.</p>
+      <div className={s.traits} role="group" aria-label="Personality">
+        {assistantTraits.map(({ id, label, description }) => {
+          const on: boolean = value.includes(id);
+          const blocked: string[] = on ? [] : incompatibleTraits[id].filter((other) => value.includes(other)).map((other) => assistantTraits.find((trait) => trait.id === other)!.label);
+          return (
+            <Tooltip key={id} delay={0} side="top" content={blocked.length ? `${description} Does not go with ${blocked.join(" or ")}.` : description}>
+              <button type="button" className={s.trait} aria-pressed={on} aria-disabled={disabled || blocked.length > 0}
+                onClick={() => { if (!disabled && !blocked.length) onChange(on ? value.filter((trait) => trait !== id) : [...value, id]); }}>
+                {label}
+              </button>
+            </Tooltip>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function Settings() {
   const connected: boolean = useConnected();
   const { search } = useLocation();
@@ -447,6 +471,8 @@ export function Settings() {
         <NumberField label="Compact at once above" unit="tokens" value={value[role].compaction.max} min={1} step={1000}
           onValueChange={(max) => update({ ...value, [role]: { ...value[role], compaction: { ...value[role].compaction, max: max ?? 0 } } })} />
       </div>
+      {role === "assistant" && <Traits value={value.assistant.traits} disabled={!connected}
+        onChange={(traits) => update({ ...value, assistant: { ...value.assistant, traits } })} />}
     </Section>;
   const prefs: ThemePrefs = themePrefs(value?.ui);
 
@@ -466,6 +492,11 @@ export function Settings() {
     </SidebarSection>
     <div>
       <div className={s.content}>
+        {value && <Section id="you" title="You" description="How the Assistant and the Project Managers call you.">
+          <TextField label="Your name" value={value.user.name ?? ""} disabled={!connected}
+            description="Leave it empty and the Assistant asks for it."
+            onValueChange={(name) => update({ ...value, user: { name: name.trim() ? name : null } })} />
+        </Section>}
         <Section id="accounts" title="Accounts" description="The AI tools and the code hosting accounts &lt;PE/CORE&gt; works with." plain>
           {accounts.feedback}
           <ErrorText error={accounts.error} />

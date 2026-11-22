@@ -4,7 +4,7 @@ import { basename, join } from "node:path";
 import { monotonicFactory } from "ulid";
 import { probeImageSupport, startSession } from "@pecore/agents";
 import type { McpServer, PromptContent, Session, Spawn, SpawnedProcess } from "@pecore/agents";
-import { ChatConfirmationRow, ExportFinding, ImportProjectPreview, ProjectExportOptions, ProjectId, chatAttachmentMaxBytes, chatCompactCommand, roleProfile } from "@pecore/schemas";
+import { ChatConfirmationRow, ExportFinding, assistantTraits, ImportProjectPreview, ProjectExportOptions, ProjectId, chatAttachmentMaxBytes, chatCompactCommand, roleProfile } from "@pecore/schemas";
 import type { ChatAttachmentView, ChatDetail, ChatImageMime, ChatMessageView, ExportProjectResult, ImportProjectSelection, LiveMessage, Role, SendChatMessageBody } from "@pecore/schemas";
 import { z } from "zod";
 import { protectedUser, spawnFor } from "../accounts/agents";
@@ -136,6 +136,19 @@ export class AgentChats {
 
   project(chatId: string): string | null {
     return this.db.chat(chatId)?.project ?? null;
+  }
+
+  private instructions(role: Role, name: string | undefined): string {
+    const { user, assistant } = this.engine.global().settings;
+    const lines: string[] = [preambles[role]];
+    if (name) lines.push(`Your name is ${name}.`);
+    if (user.name) lines.push(`The user's name is ${user.name}.`);
+    else if (role === "assistant") lines.push("You do not know the user's name yet. Ask for it once, briefly, and save it with set_user_name.");
+    if (role === "assistant" && assistant.traits.length) {
+      const traits = assistantTraits.filter(({ id }) => assistant.traits.includes(id));
+      lines.push(`Your personality, chosen by the user: ${traits.map(({ label, description }) => `${label} (${description})`).join("; ")}. It shapes your tone, never what you are allowed to do.`);
+    }
+    return lines.join("\n");
   }
 
   access(chatId: string): ChatAccess {
@@ -640,7 +653,7 @@ export class AgentChats {
       }
 
       const name: string | undefined = role === "pm" ? this.engine.projects.get(this.project(chatId) ?? "")?.ctx.project.pm?.name : undefined;
-      const instructions: string = name ? `${preambles[role]}\nYour name is ${name}.` : preambles[role];
+      const instructions: string = this.instructions(role, name);
       const digest: string = createHash("sha256").update(instructions).digest("hex");
       const lines: string[] = !session.resumed || this.db.instructions(chatId) !== digest ? [instructions] : [];
       const reports: ChatTurn[] = role === "assistant" ? this.db.reportsSince(chatId) : [];
