@@ -178,7 +178,7 @@ function AccountRow({ name, detail, state, checking, actions, children }: { name
   </li>;
 }
 
-function harnessName(account: Account, all: Account[]): string {
+export function harnessName(account: Account, all: Account[]): string {
   if (account.kind !== "model") return account.id;
   const name: string = install[account.connector as BuiltInHarness]?.name ?? account.connector;
   return all.filter((other) => other.kind === "model" && other.connector === account.connector).length > 1 ? `${name} · ${account.id}` : name;

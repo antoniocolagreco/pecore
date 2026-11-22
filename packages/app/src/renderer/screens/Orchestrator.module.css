@@ -25,6 +25,28 @@
   padding: 0 12px;
 }
 
+.heading {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-size);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.model {
+  overflow: hidden;
+  font-size: var(--text-size-sm);
+  color: var(--text-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .history {
   flex: 1;
   min-height: 0;

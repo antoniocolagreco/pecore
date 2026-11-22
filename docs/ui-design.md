@@ -239,7 +239,7 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 
 ### Assistant chat (right panel)
 
-*   One chat for the whole app, always on the right of every screen. No conversation list, no page of its own. Its header has two icon buttons: Compact, and Clear, which after a confirmation deletes the conversation and starts a new Assistant session.
+*   One chat for the whole app, always on the right of every screen. No conversation list, no page of its own. Its header shows the title "Assistant" and, below it in small muted text, the harness, model and effort from Settings > Assistant, for example "Claude Code · claude-opus-5-5 · high" ("default effort" when none is chosen); the line is hidden until an Assistant is chosen. The header also has two icon buttons: Compact, and Clear, which after a confirmation deletes the conversation and starts a new Assistant session.
 *   The user talks only to the Assistant. The Orchestrator, which works in the background on new issues of linked projects, never chats and never writes in this chat: what it does arrives as a notification, for example "Shop, ticket 42: The Orchestrator created the job Fix login.".
 *   The user's messages sit in a bubble that keeps the accent colour at the bottom-right corner and fades towards the top-left to a lighter shade in light themes, a darker one in dark themes (`--bubble-user`); the Assistant's replies have no bubble.
 *   The reply appears while it is written. Until it starts, animated dots under the user's message show the Assistant is working.

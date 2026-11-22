@@ -16,6 +16,7 @@ import { Alert, Spinner } from "../ds/feedback";
 import { ArrowUpIcon, ClipIcon, CompactIcon, SparkIcon, TrashIcon, XIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { definitionUrl, object, settingUrl, string } from "./NodeEditor";
+import { harnessName } from "./Settings";
 import s from "./Orchestrator.module.css";
 
 type SelectedImage = { key: number; file: File; mime: ChatImageMime; attachmentId?: string };
@@ -435,6 +436,13 @@ export function ChatPanel() {
   const clear = useAction(async () => {
     await call("clearChat");
     detail.reload();
+  const profiles = useData(() => call("getProfiles"), [], (event) => event.type === "definition.changed" && event.path === "profiles.json");
+  const accounts = useData(() => call("getAccounts"), [], (event) => event.type === "definition.changed" && event.path === "accounts.json");
+  const profileId: string | null = settings.data ? roleProfile(settings.data.value, "assistant") : null;
+  const profile = profiles.data?.value.profiles.find(({ id }) => id === profileId);
+  const allAccounts = accounts.data?.value.accounts ?? [];
+  const account = allAccounts.find(({ id }) => id === profile?.account);
+  const model: string | null = profile && account ? [harnessName(account, allAccounts), profile.model, profile.effort ?? "default effort"].join(" · ") : null;
   });
   const turnPending: boolean = chat?.messages.some(({ state }) => state === "queued" || state === "running") ?? false;
   const orders: Set<string> = new Set(chat?.messages.filter(({ role }) => role === "user").map(({ id }) => id));
@@ -507,6 +515,10 @@ export function ChatPanel() {
             const own: ChatActionView[] = actions.get(message.replyTo ?? message.id) ?? [];
             const reply: ChatMessageView | undefined = replies.get(message.id);
             const working: boolean = message.id === pending?.id;
+        <div className={s.heading}>
+          <h2 className={s.title}>Assistant</h2>
+          {model && <span className={s.model}>{model}</span>}
+        </div>
             return <Fragment key={message.id}>
               <Message message={message} connected={connected}
                 actions={message.role === "assistant" ? own : []} attachments={attachments.get(message.id) ?? []} reload={detail.reload} />
