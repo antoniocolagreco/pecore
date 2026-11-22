@@ -11,7 +11,7 @@ const platform = process.env.PECORE_TARGET_PLATFORM ?? process.platform;
 const arch = process.env.PECORE_TARGET_ARCH ?? process.arch;
 
 mkdirSync(out, { recursive: true });
-copyFileSync(join(root, "scripts", "orchestrator-mcp.mjs"), join(out, "orchestrator-mcp.mjs"));
+copyFileSync(join(root, "scripts", "chat-mcp.mjs"), join(out, "chat-mcp.mjs"));
 
 for (const [pkg, { version }] of Object.entries(pins.adapters)) {
   const dir = join(out, `${pkg}@${version}`);

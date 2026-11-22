@@ -155,6 +155,10 @@ export async function loadGlobal(home: string): Promise<{ value: Global | null; 
       if (value !== null && typeof value === "object") {
         for (const key of ["firstRunDone", "prices", "projectPaths", "programPaths"]) Reflect.deleteProperty(value, key);
         if ("limits" in value && value.limits !== null && typeof value.limits === "object") Reflect.deleteProperty(value.limits, "providers");
+        if ("orchestrator" in value) {
+          if (!("pm" in value)) Reflect.set(value, "pm", value.orchestrator);
+          Reflect.deleteProperty(value, "orchestrator");
+        }
       }
       return value;
     }),

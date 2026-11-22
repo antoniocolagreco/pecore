@@ -15,7 +15,7 @@ import { startApi } from "../api/server";
 import { Engine } from "../main";
 
 const fakeAgent = fileURLToPath(new URL("../../../agents/test/fake-agent/agent.mjs", import.meta.url));
-const shim = fileURLToPath(new URL("../../../agents/scripts/orchestrator-mcp.mjs", import.meta.url));
+const shim = fileURLToPath(new URL("../../../agents/scripts/chat-mcp.mjs", import.meta.url));
 const realHome = process.env.HOME;
 const realPath: string | undefined = process.env.PATH;
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
@@ -88,10 +88,10 @@ async function until<T>(fn: () => T | undefined | false | Promise<T | undefined 
   }
 }
 
-async function setup(build: (root: string) => object[][], extra: { source?: boolean; orchestrator?: (root: string) => object[][]; compaction?: object; forge?: boolean } = {}) {
+async function setup(build: (root: string) => object[][], extra: { source?: boolean; pm?: (root: string) => object[][]; compaction?: object; forge?: boolean } = {}) {
   const root = await tempDir();
   const scripts: object[][] = build(root);
-  const orchestratorScripts: object[][] = extra.orchestrator?.(root) ?? [];
+  const pmScripts: object[][] = extra.pm?.(root) ?? [];
   process.env.HOME = join(root, "user");
   await mkdir(process.env.HOME);
   const forge: FakeForge | null = extra.forge ? await FakeForge.start() : null;
@@ -110,23 +110,23 @@ async function setup(build: (root: string) => object[][], extra: { source?: bool
   }
   const connectors = join(root, "connectors");
   await mkdir(connectors);
-  const orchestratorFiles: string[] = [];
-  for (const [i, s] of orchestratorScripts.entries()) {
-    const f = join(root, `orchestrator-${i}.jsonl`);
+  const pmFiles: string[] = [];
+  for (const [i, s] of pmScripts.entries()) {
+    const f = join(root, `pm-${i}.jsonl`);
     await writeFile(f, s.map((x) => JSON.stringify(x)).join("\n") + "\n");
-    orchestratorFiles.push(f);
+    pmFiles.push(f);
   }
   const connector = (name: string, scriptFiles: string[]) => JSON.stringify({ name, title: "Fake", kind: "native", harness: { program: "node", versionArgs: ["--version"], versionRange: ">=18.0.0" }, command: ["{harnessPath}", fakeAgent], env: { FAKE_AGENT_SCRIPT: scriptFiles.join(",") }, reader: "claude-code" });
   await writeFile(join(connectors, "fake.json"), connector("fake", files));
   await mkdir(home, { recursive: true });
-  if (extra.orchestrator) {
-    await writeFile(join(connectors, "fake-background.json"), connector("fake-background", orchestratorFiles));
+  if (extra.pm) {
+    await writeFile(join(connectors, "fake-background.json"), connector("fake-background", pmFiles));
     await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [
       { id: "fake", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" },
       { id: "background", kind: "model", provider: "fakeco", connector: "fake-background", login: "subscription" },
     ] }));
     await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p1", account: "fake", model: "m1" }, { id: "p2", account: "background", model: "m2" }] }));
-    await writeFile(join(home, "settings.json"), JSON.stringify({ assistant: { profile: "p1" }, orchestrator: { profile: "p2", ...extra.compaction && { compaction: extra.compaction } } }));
+    await writeFile(join(home, "settings.json"), JSON.stringify({ assistant: { profile: "p1" }, pm: { profile: "p2", ...extra.compaction && { compaction: extra.compaction } } }));
   } else {
     await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [{ id: "fake", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" }, ...(forge ? [forgeAccount] : [])] }));
     await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p1", account: "fake", model: "m1" }] }));
@@ -164,7 +164,7 @@ function mcp(tokenFile: string) {
 }
 
 const tokenFileOf = (chatId: string) => join(process.env.HOME!, ".pecore-chats", chatId, "mcp-token");
-const intakeChat = (t: { engine: Engine }) => t.engine.orchestrator.chats().find(({ project }) => project === "demo")!.id;
+const intakeChat = (t: { engine: Engine }) => t.engine.agentChats.chats().find(({ project }) => project === "demo")!.id;
 const plan = [
   { key: "api", title: "API", ticketText: "add the endpoint", recipe: "reviewed", dependsOn: [] },
   { key: "ui", title: "UI", ticketText: "add the screen", recipe: "reviewed", dependsOn: ["api"] },
@@ -175,7 +175,7 @@ afterEach(() => {
   if (realPath !== undefined) process.env.PATH = realPath;
 });
 
-describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3 and 4)", () => {
+describe("Assistant and Project Manager chats with the MCP shim (section 6, Phase 6 decisions 1, 3 and 4)", () => {
   it("exposes partial replies before the prompt ends and saves one complete reply", async () => {
     const t = await setup((root) => [[
       ...init(),
@@ -308,7 +308,7 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "compact.json") }, ...replyWith("")],
     ]);
     try {
-      t.engine.orchestrator.idleCompactionMs = 300;
+      t.engine.agentChats.idleCompactionMs = 300;
       expect((await t.call("getChat")).supportsImages).toBe(false);
       const settled = (count: number) => until(async () => {
         const snapshot: ChatDetail = await t.call("getChat");
@@ -337,7 +337,7 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       [...init(), ...resumed, { expect: "session/prompt" }, { send: { jsonrpc: "2.0", id: "$id", error: { code: -32603, message: "boom" } } }],
     ]);
     try {
-      t.engine.orchestrator.idleCompactionMs = 800;
+      t.engine.agentChats.idleCompactionMs = 800;
       expect((await t.call("getChat")).supportsImages).toBe(false);
       await t.call("sendChatMessage", { body: { text: "Hi" } });
       await until(async () => (await t.call("getChat")).messages.length === 2);
@@ -716,11 +716,11 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     expect(logText.length).toBeLessThan(210_000);
 
     const recipeFile = join(t.engine.projectDir("demo"), "recipes", "reviewed.json");
-    const changed = JSON.stringify({ ...reviewed, description: "changed by the orchestrator" }, null, 2) + "\n";
+    const changed = JSON.stringify({ ...reviewed, description: "changed by the Assistant" }, null, 2) + "\n";
     const saved = await m.tool("write_instance", { path: "projects/demo/recipes/reviewed.json", content: changed });
     expect(saved.result?.isError).toBeUndefined();
     m.close();
-    expect(JSON.parse(await readFile(recipeFile, "utf8"))).toMatchObject({ description: "changed by the orchestrator" });
+    expect(JSON.parse(await readFile(recipeFile, "utf8"))).toMatchObject({ description: "changed by the Assistant" });
 
     await writeFile(join(t.root, "done"), "");
     const detail = await until(async () => {
@@ -757,8 +757,8 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     await again.close();
   }, 60000);
 
-  it("runs the Orchestrator on its own model with limited tools, and notifies the jobs it creates", async () => {
-    const t = await setup(() => [init()], { source: true, orchestrator: (root) => [[...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "intake.json") }, { waitFile: join(root, "done") }, ...replyWith("Planned.")]] });
+  it("runs the Project Manager on its own model with limited tools, and notifies the jobs it creates", async () => {
+    const t = await setup(() => [init()], { source: true, pm: (root) => [[...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "intake.json") }, { waitFile: join(root, "done") }, ...replyWith("Planned.")]] });
     try {
       const system: { kind: string; title: string; body: string }[] = [];
       t.engine.on("notify", (n: { kind: string; title: string; body: string }) => system.push(n));
@@ -778,9 +778,9 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       await m.tool("create_jobs", { project: "demo", plan: fix });
       m.close();
       const jobId: string = (ctx.db.db.prepare("SELECT id FROM jobs WHERE order_key = 'fix'").get() as { id: string }).id;
-      const reports = (await t.call("listNotifications")).filter(({ kind }) => kind === "orchestrator");
-      expect(reports).toMatchObject([{ title: "Demo, ticket 7", body: "The Orchestrator created the job Fix login.", target: { project: "demo", job: jobId, item: null }, seen: false }]);
-      expect(system).toContainEqual({ kind: "orchestrator", title: "Demo, ticket 7", body: "The Orchestrator created the job Fix login." });
+      const reports = (await t.call("listNotifications")).filter(({ kind }) => kind === "pm");
+      expect(reports).toMatchObject([{ title: "Demo, ticket 7", body: "The Project Manager created the job Fix login.", target: { project: "demo", job: jobId, item: null }, seen: false }]);
+      expect(system).toContainEqual({ kind: "pm", title: "Demo, ticket 7", body: "The Project Manager created the job Fix login." });
       expect((await t.call("getChat")).messages).toEqual([]);
       const open = (): number => (ctx.db.db.prepare("SELECT COUNT(*) AS n FROM human_queue WHERE state = 'open' AND kind != 'agent-question'").get() as { n: number }).n;
       await until(async () => (await t.call("listNotifications")).some(({ kind }) => kind === "needs-user") && open() > 0);
@@ -788,19 +788,19 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       await t.call("markNotificationsSeen");
       expect((await t.call("listNotifications")).every(({ seen }) => seen)).toBe(true);
       expect((await t.call("getStatus")).notifications).toBe(open());
-      expect(await readFile(join(t.root, "intake.json"), "utf8")).toContain("<PE/CORE>'s Orchestrator");
+      expect(await readFile(join(t.root, "intake.json"), "utf8")).toContain("this project's Project Manager in <PE/CORE>");
       await writeFile(join(t.root, "done"), "");
     } finally {
       await t.close();
     }
   }, 60000);
 
-  it("compacts an Orchestrator chat with the Orchestrator's own thresholds", async () => {
+  it("compacts a Project Manager chat with the Project Manager's own thresholds", async () => {
     const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
     const t = await setup(() => [init()], {
       source: true,
       compaction: { auto: 500, max: 1000 },
-      orchestrator: (root) => [
+      pm: (root) => [
         [...init(), ...newSession, { expect: "session/prompt" }, usage(1000), ...replyWith("Planned.")],
         [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "compact.json") }, ...replyWith("")],
       ],
@@ -814,11 +814,11 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
     }
   }, 60000);
 
-  it("holds a question from the Orchestrator for the user's approval; the Assistant posts the user's order at once", async () => {
+  it("holds a question from the Project Manager for the user's approval; the Assistant posts the user's order at once", async () => {
     const t = await setup((root) => [
       init(),
       [...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "assistant.json") }, { waitFile: join(root, "assistant-done") }, ...replyWith("Posted.")],
-    ], { source: true, orchestrator: (root) => [[...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "intake.json") }, { waitFile: join(root, "done") }, ...replyWith("Asked.")]] });
+    ], { source: true, pm: (root) => [[...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "intake.json") }, { waitFile: join(root, "done") }, ...replyWith("Asked.")]] });
     try {
       const comments = join(t.root, "comments");
       const posted = async (): Promise<number> => existsSync(comments) ? (await readFile(comments, "utf8")).trim().split("\n").length : 0;
@@ -849,8 +849,8 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       m.close();
       await writeFile(join(t.root, "done"), "");
 
-      const reports = (await t.call("listNotifications")).filter(({ kind }) => kind === "orchestrator");
-      expect(reports.map(({ body, target }) => [body, target?.item])).toEqual([third, second, first].map((id) => ["The Orchestrator wants to post a question on the ticket.", id]));
+      const reports = (await t.call("listNotifications")).filter(({ kind }) => kind === "pm");
+      expect(reports.map(({ body, target }) => [body, target?.item])).toEqual([third, second, first].map((id) => ["The Project Manager wants to post a question on the ticket.", id]));
       expect((await t.call("getChat")).supportsImages).toBe(false);
       await t.call("sendChatMessage", { body: { text: "Ask on ticket 7 which page it is" } });
       await until(() => existsSync(join(t.root, "assistant.json")));
@@ -861,6 +861,68 @@ describe("orchestrator chat with the MCP shim (section 6, Phase 6 decisions 1, 3
       expect(await posted()).toBe(2);
       expect(ctx.db.db.prepare("SELECT count(*) AS n FROM human_queue WHERE kind = 'outbound' AND state = 'open'").get()).toEqual({ n: 0 });
       await writeFile(join(t.root, "assistant-done"), "");
+    } finally {
+      await t.close();
+    }
+  }, 60000);
+
+  it("lets the user talk to a project's Project Manager in the same session that handles its tickets, acting only on that project", async () => {
+    const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
+    const t = await setup(() => [init()], {
+      source: true,
+      pm: (root) => [
+        [...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "intake.json") }, ...replyWith("Planned.")],
+        [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "user.json") }, { waitFile: join(root, "user-done") }, ...replyWith("On it.")],
+      ],
+    });
+    try {
+      const events: LiveMessage[] = [];
+      const system: { kind: string; title: string; body: string }[] = [];
+      t.engine.on("live", (event: LiveMessage) => events.push(event));
+      t.engine.on("notify", (n: { kind: string; title: string; body: string }) => system.push(n));
+      const comments = join(t.root, "comments");
+      const { ctx } = t.engine.project("demo");
+      const chat = (): Promise<ChatDetail> => t.call("getProjectChat", { params: { id: "demo" } });
+      await until(() => existsSync(join(t.root, "intake.json")));
+      const intake: ChatDetail = await until(async () => {
+        const snapshot: ChatDetail = await chat();
+        return snapshot.messages.some(({ text }) => text === "Planned.") && snapshot;
+      });
+      expect(intake.messages.map(({ role, ticket }) => [role, ticket])).toEqual([["user", "7"], ["assistant", undefined]]);
+
+      const sent = await t.call("sendProjectChatMessage", { params: { id: "demo" }, body: { text: "Write a note and ask on ticket 7 which browser" } });
+      await until(() => existsSync(join(t.root, "user.json")));
+      expect(await readFile(join(t.root, "user.json"), "utf8")).toContain("Any other message is the user's order");
+      const m = mcp(tokenFileOf(intakeChat(t)));
+      await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+      const names: string[] = (await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name);
+      expect(names).toEqual(expect.arrayContaining(["write_knowledge", "write_instance", "update_project", "instantiate", "create_jobs", "comment_ticket"]));
+      for (const name of ["create_project", "delete_project", "import_project", "export_project", "write_template"]) expect(names).not.toContain(name);
+      expect((await m.tool("write_knowledge", { path: "projects/demo/knowledge/notes.md", content: "# Notes\n" })).result!.isError).not.toBe(true);
+      const outside = await m.tool("write_knowledge", { path: "projects/other/knowledge/notes.md", content: "# Notes\n" });
+      expect(outside.result!.isError).toBe(true);
+      expect(outside.result!.content![0]!.text).toContain("acts only on its own project");
+      expect((await m.tool("get_project", { project: "other" })).result!.isError).toBe(true);
+      expect((await m.tool("delete_project", { project: "demo" })).result!.isError).toBe(true);
+      expect((await m.tool("comment_ticket", { project: "demo", ticketId: "7", text: "Which browser?" })).result!.isError).not.toBe(true);
+      m.close();
+      expect((await readFile(comments, "utf8")).trim().split("\n")).toHaveLength(1);
+      expect(ctx.db.db.prepare("SELECT count(*) AS n FROM human_queue WHERE kind = 'outbound'").get()).toEqual({ n: 0 });
+
+      await writeFile(join(t.root, "user-done"), "");
+      const replied: ChatDetail = await until(async () => {
+        const snapshot: ChatDetail = await chat();
+        return snapshot.messages.some(({ text }) => text === "On it.") && snapshot;
+      });
+      expect(replied.messages.find(({ text }) => text === "On it.")).toMatchObject({ role: "assistant", replyTo: sent.id });
+      expect(replied.unread).toBe(2);
+      await t.call("markProjectChatRead", { params: { id: "demo" } });
+      expect((await chat()).unread).toBe(0);
+      expect(system).toContainEqual({ kind: "pm-replied", title: "Demo: Project Manager replied", body: "On it." });
+      expect(system.filter(({ kind }) => kind === "pm-replied")).toHaveLength(1);
+      expect(events).toContainEqual({ type: "chat.changed", project: "demo" });
+      expect((await t.call("getChat")).messages).toEqual([]);
+      await expect(t.call("getProjectChat", { params: { id: "nope" } })).rejects.toThrow();
     } finally {
       await t.close();
     }

@@ -7,7 +7,7 @@ import { useConnected } from "../api/live";
 import { Button, IconButton } from "../ds/button";
 import { Alert, Count } from "../ds/feedback";
 import { BellIcon, BookIcon, FactoryIcon, FolderIcon, GearIcon, ListIcon, PauseIcon, PlayIcon, SidebarIcon } from "../ds/icons";
-import { ChatPanel } from "../screens/Orchestrator";
+import { ChatPanel } from "../screens/AssistantChat";
 import { CommandPalette } from "./CommandPalette";
 import { SetupBanner } from "./SetupBanner";
 import { SidebarSlot } from "./sidebar";

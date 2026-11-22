@@ -495,7 +495,7 @@ describe.skipIf(gui)("phase 5 gate: forge actions from the GUI (fake gh)", () =>
 });
 
 const fakeAgent = fileURLToPath(new URL("../../agents/test/fake-agent/agent.mjs", import.meta.url));
-const shim = fileURLToPath(new URL("../../agents/scripts/orchestrator-mcp.mjs", import.meta.url));
+const shim = fileURLToPath(new URL("../../agents/scripts/chat-mcp.mjs", import.meta.url));
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 const init = (image: boolean) => [
   { expect: "initialize" },
@@ -518,7 +518,7 @@ function mcp(tokenFile: string) {
   return { rpc, close: () => child.stdin!.end() };
 }
 
-describe.skipIf(gui)("phase 6: orchestrator chat from the GUI (fake agent)", () => {
+describe.skipIf(gui)("phase 6: Assistant chat from the GUI (fake agent)", () => {
   let root: string;
   let app: ElectronApplication;
   let page: Page;
@@ -562,7 +562,7 @@ describe.skipIf(gui)("phase 6: orchestrator chat from the GUI (fake agent)", () 
       await mkdir(join(home, "connectors"), { recursive: true });
       await writeFile(join(home, "connectors", "fake.json"), JSON.stringify({ name: "fake", title: "Fake", kind: "native", harness: { program: "node", versionArgs: ["--version"], versionRange: ">=18.0.0" }, command: ["{harnessPath}", fakeAgent], env: { FAKE_AGENT_SCRIPT: files.join(",") }, reader: "claude-code" }));
       await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p1", account: "fake", model: "m1" }] }));
-      await writeFile(join(home, "settings.json"), JSON.stringify({ firstRunDone: true, projectsFolder: root, orchestrator: { profile: "p1" } }));
+      await writeFile(join(home, "settings.json"), JSON.stringify({ firstRunDone: true, projectsFolder: root, pm: { profile: "p1" } }));
     }));
   }, 60_000);
 
@@ -579,7 +579,7 @@ describe.skipIf(gui)("phase 6: orchestrator chat from the GUI (fake agent)", () 
     await page.getByRole("button", { name: "Create project" }).click();
     await page.waitForURL("**/#/projects/demo");
 
-    await page.getByRole("link", { name: "Orchestrator" }).click();
+    await page.getByRole("link", { name: "Assistant" }).click();
     await page.getByRole("button", { name: "New conversation" }).click();
     await page.getByLabel("Title").fill("Orders");
     await page.getByRole("button", { name: "Create conversation" }).click();
@@ -611,11 +611,11 @@ describe.skipIf(gui)("phase 6: orchestrator chat from the GUI (fake agent)", () 
     await visible(log.getByText("Two jobs", { exact: true }));
     await go("#/jobs");
     await writeFile(join(root, "done1"), "");
-    await visible(page.getByRole("link", { name: /Orchestrator/ }).getByLabel("1 unread"), 15_000);
-    await page.getByRole("link", { name: /Orchestrator/ }).click();
+    await visible(page.getByRole("link", { name: /Assistant/ }).getByLabel("1 unread"), 15_000);
+    await page.getByRole("link", { name: /Assistant/ }).click();
     await page.getByText("Orders").first().click();
     await visible(log.getByText("Two jobs created."));
-    await until(async () => (await page.getByRole("link", { name: /Orchestrator/ }).getByLabel(/unread/).count()) === 0);
+    await until(async () => (await page.getByRole("link", { name: /Assistant/ }).getByLabel(/unread/).count()) === 0);
     const jobLinks = log.getByRole("link", { name: /^Job / });
     await shot("replied");
     await until(async () => (await jobLinks.count()) === 2);
@@ -623,8 +623,8 @@ describe.skipIf(gui)("phase 6: orchestrator chat from the GUI (fake agent)", () 
     await until(async () => (await page.evaluate(() => (globalThis as unknown as { location: { hash: string } }).location.hash)).startsWith("#/jobs/"));
   }, 120_000);
 
-  it("shows a turn cut by an app restart as interrupted, reruns it with Retry, and disables images the orchestrator cannot read", async () => {
-    await page.getByRole("link", { name: /Orchestrator/ }).click();
+  it("shows a turn cut by an app restart as interrupted, reruns it with Retry, and disables images the Assistant cannot read", async () => {
+    await page.getByRole("link", { name: /Assistant/ }).click();
     await page.getByText("Orders").first().click();
     await visible(page.getByRole("heading", { name: "Orders" }));
     await page.getByRole("textbox", { name: "Message" }).fill("One more job");
@@ -635,7 +635,7 @@ describe.skipIf(gui)("phase 6: orchestrator chat from the GUI (fake agent)", () 
     await closed;
 
     ({ app, page } = await open(root));
-    await page.getByRole("link", { name: /Orchestrator/ }).click();
+    await page.getByRole("link", { name: /Assistant/ }).click();
     await page.getByText("Orders").first().click();
     const log = page.getByRole("log", { name: "Conversation messages" });
     await visible(log.getByText("Interrupted"), 15_000);

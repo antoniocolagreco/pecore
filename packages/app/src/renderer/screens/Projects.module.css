@@ -1,6 +1,6 @@
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fill, min(500px, 100%));
   gap: 12px;
 }
 
@@ -80,6 +80,7 @@ a.card:focus-visible {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
+  font-family: var(--mono);
 }
 
 .branch {
@@ -95,5 +96,6 @@ a.card:focus-visible {
 .badges {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
 }

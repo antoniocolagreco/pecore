@@ -189,4 +189,13 @@ describe("global files", () => {
     const g = await loadGlobal(home);
     expect(g.errors.map((e) => e.message)).toEqual(["account nobody not found", "profile sonnet not found"]);
   });
+
+  it("reads the old orchestrator settings key as the Project Manager's", async () => {
+    const home = await tempDir();
+    await writeFile(join(home, "settings.json"), JSON.stringify({ orchestrator: { profile: "background", compaction: { auto: 1000, max: 2000 } } }));
+    const g = await loadGlobal(home);
+    expect(g.errors).toEqual([]);
+    expect(g.value?.settings.pm).toEqual({ profile: "background", compaction: { auto: 1000, max: 2000 } });
+    expect(g.value?.settings).not.toHaveProperty("orchestrator");
+  });
 });

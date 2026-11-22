@@ -239,7 +239,7 @@ function Gallery() {
             onValueChange={setMode}
             options={[
               { value: "ask", label: "Ask me", detail: "The job waits in the Inbox." },
-              { value: "orchestrator", label: "Let the orchestrator decide", detail: "You can review it later." },
+              { value: "pm", label: "Let the Project Manager decide", detail: "You can review it later." },
               { value: "stop", label: "Stop the job", disabled: true },
             ]}
           />
@@ -355,7 +355,7 @@ function MoreComponents() {
         <Example caption="Counters and keys">
           <div className={g.row}>
             <span className={g.inline}><InboxIcon /> Inbox <Count value={3} /></span>
-            <span className={g.inline}><ChatIcon /> Orchestrator <Count value={12} /></span>
+            <span className={g.inline}><ChatIcon /> Project Manager <Count value={12} /></span>
             <span className={g.inline}>Search <Kbd>Ctrl</Kbd><Kbd>K</Kbd></span>
           </div>
         </Example>
@@ -437,7 +437,7 @@ function MoreComponents() {
             <EmptyState
               icon={<InboxIcon />}
               title="Nothing needs you"
-              action={<Button variant="primary" icon={<ArrowUpIcon />}>Give the orchestrator a task</Button>}
+              action={<Button variant="primary" icon={<ArrowUpIcon />}>Give the Assistant a task</Button>}
             >
               When a job waits for a review or a decision, it shows up here.
             </EmptyState>

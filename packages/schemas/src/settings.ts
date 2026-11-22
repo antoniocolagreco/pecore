@@ -24,17 +24,17 @@ export const Settings = z
     mergeCheckSec: z.number().int().positive().default(300),
     projectsFolder: z.string().min(1).default("~"),
     assistant: Agent,
-    orchestrator: Agent,
+    pm: Agent,
     protectedMode: z.boolean().default(false),
     ui: z.record(z.string(), z.unknown()).default({}),
   })
   .strict();
 export type Settings = z.infer<typeof Settings>;
 
-export type Role = "assistant" | "orchestrator";
+export type Role = "assistant" | "pm";
 
 export function roleProfile(settings: Pick<Settings, Role>, role: Role): string | null {
-  return role === "orchestrator" ? settings.orchestrator.profile ?? settings.assistant.profile : settings.assistant.profile;
+  return role === "pm" ? settings.pm.profile ?? settings.assistant.profile : settings.assistant.profile;
 }
 
 export function defaultJobLimit(cpuCount: number): number {

@@ -57,11 +57,13 @@ export function Projects() {
                 <span className={s.name}>{project?.name ?? id}</span>
               </span>
               <span className={s.repo}>
-                {project?.repo && <LinkIcon size="xs" />}
-                <span className={s.repoName}>{project?.repo ? project.repo.url.replace(/^https?:\/\//, "").replace(/\.git$/, "") : "Local only"}</span>
-                {project && <span className={s.branch}>{project.baseBranch}</span>}
+                {project?.repo ? <>
+                  <LinkIcon size="xs" />
+                  <span className={s.repoName}>{project.repo.url.replace(/^https?:\/\//, "").replace(/\.git$/, "")}</span>
+                </> : "Local only"}
               </span>
               <span className={s.badges}>
+                {project && <span className={s.branch}>{project.baseBranch}</span>}
                 {creating && <Badge tone="warning">Unfinished creation</Badge>}
                 {errors.length > 0 && <Badge tone="danger">Definition errors</Badge>}
                 {stats?.auth && <Badge tone="warning">Login needed</Badge>}

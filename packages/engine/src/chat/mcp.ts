@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import type { Engine } from "../main";
-import { orchestratorTools } from "./tools";
+import { chatTools } from "./tools";
 
 const requestSchema = z.object({
   jsonrpc: z.literal("2.0"),
@@ -16,7 +16,7 @@ const protocolVersion = "2025-11-25";
 const protocolVersions: Set<string> = new Set(["2024-11-05", "2025-03-26", "2025-06-18", protocolVersion]);
 
 export function mcpRoute(app: FastifyInstance, engine: Engine): void {
-  const tools = orchestratorTools(engine);
+  const tools = chatTools(engine);
   app.post("/mcp", async (req, reply) => {
     const parsed = requestSchema.safeParse(req.body);
     const requestId: string | number | null = parsed.data?.id ?? null;
@@ -27,7 +27,7 @@ export function mcpRoute(app: FastifyInstance, engine: Engine): void {
     const query = querySchema.safeParse(req.query);
     if (!query.success) return failure(-32602, "Invalid chat identifier");
     const routeKey: string | undefined = query.data.chat;
-    const chatId: string | undefined = routeKey ? engine.orchestrator.chatId(routeKey) : undefined;
+    const chatId: string | undefined = routeKey ? engine.agentChats.chatId(routeKey) : undefined;
     if (routeKey !== undefined && !chatId) return reply.code(401).send();
     const { method, params } = parsed.data;
     if (parsed.data.id === undefined) return reply.code(202).send();
@@ -47,14 +47,14 @@ export function mcpRoute(app: FastifyInstance, engine: Engine): void {
       case "notifications/initialized":
         return failure(-32600, "initialized must be a notification");
       case "tools/list":
-        return success({ tools: tools.list(chatId ? engine.orchestrator.role(chatId) : "orchestrator") });
+        return success({ tools: tools.list(chatId ? engine.agentChats.access(chatId) : "intake") });
       case "tools/call": {
         if (!chatId) return failure(-32602, "A chat identifier is required for tools/call");
         const input = callSchema.safeParse(params);
         if (!input.success) return failure(-32602, "Invalid tools/call params");
         try {
           const { name, arguments: args } = input.data;
-          return success(await engine.orchestrator.inTurn(chatId, (message) => tools.call(name, args, message)));
+          return success(await engine.agentChats.inTurn(chatId, (message) => tools.call(name, args, message)));
         } catch (e) {
           return failure(-32000, e instanceof Error ? e.message : String(e));
         }

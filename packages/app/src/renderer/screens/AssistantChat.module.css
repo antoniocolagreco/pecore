@@ -52,7 +52,6 @@
   min-height: 0;
   overflow-y: auto;
   outline: 0;
-  scroll-behavior: smooth;
   mask-image: linear-gradient(to bottom, transparent, black 16px);
 }
 

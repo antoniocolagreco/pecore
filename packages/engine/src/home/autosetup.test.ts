@@ -124,7 +124,7 @@ describe("auto-setup", () => {
     });
     expect(await s.json("settings.json")).toEqual({ assistant: { profile: "claude-code-frontier" } });
     expect(app.engine.global().settings.assistant.profile).toBe("claude-code-frontier");
-    expect(app.engine.global().settings.orchestrator.profile).toBeNull();
+    expect(app.engine.global().settings.pm.profile).toBeNull();
     expect(app.engine.global().profiles.profiles).toHaveLength(12);
     expect(await s.head()).toMatch(/ auto-setup: Set up Claude Code, Codex, and OpenCode: 12 profiles added$/);
     expect(s.notices).toEqual([{ kind: "auto-setup", title: "<PE/CORE> setup", body: "Set up Claude Code, Codex, and OpenCode: 12 profiles added" }]);

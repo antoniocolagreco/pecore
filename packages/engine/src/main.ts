@@ -41,8 +41,8 @@ import { ChatsDb } from "./store/chats-db";
 import { ProjectDb } from "./store/project-db";
 import { startSourcePolling } from "./sources/poll";
 import type { OrderSink } from "./sources/poll";
-import { OrchestratorChats } from "./orchestrator/chat";
-import { intakeSink } from "./orchestrator/intake";
+import { AgentChats } from "./chat/chat";
+import { intakeSink } from "./chat/intake";
 import { exportProject } from "./share/export";
 import { InvalidArchive } from "./share/archive";
 import { beginImport, previewImport } from "./share/import";
@@ -70,10 +70,10 @@ export class Engine extends EventEmitter {
   private profiles!: Profiles;
   private tiers!: Tiers;
   agents: AgentServices | null = null;
-  orchestrator!: OrchestratorChats;
+  agentChats!: AgentChats;
   private chats!: ChatsDb;
   private intake: OrderSink | null = null;
-  private stoppingOrchestrator: Promise<void> | null = null;
+  private stoppingAgentChats: Promise<void> | null = null;
   private releaseLock!: () => Promise<void>;
   private stopMergeWatch: () => void = () => undefined;
   private globalFilesPending: Promise<unknown> = Promise.resolve();
@@ -120,7 +120,7 @@ export class Engine extends EventEmitter {
       return null;
     });
     this.chats = new ChatsDb(p.chatsDb);
-    this.orchestrator = new OrchestratorChats(this, this.chats, (message) => this.live(message));
+    this.agentChats = new AgentChats(this, this.chats, (message) => this.live(message));
     if (this.opts.checkLogins !== false) await this.runAutoSetup();
     for (const id of (await readdir(p.projects).catch(() => [] as string[])).sort()) {
       await this.openProject(id);
@@ -149,7 +149,7 @@ export class Engine extends EventEmitter {
         .then(async () => {
           if (this.shuttingDown) return;
           const reads: Promise<unknown>[] = this.accounts.accounts.filter(({ kind }) => kind === "model").map(({ id }) => this.accountOptions(id));
-          for (const role of ["assistant", "orchestrator"] as const) {
+          for (const role of ["assistant", "pm"] as const) {
             const profile: Profiles["profiles"][number] | undefined = this.profiles.profiles.find(({ id }) => id === roleProfile(this.settings, role));
             if (profile) reads.push(this.accountOptions(profile.account, profile.model));
           }
@@ -203,18 +203,18 @@ export class Engine extends EventEmitter {
   }
 
   private orderSink(): OrderSink | null {
-    return this.opts.orders ?? (roleProfile(this.settings, "orchestrator") ? this.intake : null);
+    return this.opts.orders ?? (roleProfile(this.settings, "pm") ? this.intake : null);
   }
 
-  async startOrchestrator(url: string, token: string): Promise<void> {
-    await this.orchestrator.start(url, token);
-    this.intake = intakeSink(this.orchestrator);
+  async startAgentChats(url: string, token: string): Promise<void> {
+    await this.agentChats.start(url, token);
+    this.intake = intakeSink(this.agentChats);
     await this.refreshSourcePolling();
   }
 
-  stopOrchestrator(): Promise<void> {
-    this.stoppingOrchestrator ??= this.orchestrator.close();
-    return this.stoppingOrchestrator;
+  stopAgentChats(): Promise<void> {
+    this.stoppingAgentChats ??= this.agentChats.close();
+    return this.stoppingAgentChats;
   }
 
   private async refreshSourcePolling(): Promise<void> {
@@ -227,7 +227,7 @@ export class Engine extends EventEmitter {
       }
       if (sink && !project.sourcePolling && !this.creating.has(project.ctx.id)) {
         const resumed: TicketOrder[] = await resumeOrders(project.ctx);
-        if (sink === this.orderSink() && !this.stoppingOrchestrator && !project.sourcePolling) {
+        if (sink === this.orderSink() && !this.stoppingAgentChats && !project.sourcePolling) {
           project.sourcePolling = startSourcePolling(project.ctx, sink, resumed);
         }
       }
@@ -441,7 +441,7 @@ export class Engine extends EventEmitter {
       released: () => this.kick(),
       held: () => this.globalPause,
       agents: this.agents,
-      orderAttachments: (orderId, attachmentIds) => this.orchestrator.jobAttachments(orderId, attachmentIds),
+      orderAttachments: (orderId, attachmentIds) => this.agentChats.jobAttachments(orderId, attachmentIds),
       setupEnded: (state) => this.setupEnded(id, state),
       forgeAccount: (accountId) => this.accounts.accounts.find((a): a is ForgeAccount => a.kind === "forge" && a.id === accountId),
       global: () => ({ profiles: this.profiles, tiers: this.tiers }),
@@ -734,7 +734,7 @@ export class Engine extends EventEmitter {
   async shutdown(): Promise<void> {
     this.shuttingDown = true;
     this.stopMergeWatch();
-    const chats: Promise<void> = this.stopOrchestrator();
+    const chats: Promise<void> = this.stopAgentChats();
     await Promise.all([...this.projects.values()].map(({ sourcePolling }) => sourcePolling?.close()));
     await chats;
     await this.loginRunner.stopAll();

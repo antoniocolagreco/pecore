@@ -2,7 +2,7 @@ import type { QueueItemView } from "@pecore/schemas";
 import type { Engine } from "../../main";
 import { HttpError } from "../server";
 import type { Handlers } from "../server";
-import { answerOutbound } from "../../orchestrator/outbound";
+import { answerOutbound } from "../../chat/outbound";
 
 type QueueDbRow = {
   id: string;

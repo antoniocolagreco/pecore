@@ -42,7 +42,7 @@ export async function reviewWithModel(engine: Engine, files: ReviewInput[]): Pro
         permissionMode: "dontAsk", allowDangerouslySkipPermissions: false, systemPrompt: instructions,
       } } },
     };
-    session = await startSession({ connector, login, spawn: engine.orchestrator.spawnSession(login.osUser), cwd, model: profile.model, effort: profile.effort, denyPermissions: true, requestTimeoutMs: 10_000 });
+    session = await startSession({ connector, login, spawn: engine.agentChats.spawnSession(login.osUser), cwd, model: profile.model, effort: profile.effort, denyPermissions: true, requestTimeoutMs: 10_000 });
     const active: Session = session;
     let attemptedTool: boolean = false;
     const events: Promise<void> = (async () => {
