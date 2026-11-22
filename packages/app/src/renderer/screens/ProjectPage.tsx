@@ -1,12 +1,13 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import type { DefinitionEntry, DefinitionFile, ProjectView } from "@pecore/schemas";
+import type { DefinitionEntry, DefinitionFile, ForgeAccount, Project, ProjectView } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { Button, Empty, ErrorText, Field, Page, ui } from "../components/ui";
 import { Button as DsButton } from "../ds/button";
+import { RadioGroup } from "../ds/choice";
 import { Tabs } from "../ds/data";
 import { Alert, Card, Spinner } from "../ds/feedback";
 import { TextArea, TextField } from "../ds/field";
@@ -189,13 +190,15 @@ function Knowledge({ id }: { id: string }) {
   );
 }
 
-type SettingsForm = { name: string; baseBranch: string; services: string };
+type SettingsForm = { name: string; baseBranch: string; services: string; folder: string; remote: boolean; account: string; url: string };
 
 function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: string; onSaved(): void; projectActions: ReactNode; deleteNotice: ReactNode }) {
   const connected: boolean = useConnected();
   const path: string = `projects/${id}/project.json`;
   const file = useData(() => call("getDefinition", { params: { path } }), [path], (m) => m.type === "definition.changed" && m.path === path);
-  const [form, setForm] = useState<SettingsForm | null>(null);
+  const accounts = useData(() => call("getAccounts"), [], (m) => m.type === "definition.changed" && m.path === "accounts.json");
+  const forgeAccounts: ForgeAccount[] = (accounts.data?.value.accounts ?? []).filter((account) => account.kind === "forge");
+  const [draft, setDraft] = useState<{ values: SettingsForm; sha256: string } | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
   const raw: Record<string, unknown> | null = (() => {
@@ -205,34 +208,46 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
       return null;
     }
   })();
+  const repo: Project["repo"] = raw?.repo as Project["repo"] | undefined ?? null;
   const current: SettingsForm | null = raw && {
     name: String(raw.name ?? ""),
     baseBranch: String(raw.baseBranch ?? "main"),
     services: typeof raw.services === "string" ? raw.services : "",
+    folder: typeof raw.folder === "string" ? raw.folder : "",
+    remote: repo !== null,
+    account: repo?.account ?? "",
+    url: repo?.url ?? "",
   };
-  const value: SettingsForm | null = form ?? current;
-  const dirty: boolean = form !== null && JSON.stringify(form) !== JSON.stringify(current);
-  const set = (changes: Partial<SettingsForm>) => value && setForm({ ...value, ...changes });
+  const value: SettingsForm | null = draft?.values ?? current;
+  const dirty: boolean = draft !== null && JSON.stringify(draft.values) !== JSON.stringify(current);
+  const set = (changes: Partial<SettingsForm>): void => {
+    if (file.data && value) setDraft({ values: { ...value, ...changes }, sha256: draft?.sha256 ?? file.data.sha256 });
+  };
   const save = useAction(async () => {
-    if (!raw || !value || !file.data) return;
+    if (!raw || !value || !draft) return;
     const next = {
       ...raw,
       name: value.name.trim(),
       baseBranch: value.baseBranch.trim(),
       services: value.services.trim() || null,
+      folder: value.folder.trim() || null,
+      repo: value.remote ? { url: value.url.trim(), account: value.account } : null,
+      createRepo: value.remote && value.url.trim() === repo?.url ? raw.createRepo ?? null : null,
     };
     Reflect.deleteProperty(next, "limits");
     Reflect.deleteProperty(next, "defaultRecipe");
-    await call("saveDefinition", { params: { path }, body: { content: JSON.stringify(next, null, 2) + "\n", baseSha256: file.data.sha256 } });
-    setForm(null);
+    await call("saveDefinition", { params: { path }, body: { content: JSON.stringify(next, null, 2) + "\n", baseSha256: draft.sha256 } });
+    setDraft(null);
     setSavedAt(Date.now());
     file.reload();
     onSaved();
   });
-  if (!value) return <ErrorText error={file.error ?? (file.data ? "project.json is not valid JSON." : null)} />;
+  if (!value || !current) return <ErrorText error={file.error ?? (file.data ? "project.json is not valid JSON." : null)} />;
   const disabled: boolean = !connected || save.busy;
-  const folder: string | null = typeof raw?.folder === "string" ? raw.folder.replace(/\/+$/, "") : null;
-  const repo = raw?.repo as { url: string; account: string } | null | undefined ?? null;
+  const folder: string | null = current.folder.replace(/\/+$/, "") || null;
+  const account: ForgeAccount | undefined = forgeAccounts.find(({ id }) => id === value.account);
+  const existingRemote: boolean = current.remote && value.account === current.account && value.url === current.url;
+  const valid: boolean = !!value.name.trim() && !!value.baseBranch.trim() && (!value.remote || existingRemote || (!!account && !!value.url.trim()));
   const pickCompose = async (): Promise<void> => {
     setPickError(null);
     const picked: string | null = await window.pecore.pickFile(folder);
@@ -241,17 +256,30 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
     else set({ services: picked.slice(folder.length + 1) });
   };
   return (
-    <form className={s.form} onSubmit={(e) => { e.preventDefault(); if (dirty) void save.run(); }}>
+    <form className={s.form} onSubmit={(e) => { e.preventDefault(); if (dirty && valid && !disabled) void save.run(); }}>
       <dl className={`${ui.kv} ${s.details}`}>
-        <dt>Repository</dt><dd>{repo?.url ?? "Local only"}</dd>
-        {repo && <><dt>Forge account</dt><dd>{repo.account}</dd></>}
-        <dt>Folder</dt><dd>{folder ?? "None"}</dd>
         <dt>Project ID</dt><dd>{id}</dd>
       </dl>
       <div className={s.pair}>
         <TextField label="Name" value={value.name} onValueChange={(name) => set({ name })} disabled={disabled} error={value.name.trim() ? undefined : "Give the project a name."} />
         <TextField label="Base branch" mono value={value.baseBranch} onValueChange={(baseBranch) => set({ baseBranch })} disabled={disabled} description="New jobs start from here." />
       </div>
+      <RadioGroup label="Repository" value={value.remote ? "remote" : "local"} disabled={disabled}
+        options={[{ value: "local", label: "Local only" }, { value: "remote", label: "Existing remote repository" }]}
+        onValueChange={(mode) => set({ remote: mode === "remote", account: value.account || (forgeAccounts.length === 1 ? forgeAccounts[0]!.id : "") })} />
+      {value.remote && <div className={s.pair}>
+        <Select label="Forge account" value={account?.id ?? null} disabled={disabled || forgeAccounts.length === 0}
+          options={forgeAccounts.map(({ id, host }) => ({ value: id, label: `${id} · ${host}` }))} placeholder="Select an account"
+          onValueChange={(id) => set({ account: id ?? "", url: forgeAccounts.find((entry) => entry.id === id)?.host === account?.host ? value.url : "" })} />
+        <TextField label="Repository URL" mono value={value.url} onValueChange={(url) => set({ url })} disabled={disabled || !account}
+          placeholder={account ? `https://${account.host}/owner/name.git` : undefined} />
+      </div>}
+      {value.remote && <ErrorText error={accounts.error} />}
+      {value.remote && accounts.data && forgeAccounts.length === 0 && <Alert tone="warning">Add a forge account in <Link to="/settings">Settings</Link>.</Alert>}
+      {repo && (value.remote ? value.url.trim() !== repo.url : true) && <span className={ui.muted}>Changing the remote keeps your local files and the old repository. Review the project's recipes for the new setup.</span>}
+      <TextField label="Folder" mono value={value.folder} onValueChange={(folder) => set({ folder })} disabled={disabled}
+        description={folder ? "Enter a new path or choose an empty folder to move your copy of the code." : "Choose an existing checkout or an empty folder to create a local copy."}
+        action={<DsButton disabled={disabled} onClick={() => void window.pecore.pickFolder().then((picked) => picked && set({ folder: picked }))}>Choose…</DsButton>} />
       <TextField label="Services compose file" mono value={value.services} onValueChange={(services) => { setPickError(null); set({ services }); }} disabled={disabled}
         placeholder="Automatic" error={pickError ?? undefined} description="Empty: a compose file at the repository root, if there is one."
         action={<DsButton disabled={disabled} onClick={() => void pickCompose()}>Choose…</DsButton>} />
@@ -260,8 +288,8 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
       <div className={s.formActions}>
         <div className={`${s.grow} ${ui.row}`}>{projectActions}</div>
         {savedAt && !dirty && <span className={ui.muted} role="status">Saved</span>}
-        <DsButton disabled={!dirty || disabled} onClick={() => setForm(null)}>Discard</DsButton>
-        <DsButton type="submit" variant="primary" disabled={!dirty || !value.name.trim() || !value.baseBranch.trim()} loading={save.busy}>Save settings</DsButton>
+        <DsButton disabled={!dirty || disabled} onClick={() => setDraft(null)}>Discard</DsButton>
+        <DsButton type="submit" variant="primary" disabled={!dirty || !valid || disabled} loading={save.busy}>Save settings</DsButton>
       </div>
     </form>
   );

@@ -31,6 +31,7 @@ import type { GitRecord } from "../workdir/content-state";
 import { gitAppResult, gitWork } from "../workdir/git-as";
 import { writeFileAs } from "../workdir/fs-as";
 import { setupJobId } from "../projects/create";
+import { ProjectLocationConflict, withProjectLocation } from "../projects/location";
 import { JobServices } from "../services/job-services";
 import { branchHead, jobBranch } from "../workdir/repo";
 import { addWorktree, recreateWorktree, removeWorktree, workdirOf } from "../workdir/worktrees";
@@ -471,7 +472,7 @@ export class JobExecutor {
 
   private async applyBaseChange(jobId: string): Promise<void> {
     let reentered = false;
-    await this.exclusive(jobId, async () => {
+    await this.exclusive(jobId, () => withProjectLocation(this.ctx, async () => {
       const job = this.job(jobId);
       const request = this.pendingBaseChange(jobId);
       if (!request || !this.idle(job)) return;
@@ -492,24 +493,28 @@ export class JobExecutor {
       this.ctx.db.append([changed, ...(job.archived ? [{ jobId, type: "job.unarchived" as const, payload: {} }] : [])]);
       this.setState(jobId, "running", null, "base_change");
       reentered = true;
-    });
+    }));
     if (reentered) void this.tick(jobId);
   }
 
   async checkMerges(): Promise<void> {
     for (const job of this.jobs()) {
       if (job.merged_at !== null) continue;
-      await this.checkMerge(job.id).catch((e: unknown) => console.error(`merge check of job ${job.id}:`, e));
+      await this.checkMerge(job.id).catch((e: unknown) => {
+        if (!(e instanceof ProjectLocationConflict)) console.error(`merge check of job ${job.id}:`, e);
+      });
     }
   }
 
   async checkMerge(jobId: string): Promise<boolean> {
-    const job = this.job(jobId);
-    if (job.merged_at !== null) return true;
-    const delivery: string | null = await this.mergedDelivery(job);
-    if (delivery === null) return false;
-    await this.deliveryMerged(job, delivery);
-    return true;
+    return withProjectLocation(this.ctx, async () => {
+      const job = this.job(jobId);
+      if (job.merged_at !== null) return true;
+      const delivery: string | null = await this.mergedDelivery(job);
+      if (delivery === null) return false;
+      await this.deliveryMerged(job, delivery);
+      return true;
+    });
   }
 
   private async mergedDelivery(parent: JobRow): Promise<string | null> {
@@ -1110,7 +1115,7 @@ export class JobExecutor {
   }
 
   async resume(jobId: string): Promise<void> {
-    await this.exclusive(jobId, async () => {
+    await this.exclusive(jobId, () => withProjectLocation(this.ctx, async () => {
       const job = this.job(jobId);
       if (job.state !== "failed" && job.state !== "stopped") throw new Error(`job ${jobId} is ${job.state}`);
       if (job.archived) throw new Error(`job ${jobId} is archived`);
@@ -1119,7 +1124,7 @@ export class JobExecutor {
       if (!exists.includes(`worktree ${wd}\n`)) await recreateWorktree(this.ctx.user, this.ctx.dir, jobId);
       await this.copyAttachments(jobId, wd);
       this.setState(jobId, "running", null, "resume");
-    });
+    }));
     void this.tick(jobId);
   }
 
