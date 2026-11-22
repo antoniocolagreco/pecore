@@ -34,7 +34,7 @@
 *   **Factory:** the home screen, a summary dashboard.
 *   **Notifications:** the screen that lists the items to decide (open `human_queue` rows, except `agent-question` items, answered in the chat) and the notification log. Its counter counts the items to decide plus the notifications not seen yet.
 *   **Engine:** the background process that runs jobs (design.md section 1). **Engine node:** a node with `runsAs: engine`. **Engine state:** a job or node run state of design.md 4.1 and 4.3.
-*   **Normal mode and protected mode:** design.md's project user (section 8). In normal mode, the default, agents and the orchestrator run as the user, with the user's own harness logins, like Claude Code or Codex run by hand. In protected mode they run as `pecore-agent`, which cannot read the user's files and logins; it needs one login per harness account. The mode is global, not per project.
+*   **Normal mode and protected mode:** design.md's project user (section 8). In normal mode, the default, agents, the Assistant and the Project Managers run as the user, with the user's own harness logins, like Claude Code or Codex run by hand. In protected mode they run as `pecore-agent`, which cannot read the user's files and logins; it needs one login per harness account. The mode is global, not per project.
 *   **Check node:** a recipe node named in some node's `requires` (design.md 4.4).
 *   **Back edge:** an edge to a node that already ran in the job, for example `review` to `code`.
 *   **Home check:** the start-up check of `PECORE_HOME` permissions (design.md section 8).
@@ -56,7 +56,7 @@
 |---|---|---|
 | IA1 | Global pause and play | G17 |
 | IA2 | Notifications counter | 4.3, 8 |
-| IA3 | Notifications: job finished, needs the user, login expired, parent failed, auto-setup changes, what the Orchestrator did on a ticket (jobs created, question waiting for approval). Assistant replies only as a system notification | 6, 7, 9 |
+| IA3 | Notifications: job finished, needs the user, login expired, parent failed, auto-setup changes, what the Project Manager did on a ticket (jobs created, question waiting for approval). Assistant replies only as a system notification | 6, 7, 9 |
 | IA4 | Withdrawn: engine status line; only the disconnected banner stays | 1, "Fixed implementation choices" |
 | IA5 | Withdrawn: global project filter | [Shell and navigation](design.md#shell-and-navigation) |
 | IA6 | Tray icon | "Engine and main process messages" |
@@ -74,7 +74,7 @@
 | IB5 | Unread marker | 6, 7 |
 | IB6 | Answers to agent questions (`agent-question` items) | 6 |
 | IB8 | Automatic compaction at two token thresholds | 6 |
-| IB9 | Withdrawn: Orchestrator reports in the chat; they are notifications | 6 |
+| IB9 | Project Manager chat inside each project, with the tickets it handled; its reports on new tickets are notifications | 6 |
 
 ### C. Jobs
 
@@ -128,11 +128,11 @@
 | Id | Element | Source |
 |---|---|---|
 | IG1 | Accounts: AI tools (found by themselves), Git hosting (public services and private Git servers), services | 3.4 |
-| IG2 | Withdrawn: the profile and tier editor. Model choices are on agent nodes and in Settings for the Assistant and Orchestrator. | 3.4 |
+| IG2 | Withdrawn: the profile and tier editor. Model choices are on agent nodes and in Settings for the Assistant and Project Manager. | 3.4 |
 | IG3 | Global limits, services runtime, disk threshold, merge check interval | 4.7, 4.9, "Risks & Limits" |
 | IG4 | Withdrawn: the Usage page | 4.7 |
 | IG5 | Setup status and next steps | G14 |
-| IG6 | Assistant and Orchestrator, each: provider, model, effort, automatic and maximum compaction thresholds | 6 |
+| IG6 | Assistant and Project Manager, each: provider, model, effort, automatic and maximum compaction thresholds | 6 |
 | IG7 | Auto-update | "Fixed implementation choices" |
 | IG8 | Withdrawn: quiet hours are left to the operating system | 9 |
 | IG9 | Appearance: theme, reduced motion | UI4, UI6 |
@@ -145,7 +145,7 @@
 | Jobs | centre | IC1-IC4 |
 | Job view | detail page | IC3-IC9 |
 | Notifications | centre | ID1-ID9 |
-| Assistant chat | right panel, on every screen | IB2-IB8 |
+| Assistant chat | right panel, on every screen; inside a project it shows the project's Project Manager | IB2-IB8 |
 | Projects, project page, wizards | centre, detail page, full page | IF1-IF7 |
 | Recipe editor, node editor | detail page | IE1-IE3, IE5 |
 | Library | centre | IE4 |
@@ -235,25 +235,26 @@ The prototype shows the Notifications list and detail pane and the node inspecto
     *   ID1: the diff in the unified view of the artifact viewer, risky hunks first, then findings and spec, check logs collapsed, one button per node outcome, a note field when the node's `answer` setting allows one.
     *   ID6: ticket text, author, start or discard.
     *   ID7: which cap was hit (the edge's `maxRounds` or the job's `maxNodeRuns`) and the runs used; input "allow N more" (default: the cap's value), or fail.
-    *   ID9, "Comment to post": show the project, ticket and exact text proposed by the Orchestrator. The ticket waits until the user chooses Post or Reject in Notifications.
+    *   ID9, "Comment to post": show the project, ticket and exact text proposed by the Project Manager. The ticket waits until the user chooses Post or Reject in Notifications.
 
 ### Assistant chat (right panel)
 
-*   One chat for the whole app, always on the right of every screen. No conversation list, no page of its own. Its header shows the title "Assistant" and, below it in small muted text, the harness, model and effort from Settings > Assistant, for example "Claude Code · claude-opus-5-5 · high" ("default effort" when none is chosen); the line is hidden until an Assistant is chosen. The header also has two icon buttons: Compact, and Clear, which after a confirmation deletes the conversation and starts a new Assistant session.
-*   The user talks only to the Assistant. The Orchestrator, which works in the background on new issues of linked projects, never chats and never writes in this chat: what it does arrives as a notification, for example "Shop, ticket 42: The Orchestrator created the job Fix login.".
+*   One chat panel, always on the right of every screen. No conversation list, no page of its own. It follows the page: inside a project (the project page and its sub-pages, the recipe and node editors of its files) it shows that project's Project Manager; everywhere else it shows the Assistant. Each chat keeps its own history. Switching page switches the conversation and discards text typed and not sent.
+*   Its header shows who you talk to, "Assistant" or "Project Manager", and below it in small muted text the project name for a Project Manager, then the harness, model and effort from Settings > Assistant or Settings > Project Manager, for example "Shop · Claude Code · claude-opus-5-5 · high" ("default effort" when none is chosen). The header also has two icon buttons: Compact, and Clear, which after a confirmation deletes the conversation and starts a new session.
+*   The Project Manager's chat also shows the tickets it handled on its own: each appears as "Ticket 42" with its reply, without the raw ticket data. Talking to it, the user can ask what it did on a ticket. It can do what the Assistant does, but only on its project; creating, deleting, importing or exporting projects and editing the global library stay with the Assistant. What it does on new tickets also arrives as a notification, for example "Shop, ticket 42: The Project Manager created the job Fix login.".
 *   The user's messages sit in a bubble that keeps the accent colour at the bottom-right corner and fades towards the top-left to a lighter shade in light themes, a darker one in dark themes (`--bubble-user`); the Assistant's replies have no bubble.
 *   The reply appears while it is written. Until it starts, animated dots under the user's message show the Assistant is working.
 *   After sending, the cursor stays in the message box.
 *   Images: the clip button, or pasting into the message box, for example a screenshot just taken with Print Screen. Each chosen or pasted image shows above the message box in a 16:9 thumbnail, 128 px wide, where the image fits whole, never cropped, with a remove button in its corner; no file name or size. The pasted text, if any, is not inserted. When the Assistant cannot read images, pasting one shows why instead.
 *   Compaction: the Compact button, or `/compact` typed as a message, sends the harness's own compaction command to the chat's session. The chat shows a divider ("Compacting the conversation…", then "Conversation compacted"), no reply.
-*   Automatic compaction: above the maximum threshold (default 256,000 tokens) the chat compacts at once; above the automatic threshold (default 128,000) it compacts after 5 minutes without use. Both thresholds are in Settings > Assistant; the Orchestrator's sessions have their own pair in Settings > Orchestrator. The size comes from what the harness reports after each reply.
-*   An order the user gives in the chat is authorised as given: if the user asks to comment on an issue, the Assistant posts it.
+*   Automatic compaction: above the maximum threshold (default 256,000 tokens) the chat compacts at once; above the automatic threshold (default 128,000) it compacts after 5 minutes without use. Both thresholds are in Settings > Assistant; the Project Manager's sessions have their own pair in Settings > Project Manager. The size comes from what the harness reports after each reply.
+*   An order the user gives in the chat is authorised as given: if the user asks to comment on an issue, the Assistant or the Project Manager posts it. A question the Project Manager wants to ask while handling a new ticket still waits for approval in Notifications.
 *   The Assistant can update a project's name, base branch and services Compose path. A deletion request shows the project and what will be removed in a card with Confirm and Reject. Confirm deletes <PE/CORE>'s data only, using the same operation as the project settings page.
 *   "Ask the AI" (IE5) puts the cursor in the chat with the current screen's object as context.
 *   Context chip: one at a time, a reference with its scope (for example "Job: Fix login timeout", "Recipe feature (project progetto-1)", "Template recipe feature"). It shows the object of the current screen and changes on navigation; pinning keeps it; removing it sends the next message with no context.
 *   What the Assistant did (IB4) appears under its reply, never under the user's message. Actions that change something (create jobs, answer a job's question, add a node or recipe to a project, comment on a ticket) get a card that links to the job, definition or item to decide. Reads (projects, recipes, ticket, ticket replies, job status, job output, library templates, definition check) become one grey line: "Read: projects, job status".
 *   Agent questions (IB6) appear in the conversation with an answer field.
-*   Assistant replies use the unread marker and a system notification when the window is not focused. Orchestrator reports appear in the Notifications log.
+*   Replies to the user use the unread marker and a system notification when the window is not focused ("Assistant replied", "Shop: Project Manager replied"). Project Manager reports on new tickets appear in the Notifications log.
 
 ### Projects
 
@@ -298,7 +299,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 *   Two modes: an instance (from the project page) or a template (from the Library).
 *   In a project's Recipes tab, New Recipe opens the graph editor with an empty draft. Import template adds a recipe and its required nodes to the project and opens it in the editor. A recipe built from scratch is added when saved.
-*   React Flow graph on a grid. Nodes are added from a palette (the project's node instances, or node templates in template mode), placed on the grid and connected by dragging from an outcome to a node. Positions are saved in the recipe's `layout`; a recipe with no `layout` (for example written by the orchestrator) is laid out automatically when opened.
+*   React Flow graph on a grid. Nodes are added from a palette (the project's node instances, or node templates in template mode), placed on the grid and connected by dragging from an outcome to a node. Positions are saved in the recipe's `layout`; a recipe with no `layout` (for example written by the Assistant) is laid out automatically when opened.
 *   Validation errors on the node or edge that causes them (IE2).
 *   Inspector for a node: kind, outcomes, `requires`, `optional`, `skipWhenUnchanged`, `maxRounds` of its outgoing edges, "Edit node", "Ask the AI".
 *   Inspector for the recipe: `start`, `onBaseChanged`, `maxNodeRuns`, `successOutcomes`.
@@ -319,7 +320,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 ### Settings
 
-*   Sections: Accounts (IG1), Protected mode (IF6), Assistant and Orchestrator (IG6), Projects, Limits and disk threshold, Services runtime, Merge check interval (IG3), Updates (IG7), Appearance (IG9). No Models section and no Notifications section.
+*   Sections: Accounts (IG1), Protected mode (IF6), Assistant and Project Manager (IG6), Projects, Limits and disk threshold, Services runtime, Merge check interval (IG3), Updates (IG7), Appearance (IG9). No Models section and no Notifications section.
 *   The section list is in the main sidebar. Sections adapt to the window width, and each has a one-line description under its title.
 *   No text or JSON editing and no user-typed IDs; raw validation errors are never shown.
 *   Every change saves by itself, a moment after the last keystroke and at once when the page is left; there is no Save or Discard button. A value that is not valid is not saved and the problem shows at the bottom of the page.
@@ -327,7 +328,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
     *   AI tools: every installed harness appears by itself. A row shows the tool, the account, its state, a Check button that looks clickable, and Log in only when needed. A working account shows "Logged in", OpenCode and a private Git server included. OpenCode is logged in when it lists at least one model; with none, the row says to set up a model provider in OpenCode.
     *   Git hosting offers Add account for a public service or the user's own server. General copy is service-neutral. The picker and account rows name the service. Forge tool logins show the tool's device code or URL, then recheck the account. A private Git server uses the user's Git credentials and has no Log in button.
 *   Assistant settings offer the provider, model and effort from the harness and the automatic and maximum compaction thresholds (128,000 and 256,000 tokens by default).
-*   Orchestrator: Provider, Model and Effort selects, by default "Same as the Assistant", and its own pair of compaction thresholds with the same defaults.
+*   Project Manager: Provider, Model and Effort selects, by default "Same as the Assistant", and its own pair of compaction thresholds with the same defaults.
 *   In both pickers Effort is locked until a model is chosen and lists only the levels that model offers, Default alone when it offers none; choosing another model resets it to Default. The model list is read once when the app starts, and each model's levels the first time they are needed; a small refresh button next to Model reads both again.
 *   Projects: "Projects folder", typed by hand or picked with "Choose…", default the user's home (`~`). A new project's folder starts as this folder plus the project id, in the wizard and in the chat.
 *   Protected mode (IF6): one switch with a short explanation (agents cannot read your files and logins; one login per harness account for `pecore-agent`; agents can read all `pecore-agent` logins). Turning it on opens the admin prompt; if it cannot (no polkit agent), the page shows the exact script with a Copy button and "I ran it, recheck". Then the page lists each model account with a Login button for `pecore-agent`, showing the URL or code. Turning it off asks whether to also remove `pecore-agent`.
@@ -339,7 +340,7 @@ Goal: minimum friction. The user opens <PE/CORE> and it works, with no setting t
 
 *   No location window: `PECORE_HOME` is `~/.pecore` unless a location is already stored. Moving it from Settings is a later feature.
 *   No first run screen and no `firstRunDone`. The app opens on Factory, with the Assistant chat on the right and the cursor in its message box.
-*   [Auto-setup](design.md#auto-setup) discovers harnesses and existing logins on startup. It fills internal accounts, profiles and tiers as needed and chooses an Assistant model when none is set. The Orchestrator follows that choice by default.
+*   [Auto-setup](design.md#auto-setup) discovers harnesses and existing logins on startup. It fills internal accounts, profiles and tiers as needed and chooses an Assistant model when none is set. The Project Manager follows that choice by default.
 *   When no harness is installed and logged in, a banner on every page says so, with the install link of each supported harness and a Log in button for the installed ones. Nothing is disabled that can work without it.
 *   git stays required, because `PECORE_HOME` is a git repository: without it the app shows an error with the install instruction. Other missing prerequisites (Compose, gh, glab) are warnings on the feature that needs them, as in "Missing configuration and warnings" below, never a blocking step.
 
@@ -364,7 +365,7 @@ Goal: minimum friction. The user opens <PE/CORE> and it works, with no setting t
 
 ### Concurrent edits
 
-*   Editors load each file with its hash and save with it (design.md "Local API"). When `definition.changed` reports a change to an open file (for example by the orchestrator), the editor shows "Changed elsewhere: reload, compare, keep mine". Keep mine saves over the new version only after the compare view.
+*   Editors load each file with its hash and save with it (design.md "Local API"). When `definition.changed` reports a change to an open file (for example by the Assistant), the editor shows "Changed elsewhere: reload, compare, keep mine". Keep mine saves over the new version only after the compare view.
 
 ### Updates
 
@@ -491,7 +492,7 @@ Every size lives in `ds/tokens.css`; components use only these variables, never 
 | Engine crash or WebSocket drop | stale states look live | disconnected banner, controls disabled, refetch on reconnect | Cross-cutting behaviour |
 | Many running agents streaming logs | renderer overload | log streaming only for the open attempt; updates once per frame; virtual lists | Job view, Updates |
 | Very large diffs (thousands of lines) | slow diff view | files rendered 30 at a time, each collapsible, risky hunks first | Notifications ID1, artifact viewer |
-| Editor and orchestrator write the same file | one change silently lost | save with the file hash; changed-elsewhere banner | Concurrent edits |
+| Editor and Assistant write the same file | one change silently lost | save with the file hash; changed-elsewhere banner | Concurrent edits |
 | User theme file with bad values | unreadable UI | schema validation, fallback tokens, contrast rules | UI4, Color tokens |
 | Normal mode: agents run as the app user | agents read the user's files and logins | Settings shows the mode and offers protected mode in one step | Settings |
 

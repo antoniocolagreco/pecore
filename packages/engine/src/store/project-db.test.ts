@@ -114,7 +114,7 @@ describe("chats.db", () => {
     db.close();
   });
 
-  it("keeps one Orchestrator chat per project and counts unread Assistant replies", async () => {
+  it("keeps one Project Manager chat per project and counts unread Assistant replies", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
     const demo: string = db.projectChat("demo");
     expect(db.projectChat("demo")).toBe(demo);

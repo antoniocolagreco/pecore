@@ -13,7 +13,7 @@ export function stageOutbound(ctx: ProjectContext, subject: OutboundSubject): st
   const open = ctx.db.db.prepare("SELECT id FROM human_queue WHERE state = 'open' AND kind = 'outbound' AND json_extract(subject, '$.orderId') = ?").all(subject.orderId) as { id: string }[];
   const itemId: string = ulid();
   ctx.db.append([
-    ...open.map(({ id }) => ({ jobId: null, type: "queue.resolved" as const, payload: { itemId: id, state: "cancelled" as const, choice: null, note: "the Orchestrator wrote a newer request" } })),
+    ...open.map(({ id }) => ({ jobId: null, type: "queue.resolved" as const, payload: { itemId: id, state: "cancelled" as const, choice: null, note: "the Project Manager wrote a newer request" } })),
     { jobId: null, type: "queue.added", payload: { itemId, kind: "outbound", subject, subjectHash: hash, choices: ["post", "reject"] } },
   ]);
   return itemId;

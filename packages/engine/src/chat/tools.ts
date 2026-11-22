@@ -2,7 +2,7 @@ import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { ArchiveReviewBody, InstantiateBody, OrderPlan, ProjectExportOptions, TicketReply, TicketSnapshot } from "@pecore/schemas";
-import type { ExportProjectResult, ImportProjectPreview, Role, StoredEvent } from "@pecore/schemas";
+import type { ExportProjectResult, ImportProjectPreview, StoredEvent } from "@pecore/schemas";
 import { definitionOperations } from "../api/routes/definitions";
 import { jobHandlers } from "../api/routes/jobs";
 import { queueHandlers } from "../api/routes/queue";
@@ -16,6 +16,7 @@ import { analyzeProjectSource } from "../share/review";
 import { runSource } from "../sources/run";
 import type { SourceRequest } from "../sources/run";
 import type { ChatTurn } from "../store/chats-db";
+import type { ChatAccess } from "./chat";
 import { stageOutbound } from "./outbound";
 import { defaultFolder, ProjectCreation, projectCreationRows, validateProjectCreation } from "./project-creation";
 import { projectDeletion, ProjectSelection, ProjectUpdate, updateProject } from "./project-management";
@@ -82,13 +83,24 @@ function definitionPath(path: string, scope: "template" | "instance" | "knowledg
   throw new Error(`definition path is outside the allowed directories: ${path}`);
 }
 
-const orchestratorToolNames: Set<string> = new Set(["list_projects", "list_recipes", "read_ticket", "create_jobs", "job_status", "read_artifact", "comment_ticket", "read_replies"]);
+const intakeToolNames: Set<string> = new Set(["list_projects", "list_recipes", "read_ticket", "create_jobs", "job_status", "read_artifact", "comment_ticket", "read_replies"]);
+const assistantOnlyToolNames: Set<string> = new Set(["analyze_project_archive", "import_project", "export_project", "project_creation_options", "create_project", "delete_project", "write_template"]);
+const definitionToolNames: Set<string> = new Set(["write_instance", "write_knowledge", "validate"]);
 
-export function orchestratorTools(engine: Engine): {
-  list(role: Role): { name: string; description: string; inputSchema: ToolInputSchema }[];
+function inProject(engine: Engine, project: string, name: string, input: unknown): void {
+  const fields: Record<string, unknown> = input !== null && typeof input === "object" ? input as Record<string, unknown> : {};
+  const outside: boolean = (typeof fields.project === "string" && fields.project !== project)
+    || (definitionToolNames.has(name) && typeof fields.path === "string" && !fields.path.startsWith(`projects/${project}/`))
+    || (typeof fields.jobId === "string" && engine.findJob(fields.jobId).ctx.id !== project)
+    || (typeof fields.itemId === "string" && engine.findQueueItem(fields.itemId).ctx.id !== project);
+  if (outside) throw new Error(`the Project Manager of ${project} acts only on its own project`);
+}
+
+export function chatTools(engine: Engine): {
+  list(access: ChatAccess): { name: string; description: string; inputSchema: ToolInputSchema }[];
   call(name: string, input: unknown, message: ChatTurn): Promise<ToolResult>;
 } {
-  const chats = engine.orchestrator;
+  const chats = engine.agentChats;
   const definitions = definitionOperations(engine);
   const jobs = jobHandlers(engine);
   const queue = queueHandlers(engine);
@@ -213,8 +225,8 @@ export function orchestratorTools(engine: Engine): {
       if (order && !alreadyPlanned && value.accepted) {
         const titles: string[] = value.plan.map(({ title }) => title);
         engine.notify({
-          kind: "orchestrator", title: `${ctx.project.name}, ticket ${order.ticket_id}`,
-          body: `The Orchestrator created ${titles.length === 1 ? "the job" : "the jobs"} ${titles.join(", ")}.`,
+          kind: "pm", title: `${ctx.project.name}, ticket ${order.ticket_id}`,
+          body: `The Project Manager created ${titles.length === 1 ? "the job" : "the jobs"} ${titles.join(", ")}.`,
           target: { project: ctx.id, job: Object.values(value.jobIds)[0] ?? null, item: null },
         });
       }
@@ -286,11 +298,11 @@ export function orchestratorTools(engine: Engine): {
       const plannedProject: string | null = chats.orderProject(message);
       const events: StoredEvent[] = projectContext(engine, plannedProject ?? project).db.orderEvents(message.orderId);
       if (events.some((event) => event.type === "order.planned" || event.type === "order.done")) throw new Error("this order already has a plan");
-      if (chats.role(message.chatId) === "orchestrator") {
+      if (order) {
         const itemId: string = stageOutbound(ctx, { project, ticketId, orderId: message.orderId, text });
         engine.notify({
-          kind: "orchestrator", title: `${ctx.project.name}, ticket ${ticketId}`,
-          body: "The Orchestrator wants to post a question on the ticket.", target: { project, job: null, item: itemId },
+          kind: "pm", title: `${ctx.project.name}, ticket ${ticketId}`,
+          body: "The Project Manager wants to post a question on the ticket.", target: { project, job: null, item: itemId },
         });
         return { value: { waitingForApproval: true, itemId }, target: { project, ticketId, queueItemIds: [itemId] } };
       }
@@ -304,13 +316,17 @@ export function orchestratorTools(engine: Engine): {
       target: { project, ticketId },
     })),
   };
-  const allowed = (role: Role, name: string): boolean => Object.hasOwn(tools, name) && (role === "assistant" || orchestratorToolNames.has(name));
+  const allowed = (access: ChatAccess, name: string): boolean => Object.hasOwn(tools, name)
+    && (access === "assistant" || (access === "intake" ? intakeToolNames.has(name) : !assistantOnlyToolNames.has(name)));
   return {
-    list: (role) => Object.entries(tools).filter(([name]) => allowed(role, name)).map(([name, { description, inputSchema }]) => ({ name, description, inputSchema })),
+    list: (access) => Object.entries(tools).filter(([name]) => allowed(access, name)).map(([name, { description, inputSchema }]) => ({ name, description, inputSchema })),
     async call(name, input, message) {
       const actionId: string = chats.startAction(message, name);
       try {
-        if (!allowed(chats.role(message.chatId), name)) throw new Error(`unknown tool ${name}`);
+        const access: ChatAccess = chats.access(message.chatId);
+        if (!allowed(access, name)) throw new Error(`unknown tool ${name}`);
+        const project: string | null = chats.project(message.chatId);
+        if (access === "project" && project) inProject(engine, project, name, input);
         const output: ToolOutput = await tools[name]!.run(input ?? {}, message);
         chats.finishAction(message, actionId, output.target ?? { state: output.isError ? "failed" : "completed" });
         return textResult(output.value, output.isError);

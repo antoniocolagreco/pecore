@@ -149,7 +149,7 @@ export const LiveMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("definition.changed"), path: z.string(), sha256: z.string().nullable() }),
   z.object({ type: z.literal("log.line"), attemptId: z.string(), event: LogEvent }),
   z.object({ type: z.literal("login.progress"), loginId: z.string(), text: z.string(), url: z.string().nullable(), done: z.boolean() }),
-  z.object({ type: z.literal("chat.changed") }),
+  z.object({ type: z.literal("chat.changed"), project: ProjectId.nullable() }),
   z.object({ type: z.literal("notify"), kind: z.string(), title: z.string(), body: z.string() }),
 ]);
 export type LiveMessage = z.infer<typeof LiveMessage>;
@@ -198,6 +198,7 @@ export const ChatMessageView = z.object({
   state: z.enum(["queued", "running", "completed", "interrupted", "failed"]),
   error: z.string().nullable(),
   replyTo: z.string().nullable(),
+  ticket: z.string().optional(),
 });
 export type ChatMessageView = z.infer<typeof ChatMessageView>;
 export const ChatAttachmentView = z.object({
@@ -453,6 +454,7 @@ export const ThemeFileView = z.object({ file: z.string(), theme: Theme.nullable(
 const ListJobsQuery = z.object({ project: ProjectId.optional(), archived: z.enum(["true", "false"]).optional() });
 const ListQueueQuery = z.object({ project: ProjectId.optional(), state: z.enum(["open", "resolved", "cancelled"]).optional() });
 const LogQuery = z.object({ view: z.enum(["events", "raw"]).default("raw") });
+const ProjectMessageParams = z.object({ id: ProjectId, messageId: z.string().min(1) });
 
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 export type RouteDef = {
@@ -529,6 +531,19 @@ export const routes = {
   },
   retryChatMessage: { method: "POST", path: "/chat/messages/:id/retry", params: IdParams, response: ChatMessageView },
   markChatRead: { method: "POST", path: "/chat/read", response: Ok },
+  getProjectChat: { method: "GET", path: "/projects/:id/chat", params: IdParams, response: ChatDetail },
+  clearProjectChat: { method: "DELETE", path: "/projects/:id/chat", params: IdParams, response: Ok },
+  sendProjectChatMessage: { method: "POST", path: "/projects/:id/chat/messages", params: IdParams, body: SendChatMessageBody, response: ChatMessageView },
+  uploadProjectChatAttachment: {
+    method: "POST",
+    path: "/projects/:id/chat/attachments",
+    params: IdParams,
+    body: z.strictObject({ mime: ChatImageMime, data: z.base64().max(chatAttachmentMaxBase64) }),
+    bodyLimit: chatAttachmentMaxBase64 + 1024,
+    response: ChatAttachmentView,
+  },
+  retryProjectChatMessage: { method: "POST", path: "/projects/:id/chat/messages/:messageId/retry", params: ProjectMessageParams, response: ChatMessageView },
+  markProjectChatRead: { method: "POST", path: "/projects/:id/chat/read", params: IdParams, response: Ok },
   listDefinitions: { method: "GET", path: "/definitions", query: z.object({ dir: z.string().min(1) }), response: z.array(DefinitionEntry) },
   getDefinition: { method: "GET", path: "/definitions/*path", params: PathParams, response: DefinitionFile },
   saveDefinition: { method: "PUT", path: "/definitions/*path", params: PathParams, body: SaveDefinitionBody, response: SaveDefinitionResult },

@@ -2,7 +2,7 @@ import type { Engine } from "../../main";
 import type { Handlers } from "../server";
 
 export function chatHandlers(engine: Engine) {
-  const chats = engine.orchestrator;
+  const chats = engine.agentChats;
   return {
     getChat: async () => chats.detail(),
     clearChat: async () => {
@@ -30,6 +30,18 @@ export function chatHandlers(engine: Engine) {
     retryChatMessage: async ({ params }) => chats.retry(params.id),
     markChatRead: async () => {
       chats.markRead();
+      return { ok: true as const };
+    },
+    getProjectChat: async ({ params }) => chats.detail(params.id),
+    clearProjectChat: async ({ params }) => {
+      await chats.clear(params.id);
+      return { ok: true as const };
+    },
+    sendProjectChatMessage: async ({ params, body }) => chats.send(body, params.id),
+    uploadProjectChatAttachment: async ({ params, body }) => chats.upload(body.mime, body.data, params.id),
+    retryProjectChatMessage: async ({ params }) => chats.retry(params.messageId, params.id),
+    markProjectChatRead: async ({ params }) => {
+      chats.markRead(params.id);
       return { ok: true as const };
     },
   } satisfies Partial<Handlers>;

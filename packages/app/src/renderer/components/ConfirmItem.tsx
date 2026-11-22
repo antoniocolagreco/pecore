@@ -82,7 +82,7 @@ function Subject({ item, connected }: { item: QueueItemView; connected: boolean 
     case "outbound":
       return (
         <>
-          <div>The Orchestrator wants to post this on ticket {String(subject.ticketId)} of {item.projectId}. Nothing is posted until you choose post.</div>
+          <div>The Project Manager wants to post this on ticket {String(subject.ticketId)} of {item.projectId}. Nothing is posted until you choose post.</div>
           <Snapshot value={subject.text} />
         </>
       );

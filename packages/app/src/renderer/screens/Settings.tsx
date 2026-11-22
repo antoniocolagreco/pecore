@@ -26,14 +26,14 @@ type Snapshot<T> = { value: T; sha256: string };
 type LoginProgress = Extract<LiveMessage, { type: "login.progress" }>;
 type Progress = { lines: string[]; url: string | null; done: boolean };
 
-const roleProfiles: Record<Role, string> = { assistant: "assistant", orchestrator: "background" };
-const roleTitles: Record<Role, string> = { assistant: "Assistant", orchestrator: "Orchestrator" };
+const roleProfiles: Record<Role, string> = { assistant: "assistant", pm: "background" };
+const roleTitles: Record<Role, string> = { assistant: "Assistant", pm: "Project Manager" };
 const sameValue = "same";
 
 const sections: { id: string; title: string }[] = [
   { id: "accounts", title: "Accounts" },
   { id: "assistant", title: "Assistant" },
-  { id: "orchestrator", title: "Orchestrator" },
+  { id: "pm", title: "Project Manager" },
   { id: "projects", title: "Projects" },
   { id: "limits", title: "Limits" },
   { id: "protectedMode", title: "Protected mode" },
@@ -440,7 +440,7 @@ export function Settings() {
   const roleSection = (role: Role, description: string): ReactNode => value &&
     <Section id={role} title={roleTitles[role]} description={description}>
       <ModelPicker accounts={(accounts.current?.accounts ?? []).filter(({ kind }) => kind === "model")} disabled={!connected || !profiles.data}
-        same={role === "orchestrator"} choice={shown(role)} onChoice={(choice) => choose(role, choice)} />
+        same={role === "pm"} choice={shown(role)} onChoice={(choice) => choose(role, choice)} />
       <div className={s.grid}>
         <NumberField label="Compact when idle above" unit="tokens" value={value[role].compaction.auto} min={1} step={1000}
           onValueChange={(auto) => update({ ...value, [role]: { ...value[role], compaction: { ...value[role].compaction, auto: auto ?? 0 } } })} description="After 5 minutes without messages." />
@@ -488,7 +488,7 @@ export function Settings() {
         {settings.feedback}
         {value && <>
           {roleSection("assistant", "The model you talk with in the chat.")}
-          {roleSection("orchestrator", "The model that plans jobs for new tickets in the background.")}
+          {roleSection("pm", "The model that plans jobs for new tickets in the background.")}
 
           <Section id="projects" title="Projects" description="Where the code of new projects goes.">
             <TextField label="Projects folder" mono value={value.projectsFolder} disabled={!connected}

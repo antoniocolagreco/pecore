@@ -1,8 +1,8 @@
 import { ChatConfirmationRow, ChatImageMime, ExportFinding, ImportProjectPreview, chatAttachmentMaxBytes, chatCompactCommand, roleProfile } from "@pecore/schemas";
-import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatMessageView } from "@pecore/schemas";
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatMessageView, Role } from "@pecore/schemas";
+import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Link, useSearchParams } from "react-router";
+import { Link, useLocation, useSearchParams } from "react-router";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
@@ -17,10 +17,49 @@ import { ArrowUpIcon, ClipIcon, CompactIcon, SparkIcon, TrashIcon, XIcon } from 
 import { Dialog } from "../ds/overlay";
 import { definitionUrl, object, settingUrl, string } from "./NodeEditor";
 import { harnessName } from "./Settings";
-import s from "./Orchestrator.module.css";
+import s from "./AssistantChat.module.css";
 
 type SelectedImage = { key: number; file: File; mime: ChatImageMime; attachmentId?: string };
 type ActionLink = { to: string; label: string };
+type ChatApi = {
+  get(): Promise<ChatDetail>;
+  clear(): Promise<unknown>;
+  send(body: { text: string; attachmentIds: string[] }): Promise<unknown>;
+  upload(body: { mime: ChatImageMime; data: string }): Promise<ChatAttachmentView>;
+  retry(id: string): Promise<unknown>;
+  read(): Promise<unknown>;
+};
+type ChatTarget = { api: ChatApi; agent: string };
+
+function chatApi(project: string | null): ChatApi {
+  if (project === null) {
+    return {
+      get: () => call("getChat"),
+      clear: () => call("clearChat"),
+      send: (body) => call("sendChatMessage", { body }),
+      upload: (body) => call("uploadChatAttachment", { body }),
+      retry: (id) => call("retryChatMessage", { params: { id } }),
+      read: () => call("markChatRead"),
+    };
+  }
+  const params = { id: project };
+  return {
+    get: () => call("getProjectChat", { params }),
+    clear: () => call("clearProjectChat", { params }),
+    send: (body) => call("sendProjectChatMessage", { params, body }),
+    upload: (body) => call("uploadProjectChatAttachment", { params, body }),
+    retry: (messageId) => call("retryProjectChatMessage", { params: { id: project, messageId } }),
+    read: () => call("markProjectChatRead", { params }),
+  };
+}
+
+const ChatContext = createContext<ChatTarget>({ api: chatApi(null), agent: "Assistant" });
+
+export function chatProject(pathname: string): string | null {
+  const match: RegExpExecArray | null = /^\/projects\/([^/]+)/.exec(pathname) ?? /^\/edit\/(?:node|recipe)\/projects\/([^/]+)\//.exec(pathname);
+  const id: string | undefined = match?.[1];
+  return id && id !== "new" ? decodeURIComponent(id) : null;
+}
 
 const messageStates: Record<ChatMessageView["state"], StateInfo | null> = {
   queued: { label: "Queued", tone: "warning", icon: "", detail: null, pulse: false },
@@ -257,24 +296,26 @@ function Message({ message, attachments, actions, connected, reload, working = f
   reload(): void;
   working?: boolean;
 }) {
+  const { api, agent } = useContext(ChatContext);
   const retry = useAction(async () => {
     if (!message) return;
-    await call("retryChatMessage", { params: { id: message.id } });
+    await api.retry(message.id);
     reload();
   });
   const user: boolean = message?.role === "user";
+  const ticket: string | undefined = user ? message?.ticket : undefined;
   const state: StateInfo | null = !message || (user && message.state === "running") ? null : messageStates[message.state];
   return (
     <article className={`${s.message} ${user ? s.user : s.assistant}`}>
       {!user && <span className={s.avatar} aria-hidden><SparkIcon /></span>}
       <div className={s.body}>
         <div className={s.meta}>
-          <span className={s.author}>{user ? "You" : "Assistant"}</span>
+          <span className={s.author}>{ticket !== undefined ? `Ticket ${ticket}` : user ? "You" : agent}</span>
           {message && <time dateTime={new Date(message.createdAt).toISOString()} title={dateTime(message.createdAt)}>{time(message.createdAt)}</time>}
           {state && <StateLabel info={state} />}
         </div>
-        {working && !message && <div className={s.thinking} role="status" aria-label="The Assistant is working on a reply"><span /><span /><span /></div>}
-        {message?.text && <div className={s.bubble}>
+        {working && !message && <div className={s.thinking} role="status" aria-label={`The ${agent} is working on a reply`}><span /><span /><span /></div>}
+        {message?.text && ticket === undefined && <div className={s.bubble}>
           <ReactMarkdown skipHtml disallowedElements={["img"]} components={{
             a: ({ href, children }) => connected && href?.startsWith("https://")
               ? <a href={href} target="_blank" rel="noreferrer">{children}</a>
@@ -323,19 +364,20 @@ function Composer({ supportsImages, connected, ready, reload, autoFocus }: {
   const nextKey = useRef<number>(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  const { api, agent } = useContext(ChatContext);
   const send = useAction(async () => {
     const attachmentIds: string[] = [];
     for (const image of images) {
       let attachmentId: string | undefined = image.attachmentId;
       if (!attachmentId) {
         const data: string = await base64(image.file);
-        const attachment: ChatAttachmentView = await call("uploadChatAttachment", { body: { mime: image.mime, data } });
+        const attachment: ChatAttachmentView = await api.upload({ mime: image.mime, data });
         attachmentId = attachment.id;
         setImages((pending) => pending.map((entry) => entry.key === image.key ? { ...entry, attachmentId: attachment.id } : entry));
       }
       attachmentIds.push(attachmentId);
     }
-    await call("sendChatMessage", { body: { text: message, attachmentIds } });
+    await api.send({ text: message, attachmentIds });
     setMessage("");
     setImages([]);
     setImageError(null);
@@ -345,7 +387,7 @@ function Composer({ supportsImages, connected, ready, reload, autoFocus }: {
   const disabled: boolean = !connected || send.busy;
   const canSend: boolean = !disabled && ready && (!!message.trim() || images.length > 0) && (images.length === 0 || supportsImages === true);
   const imageReason: string = supportsImages === true ? "Add images: PNG, JPEG, GIF or WebP, up to 10 MB each"
-    : supportsImages === false ? "The current Assistant cannot read images" : "Checking whether the Assistant can read images…";
+    : supportsImages === false ? `The current ${agent} cannot read images` : `Checking whether the ${agent} can read images…`;
 
   function addImages(files: File[]): void {
     const selected: SelectedImage[] = [];
@@ -374,7 +416,7 @@ function Composer({ supportsImages, connected, ready, reload, autoFocus }: {
         <textarea
           ref={input}
           aria-label="Message"
-          placeholder="Ask the Assistant…"
+          placeholder={`Ask the ${agent}…`}
           rows={1}
           autoFocus={autoFocus}
           value={message}
@@ -433,17 +475,29 @@ function DefinitionPreview({ path, onClose }: { path: string; onClose(): void })
 }
 
 export function ChatPanel() {
+  const project: string | null = chatProject(useLocation().pathname);
+  return <Chat key={project ?? ""} project={project} />;
+}
+
+function Chat({ project }: { project: string | null }) {
+  const role: Role = project === null ? "assistant" : "pm";
+  const agent: string = project === null ? "Assistant" : "Project Manager";
+  const [target] = useState<ChatTarget>(() => ({ api: chatApi(project), agent }));
+  const api: ChatApi = target.api;
   const connected: boolean = useConnected();
   const settings = useData(() => call("getSettings"), [], (event) => event.type === "definition.changed" && event.path === "settings.json");
-  const ready: boolean | null = settings.data ? roleProfile(settings.data.value, "assistant") !== null : null;
+  const profileId: string | null = settings.data ? roleProfile(settings.data.value, role) : null;
+  const ready: boolean | null = settings.data ? profileId !== null : null;
   const profiles = useData(() => call("getProfiles"), [], (event) => event.type === "definition.changed" && event.path === "profiles.json");
   const accounts = useData(() => call("getAccounts"), [], (event) => event.type === "definition.changed" && event.path === "accounts.json");
-  const profileId: string | null = settings.data ? roleProfile(settings.data.value, "assistant") : null;
+  const projectView = useData(() => project === null ? Promise.resolve(null) : call("getProject", { params: { id: project } }), [], (event) => event.type === "project.updated" && event.projectId === project);
   const profile = profiles.data?.value.profiles.find(({ id }) => id === profileId);
   const allAccounts = accounts.data?.value.accounts ?? [];
   const account = allAccounts.find(({ id }) => id === profile?.account);
-  const model: string | null = profile && account ? [harnessName(account, allAccounts), profile.model, profile.effort ?? "default effort"].join(" · ") : null;
-  const detail = useData(() => call("getChat"), [], (event) => event.type === "chat.changed");
+  const projectName: string | null = project === null ? null : projectView.data?.project?.name ?? project;
+  const modelParts: string[] = profile && account ? [harnessName(account, allAccounts), profile.model, profile.effort ?? "default effort"] : [];
+  const model: string | null = [...projectName === null ? [] : [projectName], ...modelParts].join(" · ") || null;
+  const detail = useData(() => api.get(), [], (event) => event.type === "chat.changed" && event.project === project);
   const [query, setQuery] = useSearchParams();
   const definition: string | null = query.get("definition");
   const [active, setActive] = useState<boolean>(() => document.visibilityState === "visible" && document.hasFocus());
@@ -453,15 +507,15 @@ export function ChatPanel() {
   const chat: ChatDetail | undefined = detail.data;
   const lastReply: string = chat?.messages.findLast((message) => message.role === "assistant")?.id ?? "";
   const markRead = useAction(async () => {
-    await call("markChatRead");
+    await api.read();
     detail.reload();
   });
   const compact = useAction(async () => {
-    await call("sendChatMessage", { body: { text: chatCompactCommand, attachmentIds: [] } });
+    await api.send({ text: chatCompactCommand, attachmentIds: [] });
     detail.reload();
   });
   const clear = useAction(async () => {
-    await call("clearChat");
+    await api.clear();
     detail.reload();
   });
   const turnPending: boolean = chat?.messages.some(({ state }) => state === "queued" || state === "running") ?? false;
@@ -513,15 +567,16 @@ export function ChatPanel() {
     attachments.set(attachment.messageId, entries);
   }
   return (
-    <aside className={s.panel} aria-label="Assistant"><section className={s.pane}>
+    <ChatContext.Provider value={target}>
+    <aside className={s.panel} aria-label={agent}><section className={s.pane}>
       <div className={s.toolbar} role="group" aria-label="Conversation controls">
         <div className={s.heading}>
-          <h2 className={s.title}>Assistant</h2>
+          <h2 className={s.title}>{agent}</h2>
           {model && <span className={s.model}>{model}</span>}
         </div>
         <IconButton label="Compact conversation" icon={<CompactIcon />} disabled={!canCompact} loading={compact.busy} onClick={() => void compact.run()} />
         <IconButton label="Clear conversation" icon={<TrashIcon />} disabled={!canManage || !chat?.messages.length} loading={clear.busy} onClick={() => {
-          if (window.confirm("Delete this conversation and start a new Assistant session?")) void clear.run();
+          if (window.confirm(`Delete this conversation and start a new ${agent} session?`)) void clear.run();
         }} />
       </div>
       {(compact.error || clear.error) && <div className={s.footnote}><ErrorText error={compact.error ?? clear.error} /></div>}
@@ -551,13 +606,14 @@ export function ChatPanel() {
       </div>
       {ready === false && connected && (
         <div className={s.footnote}>
-          <Alert tone="warning" title="No Assistant yet" actions={<Link to={settingUrl("assistant")}>Choose one in Settings</Link>}>
+          <Alert tone="warning" title={`No ${agent} yet`} actions={<Link to={settingUrl(role)}>Choose one in Settings</Link>}>
             Log in to Claude Code, Codex or OpenCode and &lt;PE/CORE&gt; picks one for you.
           </Alert>
         </div>
       )}
-      {chat && <Composer connected={connected} ready={ready === true && !clear.busy} supportsImages={chat.supportsImages} reload={detail.reload} autoFocus />}
+      {chat && <Composer connected={connected} ready={ready === true && !clear.busy} supportsImages={chat.supportsImages} reload={detail.reload} autoFocus={project === null} />}
       {definition && <DefinitionPreview key={definition} path={definition} onClose={() => setQuery({}, { replace: true })} />}
     </section></aside>
+    </ChatContext.Provider>
   );
 }

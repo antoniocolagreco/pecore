@@ -34,12 +34,17 @@ const preambles: Record<Role, string> = {
     "When asked to export a project, use the exact project ID and report where the copy was saved. If possible secrets are found, direct the user to review them before exporting.",
     `Context references point to <PE/CORE> records. ${untrusted}`,
   ].join("\n"),
-  orchestrator: [
-    "You are <PE/CORE>'s Orchestrator. You handle new tickets of linked projects in the background; the user does not read your replies.",
-    "If the ticket is ready, call create_jobs once with the full plan. If it is unclear, ask one question with comment_ticket: the user approves it before <PE/CORE> posts it. You post nothing anywhere else.",
-    untrusted,
+  pm: [
+    "You are this project's Project Manager in <PE/CORE>. You handle its new tickets, and the user also talks to you in the project's chat. Act only on this project with the <PE/CORE> MCP tools.",
+    "A message that starts with \"Handle this ticket order\" comes from ticket intake. If the ticket is ready, call create_jobs once with the full plan. If it is unclear, ask one question with comment_ticket: the user approves it before <PE/CORE> posts it. You post nothing anywhere else.",
+    "Any other message is the user's order and is authorised as given. If it asks for jobs, call create_jobs once with the full plan.",
+    `Context references point to <PE/CORE> records. ${untrusted}`,
   ].join("\n"),
 };
+
+const roleNames: Record<Role, string> = { assistant: "the Assistant", pm: "the Project Manager" };
+
+export type ChatAccess = "assistant" | "intake" | "project";
 
 type IntakeOrder = Parameters<OrderSink["hand"]>[1];
 type ChatLocation = { user: string; cwd: string; tokenPath: string; routeKey: string };
@@ -76,7 +81,7 @@ async function drain(stream: AsyncIterable<unknown>): Promise<void> {
   for await (const value of stream) void value;
 }
 
-export class OrchestratorChats {
+export class AgentChats {
   private endpoint: { url: string; token: string } | null = null;
   private readonly locations: Map<string, { user: string; pending: Promise<ChatLocation> }> = new Map();
   private readonly routeKeys: Map<string, string> = new Map();
@@ -87,6 +92,7 @@ export class OrchestratorChats {
   private readonly imageSupport: Map<string, boolean> = new Map();
   private readonly probes: Map<string, Promise<boolean>> = new Map();
   private readonly idle: Map<string, NodeJS.Timeout> = new Map();
+  private readonly current: Map<string, ChatTurn> = new Map();
   idleCompactionMs: number = 5 * 60_000;
   private closed = false;
 
@@ -109,7 +115,23 @@ export class OrchestratorChats {
   role(chatId: string): Role {
     const chat: Chat | undefined = this.db.chat(chatId);
     if (!chat) throw new NotFoundError(`chat ${chatId} not found`);
-    return chat.project ? "orchestrator" : "assistant";
+    return chat.project ? "pm" : "assistant";
+  }
+
+  project(chatId: string): string | null {
+    return this.db.chat(chatId)?.project ?? null;
+  }
+
+  access(chatId: string): ChatAccess {
+    if (this.role(chatId) === "assistant") return "assistant";
+    const message: ChatTurn | undefined = this.current.get(chatId);
+    return message && message.orderId === message.id ? "project" : "intake";
+  }
+
+  private chatFor(project: string | undefined): string {
+    if (project === undefined) return assistantChat;
+    if (!this.engine.projects.has(project)) throw new NotFoundError(`project ${project} not found`);
+    return this.db.projectChat(project);
   }
 
   private compactLater(chatId: string): void {
@@ -185,15 +207,22 @@ export class OrchestratorChats {
     return result;
   }
 
-  async detail(): Promise<ChatDetail> {
-    const configuration = this.configuration("assistant");
+  async detail(project?: string): Promise<ChatDetail> {
+    const chatId: string = this.chatFor(project);
+    const configuration = this.configuration(this.role(chatId));
     const supportsImages: boolean | null = configuration ? await this.supportsImages(configuration).catch(() => null) : false;
+    const tickets = project === undefined ? undefined : this.engine.projects.get(project)?.ctx.db.db.prepare("SELECT ticket_id FROM tickets_seen WHERE order_id = ?");
     return {
-      unread: this.db.unread(assistantChat),
-      messages: this.db.messages(assistantChat).map(messageView),
-      streamingReply: this.active.get(assistantChat)?.reply ?? null,
-      attachments: this.db.attachments(assistantChat).map(attachmentView),
-      actions: this.db.actions(assistantChat),
+      unread: this.db.unread(chatId),
+      messages: this.db.messages(chatId).map((message) => {
+        const view: ChatMessageView = messageView(message);
+        if (!tickets || message.role !== "user" || message.orderId === message.id) return view;
+        const row = tickets.get(message.orderId) as { ticket_id: string } | undefined;
+        return { ...view, ticket: row?.ticket_id ?? message.orderId };
+      }),
+      streamingReply: this.active.get(chatId)?.reply ?? null,
+      attachments: this.db.attachments(chatId).map(attachmentView),
+      actions: this.db.actions(chatId),
       supportsImages,
     };
   }
@@ -210,9 +239,9 @@ export class OrchestratorChats {
     return { profile, account, agents, user, key, sessionKey };
   }
 
-  private requiredConfiguration(role: Role): NonNullable<ReturnType<OrchestratorChats["configuration"]>> {
+  private requiredConfiguration(role: Role): NonNullable<ReturnType<AgentChats["configuration"]>> {
     const configuration = this.configuration(role);
-    if (!configuration) throw new HttpError("conflict", `choose a model for the ${role === "assistant" ? "Assistant" : "Orchestrator"} in Settings`);
+    if (!configuration) throw new HttpError("conflict", `choose a model for ${roleNames[role]} in Settings`);
     if (this.closed) throw new HttpError("conflict", "the chat is shutting down");
     return configuration;
   }
@@ -232,7 +261,7 @@ export class OrchestratorChats {
     };
   }
 
-  private async supportsImages({ agents, account, user, key }: ReturnType<OrchestratorChats["requiredConfiguration"]>): Promise<boolean> {
+  private async supportsImages({ agents, account, user, key }: ReturnType<AgentChats["requiredConfiguration"]>): Promise<boolean> {
     const cached: boolean | undefined = this.imageSupport.get(key);
     if (cached !== undefined) return cached;
     const probe = async (): Promise<boolean> => {
@@ -248,14 +277,15 @@ export class OrchestratorChats {
     return pending;
   }
 
-  private async checkImages(): Promise<void> {
-    if (!(await this.supportsImages(this.requiredConfiguration("assistant")))) throw new HttpError("bad_request", "the Assistant's model does not support images");
+  private async checkImages(role: Role): Promise<void> {
+    if (!(await this.supportsImages(this.requiredConfiguration(role)))) throw new HttpError("bad_request", `${roleNames[role]}'s model does not support images`);
   }
 
-  async upload(mime: ChatImageMime, data: string): Promise<ChatAttachmentView> {
+  async upload(mime: ChatImageMime, data: string, project?: string): Promise<ChatAttachmentView> {
+    const chatId: string = this.chatFor(project);
     const bytes: Buffer = Buffer.from(data, "base64");
     if (bytes.length > chatAttachmentMaxBytes || !matchesMime(bytes, mime)) throw new HttpError("bad_request", "invalid image or image exceeds 10 MB");
-    await this.checkImages();
+    await this.checkImages(this.role(chatId));
     const attachmentId: string = ulid();
     const directory: string = join(this.engine.opts.home, "chat-attachments");
     const path: string = join(directory, `${attachmentId}.${extensions[mime]}`);
@@ -264,45 +294,49 @@ export class OrchestratorChats {
     await writeFile(path, bytes, { mode: 0o600, flag: "wx" });
     try {
       if (this.closed) throw new HttpError("conflict", "the chat is shutting down");
-      this.db.addAttachment(assistantChat, attachment);
+      this.db.addAttachment(chatId, attachment);
     } catch (e) {
       await rm(path, { force: true });
       throw e;
     }
-    this.changed(assistantChat);
+    this.changed(chatId);
     return attachmentView(attachment);
   }
 
-  async send({ text, context, attachmentIds }: SendChatMessageBody): Promise<ChatMessageView> {
-    this.requiredConfiguration("assistant");
-    if (attachmentIds.length) await this.checkImages();
+  async send({ text, context, attachmentIds }: SendChatMessageBody, project?: string): Promise<ChatMessageView> {
+    const chatId: string = this.chatFor(project);
+    const role: Role = this.role(chatId);
+    this.requiredConfiguration(role);
+    if (attachmentIds.length) await this.checkImages(role);
     if (this.closed) throw new HttpError("conflict", "the chat is shutting down");
     const message: ChatTurn = this.db.db.transaction(() => {
-      const message: ChatTurn = this.db.addMessage(assistantChat, "user", text, context);
+      const message: ChatTurn = this.db.addMessage(chatId, "user", text, context);
       for (const attachmentId of new Set(attachmentIds)) {
-        if (!this.db.linkAttachment(attachmentId, assistantChat, message.id)) throw new HttpError("bad_request", `attachment ${attachmentId} is unavailable`);
+        if (!this.db.linkAttachment(attachmentId, chatId, message.id)) throw new HttpError("bad_request", `attachment ${attachmentId} is unavailable`);
       }
       return message;
     })();
-    this.changed(assistantChat);
-    this.schedule(assistantChat);
+    this.changed(chatId);
+    this.schedule(chatId);
     return messageView(message);
   }
 
-  retry(messageId: string): ChatMessageView {
-    this.requiredConfiguration("assistant");
-    const message: ChatTurn | undefined = this.db.message(assistantChat, messageId);
+  retry(messageId: string, project?: string): ChatMessageView {
+    const chatId: string = this.chatFor(project);
+    this.requiredConfiguration(this.role(chatId));
+    const message: ChatTurn | undefined = this.db.message(chatId, messageId);
     if (!message) throw new NotFoundError(`message ${messageId} not found`);
     if (message.state !== "interrupted") throw new HttpError("conflict", "only interrupted messages can be retried");
     this.db.setMessageState(messageId, "queued");
-    this.changed(assistantChat);
-    this.schedule(assistantChat);
+    this.changed(chatId);
+    this.schedule(chatId);
     return messageView({ ...message, state: "queued", error: null });
   }
 
-  markRead(): void {
-    this.db.markRead(assistantChat);
-    this.changed(assistantChat);
+  markRead(project?: string): void {
+    const chatId: string = this.chatFor(project);
+    this.db.markRead(chatId);
+    this.changed(chatId);
   }
 
   async answerProjectAction(tool: "create_project" | "delete_project", id: string, decision: "approve" | "cancel"): Promise<void> {
@@ -390,21 +424,22 @@ export class OrchestratorChats {
     }
   }
 
-  async clear(): Promise<void> {
-    if (this.closed || this.db.busy(assistantChat)) throw new HttpError("conflict", "the chat is unavailable or has a pending turn");
-    if (this.projectActions.size > 0) {
+  async clear(project?: string): Promise<void> {
+    const chatId: string = this.chatFor(project);
+    if (this.closed || this.db.busy(chatId)) throw new HttpError("conflict", "the chat is unavailable or has a pending turn");
+    if (chatId === assistantChat && this.projectActions.size > 0) {
       throw new HttpError("conflict", "Wait for the project operation to finish before clearing the chat.");
     }
-    const attachments: ChatAttachment[] = this.db.attachments(assistantChat);
-    this.db.clearChat(assistantChat);
-    clearTimeout(this.idle.get(assistantChat));
-    this.idle.delete(assistantChat);
-    this.changed(assistantChat);
+    const attachments: ChatAttachment[] = this.db.attachments(chatId);
+    this.db.clearChat(chatId);
+    clearTimeout(this.idle.get(chatId));
+    this.idle.delete(chatId);
+    this.changed(chatId);
     await Promise.all(attachments.map(({ path }) => rm(path, { force: true }).catch((error: unknown) => console.error("clear chat attachment:", error))));
   }
 
   hand(projectId: string, order: IntakeOrder): void {
-    this.requiredConfiguration("orchestrator");
+    this.requiredConfiguration("pm");
     if (this.closed) throw new HttpError("conflict", "the chat is shutting down");
     const chatId: string = this.db.projectChat(projectId);
     const prior: Set<string> = new Set(this.db.messages(chatId).filter((message) => message.orderId === order.id).map((message) => message.id));
@@ -452,7 +487,7 @@ export class OrchestratorChats {
   }
 
   private changed(chatId: string): void {
-    if (chatId === assistantChat) this.live({ type: "chat.changed" });
+    this.live({ type: "chat.changed", project: this.project(chatId) });
   }
 
   private async streamReply(session: Session, active: ActiveTurn): Promise<void> {
@@ -494,6 +529,7 @@ export class OrchestratorChats {
     let session: Session | undefined;
     let drains: Promise<void>[] = [];
     const active: ActiveTurn = { message, user: this.user(), pending: Promise.resolve(), accepting: false, reply: null };
+    this.current.set(chatId, message);
     try {
       const role: Role = this.role(chatId);
       const { agents, account, profile, user, key, sessionKey } = this.requiredConfiguration(role);
@@ -501,7 +537,7 @@ export class OrchestratorChats {
       const connector = await agents.resolve(account.connector);
       const login = await agents.login(account.id);
       const saved = this.db.session(chatId);
-      const mcpServers: McpServer[] = [{ name: "pecore", command: connector.nodePath, args: [join(connector.adaptersDir, "orchestrator-mcp.mjs"), tokenPath], env: [] }];
+      const mcpServers: McpServer[] = [{ name: "pecore", command: connector.nodePath, args: [join(connector.adaptersDir, "chat-mcp.mjs"), tokenPath], env: [] }];
       session = await startSession({
         connector, login, spawn: this.spawnSession(user), cwd, model: profile.model, effort: profile.effort, mcpServers,
         ...(saved.sessionId && saved.sessionKey === sessionKey ? { resumeId: saved.sessionId } : {}),
@@ -511,7 +547,7 @@ export class OrchestratorChats {
       const compact: boolean = message.text.trim() === chatCompactCommand && attachments.length === 0;
       if (!compact || session.resumed) this.db.setSession(chatId, session.sessionId, sessionKey);
       this.imageSupport.set(key, session.supportsImages);
-      if (attachments.length && !session.supportsImages) throw new Error("the Assistant's model does not support images");
+      if (attachments.length && !session.supportsImages) throw new Error(`${roleNames[role]}'s model does not support images`);
       if (compact) {
         let tokens: number | null = null;
         if (session.resumed) {
@@ -553,7 +589,12 @@ export class OrchestratorChats {
       active.reply = null;
       this.changed(chatId);
       this.compactLater(chatId);
-      if (chatId === assistantChat) this.engine.emit("notify", { kind: "assistant-replied", title: "Assistant replied", body: result.text.trim().split("\n")[0]!.slice(0, 120) });
+      const firstLine: string = result.text.trim().split("\n")[0]!.slice(0, 120);
+      if (chatId === assistantChat) this.engine.emit("notify", { kind: "assistant-replied", title: "Assistant replied", body: firstLine });
+      else if (message.orderId === message.id) {
+        const name: string = this.engine.projects.get(this.project(chatId) ?? "")?.ctx.project.name ?? "Project";
+        this.engine.emit("notify", { kind: "pm-replied", title: `${name}: Project Manager replied`, body: firstLine });
+      }
     } catch (e) {
       active.reply = null;
       if (!this.closed) {
@@ -564,6 +605,7 @@ export class OrchestratorChats {
       active.accepting = false;
       this.active.delete(chatId);
       await active.pending;
+      this.current.delete(chatId);
       await session?.close().catch((e: unknown) => console.error(`chat ${chatId}:`, e));
       await Promise.all(drains);
     }
