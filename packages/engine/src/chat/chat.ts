@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { constants, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { monotonicFactory } from "ulid";
@@ -633,13 +633,16 @@ export class AgentChats {
           tokens = result.context?.used ?? null;
         }
         this.db.setContextTokens(chatId, tokens);
+        this.db.setInstructions(chatId, null);
         this.db.setMessageState(id, "completed");
         this.changed(chatId);
         return;
       }
 
       const name: string | undefined = role === "pm" ? this.engine.projects.get(this.project(chatId) ?? "")?.ctx.project.pm?.name : undefined;
-      const lines: string[] = [name ? `${preambles[role]}\nYour name is ${name}.` : preambles[role]];
+      const instructions: string = name ? `${preambles[role]}\nYour name is ${name}.` : preambles[role];
+      const digest: string = createHash("sha256").update(instructions).digest("hex");
+      const lines: string[] = !session.resumed || this.db.instructions(chatId) !== digest ? [instructions] : [];
       const reports: ChatTurn[] = role === "assistant" ? this.db.reportsSince(chatId) : [];
       if (!session.resumed) {
         const history = this.db.messages(chatId).filter((entry) => entry.id !== id && entry.state === "completed" && entry.text.trim() !== chatCompactCommand);
@@ -663,6 +666,7 @@ export class AgentChats {
       if (result.stopReason === "cancelled") throw new Error("the connector cancelled the turn");
       this.db.db.transaction(() => {
         this.db.setMessageState(id, "completed");
+        this.db.setInstructions(chatId, digest);
         if (result.context) this.db.setContextTokens(chatId, result.context.used);
         this.db.addMessage(chatId, "assistant", result.text, [], { replyTo: id });
         this.report(message, result.text);

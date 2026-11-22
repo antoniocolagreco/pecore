@@ -228,15 +228,6 @@
   box-shadow: 0 0 0 0.5px var(--separator), 0 1px 3px rgb(0 0 0 / 0.05);
 }
 
-.clamped {
-  max-height: calc(var(--line-height) * 8em);
-  overflow: hidden;
-}
-
-.faded {
-  mask-image: linear-gradient(to bottom, black 70%, transparent);
-}
-
 .more {
   align-self: flex-start;
 }

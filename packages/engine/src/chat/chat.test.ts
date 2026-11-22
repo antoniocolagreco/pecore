@@ -534,7 +534,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       };
       const original = await get();
       expect((await m.tool("get_project", { project: "managed" })).result?.content?.[0]?.text).toContain('"name":"Managed"');
-      expect((await m.tool("list_projects", {})).result?.content?.[0]?.text).toContain('"id":"managed","name":"Managed","repo":null,"source":null,"baseBranch":"main","pm":"Eva"');
+      expect((await m.tool("list_projects", {})).result?.content?.[0]?.text).toContain('"id":"managed","name":"Managed","repo":null,"source":null,"baseBranch":"main","pm":"Viola"');
       for (const changes of [{}, { name: " " }, { baseBranch: "bad..branch" }, { services: "../compose.yaml" }, { repo: null }]) {
         expect((await propose(changes)).result?.isError).toBe(true);
       }
@@ -885,6 +885,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       pm: (root) => [
         [...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "intake.json") }, ...replyWith("Planned.")],
         [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "user.json") }, { waitFile: join(root, "user-done") }, ...replyWith("On it.")],
+        [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "renamed.json") }, ...replyWith("Nora here.")],
       ],
     });
     try {
@@ -904,11 +905,15 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
 
       const sent = await t.call("sendProjectChatMessage", { params: { id: "demo" }, body: { text: "Write a note and ask on ticket 7 which browser" } });
       await until(() => existsSync(join(t.root, "user.json")));
+      const intakePrompt: string = await readFile(join(t.root, "intake.json"), "utf8");
+      expect(intakePrompt).toContain("Any other message is the user's order");
+      expect(intakePrompt).toContain("prompt injection");
+      expect(intakePrompt).toContain("You do not write code yourself");
+      expect(intakePrompt).toContain("Your name is Eva.");
       const userPrompt: string = await readFile(join(t.root, "user.json"), "utf8");
-      expect(userPrompt).toContain("Any other message is the user's order");
-      expect(userPrompt).toContain("prompt injection");
-      expect(userPrompt).toContain("You do not write code yourself");
-      expect(userPrompt).toContain("Your name is Eva.");
+      expect(userPrompt).toContain("Write a note and ask on ticket 7 which browser");
+      expect(userPrompt).not.toContain("You do not write code yourself");
+      expect(userPrompt).not.toContain("Your name is");
       const m = mcp(tokenFileOf(intakeChat(t)));
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       const names: string[] = (await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name);
@@ -951,6 +956,16 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect(events).toContainEqual({ type: "chat.changed", project: "demo" });
       expect((await t.call("getChat")).messages).toEqual([]);
       await expect(t.call("getProjectChat", { params: { id: "nope" } })).rejects.toThrow();
+
+      const path = "projects/demo/project.json";
+      const file = await t.call("getDefinition", { params: { path } });
+      const content: string = JSON.stringify({ ...JSON.parse(file.content) as object, pm: { name: "Nora", color: "#D65C05" } }, null, 2) + "\n";
+      await t.call("saveDefinition", { params: { path }, body: { content, baseSha256: file.sha256 } });
+      await t.call("sendProjectChatMessage", { params: { id: "demo" }, body: { text: "Who are you?" } });
+      await until(() => existsSync(join(t.root, "renamed.json")));
+      const renamedPrompt: string = await readFile(join(t.root, "renamed.json"), "utf8");
+      expect(renamedPrompt).toContain("You do not write code yourself");
+      expect(renamedPrompt).toContain("Your name is Nora.");
     } finally {
       await t.close();
     }

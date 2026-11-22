@@ -2,7 +2,7 @@ import { ChatConfirmationRow, ChatImageMime, ExportFinding, ImportProjectPreview
 import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatMessageView, ChatSender, ProjectManagerIdentity, Role } from "@pecore/schemas";
 import { ProjectManagerAvatar } from "../components/ProjectManager";
 import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties } from "react";
 import ReactMarkdown from "react-markdown";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { call } from "../api/client";
@@ -315,20 +315,7 @@ function Actions({ actions, connected }: { actions: ChatActionView[]; connected:
   );
 }
 
-function Collapsible({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState<boolean>(false);
-  const [long, setLong] = useState<boolean>(false);
-  const box = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    if (!open && box.current) setLong(box.current.scrollHeight > box.current.clientHeight + 1);
-  }, [children, open]);
-  return (
-    <>
-      <div ref={box} className={open ? undefined : long ? `${s.clamped} ${s.faded}` : s.clamped}>{children}</div>
-      {(long || open) && <Button size="sm" variant="ghost" className={s.more} aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Show less" : "Show more"}</Button>}
-    </>
-  );
-}
+const previewLength: number = 280;
 
 function Message({ message, attachments, actions, connected, reload, working = false }: {
   message: ChatMessageView | undefined;
@@ -339,6 +326,7 @@ function Message({ message, attachments, actions, connected, reload, working = f
   working?: boolean;
 }) {
   const { api, agent, title, pm, projects, projectName } = useContext(ChatContext);
+  const [open, setOpen] = useState<boolean>(false);
   const retry = useAction(async () => {
     if (!message) return;
     await api.retry(message.id);
@@ -359,12 +347,16 @@ function Message({ message, attachments, actions, connected, reload, working = f
     : managerProject !== null ? speaker ? `${speaker.name} - Project Manager` : "Project Manager"
     : title;
   const state: StateInfo | null = !message || (message.role === "user" && message.state === "running") ? null : messageStates[message.state];
-  const bubble = message?.text && <div className={s.bubble}>
+  const text: string = message?.text ?? "";
+  const long: boolean = Boolean(sender) && text.length > previewLength;
+  const cut: number = text.lastIndexOf(" ", previewLength);
+  const shown: string = long && !open ? `${text.slice(0, cut > previewLength / 2 ? cut : previewLength).trimEnd()}…` : text;
+  const bubble = text && <div className={s.bubble}>
     <ReactMarkdown skipHtml disallowedElements={["img"]} components={{
       a: ({ href, children }) => connected && href?.startsWith("https://")
         ? <a href={href} target="_blank" rel="noreferrer">{children}</a>
         : <span>{children}</span>,
-    }}>{message.text}</ReactMarkdown>
+    }}>{shown}</ReactMarkdown>
   </div>;
   return (
     <article className={`${s.message} ${user ? s.user : s.assistant} ${sender ? s.forwarded : ""} ${!user && speaker ? s.tinted : ""}`}
@@ -379,7 +371,8 @@ function Message({ message, attachments, actions, connected, reload, working = f
         </div>
         {working && !message && <div className={s.thinking} role="status" aria-label={`The ${agent} is working on a reply`}><span /><span /><span /></div>}
         {job && (connected ? <Link to={`/jobs/${encodeURIComponent(job)}`}>Open job {job}</Link> : <span>Job {job}</span>)}
-        {ticket === undefined && sender !== "job" && (sender ? <Collapsible>{bubble}</Collapsible> : bubble)}
+        {ticket === undefined && sender !== "job" && bubble}
+        {ticket === undefined && sender !== "job" && long && <Button size="sm" variant="ghost" className={s.more} aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Show less" : "Show more"}</Button>}
         {attachments.length > 0 && <ul className={s.chips} aria-label="Message attachments">
           {attachments.map(({ id, mime, size }) => <li className={s.chip} key={id} title={`${size} bytes`}>{mime} · {fileSize(size)}</li>)}
         </ul>}

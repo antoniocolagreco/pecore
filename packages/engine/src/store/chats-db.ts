@@ -73,7 +73,7 @@ export class ChatsDb {
     this.db.transaction(() => {
       this.db.prepare("DELETE FROM attachments WHERE chat_id = ?").run(id);
       this.db.prepare("DELETE FROM messages WHERE chat_id = ?").run(id);
-      this.db.prepare("UPDATE chats SET session_id = NULL, session_key = NULL, context_tokens = NULL, last_read_message_id = NULL, reported_until = NULL WHERE id = ?").run(id);
+      this.db.prepare("UPDATE chats SET session_id = NULL, session_key = NULL, context_tokens = NULL, last_read_message_id = NULL, reported_until = NULL, instructions = NULL WHERE id = ?").run(id);
     })();
   }
 
@@ -92,6 +92,14 @@ export class ChatsDb {
 
   setSession(id: string, sessionId: string, sessionKey: string): void {
     this.db.prepare("UPDATE chats SET session_id = ?, session_key = ? WHERE id = ?").run(sessionId, sessionKey, id);
+  }
+
+  instructions(id: string): string | null {
+    return (this.db.prepare("SELECT instructions FROM chats WHERE id = ?").get(id) as { instructions: string | null } | undefined)?.instructions ?? null;
+  }
+
+  setInstructions(id: string, digest: string | null): void {
+    this.db.prepare("UPDATE chats SET instructions = ? WHERE id = ?").run(digest, id);
   }
 
   contextTokens(id: string): number | null {
