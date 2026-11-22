@@ -810,6 +810,10 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     expect(ctx.db.db.prepare("SELECT count(*) AS n FROM jobs WHERE order_id = ?").get(message.id)).toEqual({ n: 0 });
     expect((await m.tool("read_definition", { path: "projects/demo/recipes/reviewed.json" })).result!.content![0]!.text).toContain("write, human review, commit");
     expect((await m.tool("list_definitions", { dir: "templates/recipes" })).result!.content![0]!.text).toContain("templates/recipes/reviewed.json");
+    const iconPath: string = "templates/icons/node-reviewed.svg";
+    const icon: string = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>';
+    expect((await m.tool("write_template", { path: iconPath, content: icon })).result?.isError).toBeUndefined();
+    expect((await t.call("getDefinition", { params: { path: iconPath } })).content).toBe(icon);
 
     const log = await m.tool("read_artifact", { view: "log", jobId: bigJob, nodeRunId: bigRun });
     const logText = log.result!.content!.map((c) => c.text).join("");

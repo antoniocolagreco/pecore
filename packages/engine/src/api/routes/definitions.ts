@@ -3,6 +3,7 @@ import { lstat, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { Name, Node, Project, projectManagerClash, Recipe } from "@pecore/schemas";
 import type { DefinitionEntry, InstantiateBody, RouteOutput } from "@pecore/schemas";
+import { validIcon } from "../../definitions/icon";
 import { instantiateNode, instantiateRecipe } from "../../definitions/instantiate";
 import { loadTemplates, loadProject, zodErrors } from "../../definitions/load";
 import type { DefinitionError } from "../../definitions/load";
@@ -18,7 +19,7 @@ import { absoluteProjectFolder, changeProjectLocation, ProjectLocationConflict, 
 import { HttpError } from "../server";
 import type { Handlers } from "../server";
 
-type DefinitionKind = "node" | "recipe" | "project" | "knowledge" | "prompt" | "script";
+type DefinitionKind = "node" | "recipe" | "project" | "knowledge" | "prompt" | "script" | "icon";
 const pendingDefinitions: WeakMap<Engine, Promise<unknown>> = new WeakMap();
 
 function pathParts(path: string): string[] {
@@ -34,6 +35,7 @@ function fileKind(directory: string, file: string): DefinitionKind | undefined {
   if (directory === "knowledge" && ext === ".md") return "knowledge";
   if (directory === "nodes" && ext === ".md") return "prompt";
   if (directory === "nodes" && ext === ".sh") return "script";
+  if (directory === "icons" && ext === ".svg" && Name.safeParse(basename(file, ext)).success) return "icon";
   if (ext !== ".json" || !Name.safeParse(basename(file, ext)).success) return;
   if (directory === "nodes") return "node";
   if (directory === "recipes") return "recipe";
@@ -128,8 +130,8 @@ export function definitionOperations(engine: Engine) {
       (directory === "knowledge" && (!listing || nested.length === 0))
     );
     const homeDirectory: string | undefined =
-      scope === "templates" && parts.length === 2 && definitionDirectory
-        ? directory === "nodes" ? home.templateNodes : home.templateRecipes
+      scope === "templates" && parts.length === 2 && (definitionDirectory || directory === "icons")
+        ? join(home.templates, directory)
         : undefined;
     const kind: DefinitionKind | undefined = projectFile ? "project" : fileKind(directory, file);
     if ((!projectFile && !projectDirectory && !homeDirectory) || (!listing && !kind)) {
@@ -146,6 +148,9 @@ export function definitionOperations(engine: Engine) {
   function inspect(path: string, kind: DefinitionKind | undefined, id: string | undefined, content: string): Pick<DefinitionEntry, "value" | "errors"> {
     const errors: DefinitionError[] = [];
     if (kind === "knowledge" || kind === "prompt" || kind === "script") return { value: null, errors };
+    if (kind === "icon") return validIcon(content)
+      ? { value: content, errors }
+      : { value: null, errors: [{ file: path, path: "", message: "Use an SVG with a viewBox and basic shapes only." }] };
     let value: unknown;
     try {
       value = JSON.parse(content);

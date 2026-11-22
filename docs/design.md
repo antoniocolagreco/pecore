@@ -258,6 +258,7 @@ $PECORE_HOME/                         default ~/.pecore; its path is stored in E
   tiers.json                          tiers: ordered lists of profiles
   chats.db                            Assistant and Project Manager conversations, notifications (SQLite)
   templates/
+    icons/<name>.svg                   shared icons for nodes and recipes
     nodes/<template>.json             node templates
     nodes/<template>.md               prompt template, for agent node templates
     nodes/<template>.sh               script, for command node templates that use one
@@ -300,6 +301,7 @@ Fields common to every node:
 |---|---|
 | `name` | unique among the templates or in its project |
 | `description` | what the node does; the Assistant and the Project Manager read it to pick and build recipes |
+| `icon` | optional SVG icon name from `templates/icons/`, without the file extension |
 | `kind` | `agent`, `command`, `human` or `source` (section 7; a source node is used by the project, not by recipes) |
 | `params` | JSON Schema of the values a recipe can set |
 | `inputs` | artifact types the node reads (see 3.3) |
@@ -434,6 +436,7 @@ Recipe fields:
 
 | Field | Meaning |
 |---|---|
+| `icon` | optional SVG icon name from `templates/icons/`, without the file extension |
 | `start` | the first node |
 | `onBaseChanged` | the node the job re-enters when its base moves (D17, 4.2) |
 | `maxNodeRuns` | cap on node runs per job (4.2) |

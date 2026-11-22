@@ -56,6 +56,7 @@ const Base = {
   $schema: SchemaRef,
   name: Name,
   description: z.string().min(1),
+  icon: Name.optional(),
   params: JsonSchemaObject.default({}),
 };
 

@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { LiveMessage } from "@pecore/schemas";
+import type { DefinitionEntry, LiveMessage } from "@pecore/schemas";
 import { git } from "../home/git-commit";
 import { apiProject } from "../../test/api-project";
 import { definitionOperations } from "./routes/definitions";
@@ -37,6 +37,29 @@ describe("definition routes", () => {
     await expect(call("getDefinition", { params: { path: "projects/nope/project.json" } })).rejects.toMatchObject({ status: 404 });
     await expect(call("getDefinition", { params: { path: "templates/nodes/missing.json" } })).rejects.toMatchObject({ status: 404 });
     await close();
+  });
+
+  it("lists bundled SVGs and saves reusable icons through the template definition store", async () => {
+    const { call, close } = await apiProject();
+    try {
+      const bundled: DefinitionEntry[] = await call("listDefinitions", { query: { dir: "templates/icons" } });
+      expect(bundled.map(({ path }) => path)).toContain("templates/icons/node-spec-writer.svg");
+      expect(bundled.flatMap(({ errors }) => errors)).toEqual([]);
+      const path: string = "templates/icons/compass.svg";
+      const content: string = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m4 4 16 8-16 8 4-8z"/></svg>';
+      await call("saveDefinition", { params: { path }, body: { content, baseSha256: null } });
+      expect((await call("getDefinition", { params: { path } })).content).toBe(content);
+      expect((await call("listDefinitions", { query: { dir: "templates/icons" } })).find((entry) => entry.path === path)?.value).toBe(content);
+      const invalid: string = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><script/></svg>';
+      await expect(call("saveDefinition", { params: { path: "templates/icons/invalid.svg" }, body: { content: invalid, baseSha256: null } }))
+        .rejects.toMatchObject({ status: 400 });
+      const node: string = JSON.stringify({ name: "mine", description: "Review", icon: "compass", kind: "human", outcomes: ["ok"], changesFiles: false, timeoutSec: 10 });
+      await call("saveDefinition", { params: { path: "templates/nodes/mine.json" }, body: { content: node, baseSha256: null } });
+      await call("instantiate", { body: { kind: "node", name: "mine", project: "demo" } });
+      expect(JSON.parse((await call("getDefinition", { params: { path: "projects/demo/nodes/mine.json" } })).content)).toMatchObject({ icon: "compass" });
+    } finally {
+      await close();
+    }
   });
 
   it("instantiates an engine node and its script without creating a queue item", async () => {

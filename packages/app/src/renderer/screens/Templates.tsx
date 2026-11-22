@@ -1,80 +1,84 @@
-import { useState } from "react";
-import { Link } from "react-router";
-import type { DefinitionEntry, RouteResult } from "@pecore/schemas";
+import { Link, useNavigate, useSearchParams } from "react-router";
+import type { DefinitionEntry } from "@pecore/schemas";
 import { call } from "../api/client";
-import { useAction, useData } from "../api/hooks";
+import { useData } from "../api/hooks";
 import { useConnected } from "../api/live";
-import { Button, Empty, ErrorText, Field, Modal, Page, Panel, ui } from "../components/ui";
-import { DefinitionErrors, definitionUrl, object, string } from "./NodeEditor";
+import { DefinitionIcon, useDefinitionIcons } from "../components/DefinitionIcon";
+import type { DefinitionType } from "../components/DefinitionIcon";
+import { ErrorText, Page, ui } from "../components/ui";
+import { Button } from "../ds/button";
+import { Tabs } from "../ds/data";
+import { Card, EmptyState, Spinner } from "../ds/feedback";
+import { AlertIcon, PlusIcon } from "../ds/icons";
+import { definitionUrl, object, string } from "./NodeEditor";
+import s from "./Templates.module.css";
+
+const nameWords: ReadonlyMap<string, string> = new Map<string, string>([
+  ["bugfix", "Bug Fix"],
+  ["eslint", "ESLint"],
+  ["github", "GitHub"],
+  ["gitlab", "GitLab"],
+  ["mr", "MR"],
+  ["pr", "PR"],
+  ["typecheck", "Type Check"],
+]);
+
+function TemplateList({ type, icons }: { type: DefinitionType; icons: ReadonlyMap<string, string> | undefined }) {
+  const connected: boolean = useConnected();
+  const dir: string = `templates/${type}s`;
+  const templates = useData(() => call("listDefinitions", { query: { dir } }), [dir],
+    (event) => event.type === "definition.changed" && event.path.startsWith(dir + "/"));
+  const entries: DefinitionEntry[] = (templates.data ?? []).filter(({ path }) => path.endsWith(".json"));
+  return (
+    <div className={s.section}>
+      <p className={`${ui.muted} ${s.intro}`}>{type === "node"
+        ? "Nodes define reusable operations, such as running an agent or a command, asking for a review, or fetching tickets."
+        : "Recipes connect nodes and use their outcomes to decide what a job runs next."}</p>
+      <ErrorText error={templates.error} />
+      {templates.loading && !templates.data && <Spinner />}
+      {!templates.loading && !templates.error && !entries.length &&
+        <EmptyState title={`No ${type} templates.`} />}
+      {entries.length > 0 && <ul className={s.list} aria-label={type === "node" ? "Node templates" : "Recipe templates"}>
+        {entries.map(({ path, value, errors }) => {
+          const definition = object(value);
+          const name: string = string(definition.name) || path.slice(dir.length + 1, -5);
+          const title: string = name.split("-").filter(Boolean).map((word) => nameWords.get(word) ?? word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+          const description: string = string(definition.description);
+          const contents = <>
+            <Card className={s.card}>
+              <span className={s.glyph}><DefinitionIcon icons={icons} type={type} name={name} selected={string(definition.icon)} /></span>
+              <strong title={title}>{title}</strong>
+            </Card>
+            <div className={s.description}>
+              {description}
+              {errors.length > 0 && <span className={s.invalid} title={errors.map(({ message }) => message).join("\n")} role="img" aria-label="Definition errors"><AlertIcon /></span>}
+            </div>
+          </>;
+          return <li key={path}>
+            {connected
+              ? <Link className={s.entry} to={definitionUrl(type, path)}>{contents}</Link>
+              : <div className={s.entry}>{contents}</div>}
+          </li>;
+        })}
+      </ul>}
+    </div>
+  );
+}
 
 export function Templates() {
   const connected: boolean = useConnected();
-  const templates = useData(async () => {
-    const [nodes, recipes] = await Promise.all([
-      call("listDefinitions", { query: { dir: "templates/nodes" } }),
-      call("listDefinitions", { query: { dir: "templates/recipes" } }),
-    ]);
-    return { node: nodes.filter((item) => item.path.endsWith(".json")), recipe: recipes.filter((item) => item.path.endsWith(".json")) };
-  }, [], (event) => event.type === "definition.changed" && event.path.startsWith("templates/"));
-  const projects = useData(() => call("listProjects"), [], (event) => event.type === "project.updated" || (event.type === "definition.changed" && event.path.endsWith("/project.json")));
-  const [kind, setKind] = useState("");
-  const [project, setProject] = useState("");
-  const [target, setTarget] = useState<{ kind: "node" | "recipe"; name: string }>();
-  const [result, setResult] = useState<RouteResult<"instantiate">>();
-  const [offset, setOffset] = useState({ node: 0, recipe: 0 });
-  const instantiate = useAction(async () => {
-    if (!target) return;
-    const next = await call("instantiate", { body: { ...target, project } });
-    setResult(next);
-    setTarget(undefined);
-  });
-
-  const section = (type: "node" | "recipe", entries: DefinitionEntry[]) => {
-    const start: number = Math.min(offset[type], Math.max(0, Math.ceil(entries.length / 100) - 1) * 100);
-    return <Panel key={type}>
-    <h2>{type === "node" ? "Node templates" : "Recipe templates"}</h2>
-    {type === "node" && <Field label="Kind"><select disabled={!connected} value={kind} onChange={(event) => { setKind(event.target.value); setOffset({ ...offset, node: 0 }); }}>
-      <option value="">All kinds</option>{["agent", "command", "human", "source"].map((value) => <option key={value}>{value}</option>)}
-    </select></Field>}
-    {templates.loading && <p className={ui.muted}>Loading templates…</p>}
-    {!templates.loading && !entries.length && <Empty>No {type} templates{type === "node" && kind ? " match this kind" : ""}.</Empty>}
-    <table className={ui.table}><thead><tr><th>Name</th><th>Kind</th><th>Description</th><th /></tr></thead><tbody>
-      {entries.slice(start, start + 100).map((item) => {
-        const value = object(item.value);
-        const name: string = string(value.name);
-        return <tr key={item.path}>
-          <td>{connected ? <Link to={definitionUrl(type, item.path)}>{name || item.path.split("/").at(-1)}</Link> : name || item.path.split("/").at(-1)}</td>
-          <td>{type === "recipe" ? "recipe" : string(value.kind)}</td>
-          <td>{string(value.description)}<DefinitionErrors errors={item.errors} /></td>
-          <td><Button disabled={!connected || !name || !!item.errors.length} onClick={() => { instantiate.clear(); setTarget({ kind: type, name }); }}>Instantiate into project</Button></td>
-        </tr>;
-      })}
-    </tbody></table>
-    <div className={ui.row}>
-      {start > 0 && <Button disabled={!connected} onClick={() => setOffset({ ...offset, [type]: start - 100 })}>Previous</Button>}
-      {entries.length > start + 100 && <Button disabled={!connected} onClick={() => setOffset({ ...offset, [type]: start + 100 })}>Show more</Button>}
-    </div>
-  </Panel>;
-  };
-
-  return <Page title="Templates">
-    <ErrorText error={templates.error} />
-    {section("node", (templates.data?.node ?? []).filter((item) => !kind || object(item.value).kind === kind))}
-    {section("recipe", templates.data?.recipe ?? [])}
-    {result && <Panel>
-      <h2>Instantiation result</h2>
-      <p>Created</p>{result.created.length ? <ul>{result.created.map((path) => <li key={path}><code>{path}</code></li>)}</ul> : <p>None</p>}
-      <p>Kept</p>{result.kept.length ? <ul>{result.kept.map((path) => <li key={path}><code>{path}</code></li>)}</ul> : <p>None</p>}
-    </Panel>}
-    <Modal open={!!target} onClose={() => { if (!instantiate.busy) setTarget(undefined); }} title="Instantiate into project">
-      <p>{target?.name}</p>
-      <ErrorText error={projects.error ?? instantiate.error} />
-      <Field label="Project"><select disabled={!connected || instantiate.busy} value={project} onChange={(event) => setProject(event.target.value)}>
-        <option value="">{projects.loading ? "Loading projects…" : "Select a project"}</option>
-        {(projects.data ?? []).filter((item) => item.project && !item.creating).map((item) => <option key={item.id} value={item.id}>{item.project?.name ?? item.id}</option>)}
-      </select></Field>
-      {!projects.loading && !projects.data?.some((item) => item.project && !item.creating) && <Empty>No ready projects. {connected && <Link to="/projects/new">New project</Link>}</Empty>}
-      <Button kind="primary" disabled={!connected || instantiate.busy || !projects.data?.some((item) => item.id === project && item.project && !item.creating)} onClick={() => void instantiate.run()}>Instantiate</Button>
-    </Modal>
+  const icons = useDefinitionIcons();
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const type: DefinitionType = params.get("tab") === "recipes" ? "recipe" : "node";
+  return <Page title="Templates" actions={
+    <Button variant="primary" icon={<PlusIcon />} disabled={!connected} onClick={() => void navigate(`/templates/${type}s/new`)}>
+      {type === "node" ? "New Node" : "New Recipe"}
+    </Button>
+  }>
+    <Tabs value={type} onValueChange={(value) => setParams(value === "recipe" ? { tab: "recipes" } : {}, { replace: true })} tabs={[
+      { value: "node", label: "Node templates", content: <TemplateList type="node" icons={icons.data} /> },
+      { value: "recipe", label: "Recipe templates", content: <TemplateList type="recipe" icons={icons.data} /> },
+    ]} />
   </Page>;
 }

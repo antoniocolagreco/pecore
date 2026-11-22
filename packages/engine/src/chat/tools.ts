@@ -75,7 +75,7 @@ async function source(ctx: ProjectContext, request: SourceRequest): Promise<unkn
 }
 
 function definitionPath(path: string, scope: "template" | "instance" | "knowledge" | "any"): void {
-  const isTemplate: boolean = /^templates\/(nodes|recipes)\//.test(path);
+  const isTemplate: boolean = /^templates\/(nodes|recipes|icons)\//.test(path);
   const isInstance: boolean = /^projects\/[^/]+\/(nodes|recipes)\//.test(path);
   const isKnowledge: boolean = /^projects\/[^/]+\/knowledge\//.test(path);
   if ((scope === "template" || scope === "any") && isTemplate) return;
@@ -211,10 +211,10 @@ export function chatTools(engine: Engine): {
       await settings.putSettings({ params: undefined, query: undefined, body: { value: { ...file.value, user: { name } }, baseSha256: file.sha256 } });
       return { value: { saved: name } };
     }),
-    list_definitions: tool("List the definition files in templates/nodes, templates/recipes, projects/<id>/nodes, projects/<id>/recipes or projects/<id>/knowledge.", z.strictObject({ dir: id }), async ({ dir }) => ({
+    list_definitions: tool("List the definition files in templates/nodes, templates/recipes, templates/icons, projects/<id>/nodes, projects/<id>/recipes or projects/<id>/knowledge.", z.strictObject({ dir: id }), async ({ dir }) => ({
       value: (await definitions.handlers.listDefinitions({ params: undefined, query: { dir }, body: undefined })).map(({ path, errors }) => ({ path, errors })),
     })),
-    read_definition: tool("Read a node, recipe, prompt, script, knowledge or project.json file by its definition path.", z.strictObject({ path: id }), async ({ path }) => ({
+    read_definition: tool("Read a node, recipe, SVG icon, prompt, script, knowledge or project.json file by its definition path.", z.strictObject({ path: id }), async ({ path }) => ({
       value: await definitions.handlers.getDefinition({ params: { path }, query: undefined, body: undefined }),
       target: { path },
     })),
@@ -311,7 +311,7 @@ export function chatTools(engine: Engine): {
         recipes: await definitions.handlers.listDefinitions({ params: undefined, query: { dir: "templates/recipes" }, body: undefined }),
       },
     })),
-    write_template: write("template", "Validate and save a template or node sidecar under templates/nodes or templates/recipes."),
+    write_template: write("template", "Validate and save a template, node sidecar or icon under templates/nodes, templates/recipes or templates/icons. For an icon use <name>.svg, with an SVG namespace, a viewBox and self-closing path, circle, rect, line, polyline, polygon or ellipse elements. A definition's optional icon field is the file name without .svg."),
     instantiate: tool("Add a node or recipe template to a project.", InstantiateBody, async (input) => {
       const value = await definitions.instantiate(input);
       return { value, target: { ...input, paths: value.created }, isError: value.errors.length > 0 };

@@ -318,9 +318,11 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 ### Templates
 
-*   Node templates (filterable by kind) and recipe templates.
-*   "Instantiate into project": instantiating a recipe template also instantiates the node templates it uses (design.md `src/definitions/instantiate.ts`); a name that already exists in the project is kept and listed.
-*   Clicking a row opens the template in the node or recipe editor.
+*   Separate tabs for node templates and recipe templates.
+*   Each tab explains what its templates do and has a New Node or New Recipe button that opens the editor.
+*   Entries form a grid that adds columns as space allows. Each entry pairs a square card with its description. The card shows a large icon above a title such as Cargo Check. Hovering anywhere on the entry highlights it. Clicking it opens the editor. The page scrolls with the full grid.
+*   Add node templates from the project's Nodes tab. Import recipe templates from the project's recipe editor.
+*   The automatic icon uses `node-<name>.svg` or `recipe-<name>.svg` from the shared library, with a built-in default. The editor can select another icon. The Assistant saves new SVGs under `templates/icons/`.
 
 ### Settings
 

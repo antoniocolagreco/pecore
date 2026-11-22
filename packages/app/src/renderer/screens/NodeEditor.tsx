@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { useBlocker, useParams } from "react-router";
-import { ApiError } from "@pecore/schemas";
-import type { DefinitionFile, RouteResult } from "@pecore/schemas";
+import { Link, useBlocker, useNavigate, useParams } from "react-router";
+import { ApiError, Name } from "@pecore/schemas";
+import type { DefinitionFile, Node, RouteResult } from "@pecore/schemas";
 import { basicSetup, EditorView } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
@@ -11,7 +11,10 @@ import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { call } from "../api/client";
 import { errorText, useAction, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
+import { DefinitionIconField, useDefinitionIcons } from "../components/DefinitionIcon";
 import { Button, ErrorText, Field, Modal, Page, Panel, ui } from "../components/ui";
+import { TextArea, TextField } from "../ds/field";
+import { Select } from "../ds/select";
 import s from "./Editors.module.css";
 
 export function object(value: unknown): Record<string, unknown> {
@@ -121,7 +124,7 @@ export function useDefinitionDraft(existingPath: string, sidecar = false, creati
       if (creation) setSavedPath(path);
     } catch (error) {
       if (!(error instanceof ApiError && error.status === 409)) throw error;
-      if (creation) throw new Error("A recipe with this name already exists. Choose another name.", { cause: error });
+      if (creation) throw new Error("A definition with this name already exists. Choose another name.", { cause: error });
       setBase(baseline);
       setChanged(true);
       setCompared(undefined);
@@ -254,14 +257,53 @@ function SidecarFile({ path, name, isMarkdown, onDirty }: { path: string; name: 
   </Panel>;
 }
 
-function NodeFile({ path }: { path: string }) {
-  const file = useDefinitionDraft(path);
+const nodeKinds: { value: Node["kind"]; label: string }[] = [
+  { value: "agent", label: "Agent" },
+  { value: "command", label: "Command" },
+  { value: "human", label: "Human" },
+  { value: "source", label: "Source" },
+];
+const initialNodeFields: Record<Node["kind"], Record<string, unknown>> = {
+  agent: {
+    outcomes: ["done"], changesFiles: false, timeoutSec: 120, agent: { tier: "standard" },
+    outputSchema: { type: "object", properties: { outcome: { type: "string" } }, required: ["outcome"] },
+  },
+  command: {
+    outcomes: ["passed", "failed"], failOutcomes: ["failed"], changesFiles: false, timeoutSec: 120,
+    outcomeRules: [{ exitCode: 0, outcome: "passed" }, { exitCode: "other", outcome: "failed" }],
+  },
+  human: { outcomes: ["approve", "reject"], changesFiles: false, timeoutSec: 120 },
+  source: { list: {}, read: {}, comment: {}, replies: {} },
+};
+const sourceCommands: { key: string; label: string }[] = [
+  { key: "list", label: "List command" },
+  { key: "read", label: "Read command" },
+  { key: "comment", label: "Comment command" },
+  { key: "replies", label: "Replies command" },
+];
+const newNodeTemplate: NewDefinition = {
+  content: JSON.stringify({ $schema: "../../schemas/node.json", name: "", description: "" }, null, 2) + "\n",
+  path(content) {
+    const name = Name.safeParse(parseDraft(content)?.name);
+    return name.success ? `templates/nodes/${name.data}.json` : "";
+  },
+};
+
+function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean }) {
+  const navigate = useNavigate();
+  const creation: NewDefinition | undefined = newTemplate ? newNodeTemplate : undefined;
+  const file = useDefinitionDraft(path, false, creation);
+  const icons = useDefinitionIcons();
   const [json, setJson] = useState(false);
   const [sidecarDirty, setSidecarDirty] = useState(false);
   const [sidecarName, setSidecarName] = useState("");
   const warn = useUnsaved(file.dirty || sidecarDirty);
+  useEffect(() => {
+    if (file.savedPath) void navigate(definitionUrl("node", file.savedPath), { replace: true });
+  }, [file.savedPath, navigate]);
   const draft = parseDraft(file.content);
   const kind: string = string(draft?.kind);
+  const definitionPath: string = creation ? creation.path(file.content) : path;
   const reference: string = string(draft?.[kind === "agent" ? "prompt" : "script"]);
   const validSidecar: string = (kind === "agent" && /^[\w.-]+\.md$/.test(reference)) || (kind === "command" && /^[\w.-]+\.sh$/.test(reference)) ? reference : "";
   useEffect(() => { if (!sidecarDirty) setSidecarName(validSidecar); }, [validSidecar, sidecarDirty]);
@@ -277,7 +319,12 @@ function NodeFile({ path }: { path: string }) {
   const field = (key: string, label: string, input: ReactNode): ReactNode => <div><Field label={label}>{input}</Field>{fieldErrors(key)}</div>;
   const textField = (key: string, label: string): ReactNode => field(key, label, <input value={string(draft?.[key])} onChange={(event) => update(key, event.target.value || undefined)} />);
   const flag = (key: string, label: string): ReactNode => <div><label><input type="checkbox" checked={draft?.[key] === true} onChange={(event) => update(key, event.target.checked)} /> {label}</label>{fieldErrors(key)}</div>;
-  return <Page title={string(draft?.name) || "Node editor"} actions={file.saveButton()}>
+  const commandField = (label: string, value: unknown, onChange: (command: string[] | undefined) => void): ReactNode => (
+    <TextArea label={label} description="Enter the executable and each argument on its own line." value={Array.isArray(value) ? value.join("\n") : ""}
+      onValueChange={(text) => onChange(text ? text.split("\n") : undefined)} />
+  );
+  return <Page title={creation ? "New Node" : string(draft?.name) || "Node editor"} actions={file.saveButton(newTemplate && sidecarDirty)}>
+    {(newTemplate || path.startsWith("templates/")) && <Link to="/templates">Back to templates</Link>}
     {path.startsWith("projects/") && <p className={ui.muted}>Jobs using this node use the new version at their next run of it</p>}
     {file.feedback}
     {file.ready && <Panel>
@@ -287,32 +334,48 @@ function NodeFile({ path }: { path: string }) {
       </div>
       <fieldset className={s.fields} disabled={!file.editable}>
         {json || !draft ? <Field label="Definition JSON"><textarea className={s.json} value={file.content} onChange={(event) => { setJson(true); file.update(event.target.value); }} /></Field> : <>
-          <p>Kind: {kind}</p>
+          {creation ? <>
+            <TextField label="Name" required value={string(draft.name)} disabled={sidecarDirty}
+              description="Lowercase letters, digits and hyphens. Start with a letter." onValueChange={(name) => update("name", name)} />
+            <Select label="Kind" options={nodeKinds} value={kind || null} disabled={sidecarDirty} onValueChange={(value) => {
+              const next: Node["kind"] | undefined = nodeKinds.find((option) => option.value === value)?.value;
+              if (!next) return;
+              const { $schema, name, description, icon, params } = draft;
+              file.update(JSON.stringify({ $schema, name, description, icon, params, kind: next, ...initialNodeFields[next] }, null, 2) + "\n");
+            }} />
+          </> : <p>Kind: {kind}</p>}
           {field("description", "Description", <textarea value={string(draft.description)} onChange={(event) => update("description", event.target.value)} />)}
-          {field("timeoutSec", "Timeout (seconds)", <input type="number" min={1} value={typeof draft.timeoutSec === "number" ? draft.timeoutSec : ""} onChange={(event) => update("timeoutSec", event.target.value ? Number(event.target.value) : undefined)} />)}
-          {kind !== "source" && <>
+          <DefinitionIconField icons={icons.data} type="node" name={string(draft.name)} value={string(draft.icon)} disabled={!file.editable}
+            onChange={(value) => update("icon", value)} />
+          {kind && field("timeoutSec", "Timeout (seconds)", <input type="number" min={1} value={typeof draft.timeoutSec === "number" ? draft.timeoutSec : ""} onChange={(event) => update("timeoutSec", event.target.value ? Number(event.target.value) : undefined)} />)}
+          {kind && kind !== "source" && <>
             {field("outcomes", "Outcomes (comma separated)", <input value={Array.isArray(draft.outcomes) ? draft.outcomes.join(",") : ""} onChange={(event) => update("outcomes", event.target.value ? event.target.value.split(",") : [])} />)}
             {flag("changesFiles", "Changes files")}
           </>}
           {kind === "agent" && <>{textField("prompt", "Prompt file")}{flag("resume", "Resume session")}</>}
           {kind === "command" && <>
-            {textField("script", "Script file")}
+            {creation && !draft.script && commandField("Command", draft.command, (command) => update("command", command))}
+            {(!creation || !draft.command) && textField("script", "Script file")}
             {field("runsAs", "Runs as", <select value={string(draft.runsAs) || "project-user"} onChange={(event) => update("runsAs", event.target.value)}><option>project-user</option><option>engine</option></select>)}
             {flag("cleanCheckout", "Clean checkout")}
           </>}
           {kind === "human" && flag("answer", "Accept an answer")}
+          {creation && kind === "source" && sourceCommands.map(({ key, label }) => {
+            const action = object(draft[key]);
+            return !action.script && <div key={key}>{commandField(label, action.command, (command) => update(key, { ...action, command }))}</div>;
+          })}
           {kind === "source" && field("credentials", "Credentials (comma separated)", <input value={Array.isArray(draft.credentials) ? draft.credentials.join(",") : ""} onChange={(event) => update("credentials", event.target.value ? event.target.value.split(",") : [])} />)}
         </>}
       </fieldset>
       <DefinitionErrors errors={json || !draft ? file.errors : file.errors?.filter(({ path }) => !inlineKeys.includes(path.split(".")[0] ?? ""))} />
     </Panel>}
     {sidecarDirty && sidecarName !== validSidecar && <p className={ui.banner}>Save the open sidecar before switching files.</p>}
-    {sidecarName && <SidecarFile key={sidecarName} path={path.slice(0, path.lastIndexOf("/") + 1) + sidecarName} name={sidecarName} isMarkdown={sidecarName.endsWith(".md")} onDirty={setSidecarDirty} />}
+    {sidecarName && definitionPath && <SidecarFile key={sidecarName} path={definitionPath.slice(0, definitionPath.lastIndexOf("/") + 1) + sidecarName} name={sidecarName} isMarkdown={sidecarName.endsWith(".md")} onDirty={setSidecarDirty} />}
     {warn}
   </Page>;
 }
 
-export function NodeEditor() {
+export function NodeEditor({ newTemplate = false }: { newTemplate?: boolean }) {
   const path: string = useParams()["*"] ?? "";
-  return <NodeFile key={path} path={path} />;
+  return <NodeFile key={newTemplate ? "new-template" : path} path={path} newTemplate={newTemplate} />;
 }

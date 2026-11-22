@@ -7,6 +7,7 @@ import { ProjectManagerField, projectManagerError } from "../components/ProjectM
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
+import { DefinitionIcon, useDefinitionIcons } from "../components/DefinitionIcon";
 import { Button, Empty, ErrorText, Field, Page, ui } from "../components/ui";
 import { Button as DsButton } from "../ds/button";
 import { RadioGroup } from "../ds/choice";
@@ -17,6 +18,7 @@ import { PlusIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
 import { JobTable, useJobs } from "./Jobs";
+import { object, string } from "./NodeEditor";
 import { ProjectExportDialog } from "./ProjectShareDialogs";
 import s from "./ProjectPage.module.css";
 
@@ -89,6 +91,7 @@ function ExistingEditor({ path }: { path: string }) {
 
 function Definitions({ id, kind }: { id: string; kind: "node" | "recipe" }) {
   const connected: boolean = useConnected();
+  const icons = useDefinitionIcons();
   const dir: string = `projects/${id}/${kind}s`;
   const templatesDir: string = `templates/${kind}s`;
   const entries = useData(() => call("listDefinitions", { query: { dir } }), [dir], (m) => m.type === "definition.changed" && m.path.startsWith(dir + "/"));
@@ -112,14 +115,16 @@ function Definitions({ id, kind }: { id: string; kind: "node" | "recipe" }) {
       <ErrorText error={entries.error ?? available.error} />
       {entries.loading && !entries.data ? <Spinner /> :
         files.length === 0 && !entries.error ? <Empty>{kind === "node" ? "No nodes" : "No recipes"}</Empty> : (
-          <ul className={s.files}>{files.slice(start, start + pageSize).map(({ path, errors }) => (
-            <li key={path}>
+          <ul className={s.files}>{files.slice(start, start + pageSize).map(({ path, value, errors }) => {
+            const name: string = path.slice(dir.length + 1, -5);
+            const label = <><DefinitionIcon icons={icons.data} type={kind} name={name} selected={string(object(value).icon)} size="sm" /> {name}</>;
+            return <li key={path}>
               {connected
-                ? <Link className={s.file} to={`/edit/${kind}/${path.split("/").map(encodeURIComponent).join("/")}`}>{path.slice(dir.length + 1).replace(/\.json$/, "")}</Link>
-                : <span className={s.file}>{path.slice(dir.length + 1)}</span>}
+                ? <Link className={s.file} to={`/edit/${kind}/${path.split("/").map(encodeURIComponent).join("/")}`}>{label}</Link>
+                : <span className={s.file}>{label}</span>}
               {errors.length > 0 && <span className={ui.error}> · Definition errors</span>}
-            </li>
-          ))}</ul>
+            </li>;
+          })}</ul>
         )}
       {files.length > pageSize && <div className={ui.row}>
         <Button disabled={!connected || start === 0} onClick={() => setPage(start / pageSize - 1)}>Previous</Button>

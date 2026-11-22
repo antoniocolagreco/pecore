@@ -38,6 +38,7 @@ export const Recipe = z
     $schema: SchemaRef,
     name: Name,
     description: z.string().min(1),
+    icon: Name.optional(),
     start: NodeId.optional(),
     onBaseChanged: NodeId.optional(),
     maxNodeRuns: z.number().int().positive().default(100),
