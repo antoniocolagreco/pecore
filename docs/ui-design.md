@@ -74,7 +74,7 @@
 | IB5 | Unread marker | 6, 7 |
 | IB6 | Answers to agent questions (`agent-question` items) | 6 |
 | IB8 | Automatic compaction at two token thresholds | 6 |
-| IB9 | Project Manager chat inside each project, with the tickets it handled; its reports on new tickets are notifications | 6 |
+| IB9 | Project Manager chat inside each project and on each job page, with the tickets it handled, the orders passed on by the Assistant and its agents' questions; its reports on new tickets are notifications | 6 |
 
 ### C. Jobs
 
@@ -145,7 +145,7 @@
 | Jobs | centre | IC1-IC4 |
 | Job view | detail page | IC3-IC9 |
 | Notifications | centre | ID1-ID9 |
-| Assistant chat | right panel, on every screen; inside a project it shows the project's Project Manager | IB2-IB8 |
+| Assistant chat | right panel, on every screen; inside a project and on a job's page it shows the project's Project Manager | IB2-IB8 |
 | Projects, project page, wizards | centre, detail page, full page | IF1-IF7 |
 | Recipe editor, node editor | detail page | IE1-IE3, IE5 |
 | Library | centre | IE4 |
@@ -239,20 +239,23 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 
 ### Assistant chat (right panel)
 
-*   One chat panel, always on the right of every screen. No conversation list, no page of its own. It follows the page: inside a project (the project page and its sub-pages, the recipe and node editors of its files) it shows that project's Project Manager; everywhere else it shows the Assistant. Each chat keeps its own history. Switching page switches the conversation and discards text typed and not sent.
+*   One chat panel, always on the right of every screen. No conversation list, no page of its own. It follows the page: inside a project (the project page and its sub-pages, the recipe and node editors of its files) and on a single job's page it shows that project's Project Manager; everywhere else, the Jobs list included, it shows the Assistant. Each chat keeps its own history. Switching page switches the conversation and discards text typed and not sent.
 *   Its header shows who you talk to, "Assistant" or "Project Manager", and below it in small muted text the project name for a Project Manager, then the harness, model and effort from Settings > Assistant or Settings > Project Manager, for example "Shop · Claude Code · claude-opus-5-5 · high" ("default effort" when none is chosen). The header also has two icon buttons: Compact, and Clear, which after a confirmation deletes the conversation and starts a new session.
-*   The Project Manager's chat also shows the tickets it handled on its own: each appears as "Ticket 42" with its reply, without the raw ticket data. Talking to it, the user can ask what it did on a ticket. It can do what the Assistant does, but only on its project; creating, deleting, importing or exporting projects and editing the global library stay with the Assistant. What it does on new tickets also arrives as a notification, for example "Shop, ticket 42: The Project Manager created the job Fix login.".
+*   The Project Manager's chat also shows the tickets it handled on its own: each appears as "Ticket 42" with its reply, without the raw ticket data. Talking to it, the user can ask what it did on a ticket. It runs the project's work: jobs, recipes, nodes, knowledge, tickets and agent questions. It writes no code itself. Project settings, creating, deleting, importing or exporting projects and editing the global library stay with the Assistant. What it does on new tickets also arrives as a notification, for example "Shop, ticket 42: The Project Manager created the job Fix login.".
+*   The Assistant reads every project but does no project work. Asked for it, for example "add a job to Shop to fix the login", it passes the order to Shop's Project Manager and says so in one line, never "done". The order appears in the Project Manager's chat from "Assistant". When the Project Manager finishes, fails or is interrupted, its final reply appears in the Assistant's chat from "Project Manager · shop", without starting a new Assistant reply.
+*   A job agent's question also appears in the Project Manager's chat as "Agent question" with a link to the job. The Project Manager answers it when the project's knowledge, recipes or ticket already decide it; otherwise it says the user must decide, and the question waits in Notifications.
+*   Messages from the other agent (an order from the Assistant, a Project Manager's report) longer than about eight lines are shortened with a fade and a "Show more" button; "Show less" shortens them again.
 *   The user's messages sit in a bubble that keeps the accent colour at the bottom-right corner and fades towards the top-left to a lighter shade in light themes, a darker one in dark themes (`--bubble-user`); the Assistant's replies have no bubble.
 *   The reply appears while it is written. Until it starts, animated dots under the user's message show the Assistant is working.
 *   After sending, the cursor stays in the message box.
 *   Images: the clip button, or pasting into the message box, for example a screenshot just taken with Print Screen. Each chosen or pasted image shows above the message box in a 16:9 thumbnail, 128 px wide, where the image fits whole, never cropped, with a remove button in its corner; no file name or size. The pasted text, if any, is not inserted. When the Assistant cannot read images, pasting one shows why instead.
 *   Compaction: the Compact button, or `/compact` typed as a message, sends the harness's own compaction command to the chat's session. The chat shows a divider ("Compacting the conversation…", then "Conversation compacted"), no reply.
 *   Automatic compaction: above the maximum threshold (default 256,000 tokens) the chat compacts at once; above the automatic threshold (default 128,000) it compacts after 5 minutes without use. Both thresholds are in Settings > Assistant; the Project Manager's sessions have their own pair in Settings > Project Manager. The size comes from what the harness reports after each reply.
-*   An order the user gives in the chat is authorised as given: if the user asks to comment on an issue, the Assistant or the Project Manager posts it. A question the Project Manager wants to ask while handling a new ticket still waits for approval in Notifications.
-*   The Assistant can update a project's name, base branch and services Compose path. A deletion request shows the project and what will be removed in a card with Confirm and Reject. Confirm deletes <PE/CORE>'s data only, using the same operation as the project settings page.
+*   An order the user gives in the chat is authorised as given: if the user asks to comment on an issue, the Project Manager posts it. A question the Project Manager wants to ask while handling a new ticket still waits for approval in Notifications.
+*   The Assistant can change a project's name, base branch and services Compose path: a "Change project" card lists each change as "old → new" with Confirm and Reject, and nothing changes before Confirm. Sending a job or other frequent operations have no card. A deletion request shows the project and what will be removed in a card with Confirm and Reject. Confirm deletes <PE/CORE>'s data only, using the same operation as the project settings page.
 *   "Ask the AI" (IE5) puts the cursor in the chat with the current screen's object as context.
 *   Context chip: one at a time, a reference with its scope (for example "Job: Fix login timeout", "Recipe feature (project progetto-1)", "Template recipe feature"). It shows the object of the current screen and changes on navigation; pinning keeps it; removing it sends the next message with no context.
-*   What the Assistant did (IB4) appears under its reply, never under the user's message. Actions that change something (create jobs, answer a job's question, add a node or recipe to a project, comment on a ticket) get a card that links to the job, definition or item to decide. Reads (projects, recipes, ticket, ticket replies, job status, job output, library templates, definition check) become one grey line: "Read: projects, job status".
+*   What the Assistant did (IB4) appears under its reply, never under the user's message. Actions that change something (create jobs, answer a job's question, add a node or recipe to a project, comment on a ticket) get a card that links to the job, definition or item to decide. An order passed to a Project Manager gets a card "Sent to the Project Manager" with a link to the project. Reads (projects, recipes, ticket, ticket replies, job status, job output, library templates, definitions, definition check) become one grey line: "Read: projects, job status".
 *   Agent questions (IB6) appear in the conversation with an answer field.
 *   Replies to the user use the unread marker and a system notification when the window is not focused ("Assistant replied", "Shop: Project Manager replied"). Project Manager reports on new tickets appear in the Notifications log.
 

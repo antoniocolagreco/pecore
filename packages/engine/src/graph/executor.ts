@@ -94,6 +94,7 @@ export type ProjectContext = {
   global(): { profiles: Profiles; tiers: Tiers };
   live?: (attemptId: string, line: RawLine) => void;
   orderAttachments?: (orderId: string, attachmentIds: string[]) => Promise<JobAttachment[]>;
+  agentQuestion?: (itemId: string) => void;
 };
 
 type AttemptExtra = { usage?: Usage; model?: string; cost?: number | null; log: string };
@@ -562,7 +563,7 @@ export class JobExecutor {
     return true;
   }
 
-  private waitForHuman(job: JobRow, run: NodeRunRow, item: QueueItem, body: string, events: NewEvent[] = []): void {
+  private waitForHuman(job: JobRow, run: NodeRunRow, item: QueueItem, body: string, events: NewEvent[] = []): string {
     const itemId: string = ulid();
     assertTransition(this.job(job.id).state, "waiting", { archived: job.archived === 1 });
     this.ctx.db.append([
@@ -573,6 +574,7 @@ export class JobExecutor {
     ]);
     this.ctx.changed(job.id);
     this.ctx.notify({ kind: "needs-user", title: job.title, body, jobId: job.id });
+    return itemId;
   }
 
   private agentQuestion(jobId: string, runId: string): { subject: QuestionSubject; answer: string | null } | null {
@@ -747,7 +749,8 @@ export class JobExecutor {
             retries: attempts - attempt - 1,
           };
           if (result.quotaRejected) this.ctx.agents!.coolDown(profile!.account, "quota", result.quotaRejected.resetAt);
-          this.waitForHuman(job, run, { kind: "agent-question", subject, subjectHash: subjectHash(subject), choices: ["answer"] }, `${run.node} has a question`, [ended("human")]);
+          const itemId: string = this.waitForHuman(job, run, { kind: "agent-question", subject, subjectHash: subjectHash(subject), choices: ["answer"] }, `${run.node} has a question`, [ended("human")]);
+          this.ctx.agentQuestion?.(itemId);
           return false;
         }
         if (result.kind === "waiting") {

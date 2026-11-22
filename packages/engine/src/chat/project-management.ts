@@ -19,6 +19,22 @@ export const ProjectUpdate = ProjectSelection.extend({
   }).refine((changes) => Object.keys(changes).length > 0, "Provide at least one setting to change."),
 });
 
+export async function projectUpdateRows(engine: Engine, { project, changes }: z.infer<typeof ProjectUpdate>): Promise<ChatConfirmationRow[]> {
+  const loaded = engine.project(project);
+  if (engine.creating.has(project) || loaded.deleting) throw new Error("Wait for project setup or deletion to finish.");
+  if (changes.baseBranch !== undefined) await validateBaseBranch(engine.opts.home, changes.baseBranch);
+  const current: Project = loaded.ctx.project;
+  Project.parse({ ...current, ...changes });
+  const compose = (path: string | null): string => path ?? "Detected automatically";
+  return [
+    { label: "Project", value: current.name },
+    { label: "Project ID", value: project },
+    ...(changes.name !== undefined ? [{ label: "Name", value: `${current.name} → ${changes.name}` }] : []),
+    ...(changes.baseBranch !== undefined ? [{ label: "Base branch", value: `${current.baseBranch} → ${changes.baseBranch}` }] : []),
+    ...(changes.services !== undefined ? [{ label: "Compose file", value: `${compose(current.services)} → ${compose(changes.services)}` }] : []),
+  ];
+}
+
 export async function updateProject(engine: Engine, { project, changes }: z.infer<typeof ProjectUpdate>): Promise<void> {
   const loaded = engine.project(project);
   if (engine.creating.has(project) || loaded.deleting) throw new Error("Wait for project setup or deletion to finish.");

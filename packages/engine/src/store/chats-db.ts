@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { monotonicFactory } from "ulid";
-import type { ChatActionView, ChatAttachmentView, ChatMessageView, ChatReference } from "@pecore/schemas";
+import type { ChatActionView, ChatAttachmentView, ChatMessageView, ChatReference, ChatSender } from "@pecore/schemas";
 import { migrate } from "./migrate";
 
 const ulid = monotonicFactory();
@@ -12,13 +12,13 @@ export type Notification = { id: string; kind: string; title: string; body: stri
 
 export type Chat = { id: string; project: string | null };
 export type ChatSession = { sessionId: string | null; sessionKey: string | null };
-export type ChatTurn = ChatMessageView & { chatId: string; orderId: string; orderProject: string | null };
+export type ChatTurn = Omit<ChatMessageView, "sender"> & { chatId: string; orderId: string; orderProject: string | null; sender: ChatSender | null };
 export type ChatAttachment = ChatAttachmentView & { path: string };
 type MessageRow = Omit<ChatTurn, "context"> & { context: string };
 type ActionRow = Omit<ChatActionView, "target"> & { target: string };
 
 const messageColumns = `id, chat_id AS chatId, role, text, context, created_at AS createdAt, state, error, reply_to AS replyTo,
-  COALESCE(order_id, id) AS orderId, order_project AS orderProject`;
+  COALESCE(order_id, id) AS orderId, order_project AS orderProject, sender`;
 const attachmentColumns = "id, message_id AS messageId, mime, size, path";
 
 function messageView(row: MessageRow): ChatTurn {
@@ -73,8 +73,17 @@ export class ChatsDb {
     this.db.transaction(() => {
       this.db.prepare("DELETE FROM attachments WHERE chat_id = ?").run(id);
       this.db.prepare("DELETE FROM messages WHERE chat_id = ?").run(id);
-      this.db.prepare("UPDATE chats SET session_id = NULL, session_key = NULL, context_tokens = NULL, last_read_message_id = NULL WHERE id = ?").run(id);
+      this.db.prepare("UPDATE chats SET session_id = NULL, session_key = NULL, context_tokens = NULL, last_read_message_id = NULL, reported_until = NULL WHERE id = ?").run(id);
     })();
+  }
+
+  reportsSince(chatId: string): ChatTurn[] {
+    return (this.db.prepare(`SELECT ${messageColumns} FROM messages WHERE chat_id = ? AND sender = 'pm'
+      AND id > COALESCE((SELECT reported_until FROM chats WHERE id = ?), '') ORDER BY rowid`).all(chatId, chatId) as MessageRow[]).map(messageView);
+  }
+
+  setReportedUntil(chatId: string, messageId: string): void {
+    this.db.prepare("UPDATE chats SET reported_until = ? WHERE id = ?").run(messageId, chatId);
   }
 
   session(id: string): ChatSession {
@@ -115,11 +124,15 @@ export class ChatsDb {
     return row && messageView(row);
   }
 
-  addMessage(chatId: string, role: ChatMessageView["role"], text: string, context: ChatReference[], { order, replyTo }: { order?: { id: string; project: string }; replyTo?: string } = {}): ChatTurn {
+  addMessage(chatId: string, role: ChatMessageView["role"], text: string, context: ChatReference[], { order, replyTo, sender }: { order?: { id: string; project: string }; replyTo?: string; sender?: ChatSender } = {}): ChatTurn {
     const id: string = ulid();
-    this.db.prepare(`INSERT INTO messages (id, chat_id, role, text, context, state, order_id, order_project, reply_to, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, chatId, role, text, JSON.stringify(context), role === "user" ? "queued" : "completed", order?.id ?? null, order?.project ?? null, replyTo ?? null, Date.now());
+    this.db.prepare(`INSERT INTO messages (id, chat_id, role, text, context, state, order_id, order_project, reply_to, sender, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, chatId, role, text, JSON.stringify(context), role === "user" ? "queued" : "completed", order?.id ?? null, order?.project ?? null, replyTo ?? null, sender ?? null, Date.now());
     return this.message(chatId, id)!;
+  }
+
+  pendingDelegations(): ChatTurn[] {
+    return (this.db.prepare(`SELECT ${messageColumns} FROM messages WHERE sender = 'assistant' AND state IN ('queued', 'running') ORDER BY rowid`).all() as MessageRow[]).map(messageView);
   }
 
   setMessageState(id: string, state: ChatMessageView["state"], error: string | null = null): void {
@@ -134,7 +147,7 @@ export class ChatsDb {
     this.db.transaction(() => {
       this.db.prepare("UPDATE messages SET state = 'interrupted' WHERE state IN ('queued', 'running')").run();
       this.db.prepare("UPDATE actions SET target = ? WHERE json_extract(target, '$.state') = 'running'").run(JSON.stringify({ state: "interrupted" }));
-      this.db.prepare("UPDATE actions SET target = json_set(target, '$.state', 'interrupted') WHERE json_extract(target, '$.state') IN ('creating_project', 'deleting_project', 'importing_project', 'exporting_project')").run();
+      this.db.prepare("UPDATE actions SET target = json_set(target, '$.state', 'interrupted') WHERE json_extract(target, '$.state') IN ('creating_project', 'updating_project', 'deleting_project', 'importing_project', 'exporting_project')").run();
     })();
   }
 

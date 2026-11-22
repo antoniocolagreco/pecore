@@ -18,6 +18,10 @@ export function chatHandlers(engine: Engine) {
       await chats.answerProjectAction("delete_project", params.id, body.decision);
       return { ok: true as const };
     },
+    answerChatProjectUpdate: async ({ params, body }) => {
+      await chats.answerProjectAction("update_project", params.id, body.decision);
+      return { ok: true as const };
+    },
     answerChatProjectImport: async ({ params, body }) => {
       await chats.answerProjectShare(params.id, { tool: "import_project", ...body });
       return { ok: true as const };

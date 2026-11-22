@@ -189,6 +189,8 @@ export const ChatReference = z.strictObject({
   template: Name.optional(),
 }).refine((reference) => Object.keys(reference).length > 0, "a context reference is required");
 export type ChatReference = z.infer<typeof ChatReference>;
+export const ChatSender = z.enum(["assistant", "pm", "job"]);
+export type ChatSender = z.infer<typeof ChatSender>;
 export const ChatMessageView = z.object({
   id: z.string(),
   role: z.enum(["user", "assistant"]),
@@ -199,6 +201,7 @@ export const ChatMessageView = z.object({
   error: z.string().nullable(),
   replyTo: z.string().nullable(),
   ticket: z.string().optional(),
+  sender: ChatSender.optional(),
 });
 export type ChatMessageView = z.infer<typeof ChatMessageView>;
 export const ChatAttachmentView = z.object({
@@ -513,6 +516,7 @@ export const routes = {
   clearChat: { method: "DELETE", path: "/chat", response: Ok },
   answerChatProjectCreation: { method: "POST", path: "/chat/actions/:id/project-creation", params: IdParams, body: z.strictObject({ decision: z.enum(["approve", "cancel"]) }), response: Ok },
   answerChatProjectDeletion: { method: "POST", path: "/chat/actions/:id/project-deletion", params: IdParams, body: z.strictObject({ decision: z.enum(["approve", "cancel"]) }), response: Ok },
+  answerChatProjectUpdate: { method: "POST", path: "/chat/actions/:id/project-update", params: IdParams, body: z.strictObject({ decision: z.enum(["approve", "cancel"]) }), response: Ok },
   answerChatProjectImport: { method: "POST", path: "/chat/actions/:id/project-import", params: IdParams, body: z.discriminatedUnion("decision", [
     z.strictObject({ decision: z.literal("approve"), selection: ImportProjectSelection }),
     z.strictObject({ decision: z.literal("cancel") }),

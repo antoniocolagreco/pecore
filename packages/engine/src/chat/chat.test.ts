@@ -510,7 +510,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     }
   }, 90000);
 
-  it("updates only validated settings and deletes a project only after its chat card is confirmed", async () => {
+  it("changes validated settings and deletes a project only after their chat cards are confirmed", async () => {
     const t = await setup((root) => [[
       ...init(), ...newSession, { expect: "session/prompt" },
       { dump: join(root, "manage-project.json") }, { waitFile: join(root, "done") }, ...replyWith("Check the project card."),
@@ -524,19 +524,37 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       await until(() => existsSync(join(t.root, "manage-project.json")));
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       const get = () => t.call("getProject", { params: { id: "managed" } });
-      const update = (changes: unknown) => m.tool("update_project", { project: "managed", changes });
+      const propose = (changes: unknown) => m.tool("update_project", { project: "managed", changes });
+      const answerUpdate = (id: string, decision: "approve" | "cancel") => t.call("answerChatProjectUpdate", { params: { id }, body: { decision } });
+      const update = async (changes: unknown): Promise<string> => {
+        expect((await propose(changes)).result?.content?.[0]?.text).toBe('{"state":"awaiting_confirmation"}');
+        const action = (await t.call("getChat")).actions.at(-1)!;
+        expect(action).toMatchObject({ tool: "update_project", target: { state: "awaiting_confirmation" } });
+        return action.id;
+      };
       const original = await get();
       expect((await m.tool("get_project", { project: "managed" })).result?.content?.[0]?.text).toContain('"name":"Managed"');
       for (const changes of [{}, { name: " " }, { baseBranch: "bad..branch" }, { services: "../compose.yaml" }, { repo: null }]) {
-        expect((await update(changes)).result?.isError).toBe(true);
+        expect((await propose(changes)).result?.isError).toBe(true);
       }
       expect(await get()).toEqual(original);
-      expect((await update({ name: "Renamed", services: "ops/compose.yaml" })).result?.isError).toBeUndefined();
+      const renamed: string = await update({ name: "Renamed", services: "ops/compose.yaml" });
+      expect((await t.call("getChat")).actions.at(-1)?.target).toMatchObject({ rows: [
+        { label: "Project", value: "Managed" }, { label: "Project ID", value: "managed" },
+        { label: "Name", value: "Managed → Renamed" }, { label: "Compose file", value: "Detected automatically → ops/compose.yaml" },
+      ] });
+      expect(await get()).toEqual(original);
+      const cancelled: string = await update({ name: "Never" });
+      await answerUpdate(cancelled, "cancel");
+      await expect(answerUpdate(cancelled, "approve")).rejects.toThrow("no longer pending");
+      expect(await get()).toEqual(original);
+      await answerUpdate(renamed, "approve");
+      expect((await t.call("getChat")).actions.find(({ id }) => id === renamed)?.target).toMatchObject({ state: "approved", project: "managed" });
       expect((await get()).project).toEqual({ ...original.project, name: "Renamed", services: "ops/compose.yaml" });
-      expect((await update({ services: null })).result?.isError).toBeUndefined();
+      await answerUpdate(await update({ services: null }), "approve");
       expect((await get()).project?.services).toBeNull();
 
-      const propose = async (name: string): Promise<string> => {
+      const proposeDeletion = async (name: string): Promise<string> => {
         expect((await m.tool("delete_project", { project: "managed" })).result?.content?.[0]?.text).toBe('{"state":"awaiting_confirmation"}');
         const action = (await t.call("getChat")).actions.at(-1)!;
         expect(action.target).toMatchObject({ state: "awaiting_confirmation", rows: expect.arrayContaining([
@@ -545,7 +563,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
         return action.id;
       };
       const answer = (id: string, decision: "approve" | "cancel") => t.call("answerChatProjectDeletion", { params: { id }, body: { decision } });
-      const rejected: string = await propose("Renamed");
+      const rejected: string = await proposeDeletion("Renamed");
       expect(existsSync(t.engine.projectDir("managed"))).toBe(true);
       const { token } = JSON.parse(await readFile(tokenFile, "utf8")) as { token: string };
       const denied: Response = await fetch(`http://127.0.0.1:${t.api.port}/chat/actions/${rejected}/project-deletion`, {
@@ -556,13 +574,13 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       await expect(answer(rejected, "approve")).rejects.toThrow("no longer pending");
       expect((await get()).project?.name).toBe("Renamed");
 
-      const stale: string = await propose("Renamed");
-      expect((await update({ name: "Demo updated" })).result?.isError).toBeUndefined();
+      const stale: string = await proposeDeletion("Renamed");
+      await answerUpdate(await update({ name: "Demo updated" }), "approve");
       await answer(stale, "approve");
       expect((await t.call("getChat")).actions.find(({ id }) => id === stale)?.target).toMatchObject({ state: "failed", error: expect.stringContaining("project changed") });
       expect((await get()).project?.name).toBe("Demo updated");
 
-      const approved: string = await propose("Demo updated");
+      const approved: string = await proposeDeletion("Demo updated");
       const decisions = await Promise.allSettled([answer(approved, "approve"), answer(approved, "approve")]);
       expect(decisions.map(({ status }) => status).sort()).toEqual(["fulfilled", "rejected"]);
       expect((await t.call("getChat")).actions.find(({ id }) => id === approved)?.target).toMatchObject({ state: "approved" });
@@ -672,7 +690,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     }
   }, 30_000);
 
-  it("passes no token on the command line, binds create_jobs to the order, saves recipe changes, caps read_artifact and stores the reply", async () => {
+  it("passes no token on the command line, leaves project work to the Project Manager, caps read_artifact and stores the reply", async () => {
     const t = await setup((root) => [[
       ...init(),
       { expect: "session/new" },
@@ -680,14 +698,14 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       { send: { jsonrpc: "2.0", id: "$id", result: { sessionId: "S1" } } },
       { expect: "session/prompt" },
       { waitFile: join(root, "done") },
-      ...replyWith("Two jobs created."),
+      ...replyWith("Read the log."),
     ]]);
     const { ctx } = t.engine.project("demo");
     const bigJob = await t.engine.createJob("demo", { title: "Big", recipe: "big", ticket: { text: "x" } });
     await until(() => ctx.db.db.prepare("SELECT state FROM jobs WHERE id = ? AND state = 'succeeded'").get(bigJob));
     const bigRun = (ctx.db.db.prepare("SELECT id FROM node_runs WHERE job_id = ?").get(bigJob) as { id: string }).id;
 
-    const message = await t.call("sendChatMessage", { body: { text: "Add an API and a UI job to demo" } });
+    const message = await t.call("sendChatMessage", { body: { text: "Read the big job's log" } });
     await until(() => existsSync(join(t.root, "session-new.json")));
     const servers = (JSON.parse(await readFile(join(t.root, "session-new.json"), "utf8")) as { params: { mcpServers: { args: string[] }[] } }).params.mcpServers;
     expect(servers).toHaveLength(1);
@@ -702,36 +720,33 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
 
     const m = mcp(tokenFile);
     expect((await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } })).result).toBeDefined();
-    expect((await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name)).toEqual(expect.arrayContaining(["create_jobs", "create_project", "list_projects", "read_artifact", "answer_question", "write_instance"]));
-    const created = await m.tool("create_jobs", { project: "demo", plan });
-    expect(created.error).toBeUndefined();
-    expect(created.result!.isError).not.toBe(true);
-    await m.tool("create_jobs", { project: "demo", plan: [{ key: "other", title: "Other", ticketText: "x", recipe: "reviewed", dependsOn: [] }] });
-    expect(ctx.db.db.prepare("SELECT order_key FROM jobs WHERE order_id = ? ORDER BY order_key").all(message.id)).toEqual([{ order_key: "api" }, { order_key: "ui" }]);
+    const names: string[] = (await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name);
+    expect(names).toEqual(expect.arrayContaining(["create_project", "update_project", "delete_project", "write_template", "delegate_to_pm", "list_projects", "list_definitions", "read_definition", "read_artifact", "job_status"]));
+    for (const name of ["create_jobs", "answer_question", "instantiate", "write_instance", "write_knowledge", "comment_ticket"]) expect(names).not.toContain(name);
+    const refused = await m.tool("create_jobs", { project: "demo", plan });
+    expect(refused.result!.isError).toBe(true);
+    expect(refused.result!.content![0]!.text).toContain("unknown tool create_jobs");
+    expect(ctx.db.db.prepare("SELECT count(*) AS n FROM jobs WHERE order_id = ?").get(message.id)).toEqual({ n: 0 });
+    expect((await m.tool("read_definition", { path: "projects/demo/recipes/reviewed.json" })).result!.content![0]!.text).toContain("write, human review, commit");
+    expect((await m.tool("list_definitions", { dir: "library/recipes" })).result!.content![0]!.text).toContain("library/recipes/reviewed.json");
 
     const log = await m.tool("read_artifact", { view: "log", jobId: bigJob, nodeRunId: bigRun });
     const logText = log.result!.content!.map((c) => c.text).join("");
     expect(logText).toContain("END");
     expect(logText).not.toContain("HEAD");
     expect(logText.length).toBeLessThan(210_000);
-
-    const recipeFile = join(t.engine.projectDir("demo"), "recipes", "reviewed.json");
-    const changed = JSON.stringify({ ...reviewed, description: "changed by the Assistant" }, null, 2) + "\n";
-    const saved = await m.tool("write_instance", { path: "projects/demo/recipes/reviewed.json", content: changed });
-    expect(saved.result?.isError).toBeUndefined();
     m.close();
-    expect(JSON.parse(await readFile(recipeFile, "utf8"))).toMatchObject({ description: "changed by the Assistant" });
 
     await writeFile(join(t.root, "done"), "");
     const detail = await until(async () => {
       const d = await t.call("getChat");
-      return d.messages.some((x) => x.role === "assistant" && x.text.includes("Two jobs created.")) && d;
+      return d.messages.some((x) => x.role === "assistant" && x.text.includes("Read the log.")) && d;
     });
     expect(detail.messages.find((x) => x.id === message.id)?.state).toBe("completed");
     await t.close();
   }, 60000);
 
-  it("marks a turn cut by a restart interrupted, and Retry reruns it with the same order", async () => {
+  it("marks a turn cut by a restart interrupted, and Retry reruns the same message", async () => {
     const t = await setup((root) => [
       [...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "first.json") }, { sleep: 60000 }],
       [...init(), { expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }, { expect: "session/prompt" }, { dump: join(root, "retried.json") }, { waitFile: join(root, "done") }, ...replyWith("Retried.")],
@@ -746,12 +761,8 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     expect(interrupted.messages.find((x) => x.id === message.id)?.state).toBe("interrupted");
     await again.call("retryChatMessage", { params: { id: message.id } });
     await until(() => existsSync(join(t.root, "retried.json")));
-    const m = mcp(tokenFileOf("assistant"));
-    await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
-    expect((await m.tool("create_jobs", { project: "demo", plan })).error).toBeUndefined();
-    m.close();
-    const { ctx } = again.engine.project("demo");
-    expect(ctx.db.db.prepare("SELECT count(*) AS n FROM jobs WHERE order_id = ?").get(message.id)).toEqual({ n: 2 });
+    expect(await readFile(join(t.root, "retried.json"), "utf8")).toContain("Add an API and a UI job to demo");
+    expect((await again.call("getChat")).messages.filter(({ role }) => role === "user").map(({ id }) => id)).toEqual([message.id]);
     await writeFile(join(t.root, "done"), "");
     await until(async () => (await again.call("getChat")).messages.some((x) => x.role === "assistant" && x.text.includes("Retried.")));
     await again.close();
@@ -814,7 +825,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     }
   }, 60000);
 
-  it("holds a question from the Project Manager for the user's approval; the Assistant posts the user's order at once", async () => {
+  it("holds a question from the Project Manager for the user's approval; the Assistant cannot post on tickets", async () => {
     const t = await setup((root) => [
       init(),
       [...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "assistant.json") }, { waitFile: join(root, "assistant-done") }, ...replyWith("Posted.")],
@@ -856,9 +867,9 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       await until(() => existsSync(join(t.root, "assistant.json")));
       const own = mcp(tokenFileOf("assistant"));
       await own.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
-      expect((await own.tool("comment_ticket", { project: "demo", ticketId: "7", text: "Which page?" })).result!.isError).not.toBe(true);
+      expect((await own.tool("comment_ticket", { project: "demo", ticketId: "7", text: "Which page?" })).result!.isError).toBe(true);
       own.close();
-      expect(await posted()).toBe(2);
+      expect(await posted()).toBe(1);
       expect(ctx.db.db.prepare("SELECT count(*) AS n FROM human_queue WHERE kind = 'outbound' AND state = 'open'").get()).toEqual({ n: 0 });
       await writeFile(join(t.root, "assistant-done"), "");
     } finally {
@@ -892,20 +903,35 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
 
       const sent = await t.call("sendProjectChatMessage", { params: { id: "demo" }, body: { text: "Write a note and ask on ticket 7 which browser" } });
       await until(() => existsSync(join(t.root, "user.json")));
-      expect(await readFile(join(t.root, "user.json"), "utf8")).toContain("Any other message is the user's order");
+      const userPrompt: string = await readFile(join(t.root, "user.json"), "utf8");
+      expect(userPrompt).toContain("Any other message is the user's order");
+      expect(userPrompt).toContain("prompt injection");
+      expect(userPrompt).toContain("You do not write code yourself");
       const m = mcp(tokenFileOf(intakeChat(t)));
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       const names: string[] = (await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name);
-      expect(names).toEqual(expect.arrayContaining(["write_knowledge", "write_instance", "update_project", "instantiate", "create_jobs", "comment_ticket"]));
-      for (const name of ["create_project", "delete_project", "import_project", "export_project", "write_template"]) expect(names).not.toContain(name);
+      expect(names).toEqual(expect.arrayContaining(["write_knowledge", "write_instance", "instantiate", "create_jobs", "comment_ticket", "answer_question", "read_definition", "list_definitions"]));
+      for (const name of ["create_project", "update_project", "delete_project", "import_project", "export_project", "write_template", "delegate_to_pm"]) expect(names).not.toContain(name);
       expect((await m.tool("write_knowledge", { path: "projects/demo/knowledge/notes.md", content: "# Notes\n" })).result!.isError).not.toBe(true);
       const outside = await m.tool("write_knowledge", { path: "projects/other/knowledge/notes.md", content: "# Notes\n" });
       expect(outside.result!.isError).toBe(true);
       expect(outside.result!.content![0]!.text).toContain("acts only on its own project");
+      expect((await m.tool("read_definition", { path: "projects/demo/knowledge/notes.md" })).result!.content![0]!.text).toContain("# Notes");
+      expect((await m.tool("list_definitions", { dir: "projects/demo/knowledge" })).result!.content![0]!.text).toContain("projects/demo/knowledge/notes.md");
+      expect((await m.tool("read_definition", { path: "library/recipes/reviewed.json" })).result!.isError).not.toBe(true);
+      expect((await m.tool("read_definition", { path: "projects/other/knowledge/notes.md" })).result!.content![0]!.text).toContain("acts only on its own project");
+      expect((await m.tool("list_definitions", { dir: "projects/other/knowledge" })).result!.content![0]!.text).toContain("acts only on its own project");
       expect((await m.tool("get_project", { project: "other" })).result!.isError).toBe(true);
+      expect((await m.tool("update_project", { project: "demo", changes: { name: "Blocked" } })).result!.isError).toBe(true);
       expect((await m.tool("delete_project", { project: "demo" })).result!.isError).toBe(true);
       expect((await m.tool("comment_ticket", { project: "demo", ticketId: "7", text: "Which browser?" })).result!.isError).not.toBe(true);
+      expect((await m.tool("create_jobs", { project: "demo", plan })).result!.isError).not.toBe(true);
+      await m.tool("create_jobs", { project: "demo", plan: [{ key: "other", title: "Other", ticketText: "x", recipe: "reviewed", dependsOn: [] }] });
+      expect(ctx.db.db.prepare("SELECT order_key FROM jobs WHERE order_id = ? ORDER BY order_key").all(sent.id)).toEqual([{ order_key: "api" }, { order_key: "ui" }]);
+      const changed = JSON.stringify({ ...reviewed, description: "changed by the Project Manager" }, null, 2) + "\n";
+      expect((await m.tool("write_instance", { path: "projects/demo/recipes/reviewed.json", content: changed })).result?.isError).toBeUndefined();
       m.close();
+      expect(JSON.parse(await readFile(join(t.engine.projectDir("demo"), "recipes", "reviewed.json"), "utf8"))).toMatchObject({ description: "changed by the Project Manager" });
       expect((await readFile(comments, "utf8")).trim().split("\n")).toHaveLength(1);
       expect(ctx.db.db.prepare("SELECT count(*) AS n FROM human_queue WHERE kind = 'outbound'").get()).toEqual({ n: 0 });
 
@@ -924,6 +950,144 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect((await t.call("getChat")).messages).toEqual([]);
       await expect(t.call("getProjectChat", { params: { id: "nope" } })).rejects.toThrow();
     } finally {
+      await t.close();
+    }
+  }, 60000);
+
+  it("passes an Assistant order with its image to the Project Manager, and posts the final reply back without starting an Assistant turn", async () => {
+    const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
+    const t = await setup((root) => [
+      init(true),
+      [...init(true), ...newSession, { expect: "session/prompt" }, { dump: join(root, "assistant.json") }, { waitFile: join(root, "assistant-done") }, ...replyWith("Sent to Demo's Project Manager.")],
+      [...init(true), ...resumed, { expect: "session/prompt" }, { dump: join(root, "assistant-2.json") }, ...replyWith("Demo has the API job.")],
+    ], {
+      pm: (root) => [
+        init(true),
+        [...init(true), ...newSession, { expect: "session/prompt" }, { dump: join(root, "pm.json") }, { waitFile: join(root, "pm-done") }, ...replyWith("Created the API job.")],
+      ],
+    });
+    try {
+      const { ctx } = t.engine.project("demo");
+      const attachment = await t.call("uploadChatAttachment", { body: { mime: "image/png", data: png } });
+      await t.call("sendChatMessage", { body: { text: "Ask Demo for an API job like in this screenshot", attachmentIds: [attachment.id] } });
+      await until(() => existsSync(join(t.root, "assistant.json")));
+      const assistantPrompt: string = await readFile(join(t.root, "assistant.json"), "utf8");
+      expect(assistantPrompt).toContain("call delegate_to_pm");
+      expect(assistantPrompt).toContain("Never say the work is done");
+      const m = mcp(tokenFileOf("assistant"));
+      await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+      expect((await m.tool("delegate_to_pm", { project: "nope", order: "Create a job." })).result!.isError).toBe(true);
+      expect((await m.tool("delegate_to_pm", { project: "demo", order: "Create a job.", attachmentIds: ["unknown"] })).result!.content![0]!.text).toContain("is not part of the current message");
+      const sent = await m.tool("delegate_to_pm", { project: "demo", order: "Create an API job like in the screenshot.", attachmentIds: [attachment.id] });
+      expect(sent.result!.content![0]!.text).toBe('{"state":"sent"}');
+      m.close();
+
+      await until(() => existsSync(join(t.root, "pm.json")));
+      const pmPrompt = (JSON.parse(await readFile(join(t.root, "pm.json"), "utf8")) as { params: { prompt: { type: string; text?: string; data?: string }[] } }).params.prompt;
+      expect(pmPrompt[0]!.text).toContain("Current order, passed on by the Assistant:\n\nCreate an API job like in the screenshot.");
+      expect(pmPrompt[0]!.text).not.toContain("Ask Demo for an API job");
+      expect(pmPrompt).toContainEqual(expect.objectContaining({ type: "image", mimeType: "image/png", data: png }));
+      const pmChat: ChatDetail = await t.call("getProjectChat", { params: { id: "demo" } });
+      expect(pmChat.messages).toMatchObject([{ role: "user", sender: "assistant", text: "Create an API job like in the screenshot.", context: [{ project: "demo" }] }]);
+      expect(pmChat.attachments).toEqual([{ id: expect.not.stringMatching(attachment.id), messageId: pmChat.messages[0]!.id, mime: "image/png", size: attachment.size }]);
+      const pm = mcp(tokenFileOf(intakeChat(t)));
+      await pm.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+      expect((await pm.tool("create_jobs", { project: "demo", plan: [{ key: "api", title: "API", ticketText: "add the endpoint", recipe: "reviewed", dependsOn: [], attachmentIds: [pmChat.attachments[0]!.id] }] })).result!.isError).not.toBe(true);
+      pm.close();
+      expect(ctx.db.db.prepare("SELECT order_key FROM jobs WHERE order_id = ?").all(pmChat.messages[0]!.id)).toEqual([{ order_key: "api" }]);
+
+      await writeFile(join(t.root, "assistant-done"), "");
+      await until(async () => (await t.call("getChat")).messages.some(({ text }) => text === "Sent to Demo's Project Manager."));
+      await writeFile(join(t.root, "pm-done"), "");
+      const reported: ChatDetail = await until(async () => {
+        const snapshot: ChatDetail = await t.call("getChat");
+        return snapshot.messages.some(({ sender }) => sender === "pm") && snapshot;
+      });
+      expect(reported.messages.map(({ role, sender, text, state }) => [role, sender, text, state])).toEqual([
+        ["user", undefined, "Ask Demo for an API job like in this screenshot", "completed"],
+        ["assistant", undefined, "Sent to Demo's Project Manager.", "completed"],
+        ["assistant", "pm", "Created the API job.", "completed"],
+      ]);
+      expect(reported.messages.at(-1)).toMatchObject({ context: [{ project: "demo" }], replyTo: null });
+      expect(reported.unread).toBe(2);
+
+      await t.call("sendChatMessage", { body: { text: "What did Demo say?" } });
+      await until(() => existsSync(join(t.root, "assistant-2.json")));
+      const second: string = await readFile(join(t.root, "assistant-2.json"), "utf8");
+      expect(second).toContain("Project Manager reports since your last turn");
+      expect(second).toContain("Created the API job.");
+      await until(async () => (await t.call("getChat")).messages.some(({ text }) => text === "Demo has the API job."));
+    } finally {
+      await writeFile(join(t.root, "assistant-done"), "");
+      await writeFile(join(t.root, "pm-done"), "");
+      await t.close();
+    }
+  }, 60000);
+
+  it("tells the Assistant when a restart interrupts an order it passed to a Project Manager", async () => {
+    const t = await setup((root) => [[...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "assistant.json") }, { waitFile: join(root, "assistant-done") }, ...replyWith("Sent.")]], {
+      pm: (root) => [[...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "pm.json") }, { sleep: 60000 }]],
+    });
+    await t.call("sendChatMessage", { body: { text: "Ask Demo for an API job" } });
+    await until(() => existsSync(join(t.root, "assistant.json")));
+    const m = mcp(tokenFileOf("assistant"));
+    await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+    expect((await m.tool("delegate_to_pm", { project: "demo", order: "Create an API job." })).result!.isError).not.toBe(true);
+    m.close();
+    await until(() => existsSync(join(t.root, "pm.json")));
+    await writeFile(join(t.root, "assistant-done"), "");
+    await until(async () => (await t.call("getChat")).messages.some(({ text }) => text === "Sent."));
+    await t.close();
+
+    const again = await t.open();
+    try {
+      const reports = (await again.call("getChat")).messages.filter(({ sender }) => sender === "pm");
+      expect(reports).toMatchObject([{ role: "assistant", context: [{ project: "demo" }], text: "This order was interrupted before I finished it. Retry it in this project's chat." }]);
+      expect((await again.call("getProjectChat", { params: { id: "demo" } })).messages).toMatchObject([{ sender: "assistant", state: "interrupted" }]);
+    } finally {
+      await again.close();
+    }
+  }, 60000);
+
+  it("asks the Project Manager a job agent's question with only the tools to read the project and answer that question", async () => {
+    const t = await setup(() => [init()], {
+      pm: (root) => [[...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "question.json") }, { waitFile: join(root, "done") }, ...replyWith("The user must decide: the knowledge does not say.")]],
+    });
+    try {
+      const system: { kind: string }[] = [];
+      t.engine.on("notify", (n: { kind: string }) => system.push(n));
+      const { ctx } = t.engine.project("demo");
+      const jobId: string = await t.engine.createJob("demo", { title: "Fix", recipe: "reviewed", ticket: { text: "x" } });
+      const ask = (itemId: string, question: string) => ctx.db.append([{ jobId, type: "queue.added", payload: { itemId, kind: "agent-question", subject: { question, node: "write" }, subjectHash: "a".repeat(64), choices: ["answer"] } }]);
+      ask("question-1", "Which database?");
+      ask("question-2", "Which cache?");
+      t.engine.agentChats.askPm("demo", "missing");
+      t.engine.agentChats.askPm("demo", "question-1");
+      await until(() => existsSync(join(t.root, "question.json")));
+      const prompt: string = await readFile(join(t.root, "question.json"), "utf8");
+      expect(prompt).toContain("Answer this agent question");
+      expect(prompt).toContain("Which database?");
+      expect(prompt).toContain("Call answer_question only if they already decide the answer");
+      const m = mcp(tokenFileOf(intakeChat(t)));
+      await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+      expect((await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name).sort())
+        .toEqual(["answer_question", "job_status", "list_definitions", "list_recipes", "read_artifact", "read_definition", "read_replies", "read_ticket"]);
+      expect((await m.tool("answer_question", { itemId: "question-2", answer: "Redis" })).result!.content![0]!.text).toContain("answer only the question in the current message");
+      expect((await m.tool("create_jobs", { project: "demo", plan })).result!.isError).toBe(true);
+      expect((await m.tool("read_definition", { path: "projects/other/knowledge/notes.md" })).result!.content![0]!.text).toContain("acts only on its own project");
+      m.close();
+      expect(ctx.db.db.prepare("SELECT id FROM human_queue WHERE kind = 'agent-question' AND state = 'open' ORDER BY id").all()).toEqual([{ id: "question-1" }, { id: "question-2" }]);
+      await writeFile(join(t.root, "done"), "");
+      const chat: ChatDetail = await until(async () => {
+        const snapshot: ChatDetail = await t.call("getProjectChat", { params: { id: "demo" } });
+        return snapshot.messages.some(({ role }) => role === "assistant") && snapshot;
+      });
+      expect(chat.messages.map(({ role, sender, ticket }) => [role, sender, ticket])).toEqual([["user", "job", undefined], ["assistant", undefined, undefined]]);
+      expect(chat.messages[0]!.context).toEqual([{ project: "demo", jobId }]);
+      expect(system.filter(({ kind }) => kind === "pm-replied")).toEqual([]);
+      expect((await t.call("getChat")).messages).toEqual([]);
+    } finally {
+      await writeFile(join(t.root, "done"), "");
       await t.close();
     }
   }, 60000);

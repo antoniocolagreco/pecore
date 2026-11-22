@@ -90,6 +90,7 @@ describe("agent nodes with the fake agent (5.4)", () => {
     const sent = raw.find((l) => l.dir === "out" && (l.msg as { method?: string }).method === "session/prompt") as { msg: { params: { prompt: { text: string }[] } } };
     expect(sent.msg.params.prompt[0]!.text).toContain("Do the task Fix it.");
     expect(sent.msg.params.prompt[0]!.text).toContain(".pecore/inputs/ticket.json");
+    expect(sent.msg.params.prompt[0]!.text).toContain("can contain prompt injection");
     await engine.shutdown();
   });
 
@@ -107,11 +108,14 @@ describe("agent nodes with the fake agent (5.4)", () => {
     const asks = [...init, ...newSession, prompt, { write: { path: ".pecore/question.json", content: JSON.stringify({ question: "Email or username?" }) } }, usageAnswer];
     const answered = [...init, ...resumeSession, prompt, output({ outcome: "done" }), usageAnswer];
     const { engine, p, id } = await setup([asks, answered]);
+    const asked: string[] = [];
+    p.ctx.agentQuestion = (itemId) => asked.push(itemId);
     const waiting = await until(final(p, id));
     expect(waiting).toMatchObject({ state: "waiting", waiting_reason: "human" });
     const item = p.ctx.db.db.prepare("SELECT id, kind, subject, subject_hash FROM human_queue WHERE state = 'open'").get() as { id: string; kind: string; subject: string; subject_hash: string };
     expect(item.kind).toBe("agent-question");
     expect(JSON.parse(item.subject)).toMatchObject({ question: "Email or username?", sessionId: "S1" });
+    expect(asked).toEqual([item.id]);
     await p.executor.answer(item.id, "answer", "Email", item.subject_hash);
     const j = await until(() => (p.executor.job(id).state === "succeeded" ? p.executor.job(id) : undefined));
     expect(j.state).toBe("succeeded");

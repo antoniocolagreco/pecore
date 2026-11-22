@@ -1,6 +1,7 @@
 import { ChatConfirmationRow, ChatImageMime, ExportFinding, ImportProjectPreview, chatAttachmentMaxBytes, chatCompactCommand, roleProfile } from "@pecore/schemas";
-import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatMessageView, Role } from "@pecore/schemas";
+import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatMessageView, ChatSender, Role } from "@pecore/schemas";
 import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { call } from "../api/client";
@@ -127,6 +128,7 @@ const confirmationRows = ChatConfirmationRow.array().min(1);
 const confirmationStatuses: Record<string, string> = {
   awaiting_confirmation: "Awaiting confirmation",
   creating_project: "Creating project…",
+  updating_project: "Updating project…",
   deleting_project: "Deleting project…",
   approved: "Confirmed",
   cancelled: "Rejected",
@@ -138,15 +140,17 @@ function ProjectConfirmation({ action, rows, connected }: { action: ChatActionVi
   const project: string = string(target.project);
   const id: string = encodeURIComponent(project);
   const deleting: boolean = action.tool === "delete_project";
-  const operation: string = deleting ? "Deletion" : "Creation";
+  const updating: boolean = action.tool === "update_project";
+  const operation: string = deleting ? "Deletion" : updating ? "Update" : "Creation";
   const status: string = state === "failed" ? `${operation} failed`
     : state === "interrupted" ? `${operation} interrupted`
-    : deleting && state === "approved" ? "Project deleted" : confirmationStatuses[state] ?? "";
+    : deleting && state === "approved" ? "Project deleted"
+    : updating && state === "approved" ? "Project updated" : confirmationStatuses[state] ?? "";
   const answer = useAction(async (decision: "approve" | "cancel") => {
-    await call(deleting ? "answerChatProjectDeletion" : "answerChatProjectCreation", { params: { id: action.id }, body: { decision } });
+    await call(deleting ? "answerChatProjectDeletion" : updating ? "answerChatProjectUpdate" : "answerChatProjectCreation", { params: { id: action.id }, body: { decision } });
   });
   return (
-    <ChatConfirmation title={deleting ? "Delete project" : "Create project"} rows={rows} status={status} destructive={deleting}
+    <ChatConfirmation title={deleting ? "Delete project" : updating ? "Change project" : "Create project"} rows={rows} status={status} destructive={deleting}
       pending={state === "awaiting_confirmation"} disabled={!connected} busy={answer.busy}
       error={answer.error ?? (string(target.error) || null)} onDecision={(decision) => void answer.run(decision)}>
       {project && connected && <Link to={target.creating === true ? `/projects/new?resume=${id}` : `/projects/${id}`}>
@@ -211,7 +215,7 @@ function ExportConfirmation({ action, findings, connected }: { action: ChatActio
 
 function ActionCard({ action, connected }: { action: ChatActionView; connected: boolean }) {
   const target: Record<string, unknown> = object(action.target);
-  if (action.tool === "create_project" || action.tool === "delete_project") {
+  if (action.tool === "create_project" || action.tool === "update_project" || action.tool === "delete_project") {
     const rows = confirmationRows.safeParse(target.rows);
     if (rows.success) return <ProjectConfirmation action={action} rows={rows.data} connected={connected} />;
   }
@@ -248,12 +252,12 @@ function ActionCard({ action, connected }: { action: ChatActionView; connected: 
     const id: string = encodeURIComponent(project);
     links.push({ to: target.creating === true ? `/projects/new?resume=${id}` : `/projects/${id}`, label: project });
   }
-  if (action.tool === "update_project" && project) links.push({ to: `/projects/${encodeURIComponent(project)}`, label: "Open project" });
+  if (action.tool === "delegate_to_pm" && project) links.push({ to: `/projects/${encodeURIComponent(project)}`, label: "Open project" });
   return (
     <div className={s.action}>
       <div className={s.actionHead}>
         <SparkIcon />
-        <span className={s.tool}>{action.tool.replaceAll("_", " ")}</span>
+        <span className={s.tool}>{action.tool === "delegate_to_pm" ? "Sent to the Project Manager" : action.tool.replaceAll("_", " ")}</span>
         {project && action.tool !== "create_project" && <span className={s.actionMeta}>{project}</span>}
         {state && <span className={s.actionMeta}>{state}</span>}
         {ticket && <span className={s.actionMeta}>Ticket {ticket}</span>}
@@ -275,6 +279,8 @@ const readTools: Record<string, string> = {
   job_status: "job status",
   read_artifact: "job output",
   list_templates: "library templates",
+  list_definitions: "definitions",
+  read_definition: "definition",
   validate: "definition check",
 };
 
@@ -284,6 +290,21 @@ function Actions({ actions, connected }: { actions: ChatActionView[]; connected:
     <>
       {actions.filter(({ tool }) => !Object.hasOwn(readTools, tool)).map((action) => <ActionCard key={action.id} action={action} connected={connected} />)}
       {reads.length > 0 && <div className={s.reads}>Read: {reads.join(", ")}</div>}
+    </>
+  );
+}
+
+function Collapsible({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState<boolean>(false);
+  const [long, setLong] = useState<boolean>(false);
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!open && box.current) setLong(box.current.scrollHeight > box.current.clientHeight + 1);
+  }, [children, open]);
+  return (
+    <>
+      <div ref={box} className={open ? undefined : long ? `${s.clamped} ${s.faded}` : s.clamped}>{children}</div>
+      {(long || open) && <Button size="sm" variant="ghost" className={s.more} aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Show less" : "Show more"}</Button>}
     </>
   );
 }
@@ -302,26 +323,36 @@ function Message({ message, attachments, actions, connected, reload, working = f
     await api.retry(message.id);
     reload();
   });
-  const user: boolean = message?.role === "user";
-  const ticket: string | undefined = user ? message?.ticket : undefined;
-  const state: StateInfo | null = !message || (user && message.state === "running") ? null : messageStates[message.state];
+  const sender: ChatSender | undefined = message?.sender;
+  const user: boolean = message?.role === "user" && !sender;
+  const ticket: string | undefined = message?.role === "user" ? message.ticket : undefined;
+  const project: string | undefined = message?.context.find((reference) => reference.project)?.project;
+  const job: string | undefined = sender === "job" ? message?.context.find((reference) => reference.jobId)?.jobId : undefined;
+  const author: string = ticket !== undefined ? `Ticket ${ticket}`
+    : sender === "assistant" ? "Assistant"
+    : sender === "pm" ? `Project Manager · ${project ?? "project"}`
+    : sender === "job" ? "Agent question"
+    : user ? "You" : agent;
+  const state: StateInfo | null = !message || (message.role === "user" && message.state === "running") ? null : messageStates[message.state];
+  const bubble = message?.text && <div className={s.bubble}>
+    <ReactMarkdown skipHtml disallowedElements={["img"]} components={{
+      a: ({ href, children }) => connected && href?.startsWith("https://")
+        ? <a href={href} target="_blank" rel="noreferrer">{children}</a>
+        : <span>{children}</span>,
+    }}>{message.text}</ReactMarkdown>
+  </div>;
   return (
-    <article className={`${s.message} ${user ? s.user : s.assistant}`}>
+    <article className={`${s.message} ${user ? s.user : s.assistant} ${sender ? s.forwarded : ""}`}>
       {!user && <span className={s.avatar} aria-hidden><SparkIcon /></span>}
       <div className={s.body}>
         <div className={s.meta}>
-          <span className={s.author}>{ticket !== undefined ? `Ticket ${ticket}` : user ? "You" : agent}</span>
+          <span className={s.author}>{author}</span>
           {message && <time dateTime={new Date(message.createdAt).toISOString()} title={dateTime(message.createdAt)}>{time(message.createdAt)}</time>}
           {state && <StateLabel info={state} />}
         </div>
         {working && !message && <div className={s.thinking} role="status" aria-label={`The ${agent} is working on a reply`}><span /><span /><span /></div>}
-        {message?.text && ticket === undefined && <div className={s.bubble}>
-          <ReactMarkdown skipHtml disallowedElements={["img"]} components={{
-            a: ({ href, children }) => connected && href?.startsWith("https://")
-              ? <a href={href} target="_blank" rel="noreferrer">{children}</a>
-              : <span>{children}</span>,
-          }}>{message.text}</ReactMarkdown>
-        </div>}
+        {job && (connected ? <Link to={`/jobs/${encodeURIComponent(job)}`}>Open job {job}</Link> : <span>Job {job}</span>)}
+        {ticket === undefined && sender !== "job" && (sender ? <Collapsible>{bubble}</Collapsible> : bubble)}
         {attachments.length > 0 && <ul className={s.chips} aria-label="Message attachments">
           {attachments.map(({ id, mime, size }) => <li className={s.chip} key={id} title={`${size} bytes`}>{mime} · {fileSize(size)}</li>)}
         </ul>}
@@ -475,7 +506,11 @@ function DefinitionPreview({ path, onClose }: { path: string; onClose(): void })
 }
 
 export function ChatPanel() {
-  const project: string | null = chatProject(useLocation().pathname);
+  const { pathname } = useLocation();
+  const job: string | null = /^\/jobs\/([^/]+)/.exec(pathname)?.[1] ?? null;
+  const owner = useData(() => job === null ? Promise.resolve(null) : call("getJob", { params: { id: decodeURIComponent(job) } }), [job]);
+  if (job !== null && !owner.data && !owner.error) return null;
+  const project: string | null = job === null ? chatProject(pathname) : owner.data?.job.projectId ?? null;
   return <Chat key={project ?? ""} project={project} />;
 }
 
