@@ -5,6 +5,7 @@ import { monotonicFactory } from "ulid";
 import type { Artifact, Recipe } from "@pecore/schemas";
 import { checkRecipe, hasCommitNode } from "../definitions/recipe-check";
 import type { JobRow, ProjectContext } from "../graph/executor";
+import { ProjectLocationConflict, withProjectLocation } from "../projects/location";
 import { jobBranch } from "../workdir/repo";
 import { commitSha, fetchBase, latestArtifact } from "./stacked";
 
@@ -44,6 +45,13 @@ export function recipeForJob(ctx: ProjectContext, recipeName: string): Recipe {
 }
 
 export async function createJob(ctx: ProjectContext, req: CreateJob): Promise<string> {
+  return withProjectLocation(ctx, () => createJobInProject(ctx, req)).catch((error: unknown) => {
+    if (error instanceof ProjectLocationConflict) fail(error);
+    throw error;
+  });
+}
+
+async function createJobInProject(ctx: ProjectContext, req: CreateJob): Promise<string> {
   if ((req.orderId === undefined) !== (req.orderKey === undefined)) throw new JobCreateError("orderId and orderKey must be set together");
   const recipe: Recipe = recipeForJob(ctx, jobRecipeName(ctx, req.recipe));
   const parent = req.parentJobId ? (ctx.db.db.prepare("SELECT * FROM jobs WHERE id = ?").get(req.parentJobId) as JobRow | undefined) : null;

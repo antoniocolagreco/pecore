@@ -153,7 +153,7 @@ User bubbles fade from the accent at the bottom right to a lighter top left in L
 
 Projects shows New project and Import together. When the list is empty both actions move into the empty state. The project page is full width and opens on Jobs. Its table omits the Project column. New job opens a form with a title, instructions and the recipe. The only recipe is chosen automatically. The form gives a clear next action when the project has none.
 
-Project Settings starts with repository, forge account, folder and ID as a read-only details list. Editable fields follow: name, base branch and Compose file. The Compose field accepts a path or a file chosen within the project folder. Export is a Settings action. Project settings have no raw JSON editor, default recipe, project limits or budgets. Per-node duration and available token counts belong in each job. There is no global Usage page or Factory token or cost counter.
+Project Settings shows the fixed project ID and lets the user edit the name, base branch, repository, forge account, local folder and Compose file. The Compose field accepts a path or a file chosen within the project folder. Export is a Settings action. Project settings have no raw JSON editor, default recipe, project limits or budgets. Per-node duration and available token counts belong in each job. There is no global Usage page or Factory token or cost counter.
 
 ## Critical User Journeys (CUJs)
 
@@ -507,11 +507,15 @@ A node receives the latest artifact of each type in its `inputs`. The recipe val
 |---|---|
 | `id`, `name` | identity |
 | `repo` | `url` of the remote, or `null` for a local-only project; `account` from `accounts.json` |
-| `folder` | The user's absolute path to their copy of the code. Project creation expands `~/`. The wizard and chat propose `<projectsFolder>/<id>`, using the user's home as the initial global default. Fixed after creation. Imports may have no local copy. |
+| `folder` | Absolute path to the user's copy of the code, or `null`. Paths beginning with `~/` expand to the user's home. The wizard and chat propose `<projectsFolder>/<id>` and the default projects folder is the user's home. Settings can move the checkout or set a folder for an imported project. |
 | `baseBranch` | branch new jobs start from and deliver to, for example `dev` or a feature branch; the Assistant, the Project Manager or the user can set another one per job |
 | `createRepo` | node instance that creates the remote repo when it does not exist (section 2); `null` if not needed |
 | `services` | path of a compose file for job services, relative to the repo (4.9); `null` (the default) means automatic: the first of `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml` found at the root of the job's base commit, and none when the services runtime is not set |
 | `source` | node instance of kind `source` that brings tickets into the project (section 7), with its `params` (for example the label), or `null` |
+
+Settings can connect, replace or disconnect an existing remote. The engine validates the base branch with the selected forge account before changing its `origin`. Changing the remote URL clears its repo creation node and disables a ticket source that uses the project account. Existing recipes and job history are preserved. Review the recipes if they use a specific forge.
+
+Moving the checkout preserves its working files and Git history. The destination must be empty. If there is no checkout at the old path, Settings can attach an existing checkout or create a copy in an empty folder. A change to the repository or folder requires the project's jobs to finish or stop first.
 
 ### 4. Engine
 

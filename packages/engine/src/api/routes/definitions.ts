@@ -7,12 +7,14 @@ import { instantiateNode, instantiateRecipe } from "../../definitions/instantiat
 import { loadLibrary, loadProject, zodErrors } from "../../definitions/load";
 import type { DefinitionError } from "../../definitions/load";
 import { checkRecipe, remoteIssues } from "../../definitions/recipe-check";
+import { isFinal } from "../../graph/job-machine";
 import { commitDefinition, commitMessage, git } from "../../home/git-commit";
 import { homePaths } from "../../home/layout";
 import { NotFoundError } from "../../main";
 import type { Engine } from "../../main";
 import { forgeAccountOf, ProjectCreateError } from "../../projects/create";
 import { projectDefaults } from "../../projects/defaults";
+import { absoluteProjectFolder, changeProjectLocation, ProjectLocationConflict, sameRepository } from "../../projects/location";
 import { HttpError } from "../server";
 import type { Handlers } from "../server";
 
@@ -214,14 +216,51 @@ export function definitionOperations(engine: Engine) {
     if ((before === null ? null : sha256(before)) !== baseSha256) {
       throw new HttpError("conflict", "the file changed since it was loaded");
     }
-    const { errors } = inspect(path, kind, id, content);
+    const { errors, value } = inspect(path, kind, id, content);
     if (errors.length) throw new HttpError("bad_request", errors.map((error) => error.message).join("\n"));
-    const hash: string = sha256(bytes);
     const name: string = kind === "project" ? id! : basename(file, extname(file));
-    await mkdir(dirname(absPath), { recursive: true });
-    await writeFile(absPath, bytes);
-    await commitFiles(home.home, projectDir, [absPath], commitMessage(kind!, name, before === null ? "created" : "edited"));
+    const persist = async (data: Buffer): Promise<void> => {
+      await mkdir(dirname(absPath), { recursive: true });
+      await writeFile(absPath, data);
+      await commitFiles(home.home, projectDir, [absPath], commitMessage(kind!, name, before === null ? "created" : "edited"));
+    };
+    let saved: Buffer = bytes;
+    if (kind === "project" && id) {
+      const loaded = engine.project(id);
+      const current: Project = loaded.ctx.project;
+      const next: Project = Project.parse(value);
+      if (current.folder !== next.folder || !sameRepository(current.repo, next.repo)) {
+        if (engine.creating.has(id) || loaded.deleting || loaded.executor.jobs().some(({ state }) => !isFinal(state))) {
+          throw new HttpError("conflict", "Finish or stop this project's jobs before changing its repository or folder.");
+        }
+        try {
+          if (next.folder !== current.folder) next.folder = absoluteProjectFolder(next.folder);
+          if (next.repo?.url !== current.repo?.url) {
+            next.createRepo = null;
+            const source = next.source && loaded.ctx.defs.nodes.get(next.source.node);
+            if (source?.kind === "source" && source.credentials.includes("project.account")) next.source = null;
+          }
+          saved = Buffer.from(JSON.stringify(next, null, 2) + "\n");
+          await changeProjectLocation(loaded.ctx, current, next, engine.global().accounts, async () => {
+            try {
+              await persist(saved);
+            } catch (error) {
+              if (before) await writeFile(absPath, before);
+              throw error;
+            }
+            await engine.reloadProject(id);
+          });
+        } catch (error) {
+          throw new HttpError(error instanceof ProjectLocationConflict ? "conflict" : "bad_request", (error as Error).message);
+        }
+        const hash: string = sha256(saved);
+        engine.definitionChanged(path, hash);
+        return { sha256: hash };
+      }
+    }
+    await persist(saved);
     if (id) await engine.reloadProject(id);
+    const hash: string = sha256(saved);
     engine.definitionChanged(path, hash);
     return { sha256: hash };
   }

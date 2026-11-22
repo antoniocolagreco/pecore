@@ -264,7 +264,7 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 *   Project page, full width, in tabs:
     *   Jobs, the first tab and open by default: the project's jobs, in the same table as the Jobs page without the Project column.
     *   Settings, Recipes, Nodes and Knowledge: a panel with a maximum width, aligned to the left.
-    *   Settings: at the top a details list, read-only after creation: repository, forge account, folder, id; under it the editable fields: name, base branch, services compose file. No default recipe and no `project.json` editor. The services compose file is empty by default, meaning automatic (a standard compose file at the repository root); it can be typed or picked with "Choose…", which opens the file dialog in the project folder and keeps only files inside it, saved relative to it.
+    *   Settings shows the fixed project ID and editable name, base branch, repository, folder and Compose file. Select an existing remote and its forge account, or choose "Local only" to disconnect it. Type a new path or use "Choose…" to move the checkout to an empty folder. The Compose path is relative to the project folder and can be picked there. Leave it empty for automatic detection.
     *   Recipes (recipe editor), Nodes (node editor), Knowledge (IF4), Services, Ticket source (`label`, `pollSec`, trusted users).
     *   Delete project (IF7) and Export sit at the left of the Settings actions, apart from Discard and Save.
 *   No "Jobs of this project" button.

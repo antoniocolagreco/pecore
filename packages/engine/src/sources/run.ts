@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { SourceNode } from "@pecore/schemas";
 import type { ProjectContext } from "../graph/executor";
+import { withProjectLocation } from "../projects/location";
 import { runCommandNode } from "../runners/command";
 import type { CommandRun } from "../runners/command";
 import { forgeEnv, toolAccounts } from "../runners/forge-env";
@@ -16,6 +17,10 @@ export type SourceRequest =
 export type SourceResult = { data: unknown; trusted: string[] };
 
 export async function runSource(ctx: ProjectContext, request: SourceRequest): Promise<SourceResult> {
+  return withProjectLocation(ctx, () => runSourceAtLocation(ctx, request));
+}
+
+async function runSourceAtLocation(ctx: ProjectContext, request: SourceRequest): Promise<SourceResult> {
   const { source, repo, baseBranch } = ctx.project;
   const node = source && ctx.defs.nodes.get(source.node);
   if (node?.kind !== "source" || !source) throw new Error(`project ${ctx.id} has no source node`);
