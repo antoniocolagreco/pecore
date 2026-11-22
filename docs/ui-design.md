@@ -3,7 +3,7 @@
 *   **Author:** Antonio Colagreco
 *   **Status:** Approved (EGM stages 5-8 applied; stage 9 not applicable; reports in [reviews/ui/](reviews/ui/)). The `packages/app` table of design.md matches the Screens table below.
 *   **Date:** 2026-11-18
-*   **Related:** [Product and engineering design](design.md), [concepts brief](archive/concepts-brief.md)
+*   **Related:** [Product and engineering design](design.md), [concepts brief](archive/concepts-brief.md), [repository workflow](repository-workflow.md)
 *   **Maintenance:** Update these screen details and the [product interface](design.md#product-interface) together.
 
 ## Problem Statement
