@@ -237,6 +237,33 @@
   list-style: none;
 }
 
+.thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 128px;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius);
+  background: var(--fill);
+  animation: chip-in var(--spring-time) var(--spring);
+}
+
+.thumbImage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.thumbRemove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+}
+
 .chip {
   display: inline-flex;
   align-items: center;

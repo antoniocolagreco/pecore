@@ -36,16 +36,28 @@ function fileSize(bytes: number): string {
   return `${bytes} B`;
 }
 
-function base64(file: File): Promise<string> {
+function dataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader: FileReader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result !== "string") return reject(new Error(`Could not read ${file.name}.`));
-      resolve(reader.result.slice(reader.result.indexOf(",") + 1));
-    };
+    reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error(`Could not read ${file.name}.`));
     reader.onerror = () => reject(reader.error ?? new Error(`Could not read ${file.name}.`));
     reader.readAsDataURL(file);
   });
+}
+
+async function base64(file: File): Promise<string> {
+  const url: string = await dataUrl(file);
+  return url.slice(url.indexOf(",") + 1);
+}
+
+function Thumbnail({ file }: { file: File }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let live: boolean = true;
+    void dataUrl(file).then((url) => { if (live) setSrc(url); }, () => undefined);
+    return () => { live = false; };
+  }, [file]);
+  return src ? <img className={s.thumbImage} src={src} alt={file.name} /> : <Spinner size="xs" />;
 }
 
 function strings(value: unknown): string[] {
@@ -354,9 +366,9 @@ function Composer({ supportsImages, connected, ready, reload, autoFocus }: {
         if (canSend) void send.run();
       }}>
         {images.length > 0 && <ul className={s.chips} aria-label="Selected images">
-          {images.map(({ key, file }) => <li key={key} className={s.chip}>
-            <span>{file.name} · {fileSize(file.size)}</span>
-            <IconButton size="sm" label={`Remove ${file.name}`} icon={<XIcon />} disabled={disabled} onClick={() => setImages((pending) => pending.filter((image) => image.key !== key))} />
+          {images.map(({ key, file }) => <li key={key} className={s.thumb}>
+            <Thumbnail file={file} />
+            <IconButton size="sm" className={s.thumbRemove} label={`Remove ${file.name}`} icon={<XIcon />} disabled={disabled} onClick={() => setImages((pending) => pending.filter((image) => image.key !== key))} />
           </li>)}
         </ul>}
         <textarea
@@ -369,6 +381,14 @@ function Composer({ supportsImages, connected, ready, reload, autoFocus }: {
           disabled={!connected}
           readOnly={send.busy}
           onChange={(event) => setMessage(event.target.value)}
+          onPaste={(event) => {
+            const files: File[] = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
+            if (!files.length) return;
+            event.preventDefault();
+            if (disabled) return;
+            if (supportsImages !== true) setImageError(imageReason);
+            else addImages(files.map((file, index) => new File([file], `Pasted image ${nextKey.current + index + 1}.${file.type.slice(6)}`, { type: file.type })));
+          }}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
@@ -416,6 +436,13 @@ export function ChatPanel() {
   const connected: boolean = useConnected();
   const settings = useData(() => call("getSettings"), [], (event) => event.type === "definition.changed" && event.path === "settings.json");
   const ready: boolean | null = settings.data ? roleProfile(settings.data.value, "assistant") !== null : null;
+  const profiles = useData(() => call("getProfiles"), [], (event) => event.type === "definition.changed" && event.path === "profiles.json");
+  const accounts = useData(() => call("getAccounts"), [], (event) => event.type === "definition.changed" && event.path === "accounts.json");
+  const profileId: string | null = settings.data ? roleProfile(settings.data.value, "assistant") : null;
+  const profile = profiles.data?.value.profiles.find(({ id }) => id === profileId);
+  const allAccounts = accounts.data?.value.accounts ?? [];
+  const account = allAccounts.find(({ id }) => id === profile?.account);
+  const model: string | null = profile && account ? [harnessName(account, allAccounts), profile.model, profile.effort ?? "default effort"].join(" · ") : null;
   const detail = useData(() => call("getChat"), [], (event) => event.type === "chat.changed");
   const [query, setQuery] = useSearchParams();
   const definition: string | null = query.get("definition");
@@ -436,13 +463,6 @@ export function ChatPanel() {
   const clear = useAction(async () => {
     await call("clearChat");
     detail.reload();
-  const profiles = useData(() => call("getProfiles"), [], (event) => event.type === "definition.changed" && event.path === "profiles.json");
-  const accounts = useData(() => call("getAccounts"), [], (event) => event.type === "definition.changed" && event.path === "accounts.json");
-  const profileId: string | null = settings.data ? roleProfile(settings.data.value, "assistant") : null;
-  const profile = profiles.data?.value.profiles.find(({ id }) => id === profileId);
-  const allAccounts = accounts.data?.value.accounts ?? [];
-  const account = allAccounts.find(({ id }) => id === profile?.account);
-  const model: string | null = profile && account ? [harnessName(account, allAccounts), profile.model, profile.effort ?? "default effort"].join(" · ") : null;
   });
   const turnPending: boolean = chat?.messages.some(({ state }) => state === "queued" || state === "running") ?? false;
   const orders: Set<string> = new Set(chat?.messages.filter(({ role }) => role === "user").map(({ id }) => id));
@@ -495,6 +515,10 @@ export function ChatPanel() {
   return (
     <aside className={s.panel} aria-label="Assistant"><section className={s.pane}>
       <div className={s.toolbar} role="group" aria-label="Conversation controls">
+        <div className={s.heading}>
+          <h2 className={s.title}>Assistant</h2>
+          {model && <span className={s.model}>{model}</span>}
+        </div>
         <IconButton label="Compact conversation" icon={<CompactIcon />} disabled={!canCompact} loading={compact.busy} onClick={() => void compact.run()} />
         <IconButton label="Clear conversation" icon={<TrashIcon />} disabled={!canManage || !chat?.messages.length} loading={clear.busy} onClick={() => {
           if (window.confirm("Delete this conversation and start a new Assistant session?")) void clear.run();
@@ -515,10 +539,6 @@ export function ChatPanel() {
             const own: ChatActionView[] = actions.get(message.replyTo ?? message.id) ?? [];
             const reply: ChatMessageView | undefined = replies.get(message.id);
             const working: boolean = message.id === pending?.id;
-        <div className={s.heading}>
-          <h2 className={s.title}>Assistant</h2>
-          {model && <span className={s.model}>{model}</span>}
-        </div>
             return <Fragment key={message.id}>
               <Message message={message} connected={connected}
                 actions={message.role === "assistant" ? own : []} attachments={attachments.get(message.id) ?? []} reload={detail.reload} />

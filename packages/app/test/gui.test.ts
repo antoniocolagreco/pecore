@@ -588,7 +588,7 @@ describe.skipIf(gui)("phase 6: orchestrator chat from the GUI (fake agent)", () 
     const attach = page.getByLabel("Attach images");
     await until(() => attach.isEnabled());
     await attach.setInputFiles({ name: "shot.png", mimeType: "image/png", buffer: png });
-    await visible(page.getByLabel("Selected images").getByText(/shot\.png/));
+    await visible(page.getByLabel("Selected images").getByRole("img", { name: "shot.png" }));
     await page.getByRole("textbox", { name: "Message" }).fill("Add an API and a UI job to demo");
     await until(async () => (await spawns()) === 2);
     await page.getByRole("button", { name: "Send" }).click();
