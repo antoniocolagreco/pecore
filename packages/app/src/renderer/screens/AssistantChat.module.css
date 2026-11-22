@@ -117,6 +117,13 @@
   color: var(--text-2);
 }
 
+.authorProject {
+  flex-basis: 100%;
+  margin-top: -3px;
+  font-size: var(--text-size-sm);
+  color: var(--text-3);
+}
+
 .reads {
   font-size: var(--text-size-sm);
   color: var(--text-3);
@@ -211,6 +218,14 @@
 .forwarded .bubble {
   padding: 2px 0 2px 12px;
   box-shadow: inset 2px 0 0 var(--separator);
+}
+
+.tinted .bubble {
+  padding: 9px 13px;
+  border-radius: 16px;
+  border-bottom-left-radius: 6px;
+  background: color-mix(in srgb, var(--pm) 14%, var(--surface));
+  box-shadow: 0 0 0 0.5px var(--separator), 0 1px 3px rgb(0 0 0 / 0.05);
 }
 
 .clamped {
@@ -325,6 +340,14 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--text-size-sm);
+}
+
+.delegation {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   overflow-wrap: anywhere;
   font-size: var(--text-size-sm);

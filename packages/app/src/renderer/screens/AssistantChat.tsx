@@ -2,7 +2,7 @@ import { ChatConfirmationRow, ChatImageMime, ExportFinding, ImportProjectPreview
 import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatMessageView, ChatSender, ProjectManagerIdentity, Role } from "@pecore/schemas";
 import { ProjectManagerAvatar } from "../components/ProjectManager";
 import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { call } from "../api/client";
@@ -33,7 +33,7 @@ type ChatApi = {
 };
 type ChatTarget = { api: ChatApi; agent: string };
 type ProjectEntry = { name: string; pm: ProjectManagerIdentity | null };
-type ChatPeople = { title: string; pm: ProjectManagerIdentity | null; projects: Map<string, ProjectEntry> };
+type ChatPeople = { title: string; pm: ProjectManagerIdentity | null; projects: Map<string, ProjectEntry>; projectName: string | null };
 
 function chatApi(project: string | null): ChatApi {
   if (project === null) {
@@ -57,7 +57,7 @@ function chatApi(project: string | null): ChatApi {
   };
 }
 
-const ChatContext = createContext<ChatTarget & ChatPeople>({ api: chatApi(null), agent: "Assistant", title: "Assistant", pm: null, projects: new Map() });
+const ChatContext = createContext<ChatTarget & ChatPeople>({ api: chatApi(null), agent: "Assistant", title: "Assistant", pm: null, projects: new Map(), projectName: null });
 
 export function chatProject(pathname: string): string | null {
   const match: RegExpExecArray | null = /^\/projects\/([^/]+)/.exec(pathname) ?? /^\/edit\/(?:node|recipe)\/projects\/([^/]+)\//.exec(pathname);
@@ -216,8 +216,27 @@ function ExportConfirmation({ action, findings, connected }: { action: ChatActio
   );
 }
 
+function DelegationCard({ project, error, connected }: { project: string; error: string; connected: boolean }) {
+  const entry: ProjectEntry | undefined = useContext(ChatContext).projects.get(project);
+  const name: string = entry?.pm?.name ?? "the Project Manager";
+  return (
+    <div className={s.action}>
+      {entry?.pm && <ProjectManagerAvatar pm={entry.pm} />}
+      <div className={s.delegation}>
+        <strong>Order sent to {name}</strong>
+        <span className={s.actionMeta}>
+          {entry?.name ?? project}
+          {connected && <> · <Link to={`/projects/${encodeURIComponent(project)}`}>{entry?.pm ? `Open ${entry.pm.name}'s chat` : "Open chat"}</Link></>}
+        </span>
+      </div>
+      <ErrorText error={error} />
+    </div>
+  );
+}
+
 function ActionCard({ action, connected }: { action: ChatActionView; connected: boolean }) {
   const target: Record<string, unknown> = object(action.target);
+  if (action.tool === "delegate_to_pm" && string(target.project)) return <DelegationCard project={string(target.project)} error={string(target.error)} connected={connected} />;
   if (action.tool === "create_project" || action.tool === "update_project" || action.tool === "delete_project") {
     const rows = confirmationRows.safeParse(target.rows);
     if (rows.success) return <ProjectConfirmation action={action} rows={rows.data} connected={connected} />;
@@ -255,12 +274,11 @@ function ActionCard({ action, connected }: { action: ChatActionView; connected: 
     const id: string = encodeURIComponent(project);
     links.push({ to: target.creating === true ? `/projects/new?resume=${id}` : `/projects/${id}`, label: project });
   }
-  if (action.tool === "delegate_to_pm" && project) links.push({ to: `/projects/${encodeURIComponent(project)}`, label: "Open project" });
   return (
     <div className={s.action}>
       <div className={s.actionHead}>
         <SparkIcon />
-        <span className={s.tool}>{action.tool === "delegate_to_pm" ? "Sent to the Project Manager" : action.tool.replaceAll("_", " ")}</span>
+        <span className={s.tool}>{action.tool.replaceAll("_", " ")}</span>
         {project && action.tool !== "create_project" && <span className={s.actionMeta}>{project}</span>}
         {state && <span className={s.actionMeta}>{state}</span>}
         {ticket && <span className={s.actionMeta}>Ticket {ticket}</span>}
@@ -320,7 +338,7 @@ function Message({ message, attachments, actions, connected, reload, working = f
   reload(): void;
   working?: boolean;
 }) {
-  const { api, agent, title, pm, projects } = useContext(ChatContext);
+  const { api, agent, title, pm, projects, projectName } = useContext(ChatContext);
   const retry = useAction(async () => {
     if (!message) return;
     await api.retry(message.id);
@@ -332,12 +350,14 @@ function Message({ message, attachments, actions, connected, reload, working = f
   const project: string | undefined = message?.context.find((reference) => reference.project)?.project;
   const reporter: ProjectEntry | undefined = sender === "pm" && project ? projects.get(project) : undefined;
   const job: string | undefined = sender === "job" ? message?.context.find((reference) => reference.jobId)?.jobId : undefined;
+  const speaker: ProjectManagerIdentity | null = sender === "pm" ? reporter?.pm ?? null : sender ? null : pm;
+  const managerProject: string | null = sender === "pm" ? reporter?.name ?? project ?? null : !sender && !user ? projectName : null;
   const author: string = ticket !== undefined ? `Ticket ${ticket}`
     : sender === "assistant" ? "Assistant"
-    : sender === "pm" ? `${reporter?.pm?.name ?? "Project Manager"} · ${reporter?.name ?? project ?? "project"}`
     : sender === "job" ? "Agent question"
-    : user ? "You" : title;
-  const speaker: ProjectManagerIdentity | null = sender === "pm" ? reporter?.pm ?? null : sender ? null : pm;
+    : user ? "You"
+    : managerProject !== null ? speaker ? `${speaker.name} - Project Manager` : "Project Manager"
+    : title;
   const state: StateInfo | null = !message || (message.role === "user" && message.state === "running") ? null : messageStates[message.state];
   const bubble = message?.text && <div className={s.bubble}>
     <ReactMarkdown skipHtml disallowedElements={["img"]} components={{
@@ -347,13 +367,15 @@ function Message({ message, attachments, actions, connected, reload, working = f
     }}>{message.text}</ReactMarkdown>
   </div>;
   return (
-    <article className={`${s.message} ${user ? s.user : s.assistant} ${sender ? s.forwarded : ""}`}>
+    <article className={`${s.message} ${user ? s.user : s.assistant} ${sender ? s.forwarded : ""} ${!user && speaker ? s.tinted : ""}`}
+      style={!user && speaker ? { "--pm": speaker.color } as CSSProperties : undefined}>
       {!user && (speaker ? <ProjectManagerAvatar pm={speaker} /> : <span className={s.avatar} aria-hidden><SparkIcon /></span>)}
       <div className={s.body}>
         <div className={s.meta}>
           <span className={s.author}>{author}</span>
           {message && <time dateTime={new Date(message.createdAt).toISOString()} title={dateTime(message.createdAt)}>{time(message.createdAt)}</time>}
           {state && <StateLabel info={state} />}
+          {managerProject !== null && sender === "pm" && <span className={s.authorProject}>{managerProject}</span>}
         </div>
         {working && !message && <div className={s.thinking} role="status" aria-label={`The ${agent} is working on a reply`}><span /><span /><span /></div>}
         {job && (connected ? <Link to={`/jobs/${encodeURIComponent(job)}`}>Open job {job}</Link> : <span>Job {job}</span>)}
@@ -541,7 +563,7 @@ function Chat({ project }: { project: string | null }) {
   const projectName: string | null = project === null ? null : own?.name ?? project;
   const modelParts: string[] = profile && account ? [harnessName(account, allAccounts), profile.model, profile.effort ?? "default effort"] : [];
   const model: string | null = [...projectName === null ? [] : [pm ? `${agent} · ${projectName}` : projectName], ...modelParts].join(" · ") || null;
-  const people: ChatTarget & ChatPeople = { ...target, title, pm, projects };
+  const people: ChatTarget & ChatPeople = { ...target, title, pm, projects, projectName };
   const detail = useData(() => api.get(), [], (event) => event.type === "chat.changed" && event.project === project);
   const [query, setQuery] = useSearchParams();
   const definition: string | null = query.get("definition");

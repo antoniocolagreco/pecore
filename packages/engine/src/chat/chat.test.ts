@@ -534,6 +534,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       };
       const original = await get();
       expect((await m.tool("get_project", { project: "managed" })).result?.content?.[0]?.text).toContain('"name":"Managed"');
+      expect((await m.tool("list_projects", {})).result?.content?.[0]?.text).toContain('"id":"managed","name":"Managed","repo":null,"source":null,"baseBranch":"main","pm":"Eva"');
       for (const changes of [{}, { name: " " }, { baseBranch: "bad..branch" }, { services: "../compose.yaml" }, { repo: null }]) {
         expect((await propose(changes)).result?.isError).toBe(true);
       }
