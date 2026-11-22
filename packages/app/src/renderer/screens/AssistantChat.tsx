@@ -1,5 +1,6 @@
 import { ChatConfirmationRow, ChatImageMime, ExportFinding, ImportProjectPreview, chatAttachmentMaxBytes, chatCompactCommand, roleProfile } from "@pecore/schemas";
-import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatMessageView, ChatSender, Role } from "@pecore/schemas";
+import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatMessageView, ChatSender, ProjectManagerIdentity, Role } from "@pecore/schemas";
+import { ProjectManagerAvatar } from "../components/ProjectManager";
 import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
@@ -31,6 +32,8 @@ type ChatApi = {
   read(): Promise<unknown>;
 };
 type ChatTarget = { api: ChatApi; agent: string };
+type ProjectEntry = { name: string; pm: ProjectManagerIdentity | null };
+type ChatPeople = { title: string; pm: ProjectManagerIdentity | null; projects: Map<string, ProjectEntry> };
 
 function chatApi(project: string | null): ChatApi {
   if (project === null) {
@@ -54,7 +57,7 @@ function chatApi(project: string | null): ChatApi {
   };
 }
 
-const ChatContext = createContext<ChatTarget>({ api: chatApi(null), agent: "Assistant" });
+const ChatContext = createContext<ChatTarget & ChatPeople>({ api: chatApi(null), agent: "Assistant", title: "Assistant", pm: null, projects: new Map() });
 
 export function chatProject(pathname: string): string | null {
   const match: RegExpExecArray | null = /^\/projects\/([^/]+)/.exec(pathname) ?? /^\/edit\/(?:node|recipe)\/projects\/([^/]+)\//.exec(pathname);
@@ -317,7 +320,7 @@ function Message({ message, attachments, actions, connected, reload, working = f
   reload(): void;
   working?: boolean;
 }) {
-  const { api, agent } = useContext(ChatContext);
+  const { api, agent, title, pm, projects } = useContext(ChatContext);
   const retry = useAction(async () => {
     if (!message) return;
     await api.retry(message.id);
@@ -327,12 +330,14 @@ function Message({ message, attachments, actions, connected, reload, working = f
   const user: boolean = message?.role === "user" && !sender;
   const ticket: string | undefined = message?.role === "user" ? message.ticket : undefined;
   const project: string | undefined = message?.context.find((reference) => reference.project)?.project;
+  const reporter: ProjectEntry | undefined = sender === "pm" && project ? projects.get(project) : undefined;
   const job: string | undefined = sender === "job" ? message?.context.find((reference) => reference.jobId)?.jobId : undefined;
   const author: string = ticket !== undefined ? `Ticket ${ticket}`
     : sender === "assistant" ? "Assistant"
-    : sender === "pm" ? `Project Manager · ${project ?? "project"}`
+    : sender === "pm" ? `${reporter?.pm?.name ?? "Project Manager"} · ${reporter?.name ?? project ?? "project"}`
     : sender === "job" ? "Agent question"
-    : user ? "You" : agent;
+    : user ? "You" : title;
+  const speaker: ProjectManagerIdentity | null = sender === "pm" ? reporter?.pm ?? null : sender ? null : pm;
   const state: StateInfo | null = !message || (message.role === "user" && message.state === "running") ? null : messageStates[message.state];
   const bubble = message?.text && <div className={s.bubble}>
     <ReactMarkdown skipHtml disallowedElements={["img"]} components={{
@@ -343,7 +348,7 @@ function Message({ message, attachments, actions, connected, reload, working = f
   </div>;
   return (
     <article className={`${s.message} ${user ? s.user : s.assistant} ${sender ? s.forwarded : ""}`}>
-      {!user && <span className={s.avatar} aria-hidden><SparkIcon /></span>}
+      {!user && (speaker ? <ProjectManagerAvatar pm={speaker} /> : <span className={s.avatar} aria-hidden><SparkIcon /></span>)}
       <div className={s.body}>
         <div className={s.meta}>
           <span className={s.author}>{author}</span>
@@ -525,13 +530,18 @@ function Chat({ project }: { project: string | null }) {
   const ready: boolean | null = settings.data ? profileId !== null : null;
   const profiles = useData(() => call("getProfiles"), [], (event) => event.type === "definition.changed" && event.path === "profiles.json");
   const accounts = useData(() => call("getAccounts"), [], (event) => event.type === "definition.changed" && event.path === "accounts.json");
-  const projectView = useData(() => project === null ? Promise.resolve(null) : call("getProject", { params: { id: project } }), [], (event) => event.type === "project.updated" && event.projectId === project);
+  const projectList = useData(() => call("listProjects"), [], (event) => event.type === "project.updated");
+  const projects: Map<string, ProjectEntry> = new Map((projectList.data ?? []).map(({ id, project: loaded }) => [id, { name: loaded?.name ?? id, pm: loaded?.pm ?? null }]));
+  const own: ProjectEntry | undefined = project === null ? undefined : projects.get(project);
+  const pm: ProjectManagerIdentity | null = own?.pm ?? null;
+  const title: string = pm?.name ?? agent;
   const profile = profiles.data?.value.profiles.find(({ id }) => id === profileId);
   const allAccounts = accounts.data?.value.accounts ?? [];
   const account = allAccounts.find(({ id }) => id === profile?.account);
-  const projectName: string | null = project === null ? null : projectView.data?.project?.name ?? project;
+  const projectName: string | null = project === null ? null : own?.name ?? project;
   const modelParts: string[] = profile && account ? [harnessName(account, allAccounts), profile.model, profile.effort ?? "default effort"] : [];
-  const model: string | null = [...projectName === null ? [] : [projectName], ...modelParts].join(" · ") || null;
+  const model: string | null = [...projectName === null ? [] : [pm ? `${agent} · ${projectName}` : projectName], ...modelParts].join(" · ") || null;
+  const people: ChatTarget & ChatPeople = { ...target, title, pm, projects };
   const detail = useData(() => api.get(), [], (event) => event.type === "chat.changed" && event.project === project);
   const [query, setQuery] = useSearchParams();
   const definition: string | null = query.get("definition");
@@ -602,11 +612,12 @@ function Chat({ project }: { project: string | null }) {
     attachments.set(attachment.messageId, entries);
   }
   return (
-    <ChatContext.Provider value={target}>
+    <ChatContext.Provider value={people}>
     <aside className={s.panel} aria-label={agent}><section className={s.pane}>
       <div className={s.toolbar} role="group" aria-label="Conversation controls">
+        {pm && <ProjectManagerAvatar pm={pm} />}
         <div className={s.heading}>
-          <h2 className={s.title}>{agent}</h2>
+          <h2 className={s.title}>{title}</h2>
           {model && <span className={s.model}>{model}</span>}
         </div>
         <IconButton label="Compact conversation" icon={<CompactIcon />} disabled={!canCompact} loading={compact.busy} onClick={() => void compact.run()} />

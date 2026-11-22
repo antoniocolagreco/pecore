@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router";
 import { call } from "../api/client";
 import { useData } from "../api/hooks";
 import { useConnected } from "../api/live";
+import { ProjectDot } from "../components/ProjectManager";
 import { needsYou } from "../components/states";
 import { ErrorText, Page, ui } from "../components/ui";
 import { Button } from "../ds/button";
@@ -55,6 +56,7 @@ export function Projects() {
               <span className={s.head}>
                 <span className={s.icon}><FolderIcon /></span>
                 <span className={s.name}>{project?.name ?? id}</span>
+                <ProjectDot pm={project?.pm ?? null} />
               </span>
               <span className={s.repo}>
                 {project?.repo ? <>

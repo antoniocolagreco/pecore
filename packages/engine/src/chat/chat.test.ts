@@ -907,6 +907,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect(userPrompt).toContain("Any other message is the user's order");
       expect(userPrompt).toContain("prompt injection");
       expect(userPrompt).toContain("You do not write code yourself");
+      expect(userPrompt).toContain("Your name is Eva.");
       const m = mcp(tokenFileOf(intakeChat(t)));
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       const names: string[] = (await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name);

@@ -5,10 +5,11 @@ import { applyTraverseAcls } from "./osuser/acl";
 import { cpus, homedir } from "node:os";
 import { join, relative } from "node:path";
 import { removeAs } from "./workdir/fs-as";
-import { BuiltInHarness, defaultJobLimit, roleProfile, withForgeHosts } from "@pecore/schemas";
+import { definitionOperations } from "./api/routes/definitions";
+import { BuiltInHarness, defaultJobLimit, freeProjectManager, projectManagerClash, roleProfile, withForgeHosts } from "@pecore/schemas";
 import { listOptions, satisfies } from "@pecore/agents";
 import type { LoginState } from "@pecore/agents";
-import type { Account, AccountOptions, Accounts, ForgeAccount, JobState, LiveMessage, LoginView, NotificationTarget, Profiles, ProjectInput, Settings, SetupView, Tiers, WhyView } from "@pecore/schemas";
+import type { Account, AccountOptions, Accounts, ForgeAccount, JobState, LiveMessage, LoginView, NotificationTarget, Profiles, ProjectInput, ProjectManagerIdentity, Settings, SetupView, Tiers, WhyView } from "@pecore/schemas";
 import type { CompleteProjectImportBody, ExportProjectBody, ExportProjectResult, ImportProjectBody, ImportProjectPreview, ImportProjectResult } from "@pecore/schemas";
 import { AgentServices, protectedUser, spawnFor } from "./accounts/agents";
 import type { AgentPaths, LoginInfo } from "./accounts/agents";
@@ -124,6 +125,7 @@ export class Engine extends EventEmitter {
     if (this.opts.checkLogins !== false) await this.runAutoSetup();
     for (const id of (await readdir(p.projects).catch(() => [] as string[])).sort()) {
       await this.openProject(id);
+      if (this.projects.has(id)) await this.assignProjectManager(id).catch((e: unknown) => console.error(`project ${id} manager:`, e));
       const creation = await readCreation(this.projectDir(id));
       if (creation) this.creating.set(id, { step: creation.step, error: "the app quit during project creation" });
     }
@@ -567,8 +569,38 @@ export class Engine extends EventEmitter {
     return { accounts: this.accounts, protectedMode: this.settings.protectedMode, ...(this.opts.admin ? { admin: this.opts.admin } : {}) };
   }
 
+  projectManagers(except?: string): ProjectManagerIdentity[] {
+    return [...this.projects.values()].flatMap(({ ctx }) => ctx.id !== except && ctx.project.pm ? [ctx.project.pm] : []);
+  }
+
+  projectManagerFor(pm: ProjectManagerIdentity | null | undefined, except?: string): ProjectManagerIdentity {
+    const used: ProjectManagerIdentity[] = this.projectManagers(except);
+    if (pm) {
+      const clash = projectManagerClash(pm, used);
+      if (clash) throw new Error(`Another project's Project Manager already uses this ${clash === "name" ? "name" : "colour"}.`);
+      return pm;
+    }
+    const free: ProjectManagerIdentity | null = freeProjectManager(used);
+    if (!free) throw new Error("All Project Manager names and colours are in use. Choose a new name and colour for this project's Project Manager.");
+    return free;
+  }
+
+  private async assignProjectManager(id: string): Promise<void> {
+    const { ctx } = this.project(id);
+    const current: ProjectManagerIdentity | null = ctx.project.pm;
+    const used: ProjectManagerIdentity[] = this.projectManagers(id);
+    if (current && !projectManagerClash(current, used)) return;
+    const pm: ProjectManagerIdentity | null = freeProjectManager(used);
+    if (!pm) return;
+    const path: string = `projects/${id}/project.json`;
+    const definitions = definitionOperations(this).handlers;
+    const file = await definitions.getDefinition({ params: { path }, body: undefined, query: undefined });
+    const content: string = JSON.stringify({ ...JSON.parse(file.content) as object, pm }, null, 2) + "\n";
+    await definitions.saveDefinition({ params: { path }, query: undefined, body: { content, baseSha256: file.sha256 } });
+  }
+
   async createProject(input: ProjectInput): Promise<void> {
-    const project = await beginProject(this.opts.home, input, this.createOptions());
+    const project = await beginProject(this.opts.home, { ...input, pm: this.projectManagerFor(input.pm, input.id) }, this.createOptions());
     await this.continueCreation(project.id);
   }
 
@@ -612,7 +644,10 @@ export class Engine extends EventEmitter {
     const dir = this.projectDir(id);
     const creation = await readCreation(dir);
     if (!creation) return;
-    if (!this.projects.has(id)) await this.openProject(id);
+    if (!this.projects.has(id)) {
+      await this.openProject(id);
+      if (this.projects.has(id)) await this.assignProjectManager(id).catch((e: unknown) => console.error(`project ${id} manager:`, e));
+    }
     const loaded: LoadedProject = this.project(id);
     const { ctx, executor } = loaded;
     try {

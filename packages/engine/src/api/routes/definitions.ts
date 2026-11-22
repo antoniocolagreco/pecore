@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { Name, Node, Project, Recipe } from "@pecore/schemas";
+import { Name, Node, Project, projectManagerClash, Recipe } from "@pecore/schemas";
 import type { DefinitionEntry, InstantiateBody, RouteOutput } from "@pecore/schemas";
 import { instantiateNode, instantiateRecipe } from "../../definitions/instantiate";
 import { loadLibrary, loadProject, zodErrors } from "../../definitions/load";
@@ -229,6 +229,8 @@ export function definitionOperations(engine: Engine) {
       const loaded = engine.project(id);
       const current: Project = loaded.ctx.project;
       const next: Project = Project.parse(value);
+      const clash = next.pm && projectManagerClash(next.pm, engine.projectManagers(id));
+      if (clash) throw new HttpError("bad_request", `Another project's Project Manager already uses this ${clash === "name" ? "name" : "colour"}.`);
       if (current.folder !== next.folder || !sameRepository(current.repo, next.repo)) {
         if (engine.creating.has(id) || loaded.deleting || loaded.executor.jobs().some(({ state }) => !isFinal(state))) {
           throw new HttpError("conflict", "Finish or stop this project's jobs before changing its repository or folder.");
