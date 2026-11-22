@@ -5,6 +5,7 @@
 *   **Date:** 2026-11-18
 *   **Replaces:** [original design](orginal_design.md).
 *   **Maintenance:** Update this design and [ui-design.md](ui-design.md) together when a product decision changes the UI.
+*   Follow the [repository workflow](repository-workflow.md) for branches, commits and pull requests.
 *   **Inputs:** [Concepts brief](archive/concepts-brief.md) and [initial design](archive/initial-brainstorm.md). References to Dn name decisions in the concepts brief.
 *   **Changes to the brief's decisions:** see [Changes from the Concepts Brief](#changes-from-the-concepts-brief).
 
