@@ -3,8 +3,8 @@
 *   **Author:** Antonio Colagreco
 *   **Status:** Approved (EGM stages 5-8 applied; stage 9 not applicable; reports in [reviews/ui/](reviews/ui/)). The `packages/app` table of design.md matches the Screens table below.
 *   **Date:** 2026-11-18
-*   **Related:** [design.md](design.md), [concepts-brief.md](concepts-brief.md)
-*   **Decision history:** [decisions.md](decisions.md). This document always describes the current state; every decision there is applied here in the same change.
+*   **Related:** [Product and engineering design](design.md), [concepts brief](archive/concepts-brief.md)
+*   **Maintenance:** Update these screen details and the [product interface](design.md#product-interface) together.
 
 ## Problem Statement
 
@@ -17,9 +17,9 @@
 *   **Diagnosis in two clicks** (design.md G13): from Factory to the live log of a running node, and from a failed job to the failing node run.
 *   **Everything in the GUI** (design.md G16): every function of design.md has a screen; no step needs a file editor.
 *   **Safe confirmations** (design.md section 8): a confirmation always approves exactly what the user saw.
-*   **Minimal** (decision 35): nothing on screen that the user does not need to act or decide.
-*   **Small screens** (decision 33): everything works in a 1024×720 window.
-*   **The user controls what leaves the app** (decision 39): outside a recipe, nothing is posted to an outside service without the user's approval or order.
+*   **Minimal**: nothing on screen that the user does not need to act or decide.
+*   **Small screens**: everything works in a 1024×720 window.
+*   **The user controls what leaves the app**: outside a recipe, nothing is posted to an outside service without the user's approval or order.
 
 ## Non-Goals
 
@@ -32,7 +32,7 @@
 ## Terms
 
 *   **Factory:** the home screen, a summary dashboard.
-*   **Notifications:** the screen that lists the items to decide (open `human_queue` rows, except `agent-question` items, answered in the chat) and the notification log (decision 45). Its counter counts the items to decide plus the notifications not seen yet.
+*   **Notifications:** the screen that lists the items to decide (open `human_queue` rows, except `agent-question` items, answered in the chat) and the notification log. Its counter counts the items to decide plus the notifications not seen yet.
 *   **Engine:** the background process that runs jobs (design.md section 1). **Engine node:** a node with `runsAs: engine`. **Engine state:** a job or node run state of design.md 4.1 and 4.3.
 *   **Normal mode and protected mode:** design.md's project user (section 8). In normal mode, the default, agents and the orchestrator run as the user, with the user's own harness logins, like Claude Code or Codex run by hand. In protected mode they run as `pecore-agent`, which cannot read the user's files and logins; it needs one login per harness account. The mode is global, not per project.
 *   **Check node:** a recipe node named in some node's `requires` (design.md 4.4).
@@ -56,25 +56,25 @@
 |---|---|---|
 | IA1 | Global pause and play | G17 |
 | IA2 | Notifications counter | 4.3, 8 |
-| IA3 | Notifications: job finished, needs the user, login expired, parent failed, auto-setup changes, what the Orchestrator did on a ticket (jobs created, question waiting for approval). Assistant replies only as a system notification (decisions 25, 27, 44) | 6, 7, 9 |
-| IA4 | Withdrawn: engine status line (decision 35); only the disconnected banner stays | 1, "Fixed implementation choices" |
-| IA5 | Withdrawn: project filter (decision 30) | 3.5 |
+| IA3 | Notifications: job finished, needs the user, login expired, parent failed, auto-setup changes, what the Orchestrator did on a ticket (jobs created, question waiting for approval). Assistant replies only as a system notification | 6, 7, 9 |
+| IA4 | Withdrawn: engine status line; only the disconnected banner stays | 1, "Fixed implementation choices" |
+| IA5 | Withdrawn: global project filter | [Shell and navigation](design.md#shell-and-navigation) |
 | IA6 | Tray icon | "Engine and main process messages" |
 | IA7 | Command palette | added by this document |
 
-### B. Orchestrator chat
+### B. Assistant chat
 
 | Id | Element | Source |
 |---|---|---|
-| IB1 | Withdrawn: conversation list; there is one chat (decision 36) | 6 |
+| IB1 | Withdrawn: conversation list; there is one chat | 6 |
 | IB2 | Messages, with attachments (text, links, images) | G1, 6 |
 | IB3 | Input field with attachment upload | G1 |
-| IB4 | What the orchestrator did (from `chats.db` `actions`), under its reply: a card for each action that changes something, one line for reads (decision 28) | 6, "Data model" |
-| IB7 | Live reply while it is written, working indicator, compaction (decisions 20, 23, 24) | added by decisions.md |
+| IB4 | Assistant actions under the reply. One card per change and one shared line for reads. | 6, "Data model" |
+| IB7 | Live reply while it is written, working indicator, compaction | 6 |
 | IB5 | Unread marker | 6, 7 |
 | IB6 | Answers to agent questions (`agent-question` items) | 6 |
-| IB8 | Automatic compaction at two token thresholds (decision 37) | added by decisions.md |
-| IB9 | Withdrawn: Orchestrator reports in the chat; they are notifications (decision 44) | added by decisions.md |
+| IB8 | Automatic compaction at two token thresholds | 6 |
+| IB9 | Withdrawn: Orchestrator reports in the chat; they are notifications | 6 |
 
 ### C. Jobs
 
@@ -89,7 +89,7 @@
 | IC7 | Artifact viewer: spec, diff, findings, risk, check log, delivery link | 3.3 |
 | IC8 | "Why is it waiting" text (same as `pecore job why`) | 9 |
 | IC9 | Base change notice | 4.2 |
-| IC10 | New job form on the project page: title, what to do, recipe (decision 82, replaces decision 31); jobs also start from the chat | "Local API", "Job creation" |
+| IC10 | New job form on the project page with title, instructions and recipe. Jobs can also start from chat. | [Job creation](design.md#job-creation) |
 
 ### D. items to decide
 
@@ -98,8 +98,8 @@
 | ID1 | Human review | `human-node` | 3.1 |
 | ID6 | Untrusted ticket | `ticket` | 7 |
 | ID7 | Round limit reached | `round-limit` | 4.2 |
-| ID8 | Withdrawn: budget reached; projects have no budgets (decision 71) | | 4.7 |
-| ID9 | Request to post outside the app (a question or comment on a ticket that no recipe prescribes) | `outbound` | decision 39 |
+| ID8 | Withdrawn: budget reached; projects have no budgets | | 4.7 |
+| ID9 | Request to post a question or comment outside a recipe | `outbound` | 6, 7 |
 
 ### E. Recipes and nodes
 
@@ -123,18 +123,18 @@
 | IF6 | Protected mode: on and off, harness logins of `pecore-agent` | 5, 8 |
 | IF7 | Project delete | 4.8 |
 
-### G. Settings and usage
+### G. Settings
 
 | Id | Element | Source |
 |---|---|---|
 | IG1 | Accounts: AI tools (found by themselves), Git hosting (public services and private Git servers), services | 3.4 |
-| IG2 | Withdrawn: profiles and tiers; models are chosen on each node and for the orchestrator (decisions 5, 6) | 3.4 |
+| IG2 | Withdrawn: the profile and tier editor. Model choices are on agent nodes and in Settings for the Assistant and Orchestrator. | 3.4 |
 | IG3 | Global limits, services runtime, disk threshold, merge check interval | 4.7, 4.9, "Risks & Limits" |
-| IG4 | Withdrawn: the Usage page (decision 64) | 4.7 |
-| IG5 | First run | G14 |
-| IG6 | Assistant and Orchestrator, each: provider, model, effort, automatic and maximum compaction thresholds (decisions 7, 37, 38, 43) | 6 |
+| IG4 | Withdrawn: the Usage page | 4.7 |
+| IG5 | Setup status and next steps | G14 |
+| IG6 | Assistant and Orchestrator, each: provider, model, effort, automatic and maximum compaction thresholds | 6 |
 | IG7 | Auto-update | "Fixed implementation choices" |
-| IG8 | Withdrawn: quiet hours are left to the operating system (decision 53) | 9 |
+| IG8 | Withdrawn: quiet hours are left to the operating system | 9 |
 | IG9 | Appearance: theme, reduced motion | UI4, UI6 |
 
 ## Screens
@@ -150,28 +150,28 @@
 | Recipe editor, node editor | detail page | IE1-IE3, IE5 |
 | Library | centre | IE4 |
 | Settings | centre | IG1, IG3, IG6-IG9 |
-| First run | full screen | IG5 |
+| Setup banner | above page content when no account works | IG5 |
 
 ## Proposed Design
 
-The prototype is normative only for: the gradients, Notifications as a list plus a detail pane, the node inspector as key/value rows, the engine status at the bottom of the navigation, the first run as a step checklist. Nothing else in it is normative.
+The prototype shows the Notifications list and detail pane and the node inspector's key/value rows. This document defines the current UI.
 
 ### Navigation (left)
 
-*   The expanded sidebar shows "<PE/CORE>" as the product name (decision 88).
-*   Window: menu on the left, the page in the centre, the Assistant chat on the right (decision 32). The chat takes 30% of the width, between 300 and 380 px.
-*   The menu collapses and expands with a button at the top left (decision 34). The choice is remembered; the first time, the menu starts collapsed below 1280 px of width. Collapsed, it is a column of icons, each showing its name on pointing (decision 55).
-*   The chat panel's width changes by dragging its left edge or with the arrow keys on it (decision 56).
-*   One list, no group titles (decision 14): Notifications (counter, IA2), Factory, Jobs, Projects, Library, Settings.
-*   Under the list, the open page's own sub-navigation (decision 13): Settings sections.
+*   The expanded sidebar shows "<PE/CORE>" as the product name.
+*   Window: menu on the left, the page in the centre, the Assistant chat on the right. By default the chat takes 30% of the width, between 300 and 380 px.
+*   The menu collapses and expands with a button at the top left. The choice is remembered; the first time, the menu starts collapsed below 1280 px of width. Collapsed, it is a column of icons, each showing its name on pointing.
+*   The chat panel's width changes by dragging its left edge or with the arrow keys on it.
+*   One list, without group titles. Order: Factory, Projects, Jobs, Notifications (IA2), Library, Settings.
+*   Under the list, the open page's own sub-navigation: Settings sections.
 *   Note: a project's recipes, nodes and settings are reached through Projects; the node editor and the job view are detail pages, not menu items.
-*   Page width follows the content (decision 81): pages with tables, lists or graphs (Factory, Jobs, Projects, Notifications, a project page, a job) use the full width; pages that are only a form or text to read (Settings, the wizards) are centred with a maximum width. Inside a full-width page, a form keeps its maximum width and stays aligned to the left with the tabs.
+*   Page width follows the content: pages with tables, lists or graphs (Factory, Jobs, Projects, Notifications, a project page, a job) use the full width; pages that are only a form or text to read (Settings, the wizards) are centred with a maximum width. Inside a full-width page, a form keeps its maximum width and stays aligned to the left with the tabs.
 
 ### Top bar
 
-*   Command palette button, global pause and play (IA1). No notification bell: notifications are a page of the menu (decision 45).
+*   Command palette button, global pause and play (IA1). No notification bell: notifications are a page of the menu.
 *   While the global pause is on, a banner says so, with Play.
-*   A system notification is shown only when the <PE/CORE> window is not focused (decision 25).
+*   A system notification is shown only when the <PE/CORE> window is not focused.
 
 ### Tray (IA6)
 
@@ -183,14 +183,14 @@ The prototype is normative only for: the gradients, Notifications as a list plus
 
 ### Factory
 
-*   Counters, each opening a filtered view: items to decide (opens Notifications; global), Needs you, Failed, Working, Waiting (open Jobs filtered by that label). No token or cost counters (decision 64).
+*   Counters, each opening a filtered view: items to decide (opens Notifications; global), Needs you, Failed, Working, Waiting (open Jobs filtered by that label). No token or cost counters.
 *   After a restart with jobs paused by the quit: "Play interrupted jobs" (UI15).
 *   Rows of jobs not in a final state, compact, so 15 or more rows fit in a 1080 px tall window: project, title, current node, state, waiting reason with time ("Quota until 15:40"). Stacked jobs indented under their parent. Hover actions follow the controls table.
 *   A Needs you row opens its target (see "Job states shown").
 
 ### Jobs
 
-*   Every job. Filters (IC2): text search on title, project, state label, archived. A project page shows the jobs of that project in its Jobs tab (decision 79).
+*   Every job. Filters (IC2): text search on title, project, state label, archived. A project page shows the jobs of that project in its Jobs tab.
 *   Columns: title, project, state, current node or final outcome, waiting reason, duration (from creation to end or to now, waits included), updated.
 *   Stacked jobs as a collapsible tree.
 *   Row actions on hover, following the controls table.
@@ -227,7 +227,7 @@ The prototype is normative only for: the gradients, Notifications as a list plus
 
 ### Notifications
 
-*   One list, all projects (decision 45). First the items to decide, oldest first, each marked with a dot: kind label ("Human review", "Comment to post", ...), project, the job when the item has one, age. Then the notification log (`GET /notifications`), newest first: title, text, age; a row opens its job or item to decide, and its trash button deletes it (decision 58). Opening the page marks the notifications seen.
+*   One list, all projects. First the items to decide, oldest first, each marked with a dot: kind label ("Human review", "Comment to post", ...), project, the job when the item has one, age. Then the notification log (`GET /notifications`), newest first: title, text, age; a row opens its job or item to decide, and its trash button deletes it. Opening the page marks the notifications seen.
 *   The detail pane appears only when an item to decide is open.
 *   Empty: "Nothing new".
 *   Every detail renders the item's `subject` snapshot, never a file read at decision time, and shows its sha256. The decision is sent with that hash. If `queue.updated` reports the open item resolved or cancelled (for example a review cancelled by a base change), the detail locks with a banner and a button that opens the new item, if any.
@@ -235,44 +235,43 @@ The prototype is normative only for: the gradients, Notifications as a list plus
     *   ID1: the diff in the unified view of the artifact viewer, risky hunks first, then findings and spec, check logs collapsed, one button per node outcome, a note field when the node's `answer` setting allows one.
     *   ID6: ticket text, author, start or discard.
     *   ID7: which cap was hit (the edge's `maxRounds` or the job's `maxNodeRuns`) and the runs used; input "allow N more" (default: the cap's value), or fail.
-    *   ID8: cost or tokens used and the limit reached (per job, or per project per day); input for the new limit, saved to `project.json` (one commit; the label says it applies to future jobs too), or stop. One item per limit: every job blocked by the same limit waits on it.
-    *   ID9, "Comment to post": the project and ticket, and the exact text that will be posted, asked by the Orchestrator. Post posts exactly that text; Reject posts nothing (decision 39). The ticket stays waiting until the user acts in the chat.
+    *   ID9, "Comment to post": show the project, ticket and exact text proposed by the Orchestrator. The ticket waits until the user chooses Post or Reject in Notifications.
 
 ### Assistant chat (right panel)
 
-*   One chat for the whole app, always on the right of every screen (decisions 32, 36). No conversation list, no page of its own. Its header has two icon buttons: Compact, and Clear, which after a confirmation deletes the conversation and starts a new Assistant session (decision 57).
-*   The user talks only to the Assistant. The Orchestrator, which works in the background on new issues of linked projects, never chats and never writes in this chat: what it does arrives as a notification, for example "Shop, ticket 42: The Orchestrator created the job Fix login." (decisions 38, 44).
-*   The user's messages sit in a bubble that keeps the accent colour at the bottom-right corner and fades towards the top-left to a lighter shade in light themes, a darker one in dark themes (`--bubble-user`); the Assistant's replies have no bubble (decision 59).
-*   The reply appears while it is written (decision 20). Until it starts, animated dots under the user's message show the Assistant is working (decision 23).
-*   After sending, the cursor stays in the message box (decision 22).
-*   Compaction (decision 24): the Compact button, or `/compact` typed as a message, sends the harness's own compaction command to the chat's session. The chat shows a divider ("Compacting the conversation…", then "Conversation compacted"), no reply.
-*   Automatic compaction (decision 37): above the maximum threshold (default 256,000 tokens) the chat compacts at once; above the automatic threshold (default 128,000) it compacts after 5 minutes without use. Both thresholds are in Settings > Assistant; the Orchestrator's sessions have their own pair in Settings > Orchestrator (decision 43). The size comes from what the harness reports after each reply.
-*   An order the user gives in the chat is authorised as given (decision 39): if the user asks to comment on an issue, the Assistant posts it.
+*   One chat for the whole app, always on the right of every screen. No conversation list, no page of its own. Its header has two icon buttons: Compact, and Clear, which after a confirmation deletes the conversation and starts a new Assistant session.
+*   The user talks only to the Assistant. The Orchestrator, which works in the background on new issues of linked projects, never chats and never writes in this chat: what it does arrives as a notification, for example "Shop, ticket 42: The Orchestrator created the job Fix login.".
+*   The user's messages sit in a bubble that keeps the accent colour at the bottom-right corner and fades towards the top-left to a lighter shade in light themes, a darker one in dark themes (`--bubble-user`); the Assistant's replies have no bubble.
+*   The reply appears while it is written. Until it starts, animated dots under the user's message show the Assistant is working.
+*   After sending, the cursor stays in the message box.
+*   Compaction: the Compact button, or `/compact` typed as a message, sends the harness's own compaction command to the chat's session. The chat shows a divider ("Compacting the conversation…", then "Conversation compacted"), no reply.
+*   Automatic compaction: above the maximum threshold (default 256,000 tokens) the chat compacts at once; above the automatic threshold (default 128,000) it compacts after 5 minutes without use. Both thresholds are in Settings > Assistant; the Orchestrator's sessions have their own pair in Settings > Orchestrator. The size comes from what the harness reports after each reply.
+*   An order the user gives in the chat is authorised as given: if the user asks to comment on an issue, the Assistant posts it.
 *   The Assistant can update a project's name, base branch and services Compose path. A deletion request shows the project and what will be removed in a card with Confirm and Reject. Confirm deletes <PE/CORE>'s data only, using the same operation as the project settings page.
 *   "Ask the AI" (IE5) puts the cursor in the chat with the current screen's object as context.
 *   Context chip: one at a time, a reference with its scope (for example "Job: Fix login timeout", "Recipe feature (project progetto-1)", "Template recipe feature"). It shows the object of the current screen and changes on navigation; pinning keeps it; removing it sends the next message with no context.
-*   What the Assistant did (IB4) appears under its reply, never under the user's message (decision 28). Actions that change something (create jobs, answer a job's question, add a node or recipe to a project, comment on a ticket) get a card that links to the job, definition or item to decide. Reads (projects, recipes, ticket, ticket replies, job status, job output, library templates, definition check) become one grey line: "Read: projects, job status".
+*   What the Assistant did (IB4) appears under its reply, never under the user's message. Actions that change something (create jobs, answer a job's question, add a node or recipe to a project, comment on a ticket) get a card that links to the job, definition or item to decide. Reads (projects, recipes, ticket, ticket replies, job status, job output, library templates, definition check) become one grey line: "Read: projects, job status".
 *   Agent questions (IB6) appear in the conversation with an answer field.
-*   A system notification for a reply or a report is shown only when the <PE/CORE> window is not focused; they never go to the notification list (decisions 25, 27).
+*   Assistant replies use the unread marker and a system notification when the window is not focused. Orchestrator reports appear in the Notifications log.
 
 ### Projects
 
 *   List: name, repo (or "local only"), base branch, jobs that need the user, failed jobs, warning when a login expired.
-*   "New project" and "Import" appear next to each other. When there are no projects, both buttons appear in the empty state (decisions 74, 85).
-*   Project page header: a "New job" button that opens a dialog with Title, What to do and Recipe. Recipe is chosen by itself and locked when the project has one recipe; with none, the dialog says to add one in the Recipes tab. "Create job" creates it and closes the dialog; the job appears in the Jobs tab (decision 82).
-*   Project page, full width, in tabs (decisions 79, 81):
+*   "New project" and "Import" appear next to each other. When there are no projects, both buttons appear in the empty state.
+*   Project page header: a "New job" button that opens a dialog with Title, What to do and Recipe. Recipe is chosen by itself and locked when the project has one recipe; with none, the dialog says to add one in the Recipes tab. "Create job" creates it and closes the dialog; the job appears in the Jobs tab.
+*   Project page, full width, in tabs:
     *   Jobs, the first tab and open by default: the project's jobs, in the same table as the Jobs page without the Project column.
     *   Settings, Recipes, Nodes and Knowledge: a panel with a maximum width, aligned to the left.
-    *   Settings: at the top a details list, read-only after creation: repository, forge account, folder, id; under it the editable fields: name, base branch, services compose file. No default recipe and no `project.json` editor (decision 77). The services compose file is empty by default, meaning automatic (a standard compose file at the repository root); it can be typed or picked with "Choose…", which opens the file dialog in the project folder and keeps only files inside it, saved relative to it (decision 78).
+    *   Settings: at the top a details list, read-only after creation: repository, forge account, folder, id; under it the editable fields: name, base branch, services compose file. No default recipe and no `project.json` editor. The services compose file is empty by default, meaning automatic (a standard compose file at the repository root); it can be typed or picked with "Choose…", which opens the file dialog in the project folder and keeps only files inside it, saved relative to it.
     *   Recipes (recipe editor), Nodes (node editor), Knowledge (IF4), Services, Ticket source (`label`, `pollSec`, trusted users).
     *   Delete project (IF7) and Export sit at the left of the Settings actions, apart from Discard and Save.
-*   No "Jobs of this project" button (decision 79).
+*   No "Jobs of this project" button.
 
 ### New project wizard (full page)
 
 Pages: Inputs and Create. Create runs the tasks of design.md "Project creation" in order; the project exists when Create ends.
 
-1.  **Inputs:** name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, folder, base branch. Folder is the user's copy of the code: typed by hand or picked with "Choose…" (system folder dialog); it starts as the projects folder of Settings plus `<id>` and follows the name until the user edits it (decisions 75, 76). No recipes: the user adds them afterwards from the Library or the project page, and a recipe that pushes or opens a PR cannot be added to a project without a remote repo (decision 72). The id comes from the name (decision 70).
+1.  **Inputs:** name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, folder, base branch. Folder is the user's copy of the code: typed by hand or picked with "Choose…" (system folder dialog); it starts as the projects folder of Settings plus `<id>` and follows the name until the user edits it. No recipes: the user adds them afterwards from the Library or the project page, and a recipe that pushes or opens a PR cannot be added to a project without a remote repo. The id comes from the name.
 2.  **Create:** the tasks of "Project creation" (validation, project directory, clone or repo creation, `repo.git` setup and home check, access for `pecore-agent` in protected mode, commit), each with its state. A failed task undoes the tasks before it, says why, and returns to Inputs with the values kept. A repo created on the forge is never deleted by the undo: the page lists it as left on the forge.
 3.  No logins page: logins belong to the user, not to the project (Settings > Accounts).
 
@@ -319,17 +318,17 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 ### Settings
 
-*   Sections: Accounts (IG1), Protected mode (IF6), Assistant and Orchestrator (IG6), Projects, Limits and disk threshold, Services runtime, Merge check interval (IG3), Updates (IG7), Appearance (IG9). No Models section (decision 6) and no Notifications section (decision 53).
-*   The section list is in the main sidebar (decision 13). Sections adapt to the window width, and each has a one-line description under its title (decisions 2, 16).
-*   No text or JSON editing and no user-typed IDs; raw validation errors are never shown (decisions 1, 3).
-*   Every change saves by itself, a moment after the last keystroke and at once when the page is left; there is no Save or Discard button (decision 49). A value that is not valid is not saved and the problem shows at the bottom of the page.
+*   Sections: Accounts (IG1), Protected mode (IF6), Assistant and Orchestrator (IG6), Projects, Limits and disk threshold, Services runtime, Merge check interval (IG3), Updates (IG7), Appearance (IG9). No Models section and no Notifications section.
+*   The section list is in the main sidebar. Sections adapt to the window width, and each has a one-line description under its title.
+*   No text or JSON editing and no user-typed IDs; raw validation errors are never shown.
+*   Every change saves by itself, a moment after the last keystroke and at once when the page is left; there is no Save or Discard button. A value that is not valid is not saved and the problem shows at the bottom of the page.
 *   Accounts has two lists:
-    *   AI tools: every installed harness appears by itself (decision 4). A row shows the tool, the account, its state, a Check button that looks clickable, and Log in only when needed (decision 8). A working account shows "Logged in", OpenCode and a private Git server included (decision 51). OpenCode is logged in when it lists at least one model; with none, the row says to set up a model provider in OpenCode (decision 12).
-    *   Git hosting: an "Add account" button for a public service or the user's own server (decisions 9, 11). Texts never name a hosting service. Forge tool logins (`gh`, `glab`) run in the GUI like harness logins: the device code or URL is shown, then the account is rechecked (design.md `accounts/login.ts`). A private Git server account uses the user's own Git credentials and has no Log in button.
-*   Assistant: Provider, Model and Effort selects, filled from what the harness reports (decision 7), and the automatic and maximum compaction thresholds in tokens (default 128,000 and 256,000, decision 37).
-*   Orchestrator: Provider, Model and Effort selects, by default "Same as the Assistant" (decision 38), and its own pair of compaction thresholds with the same defaults (decision 43).
-*   In both pickers Effort is locked until a model is chosen (decision 48) and lists only the levels that model offers, Default alone when it offers none; choosing another model resets it to Default (decision 52). The model list is read once when the app starts, and each model's levels the first time they are needed; a small refresh button next to Model reads both again (decision 50).
-*   Projects: "Projects folder", typed by hand or picked with "Choose…", default the user's home (`~`). A new project's folder starts as this folder plus the project id, in the wizard and in the chat (decision 76).
+    *   AI tools: every installed harness appears by itself. A row shows the tool, the account, its state, a Check button that looks clickable, and Log in only when needed. A working account shows "Logged in", OpenCode and a private Git server included. OpenCode is logged in when it lists at least one model; with none, the row says to set up a model provider in OpenCode.
+    *   Git hosting offers Add account for a public service or the user's own server. General copy is service-neutral. The picker and account rows name the service. Forge tool logins show the tool's device code or URL, then recheck the account. A private Git server uses the user's Git credentials and has no Log in button.
+*   Assistant settings offer the provider, model and effort from the harness and the automatic and maximum compaction thresholds (128,000 and 256,000 tokens by default).
+*   Orchestrator: Provider, Model and Effort selects, by default "Same as the Assistant", and its own pair of compaction thresholds with the same defaults.
+*   In both pickers Effort is locked until a model is chosen and lists only the levels that model offers, Default alone when it offers none; choosing another model resets it to Default. The model list is read once when the app starts, and each model's levels the first time they are needed; a small refresh button next to Model reads both again.
+*   Projects: "Projects folder", typed by hand or picked with "Choose…", default the user's home (`~`). A new project's folder starts as this folder plus the project id, in the wizard and in the chat.
 *   Protected mode (IF6): one switch with a short explanation (agents cannot read your files and logins; one login per harness account for `pecore-agent`; agents can read all `pecore-agent` logins). Turning it on opens the admin prompt; if it cannot (no polkit agent), the page shows the exact script with a Copy button and "I ran it, recheck". Then the page lists each model account with a Login button for `pecore-agent`, showing the URL or code. Turning it off asks whether to also remove `pecore-agent`.
 *   "Recheck prerequisites", with a link to the setting each failed check points to.
 
@@ -339,7 +338,7 @@ Goal: minimum friction. The user opens <PE/CORE> and it works, with no setting t
 
 *   No location window: `PECORE_HOME` is `~/.pecore` unless a location is already stored. Moving it from Settings is a later feature.
 *   No first run screen and no `firstRunDone`. The app opens on Factory, with the Assistant chat on the right and the cursor in its message box.
-*   At every engine start, auto-setup runs (design.md "Auto-setup"). It finds the installed harnesses, adds an account for each one the user is logged in to, creates profiles from the models each harness reports, fills the tiers and sets the orchestrator profile. Profiles and tiers are internal and never shown (decision 5). It only adds what is missing and never changes what the user set.
+*   [Auto-setup](design.md#auto-setup) discovers harnesses and existing logins on startup. It fills internal accounts, profiles and tiers as needed and chooses an Assistant model when none is set. The Orchestrator follows that choice by default.
 *   When no harness is installed and logged in, a banner on every page says so, with the install link of each supported harness and a Log in button for the installed ones. Nothing is disabled that can work without it.
 *   git stays required, because `PECORE_HOME` is a git repository: without it the app shows an error with the install instruction. Other missing prerequisites (Compose, gh, glab) are warnings on the feature that needs them, as in "Missing configuration and warnings" below, never a blocking step.
 
@@ -347,19 +346,19 @@ Goal: minimum friction. The user opens <PE/CORE> and it works, with no setting t
 
 ### Empty, loading and disconnected states
 
-*   Empty lists say what fills them, with the action: "No projects: New project", "Notifications: Nothing new".
-*   Loading: lists keep their layout with placeholder rows; no spinners over the whole screen. A field whose options are loading shows a spinner and a "Reading…" text and never looks disabled (decision 19).
+*   Empty lists show the next action. Projects offers New project and Import. An empty Notifications page says "Nothing new".
+*   Loading: lists keep their layout with placeholder rows; no spinners over the whole screen. A field whose options are loading shows a spinner and a "Reading…" text and never looks disabled.
 
 ### Controls
 
-*   A select and a combobox look the same: same arrow, no clear button. A focused field shows one focus ring (decision 19).
+*   A select and a combobox look the same: same arrow, no clear button. A focused field shows one focus ring.
 *   Engine or WebSocket disconnected: a banner "Disconnected, reconnecting", every control disabled, data marked stale. On reconnect the GUI refetches every open view.
 
 ### Missing configuration and warnings
 
 *   A function whose requirements are missing is disabled, with a message that says what is missing and a link to where it is set ("No forge account: add one in Settings > Accounts").
 *   A missing or expired login is a notification and a warning on the project or account, never a blocking dialog.
-*   Home check failure: a warning on the engine status with "Fix permissions".
+*   The shell shows a warning when the home check finds exposed login files.
 *   Identity mismatch (design.md 3.4): a warning on the account; jobs that use it wait with reason `auth` until the user logs in with the right account and presses "Recheck login".
 
 ### Concurrent edits
@@ -419,7 +418,7 @@ Color is never the only signal: every state also has an icon and its label.
 | `surface`, `surface-raised`, `border` | panels, cards |
 | `text`, `text-muted` | text; contrast at least 4.5:1 on `bg`, `surface` and `surface-raised` |
 | `accent` | focus, links, highlighted text |
-| `accent-fill`, `on-accent` | solid fills (primary buttons, chat bubbles, selected items) and the text on them; same as `accent` unless the theme needs a darker fill for readable text (decision 61) |
+| `accent-fill`, `on-accent` | solid fills (primary buttons, chat bubbles, selected items) and the text on them; same as `accent` unless the theme needs a darker fill for readable text |
 | `status-running` | light blue: running |
 | `status-success` | green: success, success outcomes |
 | `status-failed` | red: failed, fail outcomes, validation errors |
@@ -430,11 +429,11 @@ Status tokens need at least 3:1 contrast against `surface` in every theme.
 
 ## Size tokens
 
-Every size lives in `ds/tokens.css`; components use only these variables, never a written number for text, control, row or icon size (decision 54). The scale follows Claude web for readability.
+Every size lives in `ds/tokens.css`; components use only these variables, never a written number for text, control, row or icon size. The scale follows Claude web for readability.
 
 | Token | Value | Use |
 |---|---|---|
-| `--text-size-sm`, base `--text-size`, `-md`, `-lg`, `-xl` | 14, 15, 16, 18, 26 px | captions, badges, table headers, secondary text, logs and code; body and controls; chat messages and emphasis; section and dialog titles; page titles. No text is smaller than 14 px: no `xs` size, no text shrunk with `scale`, and third-party defaults (graph nodes and labels, `<small>`) are set to `--text-size-sm` (decision 80) |
+| `--text-size-sm`, base `--text-size`, `-md`, `-lg`, `-xl` | 14, 15, 16, 18, 26 px | captions, badges, table headers, secondary text, logs and code; body and controls; chat messages and emphasis; section and dialog titles; page titles. No text is smaller than 14 px: no `xs` size, no text shrunk with `scale`, and third-party defaults (graph nodes and labels, `<small>`) are set to `--text-size-sm` |
 | `--line-height` | 1.5 | body text |
 | `--control-h-lg`, `--control-h`, `--control-h-sm` | 42, 36, 30 px | buttons, fields, selects |
 | `--row-h-lg`, `--row-h`, `--row-h-sm` | 44, 34, 30 px | table rows, menu and list rows, popup and menu items |
@@ -449,19 +448,19 @@ Every size lives in `ds/tokens.css`; components use only these variables, never 
 |---|---|
 | UI1 | Withdrawn; ids are not reused. |
 | UI2 | Factory is a summary dashboard; every function has its own page with the full detail. |
-| UI2b | Withdrawn: the Assistant chat is always on the right of every screen, with no page of its own (decisions 32, 36). |
-| UI3 | Dark green base and translucent panels, as in the prototype. |
-| UI4 | Themes: every color is a CSS variable. Settings > Appearance has a mode (System, Light, Dark) and one theme; the mode picks the theme's light or dark version, and System follows the operating system (decision 67). Shipped: Default, Autumn, Spring, Woodlands, Summer, Winter and Monochrome (decision 66), each in a light and a dark version, as variable blocks in `ds/tokens.css`. Woodlands is the summer version of Everforest, with a warm yellow background glow; Summer has sand tones, sky-blue accents and an orange background glow; both keep a coloured background with cards, sidebar and controls almost neutral, as Autumn, Spring and Winter do (decision 73). The user can add a theme as a JSON file of tokens in `PECORE_HOME/themes/`, validated by a JSON Schema; missing tokens fall back to the default theme; values must be colors; the file applies only in the mode that matches its background. |
-| UI5 | No images. The background is a fixed gradient of `bg-gradient-1` and `bg-gradient-2`, with no animation. |
-| UI6 | Animation only on running state (pulse); off with `prefers-reduced-motion` or Settings > Appearance > Reduced motion. No progress percentages: an agent node shows state, duration, round and attempts. |
+| UI2b | Withdrawn: the Assistant chat is always on the right of every screen, with no page of its own. |
+| UI3 | Surfaces and backgrounds use the chosen theme's tokens. |
+| UI4 | Themes: every color is a CSS variable. Settings > Appearance has a mode (System, Light, Dark) and one theme; the mode picks the theme's light or dark version, and System follows the operating system. Shipped: Default, Autumn, Spring, Woodlands, Summer, Winter and Monochrome, each in a light and a dark version, as variable blocks in `ds/tokens.css`. Woodlands is the summer version of Everforest, with a warm yellow background glow; Summer has sand tones, sky-blue accents and an orange background glow; both keep a coloured background with cards, sidebar and controls almost neutral, as Autumn, Spring and Winter do. The user can add a theme as a JSON file of tokens in `PECORE_HOME/themes/`, validated by a JSON Schema; missing tokens fall back to the default theme; values must be colors; the file applies only in the mode that matches its background. |
+| UI5 | Page content uses a themed background with a soft moving glow. The shell honours reduced motion. |
+| UI6 | A running node pulses. Reduced motion disables the pulse. Show state, duration, round and attempts without a progress percentage. |
 | UI7 | Components: Base UI (unstyled, behaviour and accessibility); styles: CSS Modules with the theme's CSS variables. |
 | UI7b | Libraries: React Flow (recipe graphs), CodeMirror 6 (editors), `@tanstack/react-virtual` (long lists and logs), `cmdk` (command palette). |
 | UI8 | The job list has no model or harness columns; those are details of a node run. |
 | UI9 | Stacked jobs are a tree of indented rows in the job lists. Graphs show recipes only. |
 | UI11 | Every value shown comes from engine state, an artifact, a persisted definition, or a deterministic computation on these. A value with no source is shown as missing; the UI never asks an LLM to fill it. |
 | UI12 | Factory shows only what needs the user and the state of unfinished work. Every other function is one navigation click away. |
-| UI13 | Withdrawn: there is no global project filter (decisions.md 30). Jobs has a project filter of its own. |
-| UI14 | The mini chat sends references, never content (design.md section 6). |
+| UI13 | Jobs has its own project filter. The top bar has no project filter. |
+| UI14 | Chat context contains references to the selected item (design.md section 6). |
 | UI15a | Closing the window keeps jobs running in the tray. |
 | UI15b | Quit asks for confirmation and shows how many jobs it interrupts. |
 | UI15c | After a restart, Factory shows "Play interrupted jobs" for jobs paused with reason `quit`. |

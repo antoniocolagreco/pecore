@@ -1,16 +1,16 @@
 # <PE/CORE>
 
 *   **Author:** Antonio Colagreco
-*   **Status:** Reviewed (EGM stages 5-9); UI specified, reviewed and approved in [ui-design.md](ui-design.md). Agents moved to ACP after the phase 0 spikes (section 5); that change had a targeted review ([report](reviews/design/acp_review_report.md)). A second full EGM run followed the move to normal and protected modes; the findings for phases 0 to 3 are applied ([triage](reviews/design/round2/triage.md)).
+*   **Status:** Current product and engineering design. Earlier reviews apply to the [original design](orginal_design.md).
 *   **Date:** 2026-11-18
-*   **Replaces:** `docs/initial-brainstorm.md` (<PE/CORE> v0.5)
-*   **Decision history:** [decisions.md](decisions.md). This document always describes the current state; every decision there is applied here in the same change.
-*   **Inputs:** [concepts-brief.md](concepts-brief.md): review findings B1-B8, M1-M16, N1-N9 and author decisions D1-D27. In this document, "Dn" always means a decision in that file, and "v0.5 Qn" an open question in [initial-brainstorm.md](initial-brainstorm.md).
+*   **Replaces:** [original design](orginal_design.md).
+*   **Maintenance:** Update this design and [ui-design.md](ui-design.md) together when a product decision changes the UI.
+*   **Inputs:** [Concepts brief](archive/concepts-brief.md) and [initial design](archive/initial-brainstorm.md). References to Dn name decisions in the concepts brief.
 *   **Changes to the brief's decisions:** see [Changes from the Concepts Brief](#changes-from-the-concepts-brief).
 
 Naming rule: "<PE/CORE>" in prose. Use `pecore` for the command, packages and file names, and `PECORE_HOME` for the environment variable.
 
-The name stands for Product Engineering Core, a core designed to support plugins. The mascot is a sheep (decision 88).
+The name stands for Product Engineering Core. The core is designed to support plugins. The mascot is a sheep. The Apache License 2.0 grants patent rights and covers contributions. The distribution includes `NOTICE`. The licence does not grant rights to the product name or logo.
 
 Terms used throughout:
 
@@ -27,7 +27,7 @@ Terms used throughout:
 
 ## Overview
 
-<PE/CORE> is an open source software factory, released under the Apache License 2.0. Work reaches <PE/CORE> as an order (in chat or as a ticket reference) or as a new ticket from a ticket source. The orchestrator, an AI agent that talks with the user and calls <PE/CORE>'s tools, turns the order into one or more jobs. Each job changes the code of a project and delivers the result where the project's recipe says: a pull request on GitHub, a merge request on GitLab, a pull request on Bitbucket, a push to AWS CodeCommit or a private git server, or only a branch in the local repo.
+<PE/CORE> is an open source software factory. The Assistant turns chat orders into jobs. The background Orchestrator does the same for tickets from linked projects. Jobs deliver according to their recipe, for example as a GitHub pull request, a GitLab merge request, a pushed branch on a private Git server or a local commit.
 
 An engine written in TypeScript runs the jobs. It executes recipes. A recipe is a graph of nodes and edges. Every operation on the code or on the outside world is a node: an agent with a role, a check, a human review, a commit, a rebase, a push, a pull request. Models do the work inside agent nodes; code decides transitions, retries, limits and the order of operations.
 
@@ -37,7 +37,7 @@ Nodes start as templates in a global library. To use one, the user instantiates 
 
 Agent nodes run the original harness programs and talk to them through ACP: Claude Code (through the `claude-agent-acp` adapter), Codex (`codex-acp`), opencode (`opencode acp`), and any other harness with an ACP mode or adapter, such as GitHub Copilot CLI, Gemini CLI or pi. Each harness uses its own login and subscription. One job can use models from several providers. Claude Code is the first connector built; the others follow (Build order).
 
-<PE/CORE> is a desktop app built with Electron and React. The user downloads it and opens it; there is no background service to install. The harnesses, forge CLIs and container runtime it uses are installed separately, and the first run checks them. The engine runs in a Node process started by the app, and every harness and command process is its child. Closing the window leaves the app running in the system tray, so jobs continue. Quitting the app (from the tray or the app menu, after a confirmation that lists the jobs it interrupts) terminates the engine, those processes and the job service containers (4.9). Every action is available in the app: chat with the orchestrator, recipe graph editor, live view of each job and node, template and instance editors, project settings, accounts and harness logins. A CLI uses the same local API while the app is open.
+<PE/CORE> is an Electron desktop app. A Node engine process starts harnesses and commands. Closing the window keeps jobs running in the system tray. Quitting warns about interrupted jobs and stops the engine, its child processes and job service containers (4.9). The GUI provides the Assistant, editors, live job views, project settings and account logins. The CLI uses the same local API while the app is open.
 
 A project is self-contained: one directory holds its definitions, the history of its jobs, its artifacts and logs. A project can be exported and shared on its own.
 
@@ -47,7 +47,7 @@ A project is self-contained: one directory holds its definitions, the history of
 
 The author wants to hand off software work and get a finished result back: a fix for a bug in a web app, a feature, or a new product such as a game for Linux and macOS. He does not want to write the code, and he wants several tasks running at the same time, using models from different providers.
 
-According to the comparison in [initial-brainstorm.md](initial-brainstorm.md) Appendix A and the "Alternatives Weighed" section of the concepts brief (not re-verified for this design), each existing tool lacks at least one of the properties listed below:
+The [initial comparison](archive/initial-brainstorm.md) and the [concepts brief](archive/concepts-brief.md) describe the alternatives available during design:
 
 *   Cockpit tools (Herdr, emdash, Claude Squad, T3 Code) run several agents, but the user drives each one. There is no pipeline, no gate and no recovery after a restart.
 *   Issue-to-PR services (Copilot coding agent, Codex cloud, Claude Code GitHub Action) are each tied to one vendor's agent and run on the vendor's infrastructure.
@@ -71,13 +71,13 @@ What none of them offers together:
 *   **G5. Templates and instances.** Node and recipe definitions are JSON files validated by JSON Schema. Both nodes and recipes have templates in a global library and instances in the project. The user can create a template or an instance by hand or by asking the AI in chat; the AI can also correct or modify existing ones. A new or changed file passes schema validation and is usable at once.
 *   **G6. Several providers at once.** One job can run agents from at least three different harnesses (for example Claude Code builder, Codex reviewer, opencode with a DeepSeek model for tests). Verified by an end-to-end test of the `feature` recipe with three harnesses.
 *   **G7. Parallel jobs with waits, not failures.** The number of parallel jobs and agents is configuration. A job that hits a quota, rate limit, concurrency limit, network outage or expired login enters a visible waiting state with a reason from a fixed list (4.3), and resumes when the cause clears. It does not fail for those reasons. Verified per built-in connector with recorded ACP traffic of quota, rate limit and auth errors (section 5).
-*   **G8. Self-contained projects.** A project is one directory: project settings, node and recipe instances, knowledge base, its own SQLite database with the history of its jobs, artifacts and logs. `pecore project export` produces an archive another user can import; it contains no repo clone, no workdirs and, by default, no raw logs (section 8). A project points to at most one remote repo and one account for it, and runs its agents as one OS user. If the remote repo does not exist, <PE/CORE> creates it at project creation with the project's account, by running the project's repo creation node (section 2).
+*   **G8. Self-contained projects.** A project directory holds settings, definitions, knowledge, job history, artifacts and logs. The GUI, Assistant and CLI can share a project without its clone or workdirs. History is optional and raw logs stay local (section 8). A project can link one remote and one account. The engine uses that account and the configured node to create a new remote.
 *   **G9. Stacked jobs.** An order larger than one ticket becomes a set of tickets with dependencies. A child ticket starts from its parent's last commit when the parent job completes, without waiting for the parent's merge. When the parent changes, the recipe's rebase node realigns the child, and the recipe decides which nodes run again. Verified by a test with a chain of three jobs in which the parent gets a new commit and then is merged.
 *   **G10. No secrets kept by <PE/CORE>.** Each tool keeps its own login: harnesses (`claude`, `codex`, `agy`, ...), forge CLIs (`gh`, `glab`, AWS CLI) and git credential helpers. <PE/CORE> stores only references to those accounts. In protected mode, agents cannot read the app user's home, where forge logins live.
-*   **G11. Rules live in recipes.** Checks, reviewers, approvals, what runs again after a rebase, providers and tiers are recipe or project configuration. The empty recipe is valid: the job opens and closes.
+*   **G11. Rules live in recipes.** Recipes define checks, reviews, model selection and what runs again after a rebase. A recipe can include a human review. The empty recipe is valid.
 *   **G12. Crash safety.** After a crash, or after the app quits during a delivery, no `runsAs: engine` node repeats an action its probe reports as done, and every job that existed before is present afterwards: `queued` jobs stay `queued`, the others are `paused` or in a final state. Verified by killing the engine during each delivery node in a test.
 *   **G13. Diagnosis in under a minute.** For any job, the user can see in the GUI or the CLI which node is running, why the job waits, and open the raw harness log, in under one minute.
-*   **G14. Installable by others, with zero configuration.** On a fresh Linux or macOS machine where the user already uses a coding agent (Claude Code, Codex or opencode), <PE/CORE> works as soon as it is opened: it creates `PECORE_HOME`, finds the harness logins and sets up accounts, profiles, tiers and the orchestrator by itself (Auto-setup), with no setting to fill, no file to edit and no new login.
+*   **G14. Zero configuration.** First launch creates `PECORE_HOME`, finds existing harness logins and sets up accounts, profiles, tiers and the Assistant. The Orchestrator uses the Assistant's settings until configured separately. When no account works, the app shows the next step to connect one.
 *   **G15. Pluggable services runtime.** The container runtime for job services (Postgres, Kafka) is a setting: Podman, Docker, or on macOS Podman machine, Colima or OrbStack. Each needs Compose v2.
 *   **G16. GUI first.** Every feature is usable from the React GUI; the only terminal step is the manual fallback for creating the protected user (CUJ 6). The GUI covers chat, recipe graph editor with drag and drop, live job graph with node state and logs one click away, template and instance editors with AI assistance, settings, account and harness logins. Harness logins for the protected user run from the GUI, which shows the harness's login URL or code.
 *   **G17. Job controls.**
@@ -111,21 +111,58 @@ Each question must be answered before the build phase named in brackets (see Bui
 *   **Second full review, findings for later phases:** listed as entry gates under Build order.
 
 *   **Quota and rate limit errors:** not provoked in any spike. Claude Code reports its quota windows on every turn (`_claude/rateLimit`), and a `rejected` window is handled by 5.4; what else an exhausted window sends, and what Codex and opencode send, is recorded the first time it happens, or by using up a 5-hour window on purpose (author's choice). Until then an unrecorded error message ends as `HARNESS_ERROR` with the node's `retry` (5.4). [Phase 3 for Claude Code, phase 6 for the others]
-*   **Connector values for Codex and opencode:** Codex offers mode `agent-full-access` and option `reasoning_effort` in the recorded traffic. Answered on 2026-11-19 (`test/e2e/providers.test.ts` with `PECORE_REAL=1`): `CODEX_PATH` points `codex-acp` at the installed Codex (without it the adapter looks for the optional platform package that the build omits); with the user's existing logins Codex reports `logged_in`, the email and the plan, and lists its models and efforts; opencode reports no identity, so its login is `unknown` and its model list empty, and the profile names a model from `opencode models` (for example `opencode/deepseek-v4.1-flash-free`); one agent node ran to its outcome through each, with tokens recorded. Still open: Codex account notification without a login, usage when resuming, the opencode config directory, and permission requests in practice. [Phase 6]
+*   **Connector values for Codex and opencode:** Codex offers mode `agent-full-access` and option `reasoning_effort` in the recorded traffic. Answered on 2026-11-19 (`test/e2e/providers.test.ts` with `PECORE_REAL=1`): `CODEX_PATH` points `codex-acp` at the installed Codex (without it the adapter looks for the optional platform package that the build omits); with the user's existing logins Codex reports `logged_in`, the email and the plan, and lists its models and efforts. OpenCode now uses `opencode models` to discover models and check readiness; one agent node ran to its outcome through each, with tokens recorded. Still open: Codex account notification without a login, usage when resuming, the opencode config directory, and permission requests in practice. [Phase 6]
 *   **Harness login storage:** answered for Claude Code and Codex on macOS ([spike report](spikes/macos-keychain.md)) and Linux ([Linux spike](spikes/linux-harnesses.md)). Still open: opencode; Antigravity, which keeps its login in the desktop keyring and cannot run as a project user. [Phase 6]
-*   **GUI rework after phase 6:** the phase 5 GUI is an MVP. The target is a macOS-grade GUI: translucent surfaces, animations, fades and transitions, with friction kept to the minimum (forms instead of JSON, sensible defaults). It needs its own design pass in ui-design.md before any code.
+*   **Model selection for shipped nodes:** Default to Automatic with an optional explicit model, or require an explicit model on each node. Automatic remains the preferred option under discussion.
 *   **More connectors after phase 6:** Antigravity (agy) and pi, both through OpenRouter or their own logins. Each needs a connector file, a reader and recorded fixtures, with no engine change (G2, 5.6). Recorded for opencode on 2026-11-19: an exhausted free model answers `session/prompt` with `-32603` "Free usage limit reached" (`errorName` `provider.free-limit`), classified as quota by a rule in `opencode.json`.
 *   **Notification channel** outside the app (v0.5 Q2). [Phase 6]
 *   **Log retention** defaults: how long raw harness logs are kept (v0.5 Q11). [Phase 6]
+
+*   **Node redesign:** Consider discovering routine checks such as clippy, typecheck and tests from the repository.
+*   **Library redesign:** Consider a recipe catalogue with nodes browsed only in the recipe editor.
+
+## Product interface
+
+Keep friction low. Use defaults and show only what the user needs to understand, decide or act. Users can create, import and export projects from the GUI or the Assistant. [Screen details](ui-design.md)
+
+### Shell and navigation
+
+The app fits a 1024×720 window. The sidebar stays on the left, the page in the centre and the Assistant on the right. The sidebar lists Factory, Projects, Jobs, Notifications, Library and Settings. It collapses to an icon rail with tooltips. The list has no group headings. Page sub-navigation sits below the main items. Drag the chat's left edge or use the arrow keys on that edge to resize it.
+
+Tables, lists and graphs use the full width. Standalone forms and reading pages have a centred maximum width. A form inside a full-width page keeps its maximum width and aligns left. The top bar has global search and pause or play. Project filtering belongs on the pages that support it. The sidebar has no engine status line. The disconnected banner tells the user when the engine is unavailable.
+
+### Settings and accounts
+
+Settings lists its sections in the main sidebar. Fields adapt to the window width and every section has a one-line description, including Accounts. Changes save automatically once valid. Invalid values get a readable message and stay unsaved, including a provider choice without a model. The GUI uses form controls without raw JSON, manually entered IDs or raw validation errors.
+
+Accounts shows each installed harness automatically. A row shows the identity when available, a visible Check button and Log in only when needed. Working accounts show “Logged in”, including OpenCode and private Git servers. OpenCode is working if it lists models. With none it shows “No models”. General Git hosting copy is service-neutral. An account row and the service picker identify the actual service.
+
+There is no Models section. The user picks provider, model and effort on each agent node and separately for the Assistant and Orchestrator. Effort is locked until a model is chosen. It shows the chosen model's options, falls back to Default alone when none exist and resets to Default on model changes. The app loads model lists at startup and caches them. A refresh button beside Model reloads the choices. Selects and comboboxes use the same arrow and no clear button. Focus uses one ring. Loading choices shows a spinner without making the field look disabled.
+
+### Appearance
+
+Appearance has one mode (System, Light or Dark) and one theme. System follows the operating system. Bundled themes provide light and dark versions. A custom file in `PECORE_HOME/themes/` applies only in the mode that matches its background.
+
+The bundled themes are Default, Autumn, Spring, Summer, Winter, Woodlands and Monochrome. Woodlands takes its green palette from Everforest and uses a warm background glow. Summer uses sand backgrounds, sky-blue accents and an orange glow. The seasonal themes use lightly tinted, near-neutral panels, sidebar and controls. Monochrome uses greys, black fills with white text in Light, and grey fills with light text in Dark. Error, warning and success states retain distinct colours.
+
+Text, including links and labels on coloured fills and statuses, needs at least 4.5:1 contrast on its background. Type starts at 14 px for secondary text, logs, graph labels and `<small>`. Body is 15 px, chat 16 px, section titles 18 px and page titles 26 px. Controls are 36 px, menu rows 34 px and icon-only buttons 32 px. Icons are 20 px with 1.5 px strokes. Sizes come from `ds/tokens.css`. Components use the tokens directly and never scale down text.
+
+User bubbles fade from the accent at the bottom right to a lighter top left in Light and a darker top left in Dark. Text uses the theme's colour for text on the accent. Assistant replies have no bubble.
+
+### Projects and jobs
+
+Projects shows New project and Import together. When the list is empty both actions move into the empty state. The project page is full width and opens on Jobs. Its table omits the Project column. New job opens a form with a title, instructions and the recipe. The only recipe is chosen automatically. The form gives a clear next action when the project has none.
+
+Project Settings starts with repository, forge account, folder and ID as a read-only details list. Editable fields follow: name, base branch and Compose file. The Compose field accepts a path or a file chosen within the project folder. Export is a Settings action. Project settings have no raw JSON editor, default recipe, project limits or budgets. Per-node duration and available token counts belong in each job. There is no global Usage page or Factory token or cost counter.
 
 ## Critical User Journeys (CUJs)
 
 ### CUJ 1: Bug fix from a GitHub issue
 
 *   **Given**: project `progetto-1` points to `github.com/pappa/pippo` with account `account-1`. Its `bugfix` recipe uses instances of check templates for the project's toolchain and the nodes `git-commit`, `git-push`, `github-pr` and `github-issue-comment`. Its `source` is an instance of `github-issues`. An issue labelled `factory` exists.
-*   **When**: the user tells the orchestrator "fix issue 42 of progetto-1".
+*   **When**: the user tells the Assistant “fix issue 42 of progetto-1”.
 *   **Then**:
-    1.  The orchestrator reads the issue, picks recipe `bugfix`, and starts a job.
+    1.  The Assistant reads the issue, picks the recipe and starts a job.
     2.  The engine creates a workdir and branch.
     3.  The spec writer writes acceptance criteria; the tests node writes a failing test; the builder fixes the code.
     4.  Checks pass on the workdir content; the code reviewer approves; the user approves in the human review node.
@@ -136,19 +173,19 @@ Each question must be answered before the build phase named in brackets (see Bui
 
 *   **Given**: the user created project `progetto-3` for `gitlab.com/ciccio/pimpo` with `account-3`. The remote repo did not exist, so at project creation `gitlab-create-repo` created it with `account-3`. The project's recipes deliver through a `gitlab-mr` node.
 *   **When**: the user writes "make a 2D platform game for Linux and macOS".
-*   **Then**: the orchestrator asks clarifying questions, then produces tickets with dependencies (scaffold, game loop, player movement, levels, menu, packaging). The scaffold job starts first. Each child job starts from its parent's last commit as soon as the parent job is `succeeded`. Each MR targets its parent's branch. When a parent changes, its children run the recipe's rebase node and then the nodes the recipe lists for that case.
+*   **Then**: the Assistant asks clarifying questions and creates jobs for the scaffold, game loop, movement, levels, menu and packaging. Each child starts from its parent's last commit when the parent succeeds. Its MR targets the parent's branch. When a parent changes, its children run the recipe's rebase path.
 
 ### CUJ 3: New check for Rust, created with AI
 
 *   **Given**: a Rust project with no node for `clippy`.
-*   **When**: the user asks the orchestrator "create a check that runs clippy with warnings as errors, and add it to my Rust project".
+*   **When**: the user asks the Assistant "create a check that runs clippy with warnings as errors, and add it to my Rust project".
 *   **Then**: the Assistant writes a `cargo-clippy` template to the global library, instantiates it into the project, and adds it to the project's recipe. The engine validates the new template, the new instance and the changed recipe. The next job uses the new node.
 
 ### CUJ 4: Local-only project
 
 *   **Given**: project `prova` has no remote repo. Its recipe ends with a `git-commit` node and no delivery node.
 *   **When**: the user gives an order for `prova`.
-*   **Then**: the job ends with a commit on branch `factory/<job>` in the project's local repo, copied into the project folder (decision 75). <PE/CORE> sends nothing to a forge; only the agents' model calls and their own network use leave the machine.
+*   **Then**: the job ends with a commit on branch `factory/<job>` in the local repo. The engine copies the branch into the user's project folder. Only the agents' model calls and their own network use leave the machine.
 
 ### CUJ 5: Quota runs out during a job
 
@@ -166,7 +203,7 @@ Each question must be answered before the build phase named in brackets (see Bui
 
 *   **Given**: project `progetto-1` with its instances, knowledge base and job history.
 *   **When**: the user exports the project from Settings or asks the Assistant for it. Another user chooses the export file or its extracted folder in Projects or supplies its local path to the Assistant. The CLI still supports sharing via archives.
-*   **Then**: before importing, the recipient sees the warning about scripts and prompts, findings and coverage, and the local forge account choices. They choose a new ID only if the original is taken. The imported project contains its node and recipe instances, knowledge base and any included history (decisions 83–85).
+*   **Then**: before importing, the recipient sees the warning about scripts and prompts, findings and coverage, and the local forge account choices. They choose a new ID only if the original is taken. The imported project contains its node and recipe instances, knowledge base and any included history.
 
 --------------------------------------------------------------------------------
 
@@ -247,7 +284,7 @@ $PECORE_HOME/                         default ~/.pecore; its path is stored in E
 *   `pecore.db` runs in WAL mode. Every engine operation writes its events and updates the views in one transaction on that one file. No transaction spans two files.
 *   When a project is created and its remote does not exist yet, `repo.git` starts as an empty local repository with one empty initial commit on `baseBranch`. The engine then runs the project's repo creation node (`createRepo` in `project.json`, for example an instance of `gitlab-create-repo`) once, outside any job. The node creates the remote and pushes `baseBranch` to it; the engine then sets it as `origin`. The node has a probe, so running it again is safe.
 *   Clone and fetch are engine operations: the engine runs them as the app user with `--git-dir=repo.git`, with the project's account selected by `forge-env.ts` as for `credentials` (3.1). It clones at project creation, fetches the job's base branch before every job starts, and fetches on merge detection (4.6).
-*   `knowledge/` holds Markdown documents about the project: architecture, conventions, domain terms. The user writes them in the GUI, or asks the orchestrator to write them. Agents never write there. An agent node receives the files that match its `knowledge` globs, copied into `.pecore/context/`.
+*   `knowledge/` holds Markdown documents about the project: architecture, conventions, domain terms. The user writes them in the GUI, or asks the Assistant to write them. Agents never write there. An agent node receives the files that match its `knowledge` globs, copied into `.pecore/context/`.
 
 ### 3. Definitions
 
@@ -436,12 +473,13 @@ A node receives the latest artifact of each type in its `inputs`. The recipe val
 
 #### 3.4 Accounts, profiles and tiers
 
-*   Profiles and tiers are internal: auto-setup creates them and the GUI never shows them (decisions.md 1, 5). The user chooses a model where it is used, on each agent node (provider, model, effort) and for the Assistant and the Orchestrator (provider, model, effort in Settings, saved as the profiles `assistant` and `background` as soon as a model is chosen; section 6). How a shipped node picks its model when the user chose none is still open (decisions.md, Open).
+*   Auto-setup creates internal profiles and tiers. Users choose provider, model and effort on agent nodes and in Settings for the two chat roles (section 6). Settings stores the selected roles as `assistant` and `background` profiles. The model default for shipped nodes is an open question.
 *   <PE/CORE> keeps no secrets of its own. Each tool stores its login where it always does; `accounts.json` holds only references.
 *   `accounts.json` lists accounts of three kinds:
     *   `model`: provider, connector, login type (`subscription` or `api-key`, both configured inside the harness), the account's `email` (compared with the logged-in account, below), `maxParallel`.
     *   `forge`: forge type, host, tool (`gh`, `glab`, `aws`, `git`), the tool's account name (for example the `gh` login, the AWS profile), commit author.
     *   `service`: external service (for example Atlassian), the tool or MCP server that holds its login, the account name.
+*   Private Git servers use existing SSH or HTTPS repositories and the user's configured Git credentials. A job delivers by pushing its branch. The engine detects a merge when the target branch contains the job commit. Private Git accounts support neither repository creation nor ticket intake. Bitbucket, Codeberg, Gitea, Forgejo, SourceHut and AWS CodeCommit are candidates for future hosting support.
 *   There are no exceptions. A service is reached only through a tool that keeps its own login (for example Jira through `acli` or the Atlassian MCP server). A service with no such tool is not supported until one exists.
 *   A harness keeps its login in a config directory, chosen through the variable named in the connector file (for example `CLAUDE_CONFIG_DIR`, `CODEX_HOME`).
     *   Normal mode: the first account of each harness uses the harness's own default directory (no variable set, so `~/.claude`, `~/.codex`): the login the user already has, with no login in <PE/CORE>. A second account of the same harness gets `~/.pecore-harness/<account-id>/` in the app user's home and needs one login there.
@@ -469,10 +507,10 @@ A node receives the latest artifact of each type in its `inputs`. The recipe val
 |---|---|
 | `id`, `name` | identity |
 | `repo` | `url` of the remote, or `null` for a local-only project; `account` from `accounts.json` |
-| `folder` | the user's own copy of the code on disk (decision 75), an absolute path; `~/` is expanded at creation. The wizard and the chat propose `<projectsFolder>/<id>` (`settings.json`, default the user's home `~`, decision 76). Fixed after creation. `null` for a project created without one or imported from an archive |
+| `folder` | The user's absolute path to their copy of the code. Project creation expands `~/`. The wizard and chat propose `<projectsFolder>/<id>`, using the user's home as the initial global default. Fixed after creation. Imports may have no local copy. |
 | `baseBranch` | branch new jobs start from and deliver to, for example `dev` or a feature branch; the orchestrator or the user can set another one per job |
 | `createRepo` | node instance that creates the remote repo when it does not exist (section 2); `null` if not needed |
-| `services` | path of a compose file for job services, relative to the repo (4.9); `null` (the default) means automatic: the first of `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml` found at the root of the job's base commit, and none when the services runtime is not set (decision 78) |
+| `services` | path of a compose file for job services, relative to the repo (4.9); `null` (the default) means automatic: the first of `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml` found at the root of the job's base commit, and none when the services runtime is not set |
 | `source` | node instance of kind `source` that brings tickets into the project (section 7), with its `params` (for example the label), or `null` |
 
 ### 4. Engine
@@ -551,7 +589,7 @@ A job waiting for a human, a quota or a login releases its pool units (4.7) and 
 *   One job has exactly one workdir and runs one node at a time. Work that should run in parallel is split into separate jobs (sibling or stacked, 4.6). Several workdirs per job is a possible later evolution, not part of this design.
 *   Node-run ids: `<job-id>/<node>#<round>`.
 *   When a job ends `succeeded` or `not_delivered`, the engine removes its worktree. If the job later re-enters `running` (base change, 4.2), the engine first recreates its worktree from `factory/<job-id>`. When a job fails or is stopped, its worktree stays, so the user can see what the agents left; it is removed when the job is archived or deleted. Branches stay until the job is deleted.
-*   Project folder (decision 75): when a job ends `succeeded` or `not_delivered` and the project has a `folder`, the engine force-pushes `factory/<job-id>` from `repo.git` into the folder as the app user, so the user finds the branch in their own copy. If the push fails (folder gone, branch checked out there), the job keeps its state and a notification of kind `folder` says why. Deleting the job or the project never removes the branch from the folder.
+*   Project folder: when a job ends `succeeded` or `not_delivered` and the project has a `folder`, the engine force-pushes `factory/<job-id>` from `repo.git` into the folder as the app user, so the user finds the branch in their own copy. If the push fails (folder gone, branch checked out there), the job keeps its state and a notification of kind `folder` says why. Deleting the job or the project never removes the branch from the folder.
 *   With `repo: null` and a `folder`, the folder is `origin` of `repo.git`: the base branch is fetched from it when a job is created and when it starts, so jobs start from the user's latest commits. If the fetch fails, the job uses the base branch already in `repo.git`.
 
 #### 4.6 Stacked jobs
@@ -561,7 +599,7 @@ A job waiting for a human, a quota or a login releases its pool units (4.7) and 
 *   When the parent's branch changes later, the engine requests a base change for every child that has started (4.2).
 *   `{job.target}` is the parent job's branch while the parent is not merged, so the child's PR or MR shows only the child's changes. For a job with no parent it is the job's base branch.
 *   Merge detection: for every job with a delivery not yet merged, the engine runs the `mergedCheck` of its delivery node at the interval set in settings (default 5 minutes). When it reports `done`, the engine records `job.delivery_merged` on the parent and notifies each child: it requests a base change with the parent's target as the child's new `{job.target}` (4.2). When the request is applied, the engine fetches that branch into `repo.git` (section 2) and sets the child's base to the fetched commit. The child's rebase node runs, and its delivery node moves the existing PR or MR to the new target (`gh pr edit --base` in `github-pr`). A delivery node with no `mergedCheck` gives no notification; the user realigns by hand.
-*   The orchestrator creates a set of stacked jobs from one order through the tool `create_jobs`, which takes tickets with `dependsOn`.
+*   The Assistant and Orchestrator create stacked jobs through `create_jobs`, which takes tickets with `dependsOn`.
 *   Parent ends `not_delivered`, `failed` or `stopped`: its queued children move to waiting reason `parent_failed` and the user is notified. They start when the parent later ends `succeeded` (after a resume or a base change), or the user stops them.
 *   Parent re-enters `running` after a base change and then does not succeed: its children keep their current base and show `parent_failed` until the parent succeeds again.
 *   A parent with children that are not in a final state cannot be deleted; the GUI lists the children. Archiving a parent is allowed: merge detection continues while it has live children.
@@ -569,9 +607,10 @@ A job waiting for a human, a quota or a login releases its pool units (4.7) and 
 #### 4.7 Scheduler and limits
 
 *   Limits are counters held in memory, organised in pools: `jobs` (global), `agents` (global), `account:<id>` (from `maxParallel`). A node run takes one unit from every pool that applies, all at once, or waits with reason `concurrency`.
+*   The job limit is global. There are no per-project job pools or budget waits.
 *   After an app restart the counters start at zero, after the leftover-process sweep of section 1.
 *   When a connector reports a quota or rate limit error (section 5), the engine marks the account as cooling down until the reset time the connector reported, or for a backoff of 1, 2, 4, then 8 minutes if no time is known. All node runs on that account wait with reason `quota` or `rate_limit`. A node whose tier has another available profile switches to it as a new attempt.
-*   Usage: attempts record token usage and the cost reported by the connector (5.3).
+*   Attempts record token usage and cost when the connector reports them (5.3). The app reports usage in each job. It keeps no daily usage table and exposes no aggregate usage route.
 
 #### 4.8 External effects and crash safety
 
@@ -582,7 +621,7 @@ A job waiting for a human, a quota or a login releases its pool units (4.7) and 
 
 #### 4.9 Job services
 
-*   If `project.json` has `services`, or it is `null` and the job's base commit has a standard compose file at its root while a services runtime is set (decision 78), the engine starts them when the job starts. Pause stops the containers and keeps their data (`compose stop`); play starts them again (`compose start`). A final state removes them with their data (`compose down -v`); a job that re-enters `running` starts them from scratch. Until they are healthy, node runs wait with reason `services`.
+*   If `project.json` has `services`, or it is `null` and the job's base commit has a standard compose file at its root while a services runtime is set, the engine starts them when the job starts. Pause stops the containers and keeps their data (`compose stop`); play starts them again (`compose start`). A final state removes them with their data (`compose down -v`); a job that re-enters `running` starts them from scratch. Until they are healthy, node runs wait with reason `services`.
 *   The container runtime runs as the app user, but the compose file lives in the repo, where agents can edit it. So the engine never reads it from the workdir. It reads it from the job's base commit (`git --git-dir=repo.git show <base>:<path>`), rejects `build:`, bind mounts of host paths, `privileged`, `cap_add`, `devices`, `network_mode: host` and `pid: host`. It runs the validated copy with `-f <copy> --project-directory <empty temp dir>`.
 *   Each job gets its own compose project, `pecore-<job id in lower case>`. The compose file must publish ports as `"127.0.0.1::<container port>"`, so the runtime picks free host ports on the loopback address and parallel jobs never clash.
 *   The engine reads the chosen ports with `compose port` and passes them to every node as environment variables `PECORE_SERVICE_<SERVICE>_<PORT>`, with the service name in upper case and `-` replaced by `_` (for example `PECORE_SERVICE_POSTGRES_5432=127.0.0.1:49153`). The project user can reach the loopback address.
@@ -655,7 +694,7 @@ The engine adds to `env` only `HOME`, `PATH` and `LANG` of the target user and t
 *   The reader turns the connector's usage into four fields that do not overlap: `input` (not served from cache), `cacheRead`, `cacheWrite`, `output`. Claude Code reports them separately in the `session/prompt` answer (`usage.inputTokens`, `cachedReadTokens`, `cachedWriteTokens`, `outputTokens`); its reader adds the side models listed in `_meta.quota.model_usage` (for example a Haiku model for titles). Codex counts cached tokens inside `inputTokens`, so its reader subtracts `cachedReadTokens`.
 *   `model` is the resolved model id when the reader finds it (Claude Code: `_meta["_claude/model"]` in `usage_update`), else the profile's model. Price lookups use it.
 *   Cost: Claude Code sends the total cost of the session so far in `usage_update.cost` (`amount`, `currency`). It is reported as `costUsd` only for a new session, where the total is the attempt's cost. For a resumed session, and for any currency other than USD, the cost is unknown.
-*   Quota: the Claude Code reader reads `_meta["_claude/rateLimit"]` in `usage_update`: `status` (`allowed`, `allowed_warning`, `rejected`), `resetsAt` (epoch seconds), `rateLimitType` (`five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`, `seven_day_overage_included`, `overage`), and `unifiedWindows` with `utilization` (0 to 1) and `resetsAt` per window. These are the values of the Agent SDK's `SDKRateLimitInfo` type. Only `rejected` is an error. The values are not kept (decision 64).
+*   Quota: the Claude Code reader reads `_meta["_claude/rateLimit"]` in `usage_update`: `status` (`allowed`, `allowed_warning`, `rejected`), `resetsAt` (epoch seconds), `rateLimitType` (`five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`, `seven_day_overage_included`, `overage`), and `unifiedWindows` with `utilization` (0 to 1) and `resetsAt` per window. These are the values of the Agent SDK's `SDKRateLimitInfo` type. Only `rejected` is an error. The values are not kept.
 *   When a turn is refused for quota, the adapter ends it with a JSON-RPC error whose `data` is `{ "errorKind": "rate_limit", "rateLimit": <the same fields> }` (`claude-agent-acp` 0.108.0, `result-end.js`). The reader reads `data.errorKind` and `data.rateLimit.resetsAt`, never the error text. `errorKind` values from the SDK's `SDKAssistantMessageError` type: `rate_limit` is `quota` with its reset time; `billing_error` and `account_on_hold` are `quota` with no reset time; `authentication_failed` and `oauth_org_not_allowed` are `auth`; `overloaded` and `server_error` are `other`.
 
 #### 5.4 End of a turn
@@ -703,35 +742,39 @@ Each built-in connector ships with recorded ACP traffic of these cases, used by 
 
 *   A login is a model account in one config directory (3.4). In normal mode the first account of each harness is the login the user already has, so <PE/CORE> asks for no login; it only runs `checkLogin`. A second account of the same harness, or protected mode, needs one login per account, done once.
 *   The GUI starts a login with `prepareLogin`. The engine creates the config directory and writes the returned files as the target user through `workdir/fs-as.ts`, runs `before` and then `command` through `spawn`, and streams the output to the GUI. The GUI shows the first match of `urlPattern`; when `readsCode` is true it shows a field, and the code goes to the command's stdin (`POST /logins/:id/code`). Then the engine runs `checkLogin`.
-*   `checkLogin` and `listOptions` run `initialize` and `session/new` with no prompt, so no tokens are spent, in an empty directory `<configDir>/probe/`, then `close()`. The account comes from the last account notification before the `session/new` answer: for Claude Code `auth/status_update` with `state` (`authenticated`, `unauthenticated`) and the entry of `accounts` with `active: true`, which gives `email` and `_meta.claudeCode.plan`. With no notification and no `identityCommand` the state is `unknown`: runs are allowed and the GUI shows the login as not verified. `listOptions` returns the values of the config options with category `model` and `thought_level`, and `null` when not `logged_in`. OpenCode reports no identity: the engine treats it as logged in when `opencode models` lists at least one model, at start and at every check, and takes its model list from that command (decisions.md 12).
+*   `checkLogin` and `listOptions` run `initialize` and `session/new` with no prompt, so no tokens are spent, in an empty directory `<configDir>/probe/`, then `close()`. The account comes from the last account notification before the `session/new` answer: for Claude Code `auth/status_update` with `state` (`authenticated`, `unauthenticated`) and the entry of `accounts` with `active: true`, which gives `email` and `_meta.claudeCode.plan`. With no notification and no `identityCommand` the state is `unknown`: runs are allowed and the GUI shows the login as not verified. `listOptions` returns the values of the config options with category `model` and `thought_level`, and `null` when not `logged_in`. OpenCode reports no identity: the engine treats it as logged in when `opencode models` lists at least one model, at start and at every check, and takes its model list from that command.
 
 ### 6. Assistant and Orchestrator
 
-Two agents with different roles (decisions.md 38). The mechanics below apply to both unless a bullet names one.
+The Assistant handles user orders. The Orchestrator handles background ticket intake. Both use a connector and the project user's permissions.
 
-*   **Assistant:** the agent the user talks to, in the one chat of the app (decision 36). It acts on <PE/CORE> for the user and has access to everything in the projects. It reads untrusted content only when asked and treats it as data. A chat order authorises the requested work (decision 39). Project import uses the confirmation shown in chat (decision 85).
-*   **Orchestrator:** works in the background on what does not come from the user: new tickets of linked projects (section 7). It reads untrusted text, so its tools are limited: read projects, recipes, tickets and job state, create jobs, and file `outbound` requests. It never posts to an outside service itself: a question or comment that no recipe prescribes becomes an `outbound` item to decide in Notifications with the exact text, posted by the engine only after the user approves it (decisions.md 39). When it does something, it sends a notification (decisions.md 44). The user never chats with it. Each project's intake runs in its own hidden session, so the user's chat never waits for it.
+Recipes can perform the external actions they define. Outside a recipe, an external action requires a direct user order or approval of the proposed action.
+
+*   **Assistant:** the only agent the user chats with. It acts on <PE/CORE> and can access every project. It treats untrusted content as data. A direct chat order authorises the requested action. Project creation, import and deletion use confirmation cards. A flagged export requires the user's decision.
+*   **Orchestrator:** reads new tickets from linked projects and creates jobs. Each project has its own session to keep intake out of the Assistant's chat. It reads project, recipe, ticket and job data. For a question or comment outside a recipe, it files an `outbound` request. The engine shows the exact text in Notifications and posts it only after the user approves. The Orchestrator reports results through Notifications.
 *   Settings hold, for each role, `assistant` and `orchestrator`, a `profile` (provider, model, effort) and `compaction` thresholds; an Orchestrator with no profile uses the Assistant's. Auto-setup fills the Assistant's profile when it is empty.
 *   The Orchestrator's notifications are written by the engine, not by the model, so ticket text cannot reach the user through them (kind `orchestrator`, title "<project>, ticket <id>"): when `create_jobs` plans a ticket, "The Orchestrator created the job Fix login.", opening the first job.
 *   `comment_ticket` from the Orchestrator posts nothing: it adds an `outbound` item to decide (choices `post` and `reject`) with the project, ticket and exact text, and a notification that opens it. A newer request for the same ticket order cancels the open one. `post` runs the source's `comment` command and records `order.asked`, so the replies are read as before; `reject` posts nothing. From the Assistant, `comment_ticket` posts at once.
 *   The Orchestrator's MCP tools are `list_projects`, `list_recipes`, `read_ticket`, `create_jobs`, `job_status`, `read_artifact`, `comment_ticket` and `read_replies`; the Assistant has all the tools listed below.
-*   Single chat and compaction: the Assistant's chat is one conversation for the whole app. After each reply the harness reports the context in use (`usage_update.used`, out of `size`). Above the maximum threshold (default 256,000 tokens) the engine compacts at once; above the automatic threshold (default 128,000) it compacts after 5 minutes with no message (decisions.md 37). Both thresholds are in settings (`assistant.compaction.auto`, `assistant.compaction.max`); Orchestrator sessions use `orchestrator.compaction`, with the same defaults (decisions.md 43). The engine stores the last reported size per chat (`context_tokens` in `chats.db`), so the check runs again at app start with the current settings. A new message restarts the 5 minutes. Compaction is queued as a `/compact` message, at most one at a time, and sets the size to what the harness reports after it (unknown if it reports nothing).
+*   Single chat and compaction: the Assistant's chat is one conversation for the whole app. After each reply the harness reports the context in use (`usage_update.used`, out of `size`). Above the maximum threshold (default 256,000 tokens) the engine compacts at once; above the automatic threshold (default 128,000) it compacts after 5 minutes with no message. Both thresholds are in settings (`assistant.compaction.auto`, `assistant.compaction.max`); Orchestrator sessions use `orchestrator.compaction`, with the same defaults. The engine stores the last reported size per chat (`context_tokens` in `chats.db`), so the check runs again at app start with the current settings. A new message restarts the 5 minutes. Compaction is queued as a `/compact` message, at most one at a time, and sets the size to what the harness reports after it (unknown if it reports nothing).
 *   The Assistant is an agent run through a connector, like any agent node, with the provider, model and effort chosen in settings. The model and effort are passed to the connector before the session starts or resumes, so a resumed chat uses the current choice. It runs as the project user: the app user in normal mode, `pecore-agent` in protected mode, where it cannot read the app user's files although it reads untrusted tickets and links.
-*   It reaches <PE/CORE> only through an MCP server provided by the engine, with its own token, generated at app start and passed to the orchestrator's connector in the `mcpServers` field of `session/new`, `session/resume` or `session/load` (HTTP transport, which the Claude Code and Codex adapters support). The token changes at every app start, so it is passed again at every resume. The raw log replaces it with `***`.
-*   Each chat has a fixed working directory, `~/.pecore-chats/<chat-id>/` in the project user's home, because harnesses store sessions by directory. Messages of one chat run one at a time: a message sent while the previous one runs waits for it. That token reaches only the tools below. It cannot choose the outcome of a human node, change global settings, or stop or delete jobs: those need the user token of the GUI and CLI. Tools: `list_projects`, `get_project`, `update_project`, `delete_project`, `create_project` (proposes a project, local or on a remote repository, with an optional folder, default `<projectsFolder>/<id>`, as a card in the chat; the project is created only when the user confirms the card, decision 68), `project_creation_options` (forge accounts to offer, default base branch and folder), `list_recipes`, `read_ticket`, `create_jobs` (with `dependsOn` and an optional `baseBranch` per job), `job_status`, `read_artifact` (an artifact or the log of a node run of a job, by job id and node-run id; size-capped), `answer_question`, `list_templates`, `write_template`, `instantiate`, `write_instance`, `write_knowledge`, `validate`, `comment_ticket`, `read_replies`.
+*   Both roles use an MCP server provided by the engine. The harness starts a stdio shim configured in `mcpServers`. The shim reads a private token file and forwards requests to the engine on loopback (Phase 6 decisions). The engine refreshes the token at startup and redacts it from logs.
+*   Each chat has a fixed working directory, `~/.pecore-chats/<chat-id>/` in the project user's home, because harnesses store sessions by directory. Messages of one chat run one at a time: a message sent while the previous one runs waits for it. That token reaches only the tools below. It cannot choose the outcome of a human node, change global settings, or stop or delete jobs: those need the user token of the GUI and CLI. Tools: `list_projects`, `get_project`, `update_project`, `delete_project`, `create_project` (proposes a project, local or on a remote repository, with an optional folder, default `<projectsFolder>/<id>`, as a card in the chat; the project is created only when the user confirms the card), `project_creation_options` (forge accounts to offer, default base branch and folder), `list_recipes`, `read_ticket`, `create_jobs` (with `dependsOn` and an optional `baseBranch` per job), `job_status`, `read_artifact` (an artifact or the log of a node run of a job, by job id and node-run id; size-capped), `answer_question`, `list_templates`, `write_template`, `instantiate`, `write_instance`, `write_knowledge`, `validate`, `comment_ticket`, `read_replies`.
 *   `update_project` validates a patch to the name, base branch or Compose path. `delete_project` proposes the deletion of one project. The GUI confirms or rejects that proposal with the user API token. The engine checks the project and its running jobs again before deleting.
 *   `analyze_project_archive` reviews a local export or extracted folder without importing it. `import_project` reviews the same sources and proposes an import. The user sees the warning and coverage, chooses any required mappings and confirms with the user API token. `export_project` saves `<project id>.tar.zst` in the system's downloads folder and returns the path. If the secret scan finds a match, only the user can proceed using the findings card.
 *   `write_*` tools validate the file before saving and return the validation errors; a saved file is committed to `PECORE_HOME`.
 *   The Assistant validates and saves recipe, node and script changes directly. The Orchestrator can read definitions and plan jobs.
-*   Artifacts and logs are written by agents and can carry prompt injection, like tickets. `read_artifact` gives the orchestrator nothing beyond its existing tools..
-*   A chat message can carry a context: references only (project id, job id, node-run id, recipe, node or template name), never content. The GUI shows it as a removable chip; the orchestrator reads what it needs through its tools.
+*   Artifacts and logs are written by agents and can carry prompt injection, like tickets. `read_artifact` gives the orchestrator nothing beyond its existing tools.
+*   A chat message can carry a context: references only (project id, job id, node-run id, recipe, node or template name), never content. The GUI shows it as a removable chip; the Assistant reads what it needs through its tools.
 *   Chats are stored in `chats.db`. Attachments are stored as files next to it.
 *   The reply streams: the engine collects the `agent_message_chunk` text of the current prompt, sends `chat.changed` on the WebSocket, and `GET /chat` returns it as `streamingReply` until the turn ends. Only one complete reply is stored. Text sent before the prompt (for example during a resume) is dropped.
-*   Each stored reply records the user message it answers (`reply_to`). Actions recorded by the MCP tools belong to the user message; the GUI shows them under the reply that answers it.
-*   Compaction: a user message that is exactly `/compact`, with no attachments, is sent to the resumed session as the bare command, with no preamble, so the harness runs its own compaction. No reply is stored. If the session cannot be resumed, nothing is sent and the saved session is kept. `/compact` messages are left out of the history replayed into a new session.
-*   A reply sends a native notification ("Assistant replied" and the reply's first line) only when the <PE/CORE> window is not focused, and is not stored in the notification log; the unread counts show it (decisions.md 25, 27).
-*   `chats.db` holds the Assistant chat, with the fixed id `assistant`, and one Orchestrator chat per project (`project` column). The API has no chat ids: `GET /chat`, `DELETE /chat` (deletes the messages and attachments and forgets the session, so the next message starts a new one; refused while a turn runs), `POST /chat/messages`, `POST /chat/attachments`, `POST /chat/messages/:id/retry`, `POST /chat/read`; Orchestrator chats are never exposed. The WebSocket sends `chat.changed` only for the Assistant chat.
-*   Notifications live in `chats.db` too, with a `seen` flag. `POST /notifications/seen` marks them all seen; `DELETE /notifications/:id` deletes one; the menu counter is the open items to decide plus the notifications not seen (decision 45).
+*   The message box keeps focus after Send and receives focus when the chat opens. Animated dots show work until the reply starts.
+*   Each reply records the user message it answers (`reply_to`). The GUI shows the Assistant's tool actions under that reply. A change gets a card with its result or a link to it. Reads share one muted line.
+*   Compact in the header or a message containing only `/compact` starts the harness's own compaction. The command goes to the resumed session without attachments or a preamble. A divider shows progress and completion. No reply is stored and the command is omitted from history replay. If resumption fails, the saved session stays intact. Clear asks for confirmation before starting a fresh session.
+*   A reply sends a native notification ("Assistant replied" and the reply's first line) only when the <PE/CORE> window is not focused, and is not stored in the notification log; the unread counts show it.
+*   `chats.db` holds the Assistant chat (id `assistant`) and one internal Orchestrator session per project (`project` column). The API in [Local API, WebSocket and MCP](#local-api-websocket-and-mcp) exposes only the Assistant chat. Clearing it deletes its messages and attachments and forgets the session. Clearing is refused during a turn.
+*   During development, schema changes may reset local data. The legacy multi-conversation store has no migration into the single Assistant chat.
+*   `chats.db` also holds the notification log with a `seen` flag. Notifications shows outstanding items first, then the log. There is no bell in the top bar. `POST /notifications/seen` marks all entries seen. The trash button deletes one via `DELETE /notifications/:id`. The menu count includes open items and unseen notifications.
 
 ### 7. Sources
 
@@ -740,10 +783,11 @@ Two agents with different roles (decisions.md 38). The mechanics below apply to 
 *   Its `params` are set per project: for example `label` (default `factory`, any label the user wants), repo, `pollSec` (default 300) and `trusted` (list of tracker user names; default the project account's user).
 *   `read` returns the ticket's author and, where the tracker exposes it, who applied the label. Trust rule: a new ticket starts automatically only if the author or the user who applied the label is in `trusted`. Any other ticket goes into the confirmation queue (section 8) and is not shown to the orchestrator until confirmed.
 *   Source nodes run as the app user and use configured forge accounts.
-*   Intake: every `pollSec` the engine runs `list` and keeps the ids already seen in `pecore.db`. For each new ticket it runs `read`, applies the trust rule, and hands a trusted or confirmed ticket to the Orchestrator (section 6), which picks the recipe, splits it into stacked jobs if needed, starts them, and reports in the Assistant's chat. If the ticket is unclear, the Orchestrator does not post on its own: it files an `outbound` request with the exact question, and only after the user approves it does the engine post it (`comment`); the Orchestrator reads the answer later (`replies`) before starting (decisions.md 39).
-*   A ticket the user names in chat (for example "fix issue 42") skips polling: the Assistant reads it with `read_ticket`. A comment the user orders in chat is posted without a further approval.
+*   Intake: every `pollSec` the engine runs `list` and keeps the ids already seen in `pecore.db`. For each new ticket it runs `read`, applies the trust rule, and hands a trusted or confirmed ticket to the Orchestrator (section 6), which picks the recipe, splits it into stacked jobs if needed, starts them, and reports through Notifications. If the ticket is unclear, the Orchestrator does not post on its own: it files an `outbound` request with the exact question, and only after the user approves it does the engine post it (`comment`); the Orchestrator reads the answer later (`replies`) before starting.
+*   The Assistant reads a ticket named in chat with `read_ticket`, without waiting for polling. An explicit user order to comment is sufficient authorisation.
 *   Shipped templates: `github-issues` (through `gh`), `gitlab-issues` (through `glab`), `jira` (through the tool that holds the Jira login, see 3.4), `markdown-folder` (reads `*.md` files from a folder). A new tracker such as Linear or Bitbucket needs only a new template.
 *   Agents never hold source credentials. Writing back to a ticket at the end of a job is a recipe node (for example template `github-issue-comment`).
+*   Later, run ticket fetching as a scheduled recipe.
 
 ### 8. Security
 
@@ -759,10 +803,10 @@ Two agents with different roles (decisions.md 38). The mechanics below apply to 
 *   `PECORE_HOME/adapters/` holds only code shipped with the app. It is readable by every user, so `pecore-agent` can run the adapters and the shipped Node; it gets traverse-only access on the directories on the path to it, like `work/`, and on the directories on the path to the harness program (5.7). Only the app user can write any of them.
 *   The Claude Code connector keeps the MCP connectors of the user's claude.ai account out of agents' sessions (5.6), because those act with the user's account outside the project user's reach.
 *   Forge and service logins live in the app user's home, stored by their tools. Only `command` nodes with `runsAs: engine` run as the app user, and the engine selects only the accounts they declare.
-*   Engine and source nodes execute as the app user. Recipes cannot override engine node `params` (3.2). <PE/CORE> executes the configured definitions and scripts without a separate approval (decision 83).
+*   Engine and source nodes run as the app user. Recipes cannot override engine node `params` (3.2). Saving and running recipes, nodes and Compose files requires no technical approval, including agent edits and custom repository creation nodes. Schema validation, recipe-defined human reviews and destructive-action confirmations still apply.
 *   The human queue holds reviews declared in a recipe, agent questions, round limits, untrusted tickets and proposed external comments.
 *   The GUI opens a native save dialog at `<project id>.tar.zst` in the system's downloads folder (Electron `app.getPath("downloads")`, which follows the XDG user directories on Linux, so `~/Scaricati` on an Italian desktop). The app passes that folder to the engine in `PECORE_DOWNLOADS`, and the Assistant saves there; without it the engine uses `~/Downloads`. Both can include history and exclude raw logs. When history is included, the engine scans artifacts with its own list of common token formats (`share/secrets.ts`: GitHub, GitLab, AWS, Slack, Stripe, Anthropic, OpenAI, Google, npm, PyPI, Hugging Face, Atlassian, JWT, private keys); nothing needs to be installed. Both show the findings before "Export anyway" accepts the displayed fingerprints. History export requires the project's queued, running, waiting and paused jobs to be stopped or archived.
-*   GUI and Assistant import validate entries, reject links, and apply the same manifest checks to archives and extracted folders. Size never blocks an import: a file or a job history over 32 MB is listed as too large and not reviewed, and the review counts as partial. The advisory report shows findings and coverage, and the user reviews every script and prompt before proceeding. Confirmation checks the content digest and validates the ID and account mappings. History imports remap job, run, attempt and queue item IDs and their artifact and log paths.
+*   GUI and Assistant import validate entries, reject links and apply the same manifest checks to archives and extracted folders. Size limits apply only to review. Files and job histories over 32 MB are skipped, making the review partial. The review treats code, prompts and documents as untrusted, including hidden instructions. The advisory report lists findings and shows what was inspected or skipped. The import dialog and chat card ask the user to review the scripts and prompts. Each required forge account maps to a local one, preselected when just one fits. The import asks for a new ID only if the original is taken. Confirmation checks the content digest, ID and account mappings. History imports remap job, run, attempt and queue item IDs and their artifact and log paths.
 *   Ticket text, links, images and repo content are data. Prompts mark them as untrusted input.
 
 ### 9. Observability
@@ -770,7 +814,7 @@ Two agents with different roles (decisions.md 38). The mechanics below apply to 
 *   `pecore.db` holds the job views: `jobs`, `node_runs` (with state, waiting reason, content states), `attempts` (profile, harness version, model, tokens, cost, log path), `human_queue` (user decisions, by `kind`). External effects are events (`effect.requested`, `effect.completed`, `effect.failed`) with no separate view.
 *   Raw logs are files under `logs/`, named by attempt id (a ULID). For an agent node, one line per item: `{ "dir": "in" | "out", "msg": <JSON-RPC message>, "at" }` for ACP traffic and `{ "dir": "err", "line", "at" }` for the connector's stderr. For a command node, its output. Each attempt row stores its log path.
 *   The GUI shows the job graph with each node's state, round, waiting reason, duration, tokens and cost. One click opens the node's attempts, artifacts and raw log. `pecore job why <id>` prints the same blocking reasons.
-*   Notifications: job finished, job needs the user, harness or tool login expired, parent job failed, job started from a ticket, auto-setup changes, login files readable by other users. Each is also stored in the notification log of `chats.db`. Orchestrator replies are a native notification only, never stored (section 6). Native notifications through Electron, only while the <PE/CORE> window is not focused. <PE/CORE> has no quiet hours: the operating system's do-not-disturb applies (decisions.md 53).
+*   Notifications cover job completion, jobs that need attention, expired logins, failed parents, ticket intake, auto-setup changes and exposed login files. The engine stores these in the notification log, including Orchestrator reports. Assistant replies use the unread marker and a native notification only. Native notifications are sent only while the window is unfocused. The operating system handles do-not-disturb.
 
 ### 10. Stack
 
@@ -976,38 +1020,40 @@ Recorded ACP traffic for tests lives in `packages/agents/fixtures/<connector>/<c
 
 | Method and path | Purpose |
 |---|---|
-| `GET/POST /projects`, `GET /projects/:id` | list, create (Project creation below; a new project has no recipes, decision 72), read; a project is edited by saving its `project.json` through `PUT /definitions/projects/<id>/project.json` |
+| `GET/POST /projects`, `GET /projects/:id` | list, create and read projects. A new project starts with no recipes. The Settings form and Assistant validate edits to `project.json`. |
 | `POST /projects/:id/export`, `POST /projects/import` | export and CLI archive import |
 | `POST /projects/import/analysis` | CLI archive security review |
 | `POST /projects/import/preview`, `POST /projects/import/complete` | review a local export or extracted folder, then import the reviewed contents with the selected ID and forge accounts |
 | `POST /chat/actions/:id/project-import`, `POST /chat/actions/:id/project-export` | confirm or reject a chat import proposal or a flagged export |
 | `GET /jobs`, `GET /jobs/:id`, `GET /jobs/:id/why` | list and read |
 | `POST /jobs` | create (Job creation below) |
-| `POST /jobs/:id/{stop,pause,play,resume,archive,delete,realign,check-merge}` | controls; `check-merge` runs merge detection for the job now (decision 10) |
+| `POST /jobs/:id/{stop,pause,play,resume,archive,delete,realign,check-merge}` | job controls. `check-merge` runs merge detection for the job immediately. |
 | `POST /pause`, `POST /play`, `POST /play-interrupted` | global controls; `play-interrupted` plays every job paused by the app quit |
-| `GET /projects/:id/creation`, `POST /projects/:id/creation/{retry,cancel}` | an unfinished project creation: the state of each task of "Project creation", the error, the open confirmation item of the repo creation node; Retry and Cancel (decision 13) |
+| `GET /projects/:id/creation`, `POST /projects/:id/creation/{retry,cancel}` | creation progress, errors and recovery actions |
 | `GET /status` | app version, home check warnings, global pause, jobs paused by the quit, Notifications count |
 | `GET /setup` | what auto-setup found: each built-in harness (installed, version, logged in) and whether any model account works; feeds the banner of ui-design.md "Zero-config start" |
-| `POST /prerequisites/check` | runs the checks of decision 12 for the features in use; each result names the setting it points to |
+| `POST /prerequisites/check` | checks the prerequisites for the features in use and points each result to its setting |
 | `GET /themes` | the theme files of `PECORE_HOME/themes/`, each with its tokens or its validation error |
 | `GET /queue`, `POST /queue/:id` | waiting items and the user's choice; the body carries `{choice, note, input, hash}`, where `hash` is the sha256 of the item's `subject` the GUI showed; the engine refuses the choice (409) if the item changed, was resolved or was cancelled since |
 | `GET /definitions?dir`, `GET/PUT /definitions/*path`, `POST /definitions/validate`, `POST /definitions/instantiate` | templates and instances, by path under the `PECORE_HOME` layout (`library/...`, `projects/<id>/...`); `GET` returns the file's sha256, `PUT` carries it as `baseSha256` (null for a new file) and is refused (409) when the file changed since |
 | `DELETE /projects/:id` | project delete (4.8) |
 | `POST /protected-mode` | `{on: true}` creates `pecore-agent` if missing and switches every project to it; `{on: false}` switches back; `{on: false, removeUser: true}` also removes the user (admin prompt) |
 | `POST /accounts/:id/recheck` | re-runs the identity check of a forge or service account, or of every login of a model account, and releases runs waiting with `auth` on them |
-| `POST /chats/:id/read` | sets `last_read_at` |
-| `GET /notifications` | the notification log |
+| `POST /chat/read` | mark the Assistant chat as read |
+| `GET /notifications`, `POST /notifications/seen`, `DELETE /notifications/:id` | list the log, mark all seen or delete one notification |
 | `GET/PUT /settings`, `/accounts`, `/profiles`, `/tiers` | global files; `GET` returns the value and its sha256, `PUT` carries `baseSha256` (409 when the file changed since); `protectedMode` changes only through `POST /protected-mode` |
 | `GET /logins`, `POST /logins` | harness logins (account and OS user, 3.4) with their state; start one (`{account, osUser}`); progress and the URL over WebSocket |
 | `POST /logins/:id/code`, `POST /logins/:id/recheck` | send the code the login command reads on stdin (5.9); re-run `checkLogin` and release runs waiting with `auth` on that login |
 | `POST /accounts/:id/login` | start a forge or service tool login; progress over WebSocket |
-| `GET /accounts/:id/options` | the models and efforts the account's connector offers (`listOptions` through any logged-in login of the account), for the profile editor; with `?model=`, the efforts of that model (`listOptions` with `model`, decisions.md 52). Each answer is read once and kept in memory (a `null` result is not kept); after the login check at start the engine reads every model account and the models of the Assistant and Orchestrator profiles |
-| `POST /accounts/:id/options/refresh` | forgets what is kept for the account and reads its models again (decisions.md 50) |
-| `GET/POST /chats`, `POST /chats/:id/messages` | orchestrator chat; a message has text, attachments and an optional `context` of references (section 6) |
+| `GET /accounts/:id/options` | cached model choices for an account. With `?model=`, returns the effort choices for that model. |
+| `POST /accounts/:id/options/refresh` | refresh the account's available choices |
+| `GET /chat`, `DELETE /chat` | read or clear the Assistant's only chat (section 6) |
+| `POST /chat/messages`, `POST /chat/attachments`, `POST /chat/messages/:id/retry` | send a message with optional context references and attachments, upload an attachment or retry a turn |
+| `POST /chat/actions/:id/project-creation`, `POST /chat/actions/:id/project-deletion` | confirm or reject an Assistant proposal |
 | `GET /artifacts/:job/:run/:name`, `GET /logs/:attempt?view=events\|raw` | files; `events` returns the normalised events of the attempt (the shape of `log.line`), `raw` the JSONL lines; 410 when retention removed the log |
 
-*   WebSocket `/live` sends a union of `job.updated`, `node_run.updated`, `queue.updated`, `project.updated` (a creation step changed), `definition.changed` (path, new hash), `log.line` (one normalised event), `login.progress`, `chat.message`, `chat.action`, `notify`. `log.line` is sent only for attempts the client subscribed to (`{subscribe: attempt id}`, `{unsubscribe: attempt id}`), so the GUI receives the lines of the log it shows and nothing else.
-*   MCP: HTTP transport (streamable HTTP) on a second `127.0.0.1` port, header `Authorization: Bearer <orchestrator token>`. The token is made at each start and passed in the `mcpServers` field of the orchestrator's `session/new`, with the URL and the header.
+*   WebSocket `/live` sends a union of `job.updated`, `node_run.updated`, `queue.updated`, `project.updated` (a creation step changed), `definition.changed` (path, new hash), `log.line` (one normalised event), `login.progress`, `chat.changed`, `notify`. `log.line` is sent only for attempts the client subscribed to (`{subscribe: attempt id}`, `{unsubscribe: attempt id}`), so the GUI receives the lines of the log it shows and nothing else.
+*   MCP uses a separate loopback endpoint with a private token. The harness talks to it through the stdio shim (section 6 and Phase 6 decisions).
 
 ### Engine and main process messages
 
@@ -1019,12 +1065,16 @@ Quit (tray, app menu, Cmd+Q): main asks the engine `active?`. If jobs are `runni
 
 ### Project creation
 
-`src/projects/create.ts`, in order. A step that fails undoes the steps before it and reports which step failed.
+The wizard and Assistant collect the name, repository choice (local, existing remote or new remote), any forge account, folder and base branch. Pick a local folder or accept the default from Settings. The ID comes from the name in lowercase with dashes, with a maximum of 24 characters and a numeric suffix (`-2`, `-3`, …) when taken. The wizard has no ID field.
+
+The Assistant fills in choices when the user delegates them, validates the inputs and shows a card. Confirm starts the same creation as the wizard. A new project has no recipes. Users add recipes later. Validation refuses a recipe that uses a remote operation, such as push, PR, MR or ticket comment, on a project without a remote.
+
+`src/projects/create.ts` runs the steps below. A failed step reports the error and rolls back completed local steps.
 
 1.  Validate the id. With a `repo`, also validate its URL and account and check the account belongs to the repo's forge and host; with `repo: null` there is no forge account to check. With a `folder`: it must be an absolute path, and missing, empty, or the root of a Git repository; with `repo: null` or `createRepo`, a repository folder must have the branch `baseBranch`.
 2.  Nothing to create for the OS user: in normal mode the project runs as the app user; in protected mode `pecore-agent` already exists.
 3.  Create the project directory, `project.json`, `pecore.db`; set ownership and permissions (section 8).
-4.  With `repo: null`: create `repo.git` with one empty initial commit on `baseBranch`; no `createRepo`, no clone. If the remote exists: clone into `repo.git`. Otherwise create the empty repo and run the `createRepo` node once under `project-setup`. With `repo: null` or `createRepo`, a `folder` that is a repository is cloned into `repo.git` instead of the empty repo, so its code is the project's start and, with `createRepo`, the new remote's content. Then the folder: a missing or empty one gets a clone of `repo.git` on `baseBranch`, with the remote as its `origin` or, with `repo: null`, no `origin`; an existing repository without `origin` gets the remote as `origin`, and is otherwise left as it is. With `repo: null` the folder is `origin` of `repo.git`. <PE/CORE> never deletes the folder, also when creation is cancelled. Creating the project approves the shipped GitHub or GitLab setup node when its definition and scripts match the bundled files. Changed or custom nodes follow the normal confirmation flow.
+4.  With `repo: null`: create `repo.git` with one empty initial commit on `baseBranch`; no `createRepo`, no clone. If the remote exists: clone into `repo.git`. Otherwise create the empty repo and run the `createRepo` node once under `project-setup`. With `repo: null` or `createRepo`, a `folder` that is a repository is cloned into `repo.git` instead of the empty repo, so its code is the project's start and, with `createRepo`, the new remote's content. Then the folder: a missing or empty one gets a clone of `repo.git` on `baseBranch`, with the remote as its `origin` or, with `repo: null`, no `origin`; an existing repository without `origin` gets the remote as `origin`, and is otherwise left as it is. With `repo: null` the folder is `origin` of `repo.git`. <PE/CORE> never deletes the folder, also when creation is cancelled. Repository setup runs as part of creation.
 5.  Configure `repo.git` (Fixed choices), run the home check, commit the definitions to `PECORE_HOME`.
 6.  In protected mode, give `pecore-agent` access to the new project (group and ACLs, Fixed choices). No login is needed: logins belong to the user, not to the project.
 
@@ -1036,15 +1086,17 @@ Quit (tray, app menu, Cmd+Q): main asks the engine `active?`. If jobs are `runni
 2.  Accounts: each such harness with no model account on its connector gets `{ id: <connector name>, kind: "model", connector, login: "subscription" }`, with its provider.
 3.  Profiles: models and efforts are read from each harness at every start, never written in <PE/CORE>: `listOptions` (models, efforts, the current default model); for opencode, `opencode models` and the default model of the user's opencode configuration, otherwise the first model it lists. Each account gets the profiles `<connector>-frontier`, `-strong`, `-standard` and `-cheap`. The only fixed part is a ranking rule on model names that holds across versions: a name with `opus`, `pro`, `max` or `ultra` ranks as frontier, `sonnet` as middle, `haiku`, `mini`, `flash`, `lite` or `nano` as cheap. Frontier takes the best ranked model, strong and standard the harness's default model, cheap the cheapest ranked model; a tier with no ranked model takes the default model. Efforts come from the harness's list: frontier and strong the highest, standard the middle one, cheap the lowest; a harness that offers no effort leaves it unset. At every start, a profile that auto-setup created and the user has not changed since is updated to what the harness offers now; `PECORE_HOME/auto-setup.json` records the values auto-setup last wrote, so a profile the user changed is never touched.
 4.  Tiers: each tier gets the new profiles appended after the ones already there, in connector order, so a tier can fall back to another provider.
-5.  Orchestrator: when no profile is set, the `frontier` profile of the first account.
+5.  Assistant: when no profile is set, select the first usable account's `frontier` profile. The Orchestrator uses the Assistant's choice until configured separately.
 
 With no harness found and logged in, nothing changes and the GUI shows the banner of ui-design.md "Zero-config start". Tests: fake harness programs on `PATH` with a fake login check and model list; a second run changes nothing; accounts, profiles and tiers set by the user are kept; no harness gives no change.
 
 ### Job creation
 
-`src/jobs/create.ts` is used by `POST /jobs`, the orchestrator's `create_jobs` and ticket intake. A job without a recipe gets the project's only recipe; with no recipes or more than one, creation fails and asks to add or choose one (decision 77). It validates the recipe, writes the `ticket` artifact, fetches the base branch (for a `repo: null` project only from its `folder`, if any; without one the base branch lives only in `repo.git`), and sets base commit, target and branch. A job with an unfinished parent is created `queued` with reason `parent_job`; otherwise it waits for the scheduler and the disk check. When the job starts, the engine fetches its target branch again (unless the target is a `factory/` branch of a parent) and creates the worktree from the fetched head, recorded as `job.base_changed` with cause `fetched`; if that fetch fails, the job stays `queued` with reason `network` or `auth` and never starts on an old base.
+`src/jobs/create.ts` is used by `POST /jobs`, `create_jobs` from the Assistant and Orchestrator, and ticket intake. A job without a recipe gets the project's only recipe; with no recipes or more than one, creation fails and asks to add or choose one. It validates the recipe, writes the `ticket` artifact, fetches the base branch (for a `repo: null` project only from its `folder`, if any; without one the base branch lives only in `repo.git`), and sets base commit, target and branch. A job with an unfinished parent is created `queued` with reason `parent_job`; otherwise it waits for the scheduler and the disk check. When the job starts, the engine fetches its target branch again (unless the target is a `factory/` branch of a parent) and creates the worktree from the fetched head, recorded as `job.base_changed` with cause `fetched`; if that fetch fails, the job stays `queued` with reason `network` or `auth` and never starts on an old base.
 
 ### Tests
+
+Run typecheck, lint and engine tests for every code change. Defer GUI tests until the redesign is stable. `pnpm dev` runs the app with live reload and needs no prior build.
 
 | File | Scenario | Runs |
 |---|---|---|
@@ -1052,7 +1104,7 @@ With no harness found and logged in, nothing changes and the GUI shows the banne
 | `workdir/fs-as.test.ts` | symlinks at every engine file path | CI (Linux, with a test user) |
 | `workdir/git-as.test.ts` | hooks, `core.fsmonitor`, `core.sshCommand` and a forged `commondir` do not run as the app user | CI (Linux, test user) |
 | `workdir/content-state.test.ts` | `READ_ONLY_VIOLATION` restore; `requires` gives `stale`; interrupted rebase is undone | CI |
-| `definitions/engine-node.test.ts` | engine nodes run with current scripts and legacy approval items are closed | CI |
+| `definitions/engine-node.test.ts` | engine nodes run with the current scripts without approval | CI |
 | `agents: src/connectors.test.ts` | for each built-in connector, the incoming messages of each fixture go through the reader and the classifier, and the result must equal `<case>.expected.json`: auth, quota and rate limit errors (synthetic until recorded, 5.4), usage, account (G7) | CI |
 | `agents: src/session.test.ts` | ACP session with the fake agent: options applied in order and checked, a mismatching `currentValue`, permission answered, resume and fallback to a new session, a request past 30 seconds, connector exit without answer | CI |
 | `engine: runners/agent.test.ts` | agent node with the fake agent: the order of 5.4, invalid output corrected twice then `INVALID_OUTPUT`, timeout with cancel then stop, `retry` use, quota and auth waits, resume lookup (5.5) | CI |
@@ -1070,14 +1122,14 @@ The fake forge (`test/fake-forge/`) is a local bare repo plus scripts that imita
 
 | File | What and why |
 |---|---|
-| `package.json` | pnpm workspace root; scripts `build`, `test`, `lint`, `typecheck`, `dist` |
+| `package.json` | pnpm workspace root; scripts `dev`, `build`, `test`, `lint`, `typecheck`, `dist` |
 | `pnpm-workspace.yaml` | lists `packages/*` |
 | `tsconfig.base.json` | shared TypeScript strict settings |
 | `vitest.config.ts` | `test.projects` lists every package; run under Electron's Node (Fixed choices) |
 | `.npmrc` | `node-linker=hoisted` for electron-builder |
 | `eslint.config.js` | lint rules for all packages |
 | `.gitignore` | ignores `node_modules/`, `dist/`, `out/` |
-| `LICENSE` | Apache License 2.0 (decision 87) |
+| `LICENSE` | Apache License 2.0 |
 | `NOTICE` | name and copyright notice required by Apache License 2.0 |
 | `README.md` | what <PE/CORE> is, install, first run, build from source |
 | `.github/workflows/ci.yml` | lint, typecheck and tests on Linux and macOS for every push |
@@ -1095,7 +1147,7 @@ Every file exports a Zod schema and the TypeScript type inferred from it. The en
 | `src/accounts.ts` | `accounts.json` with the kinds `model`, `forge`, `service` |
 | `src/profiles.ts` | `profiles.json` |
 | `src/tiers.ts` | `tiers.json`, with the four tier names fixed |
-| `src/settings.ts` | `settings.json` with defaults: `limits.jobs` (CPU cores / 2), `limits.agents` (4), `servicesRuntime`, `minFreeDiskGb` (10), `mergeCheckSec` (300), `projectsFolder` (`~`, the user's home, where new project folders start, decision 76), `orchestrator` (profile), `protectedMode` (false), `firstRunDone` (false until the first run ends; while false the GUI opens the first run), UI preferences |
+| `src/settings.ts` | global job and agent limits, services runtime, minimum free disk (10 GB), merge check interval (300 seconds), `projectsFolder` (user home), Assistant and Orchestrator profiles and compaction thresholds, protected mode (off by default) and appearance |
 | `src/connector.ts` | connector file (Connector file above) |
 | `src/artifacts.ts` | artifact types of 3.3. `spec`: `criteria[]`, `tests[]`, `interfaces[] {name, signature}`, `optionalNodes[]`. `findings`: `verdict`, `items[] {file, line, severity, text}`. `risk`: `hunks[] {file, hunkIndex, level: safe \| risky, reason}` |
 | `src/events.ts` | the events of Data model |
@@ -1132,21 +1184,21 @@ Everything that knows ACP or a harness lives here (section 5). It imports only `
 | `src/main.ts` | entry point, in order: reads `PECORE_HOME`; takes the lock file; writes `schemas/`; kills processes left from a previous run (section 1); removes orphan `pecore-*` compose projects (4.9); runs the home check (section 8); opens the projects; sets interrupted jobs to `paused`; starts the API and the MCP server and writes `run/api.json`; sends `ready`; then, in the background, runs `checkLogin` for every harness login (3.4); handles `shutdown` (Engine and main process messages) |
 | **home/** | |
 | `src/home/layout.ts` | paths of section 2; on first run creates `PECORE_HOME` and `run/` (0700), runs `git init` with the `.gitignore` of section 2, and copies the shipped `library/` into it; on every later start, copies shipped library files the home does not have, never overwriting a file, in one commit `library: add N shipped files` (a shipped file the user deleted comes back); when the app version changed, copies the bundled adapters to `adapters/` (Fixed choices: Adapters) |
-| `src/home/autosetup.ts` | Auto-setup: accounts, profiles, tiers and orchestrator profile from the installed and logged-in harnesses (Detailed Implementation, "Auto-setup") |
+| `src/home/autosetup.ts` | Auto-setup: accounts, profiles, tiers and Assistant profile from the installed and logged-in harnesses (Detailed Implementation, "Auto-setup") |
 | `src/home/git-commit.ts` | commits every definition change to `PECORE_HOME` (or to the project's own repo if it was moved) with the message `<kind> <name>: <created\|edited\|deleted>` |
 | `src/home/lock.ts` | one engine per `PECORE_HOME`; a lock whose pid is not running is taken over |
 | `src/home/prerequisites.ts` | first-run and start checks: git, sudo, setfacl (Linux), Compose v2; when an account needs them: gh 2.40 or later, glab; for each harness login, `checkPrerequisites` as its OS user (5.1), after adding the traverse ACLs of 5.7 |
 | **projects/** | |
 | `src/projects/create.ts` | Project creation above |
-| `src/projects/defaults.ts` | the forge's nodes from `library/forges/`: a recipe added to a project gets the delivery, comment, repo creation and source nodes of the project's forge (`github-pr` and `github-issue-comment`, or `gitlab-mr` and `gitlab-issue-comment`); a project without a remote repo (`repo: null`) gets no renames. A new project has no recipes: the user adds them afterwards (decision 72) |
+| `src/projects/defaults.ts` | the forge's nodes from `library/forges/`: a recipe added to a project gets the delivery, comment, repo creation and source nodes of the project's forge (`github-pr` and `github-issue-comment`, or `gitlab-mr` and `gitlab-issue-comment`); a project without a remote repo (`repo: null`) gets no renames. A new project has no recipes: the user adds them afterwards |
 | **definitions/** | |
 | `src/definitions/load.ts` | reads and validates definition files; returns typed errors with file and field |
-| `src/definitions/recipe-check.ts` | recipe rules beyond the schema: `use` exists in the project, every edge outcome exists on its node, inputs producible before use (3.3), a parent recipe has a commit node (4.6), `providerNot` targets exist; in a project without a remote repo, no node that uses `project.account` (push, PR, MR, ticket comment), so saving or adding such a recipe fails (decision 72) |
+| `src/definitions/recipe-check.ts` | recipe rules beyond the schema: `use` exists in the project, every edge outcome exists on its node, inputs producible before use (3.3), a parent recipe has a commit node (4.6), `providerNot` targets exist; in a project without a remote repo, no node that uses `project.account` (push, PR, MR, ticket comment), so saving or adding such a recipe fails |
 | `src/definitions/instantiate.ts` | copies a template into a project; no link kept (D19). Instantiating a recipe also instantiates every node template it uses that the project lacks; a node instance with the same name is kept, and the GUI shows that the recipe uses the existing one |
 | **store/** | |
 | `src/store/project-db.ts` | opens `pecore.db` in WAL mode; one transaction per engine operation; applies migrations by `schema_version` |
 | `src/store/migrations/001-init.sql` | the tables of Data model |
-| `src/store/chats-db.ts` | `chats.db` for orchestrator chats |
+| `src/store/chats-db.ts` | Assistant chat, internal Orchestrator sessions and notifications |
 | `src/store/migrations/chats-001-init.sql` | the `chats.db` tables of Data model |
 | **graph/** | |
 | `src/graph/job-machine.ts` | job states and transitions of 4.1 |
@@ -1196,16 +1248,16 @@ Everything that knows ACP or a harness lives here (section 5). It imports only `
 | `src/api/server.ts` | Fastify on `127.0.0.1` port 0; writes `run/api.json`; token, `Origin` and `Host` checks |
 | `src/api/routes/projects.ts` | project routes of the API table |
 | `src/api/routes/jobs.ts` | job routes and global controls |
-| `src/api/routes/queue.ts` | queue routes: human nodes and confirmations |
+| `src/api/routes/queue.ts` | items requiring a user decision (section 8) |
 | `src/api/routes/definitions.ts` | definition routes |
 | `src/api/routes/settings.ts` | settings, accounts, profiles, tiers, protected mode, logins |
-| `src/api/routes/chats.ts` | chat routes; a new message starts an orchestrator turn |
+| `src/api/routes/chats.ts` | chat routes; a user message starts an Assistant turn |
 | `src/api/routes/files.ts` | artifacts and raw logs |
 | `src/api/ws.ts` | the WebSocket union |
 | **orchestrator/** | |
 | `src/orchestrator/mcp-server.ts` | MCP over streamable HTTP on `127.0.0.1` with its own token; the tools of section 6 only |
 | `src/orchestrator/tools.ts` | tool handlers; the `write_*` handlers validate input before saving; `read_artifact` returns at most 200 KB, the end of a log when it is longer; `answer_question` resolves a question an agent asked through the chat (an `agent-question` item), never a review or confirmation |
-| `src/orchestrator/session.ts` | one `startSession` per user message, as the orchestrator's OS user, in the chat's fixed directory, resuming the chat's ACP session id, so the conversation continues; one message at a time per chat; the MCP server goes in `mcpServers` at every start or resume (section 6); if the session cannot be resumed, the new session gets the chat's earlier messages from `chats.db` in its prompt; attachments are copied into the chat's directory and listed in the prompt; the message's `context` references are listed in the prompt |
+| `src/orchestrator/session.ts` | connector sessions, model and effort selection, streamed replies, resumption and compaction for the Assistant and Orchestrator (section 6) |
 | **sources/** | |
 | `src/sources/run.ts` | runs the four commands of a source definition through `runners/command.ts`, and parses their JSON output |
 | `src/sources/poll.ts` | calls `list` on each project's source node every `pollSec`, stores seen ids in `pecore.db`, and hands new tickets to the orchestrator (section 7) |
@@ -1226,7 +1278,7 @@ The screens below come from G16. Their layout is designed in [ui-design.md](ui-d
 |---|---|
 | `electron-builder.yml` | AppImage, deb, dmg, zip; auto-update from GitHub Releases; rebuilds `better-sqlite3` for Electron; bundles `library/`, `connectors/` and the adapters (Fixed choices: Adapters) as extra resources. Built so far (phase 6): the Linux AppImage only; deb needs a project homepage, macOS and auto-update come with the release workflow. The engine copies the adapters into `PECORE_HOME/adapters` with directories 0755 and files 0644 or 0755, whatever the modes inside the app |
 | `electron.vite.config.ts` | builds main, preload and renderer |
-| `src/main/index.ts` | window, menus, tray and single-instance lock; if `userData/home.json` is missing, asks for the `PECORE_HOME` location (default `~/.pecore`) in a small main-process window and writes `home.json`, before the engine starts; then starts the engine; the quit confirmation and the shutdown sequence on `before-quit` (Engine and main process messages) |
+| `src/main/index.ts` | window, menus, tray and single-instance lock. Uses `~/.pecore` unless a home is configured, starts the engine and handles quit and shutdown. |
 | `src/main/engine.ts` | `utilityProcess.fork` of the engine with `PECORE_HOME`; handles `parentPort` messages |
 | `src/main/admin.ts` | runs the privileged script text with `pkexec` or `osascript` (Fixed choices) |
 | `src/main/notifications.ts` | native notifications for `notify` messages; optional sound |
@@ -1235,14 +1287,14 @@ The screens below come from G16. Their layout is designed in [ui-design.md](ui-d
 | `src/renderer/main.tsx` | React root and routes |
 | `src/renderer/api/client.ts` | typed HTTP client from `@pecore/schemas` |
 | `src/renderer/api/live.ts` | WebSocket subscription |
-| `src/renderer/shell/` | navigation with the page's sub-navigation, top bar (command palette, global pause, notifications), command palette (`cmdk`), disconnected banner ([ui-design.md](ui-design.md) Proposed Design, Cross-cutting behaviour) |
+| `src/renderer/shell/` | navigation with the page's sub-navigation, top bar (command palette, global pause and play), command palette (`cmdk`), disconnected banner ([ui-design.md](ui-design.md) Proposed Design, Cross-cutting behaviour) |
 | `src/renderer/theme/` | theme tokens as CSS variables, loading of `PECORE_HOME/themes/*.json` with schema and fallback (UI4, UI16) |
 | `src/renderer/shell/SetupBanner.tsx` | the banner shown when no harness is installed and logged in (ui-design.md "Zero-config start") |
 | `src/renderer/screens/Factory.tsx` | home: counters, unfinished jobs, "Play interrupted jobs" |
 | `src/renderer/screens/Jobs.tsx` | every job, filters, stacked jobs as a tree, controls by state |
 | `src/renderer/screens/JobView.tsx` | header and controls, Graph and History tabs, node run detail, log, artifact viewer, result view |
 | `src/renderer/screens/Notifications.tsx` | open `human_queue` items by kind (ID1-ID9) and the notification log; snapshot and hash, lock on cancel |
-| `src/renderer/screens/Orchestrator.tsx` | conversations, unread markers, action cards, agent questions |
+| `src/renderer/screens/Orchestrator.tsx` | single Assistant chat with streaming, action cards, agent questions, Compact and Clear |
 | `src/renderer/components/MiniChat.tsx` | the mini chat with the context chip (UI2b, UI14) |
 | `src/renderer/screens/Projects.tsx` | project list, New project and Import project entry points |
 | `src/renderer/screens/ProjectPage.tsx` | project configuration sections, export, delete |
@@ -1250,7 +1302,7 @@ The screens below come from G16. Their layout is designed in [ui-design.md](ui-d
 | `src/renderer/screens/RecipeEditor.tsx` | recipe graph editor on a grid, `layout` saving, instance and template modes |
 | `src/renderer/screens/NodeEditor.tsx` | node template and instance editor, JSON tab, save with `If-Match` |
 | `src/renderer/screens/Library.tsx` | templates, instantiate into a project |
-| `src/renderer/screens/Settings.tsx` | accounts and logins, profiles and tiers, orchestrator, limits, runtime, updates, notifications, appearance |
+| `src/renderer/screens/Settings.tsx` | accounts and logins, protected mode, Assistant and Orchestrator, projects, global limits, runtime, updates and appearance |
 | `src/renderer/components/NewJobModal.tsx` | New job form |
 | `src/renderer/components/ConfirmItem.tsx` | one confirmation, from the item's `subject` snapshot, sending its hash; used by Notifications (UI18) |
 
@@ -1299,14 +1351,14 @@ Stored in the repository under `packages/app/resources/` and bundled with the ap
 |---|---|
 | `docs/design.md` (exists) | this design |
 | `docs/ui-design.md` (exists) | UI inventory and layout |
-| `docs/initial-brainstorm.md` (changed) | a first line pointing to the design that replaces it |
+| `docs/orginal_design.md` | original design for historical reference |
 | `docs/nodes.md` | how to write a node: fields, placeholders, probe, `runsAs` |
 | `docs/recipes.md` | how to write a recipe: edges, rounds, optional nodes, `onBaseChanged` |
 | `docs/connectors.md` | how to add a bundled connector file for a harness with an ACP mode or adapter, and how to record its fixtures |
 
 ### Build order
 
-Phases fix the build order only. No phase is a release; the first release contains all six (D1). Each phase ends when its gate passes.
+This section records the original build sequence and its validation gates. The first release includes all six phases (D1).
 
 Phases 1-6 target Linux first. The macOS parts (`osuser/` with `dscl` and `sysadminctl`, `chmod +a` ACLs, the `osascript` admin prompt, Keychain logins, dmg signing and notarization) follow in a macOS pass after phase 6, before the first release. Phase 0 still runs the Keychain spike on macOS, because its result can change how harness logins are stored.
 
@@ -1315,7 +1367,7 @@ Phases 1-6 target Linux first. The macOS parts (`osuser/` with `dscl` and `sysad
 | 0. Spikes | none (results go into connector files, fixtures and Open Questions) | done: ACP sessions with Claude Code (two turns, permission, missing login), one Codex tool call, opencode's missing login ([ACP spike](spikes/acp.md)); macOS Keychain behaviour; the "Claude Code through sudo" check of Tests, with its fixtures ([sudo spike](spikes/sudo.md)) |
 | 1. Definitions and storage | `schemas`; engine `home/` (except `prerequisites.ts`), `definitions/`, `store/`; root files; the library templates that use no forge or agent | done: every template present validates (each later phase adds its templates, and its gate re-runs the validation); migrations apply; `PECORE_HOME` initialises. `git-rebase` moves to phase 4 with its entry gate (rebase checkpoints), `markdown-folder` with the source templates |
 | 2. Engine core | `graph/`, `scheduler/`, `runners/process.ts`, `placeholders.ts`, `command.ts`, `probe.ts`, `human.ts`, `workdir/`, `jobs/create.ts`, `controls.ts`, `delete.ts`, `effects.ts`, `main.ts` (without API), `observability/logs.ts`, `projects/create.ts` for `repo: null` only; test fake forge | done: `rules.test`, `content-state.test`, `fs-as.test`, `git-as.test` pass; command-only recipes run end to end on a local-only project, with the app user as project user (`test/e2e/local-commands.test.ts`). Job controls and delete live in `graph/executor.ts`; the fake forge moves to phase 4, its first user |
-| 3. Agents | `packages/agents` with the Claude Code connector only, `adapters.json`, `build-adapters.mjs`; engine `accounts/` (harness logins only), `runners/agent.ts`, `scheduler/tiers.ts`, `cooldown.ts`, `budget.ts`, the `checkLogin` step of `main.ts`; test fake agent | done: `connectors.test`, `session.test` and `agent.test` pass; a `local-only` job on a `repo: null` project runs end to end to its commit with Claude Code as the only provider, with the app user as project user, in normal mode, with the user's existing Claude Code login (`test/e2e/claude-local.test.ts` with `PECORE_REAL=1`: 4 minutes with Sonnet, 2026-11-18) |
+| 3. Agents | `packages/agents` with the Claude Code connector only, `adapters.json`, `build-adapters.mjs`; engine `accounts/` (harness logins only), `runners/agent.ts`, `scheduler/tiers.ts`, `cooldown.ts`, the `checkLogin` step of `main.ts`; test fake agent | done: `connectors.test`, `session.test` and `agent.test` pass; a `local-only` job on a `repo: null` project runs end to end to its commit with Claude Code as the only provider, with the app user as project user, in normal mode, with the user's existing Claude Code login (`test/e2e/claude-local.test.ts` with `PECORE_REAL=1`: 4 minutes with Sonnet, 2026-11-18) |
 | 4. Isolation and delivery | `osuser/`, the rest of `projects/`, `home/prerequisites.ts`, `services/`, `runners/forge-env.ts`, `jobs/stacked.ts`, `merge-watch.ts`, delivery and source templates | done: `crash.test`, `stacked.test`, `engine-node.test` pass with the fake forge; `e2e/forges` passes against real GitHub and GitLab sandbox repositories with `gh` and `glab` (`test/e2e/forges.test.ts` with `PECORE_E2E_GITHUB_REPO`/`_USER` and `PECORE_E2E_GITLAB_REPO`/`_USER`: repo creation on an empty repository, one PR or MR per job, one push and one request after a kill during push, 2026-11-19) |
 | 5. API, GUI, CLI | `api/`, `observability/why.ts`, `packages/app`, `packages/cli` (requires approved `ui-design.md`) | done: `why.test` passes; every action of G16 works from the GUI, chat and AI assistance excepted (phase 6): `packages/app/test/gui.test.ts` with `PECORE_GUI=1` drives the built app headless, with the fake `gh` for the forge account login, repository creation, PR delivery and merge check (2026-11-19); harness logins for the user and for the protected user, and protected mode on and off, verified by hand on Linux (2026-11-19) |
 | 6. Orchestrator, sharing and more connectors | `orchestrator/`, `sources/`, `share/`, `api/routes/chats.ts`; Codex and opencode connectors with their readers and fixtures | CUJ 1-7 run by hand; `e2e/providers` and `e2e/languages` pass; in the packaged app in protected mode, a chat resumed after an app restart calls an MCP tool with the new token (Phase 6 decision 4) |
@@ -1339,7 +1391,7 @@ Each line closes one entry gate of phase 4 and overrides the earlier text it con
 4.  **Auth versus network.** When a probe gives `unknown` or a `runsAs: engine` command fails with no matching outcome rule, the engine runs the account tool's identity check (`gh auth token --user <login> --hostname <host>`, `glab config get token --host <host>`). A failed check makes the node run wait with reason `auth` (kind `tool`); a passing check means `network`.
 5.  **Compose.** Allowed service keys: `image`, `environment`, `ports` (only `127.0.0.1::<port>`), `healthcheck`, `command`, `entrypoint`, `tmpfs`, `depends_on`, and `volumes` with named volumes only; any other key refuses the file. The check runs on the output of `compose config --format json` of the validated copy, so anchors, `extends` and variables are resolved before the check. Before that command runs, the engine parses the file with the `yaml` package (one document, no duplicate keys, merge keys resolved, no parse warnings) and refuses `include`, `services.*.env_file`, `services.*.label_file` and `services.*.extends.file`, because `compose config` would already read the files they name. The engine is the only owner of services: on quit it runs `compose stop` (data kept), not `down -v`, and the main process runs nothing; a final job state runs `down -v`; Play starts stopped services with `compose start`; the start-up sweep removes `pecore-*` projects whose job is final or missing.
 6.  **Protected `repo.git`.** `repo.git/` is mode 3775 (setgid and sticky) with group `pecore-agent`: the project user can create `packed-refs` and lock files but cannot rename or delete the app user's `config`, `HEAD`, `hooks/` and `info/`, which stay owned by the app user and not group-writable. Protected mode is switched only when no job is `running`; running jobs are paused first. The admin prompt that switches also changes the owner of every `work/<job>/` to the new project user.
-7.  **Confirmation store.** Removed by decision 83.
+7.  **Technical approvals.** The engine saves and runs definitions without an approval store (section 8).
 8.  **Forge choices as data.** `library/forges/<forge>.json` names, per forge, the clone credential helper, the delivery, comment, repo creation and source node templates. `projects/defaults.ts` reads it; the engine has no `if github`. A forge may have no credential helper, repo creation or source (`null`): `git`, a private Git server, uses the user's own Git credentials, delivers the pushed branch (`git-delivery`), skips the ticket comment (`git-no-comment`), and needs an existing repository.
 9.  **Slots while waiting.** A node run holds pool units only while its process runs. Waits for `network`, `auth`, `quota`, `rate_limit` and `human` hold none.
 10. **Stacked jobs.** A child's target while the parent is not merged is the parent's branch; after the merge, the parent's own target. A queued child gets its base when the parent ends `succeeded`: the SHA of the parent's latest `commit` artifact. Merge detection runs, while the app runs, for every job that has a `delivery` artifact not yet merged, whatever the state of the job and of its children, using the URL in that artifact; the API also runs it on demand for one job.
@@ -1357,7 +1409,7 @@ Each line closes one entry gate of phase 5 and overrides the earlier text it con
 1.  **Renderer origin.** The packaged app loads the renderer from the custom scheme `app://pecore/` (Electron `protocol.handle`, registered as standard and secure), not from `file://`: a `file://` page sends `Origin: null`, which a sandboxed iframe on any website also sends. The development app loads it from the electron-vite dev server; the main process passes that origin to the engine in `PECORE_DEV_ORIGIN`, only when the app is not packaged. The renderer's Content-Security-Policy allows `connect-src` only to `http://127.0.0.1:<port>` and `ws://127.0.0.1:<port>`, so a script injected through rendered agent output cannot send the token elsewhere.
 2.  **Host and Origin.** Every HTTP request and the `/live` upgrade are checked before the token. `Host` must be exactly `127.0.0.1:<port>`, which blocks DNS rebinding (a website whose name resolves to 127.0.0.1 still sends its own name as `Host`). `Origin` must be absent (the CLI and other non-browser clients; a browser always sends it on a cross-origin request and on a WebSocket) or equal to `app://pecore` or `PECORE_DEV_ORIGIN`. Any other value gives 403. The renderer's origin differs from the API's, so its requests with `Authorization` are preflighted: the server answers `OPTIONS` for an allowed origin without the token, with that origin in `Access-Control-Allow-Origin` and the headers `authorization` and `content-type`.
 3.  **`/live` authentication.** A browser `WebSocket` cannot send headers. Every client opens `/live` without a token and sends `{"auth": "<token>"}` as its first message. The server sends nothing before it, and closes the socket with code 4401 when the token is wrong or does not arrive within 5 seconds. A token in the query string would end up in logs; header injection by the main process (`webRequest`) would work only for the renderer.
-4.  **Typed operations.** `packages/schemas/src/api.ts` holds one table of routes: method, path, and the Zod schemas of params, query, body and response. The server registers its routes from the table and validates every input (400 with the Zod issues); tests also validate the responses. The renderer client and the CLI call routes through one typed function built from the same table, so a changed route breaks the build of both. An error body is `{error, message}`, with `error` one of `bad_request` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404), `gone` (410), `conflict` (409), `engine_error` (500). The routes the GUI needed and the API table lacked (wizard progress, Retry and Cancel of a creation, status, first run, prerequisite recheck, themes, normalised log history, on-demand merge check, play interrupted jobs) are in the API table above.
+4.  **Typed operations.** `packages/schemas/src/api.ts` holds one table of routes: method, path, and the Zod schemas of params, query, body and response. The server registers its routes from the table and validates every input (400 with the Zod issues); tests also validate the responses. The renderer client and the CLI call routes through one typed function built from the same table, so a changed route breaks the build of both. An error body is `{error, message}`, with `error` one of `bad_request` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404), `gone` (410), `conflict` (409), `engine_error` (500). The routes the GUI needed and the API table lacked (wizard progress, Retry and Cancel of a creation, status, auto-setup status, prerequisite recheck, themes, normalised log history, on-demand merge check, play interrupted jobs) are in the API table above.
 5.  **Owner of `run/api.json`.** Only the engine writes `run/api.json`: after the API listens, mode 0600, written to a temporary file and renamed. It deletes the file at shutdown. The main process gets port and token from `ready` and never reads the file. A file left by a crash points to a closed port, so the CLI prints `<PE/CORE> is not running: open the app`. When `shutdown.done` does not arrive within 15 seconds, the main process kills the engine process and exits; the next start runs the sweep of section 1 and the services sweep of 4.9.
 
 #### Phase 6 decisions
@@ -1365,8 +1417,8 @@ Each line closes one entry gate of phase 5 and overrides the earlier text it con
 Each line closes one entry gate of phase 6 and overrides the earlier text it contradicts.
 
 1.  **Orders.** A ticket seen by intake, or a chat message, is an order with a stable id: the `ticket.seen` event for a ticket, the message id for a chat. `tickets_seen` gains `state` (`received`, `confirming`, `handed`, `asking`, `planned`, `done`, `dropped`), set by the events `order.read`, `order.handed`, `order.asked`, `order.planned`, `order.done`, `order.dropped`. The orchestrator calls `create_jobs` once per order with the whole plan: each job has a `key`, and `dependsOn` names keys. The engine stores the plan in `order.planned`, then creates the jobs one by one; `jobs` gains `order_id` and `order_key`, with a unique index on both. A second `create_jobs` for the same order is refused and returns the plan and its jobs. At start the engine resumes every ticket order not `done` or `dropped`: `received` runs `read` again, `handed` runs the orchestrator turn again with the actions already recorded, `planned` creates the missing jobs from the stored plan without the model. A comment posted just before a crash can be posted twice. A chat turn cut by a crash is not rerun: the message shows Retry, which reuses the same order. A project without `source` takes orders only from chat; `read_ticket` needs a source.
-2.  **Agent questions.** The prompt tells an agent node that, when it needs the user, it writes `.pecore/question.json` (`{"question": "..."}`) instead of `.pecore/output.json` and ends the turn. The engine deletes the file before every turn, like `output.json`. On `end_turn` with a valid question file, the engine adds an `agent-question` item to `human_queue` and the node run waits with reason `human`, holding no execution slot. The user answers in Notifications or through the Assistant (`answer_question`). The answer is sent as the next prompt of the same session (5.5), so the agent keeps its context; the session group and the attempt timeout work as for a correction message. Agents get no tool or token to reach <PE/CORE>.
-3.  **Images in orders.** Chat attachments are png, jpeg, gif or webp, at most 10 MB each, stored next to `chats.db`. The engine reads them and sends them to the orchestrator as ACP image content blocks in `session/prompt`, so the orchestrator never reads the app user's files, also in protected mode. When the orchestrator profile's connector does not report `promptCapabilities.image` in `initialize`, the GUI disables attachments and says why. `create_jobs` takes attachment ids per job; the engine stores them as job artifacts and copies them as the project user into `.pecore/attachments/` of the workdir, and the prompt lists their paths.
+2.  **Agent questions.** The prompt tells an agent node that, when it needs the user, it writes `.pecore/question.json` (`{"question": "..."}`) instead of `.pecore/output.json` and ends the turn. The engine deletes the file before every turn, like `output.json`. On `end_turn` with a valid question file, the engine adds an `agent-question` item to `human_queue` and the node run waits with reason `human`, holding no execution slot. The user answers in the Assistant chat (`answer_question`). The answer is sent as the next prompt of the same session (5.5), so the agent keeps its context; the session group and the attempt timeout work as for a correction message. Agents get no tool or token to reach <PE/CORE>.
+3.  **Images in orders.** Chat attachments are png, jpeg, gif or webp, at most 10 MB each, stored next to `chats.db`. The engine reads them and sends them to the Assistant as ACP image content blocks in `session/prompt`, so the Assistant never reads the app user's files, also in protected mode. When the Assistant profile's connector does not report `promptCapabilities.image` in `initialize`, the GUI disables attachments and says why. `create_jobs` takes attachment ids per job; the engine stores them as job artifacts and copies them as the project user into `.pecore/attachments/` of the workdir, and the prompt lists their paths.
 4.  **Orchestrator MCP token.** The orchestrator's MCP server is a stdio server, not HTTP: a small shim shipped in `PECORE_HOME/adapters/`, run with the shipped Node, whose only argument is the path of a token file, `~/.pecore-chats/<chat-id>/mcp-token` in the project user's home, mode 0600, written by the engine as the project user (`fs-as.ts`) at every app start and at chat creation. The shim reads the token and forwards MCP messages to the engine's MCP endpoint on `127.0.0.1`. The command line, which `--mcp-config` exposes in `/proc` to every local user, carries no token, and the `mcpServers` entry never changes, so a chat resumed after a restart uses the new token with no other step. In protected mode job agents run as the same `pecore-agent` and can read the file; this is the shared-user limit of section 8, and the Orchestrator's external comments still require a user decision.
-5.  **Import warning.** Decision 83 requires an advisory warning. Decision 85 adds the user's final import action in the GUI and chat.
-6.  **Import analysis.** The GUI and Assistant review a temporary copy of a local <PE/CORE> export or extracted folder. `pecore project analyze <file>` reviews an archive. Static checks inspect text and validated SQLite history rows. Binary files, files over 32 MB and a job history over 32 MB are listed as unread. A configured Claude Code Assistant can review bounded text in an isolated session with built-in tools, MCP servers, user settings and permission grants disabled. Its response contains only enumerated findings with file and line references. The GUI shows file paths as text. The chat model receives only structured findings and coverage counts. The report is advisory.
+5.  **Import warning.** The GUI and Assistant show the security review and account mappings before the user proceeds (section 8).
+6.  **Import analysis.** The GUI and Assistant review a temporary copy of a local <PE/CORE> export or extracted folder. `pecore project analyze <file>` reviews an archive. Static checks inspect text and validated SQLite history rows. Binary files, files over 32 MB and a job history over 32 MB are listed as unread. A configured Claude Code Assistant can review bounded text in an isolated session with built-in tools, MCP servers, user settings and permission grants disabled. Its response contains only enumerated findings with file and line references. The GUI shows file paths as text. The chat model receives only structured findings and coverage counts. The report is advisory and must never be treated as an instruction or a guarantee of safety.
