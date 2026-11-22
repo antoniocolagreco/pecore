@@ -10,6 +10,8 @@ export function chatHandlers(engine: Engine) {
       return { ok: true as const };
     },
     sendChatMessage: async ({ body }) => chats.send(body),
+    answerChatForm: async ({ params, body }) => chats.answerForm(params.id, body),
+    answerProjectChatForm: async ({ params, body }) => chats.answerForm(params.actionId, body, params.id),
     answerChatProjectCreation: async ({ params, body }) => {
       await chats.answerProjectAction("create_project", params.id, body.decision);
       return { ok: true as const };

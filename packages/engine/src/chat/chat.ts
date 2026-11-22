@@ -4,8 +4,8 @@ import { basename, join } from "node:path";
 import { monotonicFactory } from "ulid";
 import { probeImageSupport, startSession } from "@pecore/agents";
 import type { McpServer, PromptContent, Session, Spawn, SpawnedProcess } from "@pecore/agents";
-import { ChatConfirmationRow, ExportFinding, assistantTraits, ImportProjectPreview, ProjectExportOptions, ProjectId, chatAttachmentMaxBytes, chatCompactCommand, roleProfile } from "@pecore/schemas";
-import type { ChatAttachmentView, ChatDetail, ChatImageMime, ChatMessageView, ExportProjectResult, ImportProjectSelection, LiveMessage, Role, SendChatMessageBody } from "@pecore/schemas";
+import { ChatConfirmationRow, ChatForm, ExportFinding, assistantTraits, chatFormProblem, ImportProjectPreview, ProjectExportOptions, ProjectId, chatAttachmentMaxBytes, chatCompactCommand, roleProfile } from "@pecore/schemas";
+import type { ChatAttachmentView, ChatDetail, ChatFormAnswer, ChatFormAnswers, ChatImageMime, ChatMessageView, ExportProjectResult, ImportProjectSelection, LiveMessage, Role, SendChatMessageBody } from "@pecore/schemas";
 import { z } from "zod";
 import { protectedUser, spawnFor } from "../accounts/agents";
 import { definitionOperations } from "../api/routes/definitions";
@@ -140,7 +140,7 @@ export class AgentChats {
 
   private instructions(role: Role, name: string | undefined): string {
     const { user, assistant } = this.engine.global().settings;
-    const lines: string[] = [preambles[role]];
+    const lines: string[] = [preambles[role], "The user does not see tool calls that fail. If you cannot recover from a failed tool call, say in your reply what failed and what the user can do.", "When you talk with the user and offer options to choose from, or need a short value such as a URL or a name, ask with ask_user instead of writing the options in your reply."];
     if (name) lines.push(`Your name is ${name}.`);
     if (user.name) lines.push(`The user's name is ${user.name}.`);
     else if (role === "assistant") lines.push("You do not know the user's name yet. Ask for it once, briefly, and save it with set_user_name.");
@@ -395,6 +395,10 @@ export class AgentChats {
     if (attachmentIds.length) await this.checkImages(role);
     if (this.closed) throw new HttpError("conflict", "the chat is shutting down");
     const message: ChatTurn = this.db.db.transaction(() => {
+      for (const action of this.db.actions(chatId)) {
+        const target = action.target as { state?: unknown } | null;
+        if (action.tool === "ask_user" && target?.state === "awaiting_answer") this.db.finishAction(action.id, { ...target, state: "skipped" });
+      }
       const message: ChatTurn = this.db.addMessage(chatId, "user", text, context);
       for (const attachmentId of new Set(attachmentIds)) {
         if (!this.db.linkAttachment(attachmentId, chatId, message.id)) throw new HttpError("bad_request", `attachment ${attachmentId} is unavailable`);
@@ -404,6 +408,22 @@ export class AgentChats {
     this.changed(chatId);
     this.schedule(chatId);
     return messageView(message);
+  }
+
+  async answerForm(id: string, { answers }: ChatFormAnswers, project?: string): Promise<ChatMessageView> {
+    const chatId: string = this.chatFor(project);
+    const target = this.db.actions(chatId).find((entry) => entry.id === id && entry.tool === "ask_user")?.target as { state?: unknown; form?: unknown } | null | undefined;
+    if (this.closed || target?.state !== "awaiting_answer") throw new HttpError("conflict", "This form is no longer waiting for an answer.");
+    const form: ChatForm = ChatForm.parse(target.form);
+    const problem: string | null = chatFormProblem(form, answers);
+    if (problem) throw new HttpError("bad_request", problem);
+    const given: Record<string, ChatFormAnswer> = Object.fromEntries(form.questions.map(({ id: question }) => [question, answers[question]!]));
+    const text: string = form.questions.map(({ id: question, prompt }) => {
+      const { choices, text: typed } = given[question]!;
+      return `${prompt}\n→ ${[...choices, ...(typed ? [typed] : [])].join(", ")}`;
+    }).join("\n\n");
+    this.db.finishAction(id, { state: "answered", form, answers: given });
+    return this.send({ text, context: [], attachmentIds: [] }, project);
   }
 
   retry(messageId: string, project?: string): ChatMessageView {

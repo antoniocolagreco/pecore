@@ -336,6 +336,35 @@
   font-size: var(--text-size-sm);
 }
 
+.form {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 10px 12px 12px;
+}
+
+.formQuestion {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.formPrompt {
+  font-weight: 600;
+}
+
+.formAnswers {
+  display: flex;
+  flex-basis: 100%;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-size-sm);
+  overflow-wrap: anywhere;
+}
+
 .delegation {
   display: flex;
   flex-direction: column;

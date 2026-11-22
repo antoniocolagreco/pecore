@@ -213,6 +213,44 @@ export const ChatAttachmentView = z.object({
 export type ChatAttachmentView = z.infer<typeof ChatAttachmentView>;
 export const ChatConfirmationRow = z.object({ label: z.string(), value: z.string() });
 export type ChatConfirmationRow = z.infer<typeof ChatConfirmationRow>;
+export const ChatFormOption = z.strictObject({
+  label: z.string().trim().min(1).max(120),
+  description: z.string().trim().min(1).max(300).optional(),
+  recommended: z.boolean().optional(),
+});
+export const ChatFormQuestion = z.strictObject({
+  id: z.string().regex(/^[a-z0-9_-]{1,40}$/),
+  prompt: z.string().trim().min(1).max(300),
+  kind: z.enum(["single", "multiple", "text"]),
+  options: z.array(ChatFormOption).max(8).default([]),
+  placeholder: z.string().trim().min(1).max(120).optional(),
+}).superRefine(({ kind, options }, ctx) => {
+  if (kind === "text" && options.length) ctx.addIssue({ code: "custom", path: ["options"], message: "a text question has no options" });
+  if (kind !== "text" && options.length < 2) ctx.addIssue({ code: "custom", path: ["options"], message: "a choice question needs at least 2 options" });
+  if (new Set(options.map(({ label }) => label)).size !== options.length) ctx.addIssue({ code: "custom", path: ["options"], message: "option labels must be unique" });
+});
+export type ChatFormQuestion = z.infer<typeof ChatFormQuestion>;
+export const ChatForm = z.strictObject({
+  title: z.string().trim().min(1).max(120).optional(),
+  questions: z.array(ChatFormQuestion).min(1).max(6),
+}).refine(({ questions }) => new Set(questions.map(({ id }) => id)).size === questions.length, { message: "question ids must be unique", path: ["questions"] });
+export type ChatForm = z.infer<typeof ChatForm>;
+export const ChatFormAnswer = z.strictObject({ choices: z.array(z.string()).default([]), text: z.string().trim().max(500).default("") });
+export type ChatFormAnswer = z.infer<typeof ChatFormAnswer>;
+export const ChatFormAnswers = z.strictObject({ answers: z.record(z.string(), ChatFormAnswer) });
+export type ChatFormAnswers = z.infer<typeof ChatFormAnswers>;
+
+export function chatFormProblem(form: ChatForm, answers: Record<string, ChatFormAnswer>): string | null {
+  for (const question of form.questions) {
+    const answer: ChatFormAnswer = answers[question.id] ?? { choices: [], text: "" };
+    const labels: Set<string> = new Set(question.options.map(({ label }) => label));
+    if (answer.choices.some((choice) => !labels.has(choice)) || new Set(answer.choices).size !== answer.choices.length) return `"${question.prompt}" has an unknown choice.`;
+    const picked: number = answer.choices.length + (answer.text ? 1 : 0);
+    if (question.kind === "text" ? !answer.text : picked === 0) return `Answer "${question.prompt}".`;
+    if (question.kind === "single" && picked > 1) return `Pick one answer for "${question.prompt}".`;
+  }
+  return null;
+}
 export const ChatActionView = z.object({
   id: z.string(),
   messageId: z.string(),
@@ -525,6 +563,7 @@ export const routes = {
     z.strictObject({ decision: z.literal("approve"), fingerprints: z.array(z.string()) }),
     z.strictObject({ decision: z.literal("cancel") }),
   ]), response: Ok },
+  answerChatForm: { method: "POST", path: "/chat/actions/:id/form", params: IdParams, body: ChatFormAnswers, response: ChatMessageView },
   sendChatMessage: { method: "POST", path: "/chat/messages", body: SendChatMessageBody, response: ChatMessageView },
   uploadChatAttachment: {
     method: "POST",
@@ -548,6 +587,7 @@ export const routes = {
   },
   retryProjectChatMessage: { method: "POST", path: "/projects/:id/chat/messages/:messageId/retry", params: ProjectMessageParams, response: ChatMessageView },
   markProjectChatRead: { method: "POST", path: "/projects/:id/chat/read", params: IdParams, response: Ok },
+  answerProjectChatForm: { method: "POST", path: "/projects/:id/chat/actions/:actionId/form", params: z.object({ id: ProjectId, actionId: z.string().min(1) }), body: ChatFormAnswers, response: ChatMessageView },
   listDefinitions: { method: "GET", path: "/definitions", query: z.object({ dir: z.string().min(1) }), response: z.array(DefinitionEntry) },
   getDefinition: { method: "GET", path: "/definitions/*path", params: PathParams, response: DefinitionFile },
   saveDefinition: { method: "PUT", path: "/definitions/*path", params: PathParams, body: SaveDefinitionBody, response: SaveDefinitionResult },

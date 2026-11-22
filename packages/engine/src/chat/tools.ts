@@ -1,7 +1,7 @@
 import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { ArchiveReviewBody, freeProjectManager, InstantiateBody, OrderPlan, ProjectExportOptions, TicketReply, TicketSnapshot } from "@pecore/schemas";
+import { ArchiveReviewBody, ChatForm, freeProjectManager, InstantiateBody, OrderPlan, ProjectExportOptions, TicketReply, TicketSnapshot } from "@pecore/schemas";
 import type { ExportProjectResult, ImportProjectPreview, StoredEvent } from "@pecore/schemas";
 import { definitionOperations } from "../api/routes/definitions";
 import { globalFileHandlers } from "../api/routes/settings";
@@ -201,6 +201,10 @@ export function chatTools(engine: Engine): {
       const messageId: string = await chats.delegate(project, order, attachmentIds, message);
       return { value: { state: "sent" }, target: { project, messageId, state: "sent" } };
     }),
+    ask_user: tool("Ask the user one to six questions as a form in the chat, answered by clicking. Use it whenever you offer options to choose from, and for short values such as a URL or a name; do not also write the options in your reply. Mark the option you recommend. After calling it, end your reply with one short line: the answers arrive as the user's next message.", ChatForm, (form) => ({
+      value: { state: "awaiting_answer" },
+      target: { state: "awaiting_answer", form },
+    })),
     set_user_name: tool("Save the user's name in the app settings, when the user tells you their name or asks to change it.", z.strictObject({ name: z.string().trim().min(1).max(60) }), async ({ name }) => {
       const settings = globalFileHandlers(engine);
       const file = await settings.getSettings();
@@ -367,7 +371,7 @@ export function chatTools(engine: Engine): {
         return textResult(output.value, output.isError);
       } catch (error) {
         const messageText: string = error instanceof Error ? error.message : String(error);
-        chats.finishAction(message, actionId, { error: messageText });
+        chats.finishAction(message, actionId, { state: "rejected", error: messageText });
         return textResult({ error: messageText }, true);
       }
     },

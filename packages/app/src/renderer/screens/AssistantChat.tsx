@@ -1,8 +1,8 @@
-import { ChatConfirmationRow, ChatImageMime, ExportFinding, ImportProjectPreview, chatAttachmentMaxBytes, chatCompactCommand, roleProfile } from "@pecore/schemas";
-import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatMessageView, ChatSender, ProjectManagerIdentity, Role } from "@pecore/schemas";
+import { ChatConfirmationRow, ChatForm, ChatImageMime, ExportFinding, ImportProjectPreview, chatAttachmentMaxBytes, chatCompactCommand, chatFormProblem, roleProfile } from "@pecore/schemas";
+import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatFormAnswer, ChatFormAnswers, ChatFormQuestion, ChatMessageView, ChatSender, ProjectManagerIdentity, Role } from "@pecore/schemas";
 import { ProjectManagerAvatar } from "../components/ProjectManager";
 import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { call } from "../api/client";
@@ -14,7 +14,9 @@ import { StateLabel } from "../components/states";
 import type { StateInfo } from "../components/states";
 import { ErrorText, dateTime, time } from "../components/ui";
 import { Button, IconButton } from "../ds/button";
-import { Alert, Spinner } from "../ds/feedback";
+import { Checkbox, RadioGroup } from "../ds/choice";
+import { Alert, Badge, Spinner } from "../ds/feedback";
+import { TextField } from "../ds/field";
 import { ArrowUpIcon, ClipIcon, CompactIcon, SparkIcon, TrashIcon, XIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { definitionUrl, object, settingUrl, string } from "./NodeEditor";
@@ -30,6 +32,7 @@ type ChatApi = {
   upload(body: { mime: ChatImageMime; data: string }): Promise<ChatAttachmentView>;
   retry(id: string): Promise<unknown>;
   read(): Promise<unknown>;
+  answerForm(id: string, body: ChatFormAnswers): Promise<unknown>;
 };
 type ChatTarget = { api: ChatApi; agent: string };
 type ProjectEntry = { name: string; pm: ProjectManagerIdentity | null };
@@ -44,6 +47,7 @@ function chatApi(project: string | null): ChatApi {
       upload: (body) => call("uploadChatAttachment", { body }),
       retry: (id) => call("retryChatMessage", { params: { id } }),
       read: () => call("markChatRead"),
+      answerForm: (id, body) => call("answerChatForm", { params: { id }, body }),
     };
   }
   const params = { id: project };
@@ -54,6 +58,7 @@ function chatApi(project: string | null): ChatApi {
     upload: (body) => call("uploadProjectChatAttachment", { params, body }),
     retry: (messageId) => call("retryProjectChatMessage", { params: { id: project, messageId } }),
     read: () => call("markProjectChatRead", { params }),
+    answerForm: (actionId, body) => call("answerProjectChatForm", { params: { id: project, actionId }, body }),
   };
 }
 
@@ -216,6 +221,69 @@ function ExportConfirmation({ action, findings, connected }: { action: ChatActio
   );
 }
 
+type Draft = { choices: string[]; other: boolean; text: string };
+const otherValue: string = "\u0000other";
+
+function FormQuestion({ question, draft, disabled, onChange }: { question: ChatFormQuestion; draft: Draft; disabled: boolean; onChange(draft: Draft): void }) {
+  const label = (option: ChatFormQuestion["options"][number]): ReactNode => option.recommended
+    ? <>{option.label} <Badge tone="accent">Recommended</Badge></> : option.label;
+  const other = draft.other && <TextField size="sm" aria-label="Other answer" placeholder="Your answer" value={draft.text} disabled={disabled}
+    onValueChange={(text) => onChange({ ...draft, text })} />;
+  if (question.kind === "text") {
+    return <TextField size="sm" label={question.prompt} placeholder={question.placeholder} value={draft.text} disabled={disabled}
+      onValueChange={(text) => onChange({ ...draft, text })} />;
+  }
+  if (question.kind === "single") {
+    return <div className={s.formQuestion}>
+      <RadioGroup label={question.prompt} disabled={disabled} value={draft.other ? otherValue : draft.choices[0] ?? ""}
+        options={[...question.options.map((option) => ({ value: option.label, label: label(option), detail: option.description })), { value: otherValue, label: "Other" }]}
+        onValueChange={(value) => onChange(value === otherValue ? { choices: [], other: true, text: draft.text } : { choices: [value], other: false, text: "" })} />
+      {other}
+    </div>;
+  }
+  return <div className={s.formQuestion} role="group" aria-label={question.prompt}>
+    <span className={s.formPrompt}>{question.prompt}</span>
+    {question.options.map((option) => <Checkbox key={option.label} label={label(option)} detail={option.description} disabled={disabled}
+      checked={draft.choices.includes(option.label)}
+      onCheckedChange={(checked) => onChange({ ...draft, choices: checked ? [...draft.choices, option.label] : draft.choices.filter((choice) => choice !== option.label) })} />)}
+    <Checkbox label="Other" disabled={disabled} checked={draft.other} onCheckedChange={(checked) => onChange({ ...draft, other: checked, text: checked ? draft.text : "" })} />
+    {other}
+  </div>;
+}
+
+function FormCard({ action, form, connected }: { action: ChatActionView; form: ChatForm; connected: boolean }) {
+  const { api } = useContext(ChatContext);
+  const target: Record<string, unknown> = object(action.target);
+  const state: string = string(target.state);
+  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const answers: Record<string, ChatFormAnswer> = Object.fromEntries(form.questions.map(({ id }) => {
+    const draft: Draft = drafts[id] ?? { choices: [], other: false, text: "" };
+    return [id, { choices: draft.choices, text: draft.other || form.questions.find((question) => question.id === id)?.kind === "text" ? draft.text.trim() : "" }];
+  }));
+  const submit = useAction(() => api.answerForm(action.id, { answers }));
+  if (state !== "awaiting_answer") {
+    const given: Record<string, ChatFormAnswer> = object(target.answers) as Record<string, ChatFormAnswer>;
+    return <section className={s.action} aria-label={form.title ?? "Questions"}>
+      <div className={s.actionHead}><SparkIcon /><strong>{form.title ?? "Questions"}</strong><span className={s.actionMeta}>{state === "answered" ? "Answered" : "Not answered"}</span></div>
+      {state === "answered" && <ul className={s.formAnswers}>{form.questions.map(({ id, prompt }) => <li key={id}>
+        <span className={s.actionMeta}>{prompt}</span> {[...(given[id]?.choices ?? []), ...(given[id]?.text ? [given[id].text] : [])].join(", ")}
+      </li>)}</ul>}
+    </section>;
+  }
+  const problem: string | null = chatFormProblem(form, answers);
+  const busy: boolean = submit.busy || !connected;
+  return (
+    <section className={`${s.action} ${s.form}`} aria-label={form.title ?? "Questions"}>
+      <div className={s.actionHead}><SparkIcon /><strong>{form.title ?? "Questions"}</strong></div>
+      {form.questions.map((question) => <FormQuestion key={question.id} question={question} disabled={busy}
+        draft={drafts[question.id] ?? { choices: [], other: false, text: "" }}
+        onChange={(draft) => setDrafts((old) => ({ ...old, [question.id]: draft }))} />)}
+      <ErrorText error={submit.error} />
+      <div><Button variant="primary" size="sm" disabled={busy || problem !== null} loading={submit.busy} onClick={() => void submit.run()}>Send</Button></div>
+    </section>
+  );
+}
+
 function DelegationCard({ project, error, connected }: { project: string; error: string; connected: boolean }) {
   const entry: ProjectEntry | undefined = useContext(ChatContext).projects.get(project);
   const name: string = entry?.pm?.name ?? "the Project Manager";
@@ -236,6 +304,10 @@ function DelegationCard({ project, error, connected }: { project: string; error:
 
 function ActionCard({ action, connected }: { action: ChatActionView; connected: boolean }) {
   const target: Record<string, unknown> = object(action.target);
+  if (action.tool === "ask_user") {
+    const form = ChatForm.safeParse(target.form);
+    if (form.success) return <FormCard action={action} form={form.data} connected={connected} />;
+  }
   if (action.tool === "delegate_to_pm" && string(target.project)) return <DelegationCard project={string(target.project)} error={string(target.error)} connected={connected} />;
   if (action.tool === "create_project" || action.tool === "update_project" || action.tool === "delete_project") {
     const rows = confirmationRows.safeParse(target.rows);
@@ -305,7 +377,13 @@ const readTools: Record<string, string> = {
   validate: "definition check",
 };
 
-function Actions({ actions, connected }: { actions: ChatActionView[]; connected: boolean }) {
+function rejected({ target }: ChatActionView): boolean {
+  const fields: Record<string, unknown> = object(target);
+  return fields.state === "rejected" || (fields.state === undefined && typeof fields.error === "string");
+}
+
+function Actions({ actions: all, connected }: { actions: ChatActionView[]; connected: boolean }) {
+  const actions: ChatActionView[] = all.filter((action) => !rejected(action));
   const reads: string[] = [...new Set(actions.filter(({ tool }) => Object.hasOwn(readTools, tool)).map(({ tool }) => readTools[tool]!))];
   return (
     <>
@@ -369,7 +447,6 @@ function Message({ message, attachments, actions, connected, reload, working = f
           {state && <StateLabel info={state} />}
           {managerProject !== null && sender === "pm" && <span className={s.authorProject}>{managerProject}</span>}
         </div>
-        {working && !message && <div className={s.thinking} role="status" aria-label={`The ${agent} is working on a reply`}><span /><span /><span /></div>}
         {job && (connected ? <Link to={`/jobs/${encodeURIComponent(job)}`}>Open job {job}</Link> : <span>Job {job}</span>)}
         {ticket === undefined && sender !== "job" && bubble}
         {ticket === undefined && sender !== "job" && long && <Button size="sm" variant="ghost" className={s.more} aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Show less" : "Show more"}</Button>}
@@ -380,6 +457,8 @@ function Message({ message, attachments, actions, connected, reload, working = f
         {message?.state === "interrupted" && <div><Button size="sm" disabled={!connected || retry.busy} loading={retry.busy} onClick={() => void retry.run()}>Retry</Button></div>}
         <ErrorText error={retry.error} />
         <Actions actions={actions} connected={connected} />
+        {((working && !message) || (message?.role === "assistant" && message.state === "running")) &&
+          <div className={s.thinking} role="status" aria-label={`The ${agent} is working on a reply`}><span /><span /><span /></div>}
       </div>
     </article>
   );

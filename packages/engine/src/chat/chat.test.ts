@@ -510,6 +510,50 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     }
   }, 90000);
 
+  it("asks with a form, sends the clicked answers as the user's next message, and drops forms left unanswered", async () => {
+    const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
+    const t = await setup((root) => [
+      [...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "first.json") }, { waitFile: join(root, "asked") }, ...replyWith("Pick in the form.")],
+      [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "answer.json") }, ...replyWith("Creating it.")],
+    ]);
+    const m = mcp(tokenFileOf("assistant"));
+    try {
+      await t.call("sendChatMessage", { body: { text: "Download a repo" } });
+      await until(() => existsSync(join(t.root, "first.json")));
+      expect(await readFile(join(t.root, "first.json"), "utf8")).toContain("ask with ask_user instead of writing the options in your reply");
+      await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+      const form = { title: "New project", questions: [
+        { id: "how", prompt: "How do you want to start?", kind: "single", options: [{ label: "From a repository", recommended: true }, { label: "Clone only" }] },
+        { id: "url", prompt: "Repository URL", kind: "text", options: [] },
+      ] };
+      expect((await m.tool("ask_user", form)).result?.content?.[0]?.text).toBe('{"state":"awaiting_answer"}');
+      expect((await m.tool("ask_user", { questions: [{ id: "a", prompt: "Only one", kind: "single", options: [{ label: "X" }] }] })).result?.isError).toBe(true);
+      expect((await m.tool("ask_user", { questions: [{ id: "later", prompt: "Anything else?", kind: "text" }] })).result?.isError).toBeUndefined();
+      await writeFile(join(t.root, "asked"), "");
+      await until(async () => (await t.call("getChat")).messages.some(({ text }) => text === "Pick in the form."));
+      const [asked, later] = (await t.call("getChat")).actions.filter(({ tool, target }) => tool === "ask_user" && (target as { state: string }).state === "awaiting_answer");
+      expect(asked?.target).toEqual({ state: "awaiting_answer", form });
+      expect((await t.call("getChat")).actions.filter(({ target }) => (target as { state: string }).state === "rejected"))
+        .toEqual([expect.objectContaining({ tool: "ask_user", target: { state: "rejected", error: expect.stringContaining("at least 2 options") } })]);
+      expect(await readFile(join(t.root, "first.json"), "utf8")).toContain("The user does not see tool calls that fail.");
+
+      await expect(t.call("answerChatForm", { params: { id: asked!.id }, body: { answers: { how: { choices: ["From a repository"], text: "" } } } })).rejects.toMatchObject({ status: 400 });
+      const answers = { how: { choices: ["From a repository"], text: "" }, url: { choices: [], text: "https://example.com/shop.git" } };
+      const sent = await t.call("answerChatForm", { params: { id: asked!.id }, body: { answers } });
+      expect(sent.text).toBe("How do you want to start?\n→ From a repository\n\nRepository URL\n→ https://example.com/shop.git");
+      await until(() => existsSync(join(t.root, "answer.json")));
+      expect(await readFile(join(t.root, "answer.json"), "utf8")).toContain(JSON.stringify(sent.text).slice(1, -1));
+      const actions = (await t.call("getChat")).actions;
+      expect(actions.find(({ id }) => id === asked!.id)?.target).toEqual({ state: "answered", form, answers });
+      expect(actions.find(({ id }) => id === later!.id)?.target).toMatchObject({ state: "skipped" });
+      await expect(t.call("answerChatForm", { params: { id: asked!.id }, body: { answers } })).rejects.toMatchObject({ status: 409 });
+      await expect(t.call("answerChatForm", { params: { id: later!.id }, body: { answers: { later: { choices: [], text: "No" } } } })).rejects.toMatchObject({ status: 409 });
+    } finally {
+      m.close();
+      await t.close();
+    }
+  }, 60000);
+
   it("asks the user's name, saves it, and passes it with the chosen traits in the instructions", async () => {
     const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
     const t = await setup((root) => [
@@ -953,7 +997,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       const m = mcp(tokenFileOf(intakeChat(t)));
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       const names: string[] = (await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name);
-      expect(names).toEqual(expect.arrayContaining(["write_knowledge", "write_instance", "instantiate", "create_jobs", "comment_ticket", "answer_question", "read_definition", "list_definitions"]));
+      expect(names).toEqual(expect.arrayContaining(["write_knowledge", "write_instance", "instantiate", "create_jobs", "comment_ticket", "answer_question", "read_definition", "list_definitions", "ask_user"]));
       for (const name of ["create_project", "update_project", "delete_project", "import_project", "export_project", "write_template", "delegate_to_pm"]) expect(names).not.toContain(name);
       expect((await m.tool("write_knowledge", { path: "projects/demo/knowledge/notes.md", content: "# Notes\n" })).result!.isError).not.toBe(true);
       const outside = await m.tool("write_knowledge", { path: "projects/other/knowledge/notes.md", content: "# Notes\n" });
