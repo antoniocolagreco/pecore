@@ -638,7 +638,8 @@ export class AgentChats {
         return;
       }
 
-      const lines: string[] = [preambles[role]];
+      const name: string | undefined = role === "pm" ? this.engine.projects.get(this.project(chatId) ?? "")?.ctx.project.pm?.name : undefined;
+      const lines: string[] = [name ? `${preambles[role]}\nYour name is ${name}.` : preambles[role]];
       const reports: ChatTurn[] = role === "assistant" ? this.db.reportsSince(chatId) : [];
       if (!session.resumed) {
         const history = this.db.messages(chatId).filter((entry) => entry.id !== id && entry.state === "completed" && entry.text.trim() !== chatCompactCommand);

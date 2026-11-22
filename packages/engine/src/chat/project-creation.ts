@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { z } from "zod";
-import { projectIdCandidate } from "@pecore/schemas";
+import { freeProjectManager, projectIdCandidate, ProjectManagerIdentity } from "@pecore/schemas";
 import type { ProjectInput } from "@pecore/schemas";
 import { homePaths } from "../home/layout";
 import type { Engine } from "../main";
@@ -21,6 +21,7 @@ export const ProjectCreation = z.strictObject({
   ]),
   folder: requiredText.optional(),
   baseBranch: requiredText,
+  pm: ProjectManagerIdentity.optional().describe("The Project Manager's name and colour. Omit it to use the first free one from project_creation_options."),
 });
 
 export const defaultFolder = (engine: Engine, id: string): string => join(engine.global().settings.projectsFolder, id);
@@ -36,8 +37,9 @@ export async function validateBaseBranch(home: string, baseBranch: string): Prom
   }
 }
 
-export async function validateProjectCreation(engine: Engine, { name, repository, baseBranch }: Settings) {
+export async function validateProjectCreation(engine: Engine, { name, repository, baseBranch, pm: chosen }: Settings) {
   const home: string = engine.opts.home;
+  const pm: ProjectManagerIdentity = engine.projectManagerFor(chosen);
   await validateBaseBranch(home, baseBranch);
 
   let repo: ProjectInput["repo"] = null;
@@ -75,10 +77,11 @@ export async function validateProjectCreation(engine: Engine, { name, repository
     }
     repo = { url, account: accountId };
   }
-  return { name, repo, createRepo, baseBranch };
+  return { name, repo, createRepo, baseBranch, pm };
 }
 
-export function projectCreationRows(engine: Engine, { name, repository, folder, baseBranch }: Settings): { label: string; value: string }[] {
+export function projectCreationRows(engine: Engine, { name, repository, folder, baseBranch, pm }: Settings): { label: string; value: string }[] {
+  const manager: ProjectManagerIdentity | null = pm ?? freeProjectManager(engine.projectManagers());
   return [
     { label: "Name", value: name },
     { label: "Repository", value: { local: "Local only", existing: "Existing repository", new: "New repository" }[repository.mode] },
@@ -89,15 +92,16 @@ export function projectCreationRows(engine: Engine, { name, repository, folder, 
     ...(repository.mode === "new" ? [{ label: "Remote setup", value: `Create a private repository if needed and push ${baseBranch}` }] : []),
     { label: "Folder", value: folder ?? defaultFolder(engine, projectIdCandidate(name, 1)) },
     { label: "Base branch", value: baseBranch },
+    { label: "Project Manager", value: manager ? `${manager.name} (${manager.color})` : "Choose a name and colour" },
   ];
 }
 
 export async function createApprovedProject(engine: Engine, settings: Settings): Promise<{ project: string; creating: boolean; error?: string }> {
-  const { name, repo, createRepo, baseBranch } = await validateProjectCreation(engine, settings);
+  const { name, repo, createRepo, baseBranch, pm } = await validateProjectCreation(engine, settings);
   for (let index: number = 1; ; index++) {
     const id: string = projectIdCandidate(name, index);
     try {
-      await engine.createProject({ id, name, repo, createRepo, baseBranch, folder: settings.folder ?? defaultFolder(engine, id) });
+      await engine.createProject({ id, name, repo, createRepo, baseBranch, pm, folder: settings.folder ?? defaultFolder(engine, id) });
     } catch (error) {
       if (error instanceof ProjectCreateError && error.message === `step 1: project ${id} already exists`) continue;
       if (engine.creating.has(id)) return { project: id, creating: true, error: error instanceof Error ? error.message : String(error) };
