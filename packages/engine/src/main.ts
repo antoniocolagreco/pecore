@@ -6,6 +6,7 @@ import { cpus, homedir } from "node:os";
 import { join, relative } from "node:path";
 import { removeAs } from "./workdir/fs-as";
 import { definitionOperations } from "./api/routes/definitions";
+import { globalFileHandlers } from "./api/routes/settings";
 import { BuiltInHarness, defaultJobLimit, freeProjectManager, projectManagerClash, roleProfile, withForgeHosts } from "@pecore/schemas";
 import { listOptions, satisfies } from "@pecore/agents";
 import type { LoginState } from "@pecore/agents";
@@ -49,7 +50,7 @@ import { InvalidArchive } from "./share/archive";
 import { beginImport, previewImport } from "./share/import";
 import { reviewProjectContents } from "./share/review";
 
-export type EngineOptions = { home: string; library: string; downloads?: string; agents?: AgentPaths; checkLogins?: boolean; admin?: (script: string) => Promise<void>; orders?: OrderSink; notify?: (notification: Pick<Notification, "kind" | "title" | "body">) => void };
+export type EngineOptions = { home: string; library: string; downloads?: string; agents?: AgentPaths; checkLogins?: boolean; detectRuntime?: () => Promise<Settings["servicesRuntime"]>; admin?: (script: string) => Promise<void>; orders?: OrderSink; notify?: (notification: Pick<Notification, "kind" | "title" | "body">) => void };
 
 export class EngineStartError extends Error {
   constructor(readonly errors: DefinitionError[]) {
@@ -82,6 +83,7 @@ export class Engine extends EventEmitter {
   private readonly openCodeReady = new Map<string, boolean>();
   private readonly options = new Map<string, Promise<AccountOptions | null>>();
   private startupReads: Promise<void> = Promise.resolve();
+  private runtimeDetection: Promise<void> = Promise.resolve();
   private setupHarnesses: SetupView["harnesses"] = BuiltInHarness.options.map((connector) => ({ connector, installed: false, version: null, loggedIn: false }));
   globalPause = false;
   private readonly loginRunner = new LoginRunner((p) => this.live({ type: "login.progress", ...p }));
@@ -123,6 +125,9 @@ export class Engine extends EventEmitter {
     this.chats = new ChatsDb(p.chatsDb);
     this.agentChats = new AgentChats(this, this.chats, (message) => this.live(message));
     if (this.opts.checkLogins !== false) await this.runAutoSetup();
+    if (this.opts.detectRuntime && this.settings.servicesRuntime === null) {
+      this.runtimeDetection = this.detectServicesRuntime(this.opts.detectRuntime).catch((error: unknown) => console.error("services runtime detection:", error));
+    }
     for (const id of (await readdir(p.projects).catch(() => [] as string[])).sort()) {
       await this.openProject(id);
       if (this.projects.has(id)) await this.assignProjectManager(id).catch((e: unknown) => console.error(`project ${id} manager:`, e));
@@ -190,6 +195,16 @@ export class Engine extends EventEmitter {
         this.definitionChanged(`${kind}.json`, createHash("sha256").update(content).digest("hex"));
       }
     }).catch((error: unknown) => console.error("auto-setup:", error));
+  }
+
+  private async detectServicesRuntime(detect: () => Promise<Settings["servicesRuntime"]>): Promise<void> {
+    const runtime = await detect();
+    if (!runtime || this.shuttingDown) return;
+    const files = globalFileHandlers(this);
+    const file = await files.getSettings();
+    if (file.value.servicesRuntime !== null) return;
+    await files.putSettings({ params: undefined, query: undefined, body: { value: { ...file.value, servicesRuntime: runtime }, baseSha256: file.sha256 } });
+    this.notify({ kind: "auto-setup", title: "<PE/CORE> setup", body: `Found ${runtime} for project services.` });
   }
 
   async setupView(): Promise<SetupView> {
@@ -781,6 +796,7 @@ export class Engine extends EventEmitter {
     await chats;
     await this.loginRunner.stopAll();
     await this.startupReads;
+    await this.runtimeDetection;
     await Promise.allSettled(this.options.values());
     await this.globalFilesPending;
     await Promise.all([...this.projects.values()].map(({ executor }) => executor.close()));

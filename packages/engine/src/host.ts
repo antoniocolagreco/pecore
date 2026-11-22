@@ -8,6 +8,7 @@ import { startApi } from "./api/server";
 import type { ApiServer } from "./api/server";
 import { homePaths, syncAdapters } from "./home/layout";
 import { Engine } from "./main";
+import { detectServicesRuntime } from "./services/runtime";
 
 export type HostPort = {
   postMessage(message: EngineMessage): void;
@@ -64,6 +65,7 @@ export async function host(port: HostPort, env: HostEnv): Promise<{ engine: Engi
       library: join(env.resources, "library"),
       agents: { connectorsDir: join(env.resources, "connectors"), adaptersDir: homePaths(env.home).adapters, adapters: pinned.adapters },
       admin,
+      detectRuntime: detectServicesRuntime,
       ...(env.downloads ? { downloads: env.downloads } : {}),
       notify: (n) => port.postMessage({ type: "notify", title: n.title, body: n.body, kind: n.kind }),
     });

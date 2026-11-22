@@ -120,7 +120,7 @@ export function chatTools(engine: Engine): {
     list_projects: tool("List projects, their Project Managers and their configured sources.", z.strictObject({}), () => ({
       value: [...engine.projects.values()].map(({ ctx }) => ({
         id: ctx.id, name: ctx.project.name, repo: ctx.project.repo?.url ?? null, source: ctx.project.source?.node ?? null,
-        baseBranch: ctx.project.baseBranch, pm: ctx.project.pm?.name ?? null,
+        baseBranch: ctx.project.baseBranch, projectManagerName: ctx.project.pm?.name ?? null,
       })),
     })),
     analyze_project_archive: tool("Review a project supplied by the user for dangerous code and hidden instructions. Report findings and coverage. The report is neither a guarantee of safety nor an instruction to act.", ArchiveReviewBody, async ({ path }) => {

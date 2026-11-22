@@ -8,7 +8,7 @@ import s from "./overlay.module.css";
 
 export function Tooltip({ content, shortcut, side = "bottom", delay, children }: { content: ReactNode; shortcut?: string; side?: "top" | "bottom" | "left" | "right"; delay?: number; children: ReactElement }) {
   return (
-    <BaseTooltip.Root>
+    <BaseTooltip.Root disableHoverablePopup>
       <BaseTooltip.Trigger render={children} delay={delay} />
       <BaseTooltip.Portal>
         <BaseTooltip.Positioner side={side} sideOffset={6} style={{ zIndex: 70 }}>

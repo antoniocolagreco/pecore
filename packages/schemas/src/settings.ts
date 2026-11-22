@@ -1,66 +1,63 @@
 import { z } from "zod";
 import { SchemaRef } from "./common";
 
+export const compactionSizes: readonly number[] = [65_536, 131_072, 262_144, 524_288, 1_048_576];
+const defaultCompaction = { auto: 131_072, max: 262_144 };
+
+function nearestSize(tokens: number, sizes: readonly number[]): number {
+  return sizes.reduce((best, size) => Math.abs(Math.log2(size / tokens)) < Math.abs(Math.log2(best / tokens)) ? size : best);
+}
+
 const Compaction = z
-  .object({ auto: z.number().int().positive().default(128_000), max: z.number().int().positive().default(256_000) })
-  .strict();
-const agentFields = { profile: z.string().min(1).nullable().default(null), compaction: Compaction.default({ auto: 128_000, max: 256_000 }) };
-const Agent = z.object(agentFields).strict().default({ profile: null, compaction: { auto: 128_000, max: 256_000 } });
+  .object({ auto: z.number().positive().default(defaultCompaction.auto), max: z.number().positive().default(defaultCompaction.max) })
+  .strict()
+  .transform(({ auto, max }) => {
+    const idle: number = nearestSize(auto, compactionSizes.slice(0, -1));
+    return { auto: idle, max: nearestSize(max, compactionSizes.filter((size) => size >= idle * 2)) };
+  });
+const agentFields = { profile: z.string().min(1).nullable().default(null), compaction: Compaction.default(defaultCompaction) };
+const Agent = z.object(agentFields).strict().default({ profile: null, compaction: defaultCompaction });
 
 export const assistantTraits = [
-  { id: "pragmatic", label: "Pragmatic", description: "Direct, concrete, solution-oriented. Few words." },
-  { id: "analytical", label: "Analytical", description: "Logical, methodical, rigorous. Breaks every problem down." },
-  { id: "socratic", label: "Socratic", description: "Asks smart questions that help you reason on your own." },
-  { id: "critical", label: "Critical", description: "Questions assumptions, spots errors and contradictions." },
-  { id: "creative", label: "Creative", description: "Imaginative, original, explores unusual possibilities." },
-  { id: "visionary", label: "Visionary", description: "Thinks about the future, opportunities and big ideas." },
-  { id: "philosophical", label: "Philosophical", description: "Introspective, reflective, interested in what things mean." },
-  { id: "stoic", label: "Stoic", description: "Rational, balanced, focused on what can be controlled." },
-  { id: "empathetic", label: "Empathetic", description: "Understanding, gentle, attentive to emotions." },
-  { id: "friendly", label: "Friendly", description: "Informal, warm, spontaneous. Acts like a friend." },
-  { id: "playful", label: "Playful", description: "Cheerful, witty, fond of jokes and irony." },
-  { id: "sarcastic", label: "Sarcastic", description: "Sharp, provocative, ironic and unconventional." },
-  { id: "rebellious", label: "Rebellious", description: "Nonconformist, challenges conventions and intellectual authority." },
-  { id: "diplomatic", label: "Diplomatic", description: "Measured, courteous, able to mediate between opposing views." },
-  { id: "professional", label: "Professional", description: "Formal, precise, reliable, with an institutional tone." },
-  { id: "academic", label: "Academic", description: "Thorough, scientific, careful with sources and definitions." },
-  { id: "mentor", label: "Mentor", description: "Teaches, encourages growth and gives constructive feedback." },
-  { id: "coach", label: "Coach", description: "Energetic, motivating, focused on goals and action." },
-  { id: "strategic", label: "Strategic", description: "Calculating, far-sighted, weighs risks and consequences." },
-  { id: "investigative", label: "Investigative", description: "Curious, skeptical, looks for evidence and hidden links." },
-  { id: "minimalist", label: "Minimalist", description: "Essential, concise, cuts any superfluous information." },
-  { id: "narrative", label: "Narrative", description: "Expressive, uses stories, analogies and examples." },
-  { id: "protective", label: "Protective", description: "Caring, cautious, anticipates risks and problems." },
-  { id: "bold", label: "Bold", description: "Confident, enterprising, proposes daring ideas and experiments." },
+  { id: "pragmatic", label: "Pragmatic", description: "Answers with the concrete next step, such as the change to make or the job to start, and skips background unless asked." },
+  { id: "analytical", label: "Analytical", description: "Explains its reasoning step by step, so you can check how it reached each answer." },
+  { id: "socratic", label: "Socratic", description: "When a request is open, asks the questions that help you decide instead of choosing for you." },
+  { id: "critical", label: "Critical", description: "Points out weak assumptions, risks and contradictions in your orders before passing them on." },
+  { id: "creative", label: "Creative", description: "Offers several different ways to reach the goal, such as other recipes or plans, and lets you pick." },
+  { id: "visionary", label: "Visionary", description: "Connects each request to where the product is going and suggests what to do next." },
+  { id: "empathetic", label: "Empathetic", description: "Notices pressure or frustration in your messages and answers gently." },
+  { id: "friendly", label: "Friendly", description: "Talks informally and warmly, like a colleague you know well." },
+  { id: "playful", label: "Playful", description: "Adds light humour to replies, never to errors or confirmations." },
+  { id: "sarcastic", label: "Sarcastic", description: "Uses dry, ironic remarks, while keeping facts and confirmations exact." },
+  { id: "diplomatic", label: "Diplomatic", description: "Gives disagreement and bad news tactfully and offers balanced options." },
+  { id: "professional", label: "Professional", description: "Writes formally and precisely, like a report." },
+  { id: "mentor", label: "Mentor", description: "Explains why things work as they do, so you learn the app and your projects." },
+  { id: "strategic", label: "Strategic", description: "Weighs the risks, costs and consequences of each option and recommends one." },
+  { id: "investigative", label: "Investigative", description: "Reads job logs, outputs and project files before answering, and shows the evidence." },
+  { id: "minimalist", label: "Minimalist", description: "Answers in as few words as possible, with no preamble or recap." },
+  { id: "bold", label: "Bold", description: "Picks one ambitious change or experiment and argues for it." },
 ] as const;
 export type AssistantTraitId = (typeof assistantTraits)[number]["id"];
 export const AssistantTraitId = z.enum(assistantTraits.map(({ id }) => id) as [AssistantTraitId, ...AssistantTraitId[]]);
 
 export const incompatibleTraits: Record<AssistantTraitId, AssistantTraitId[]> = {
-  pragmatic: ["socratic", "philosophical"],
-  analytical: [],
+  pragmatic: ["socratic"],
+  analytical: ["minimalist"],
   socratic: ["pragmatic"],
   critical: [],
   creative: [],
   visionary: [],
-  philosophical: ["pragmatic", "minimalist"],
-  stoic: ["playful"],
   empathetic: ["sarcastic"],
   friendly: ["professional"],
-  playful: ["stoic", "professional"],
+  playful: ["professional"],
   sarcastic: ["empathetic", "diplomatic", "professional"],
-  rebellious: ["diplomatic", "professional"],
-  diplomatic: ["sarcastic", "rebellious"],
-  professional: ["friendly", "playful", "sarcastic", "rebellious"],
-  academic: ["minimalist"],
-  mentor: [],
-  coach: [],
+  diplomatic: ["sarcastic"],
+  professional: ["friendly", "playful", "sarcastic"],
+  mentor: ["minimalist"],
   strategic: [],
   investigative: [],
-  minimalist: ["philosophical", "academic", "narrative"],
-  narrative: ["minimalist"],
-  protective: ["bold"],
-  bold: ["protective"],
+  minimalist: ["analytical", "mentor"],
+  bold: [],
 };
 
 export function traitConflict(traits: readonly AssistantTraitId[]): [AssistantTraitId, AssistantTraitId] | null {
@@ -79,7 +76,7 @@ const AssistantAgent = z
     const conflict = traitConflict(traits);
     if (conflict) ctx.addIssue({ code: "custom", path: ["traits"], message: `${conflict[0]} does not go with ${conflict[1]}` });
   })
-  .default({ profile: null, compaction: { auto: 128_000, max: 256_000 }, traits: [] });
+  .default({ profile: null, compaction: defaultCompaction, traits: [] });
 
 export const Settings = z
   .object({

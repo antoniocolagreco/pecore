@@ -21,6 +21,29 @@ export function composeBinary(runtime: NonNullable<ServicesRuntime>): "docker" |
   return runtime === "podman" ? "podman" : "docker";
 }
 
+async function runtimeEnv(): Promise<Record<string, string>> {
+  const env: Record<string, string> = { ...(await baseEnv(appUser)), COMPOSE_DISABLE_ENV_FILE: "1" };
+  for (const key of ["DOCKER_CONFIG", "DOCKER_CONTEXT", "DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH", "XDG_CONFIG_HOME", "XDG_RUNTIME_DIR", "CONTAINER_HOST", "CONTAINER_CONNECTION"]) {
+    const value = process.env[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return env;
+}
+
+export async function detectServicesRuntime(): Promise<NonNullable<ServicesRuntime> | null> {
+  const env: Record<string, string> = await runtimeEnv();
+  const output = async (argv: string[]): Promise<string | null> => {
+    const result = await run({ user: appUser, cwd: "/", env, argv, timeoutMs: 10_000 }).catch(() => null);
+    return result && result.code === 0 && !result.timedOut ? result.stdout.trim() : null;
+  };
+  if (await output(["docker", "compose", "version", "--short"]) !== null && await output(["docker", "info", "--format", "{{.ServerVersion}}"])) {
+    const context: string = (await output(["docker", "context", "show"]))?.toLowerCase() ?? "";
+    return context.includes("orbstack") ? "orbstack" : context.includes("colima") ? "colima" : "docker";
+  }
+  if (await output(["podman", "info", "--format", "{{.Version.Version}}"])) return "podman";
+  return null;
+}
+
 export async function withComposeDirectory<T>(
   runtime: ServicesRuntime,
   action: (directory: string, compose: ComposeCommand) => Promise<T>,
@@ -28,11 +51,7 @@ export async function withComposeDirectory<T>(
   if (process.platform === "darwin") throw new Error("not supported on macOS yet");
   if (runtime === null) throw new Error("Set servicesRuntime before using Compose");
   const binary = composeBinary(runtime);
-  const env: Record<string, string> = { ...(await baseEnv(appUser)), COMPOSE_DISABLE_ENV_FILE: "1" };
-  for (const key of ["DOCKER_CONFIG", "DOCKER_CONTEXT", "DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH", "XDG_CONFIG_HOME", "XDG_RUNTIME_DIR", "CONTAINER_HOST", "CONTAINER_CONNECTION"]) {
-    const value = process.env[key];
-    if (value !== undefined) env[key] = value;
-  }
+  const env: Record<string, string> = await runtimeEnv();
   if (runtime === "podman") env.PODMAN_COMPOSE_PROVIDER = "docker-compose";
 
   const directory = await mkdtemp(join(tmpdir(), "pecore-compose-"));

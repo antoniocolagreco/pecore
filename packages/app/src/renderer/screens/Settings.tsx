@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { ApiError, assistantTraits, forgeHost, incompatibleTraits, Settings as SettingsSchema } from "@pecore/schemas";
+import { ApiError, assistantTraits, compactionSizes, forgeHost, incompatibleTraits, Settings as SettingsSchema } from "@pecore/schemas";
 import type { Account, AssistantTraitId, BuiltInHarness, ForgeAccount, LiveMessage, Role, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { call } from "../api/client";
 import { errorText, useAction, useData } from "../api/hooks";
@@ -393,6 +393,10 @@ function ModelPicker({ accounts, choice, onChoice, disabled, same = false }: { a
   </div>;
 }
 
+function compactionOption(size: number): { value: string; label: string } {
+  return { value: String(size), label: `${size / 1024}K tokens` };
+}
+
 function Traits({ value, disabled, onChange }: { value: AssistantTraitId[]; disabled: boolean; onChange(traits: AssistantTraitId[]): void }) {
   return (
     <div className={s.nested}>
@@ -466,10 +470,18 @@ export function Settings() {
       <ModelPicker accounts={(accounts.current?.accounts ?? []).filter(({ kind }) => kind === "model")} disabled={!connected || !profiles.data}
         same={role === "pm"} choice={shown(role)} onChoice={(choice) => choose(role, choice)} />
       <div className={s.grid}>
-        <NumberField label="Compact when idle above" unit="tokens" value={value[role].compaction.auto} min={1} step={1000}
-          onValueChange={(auto) => update({ ...value, [role]: { ...value[role], compaction: { ...value[role].compaction, auto: auto ?? 0 } } })} description="After 5 minutes without messages." />
-        <NumberField label="Compact at once above" unit="tokens" value={value[role].compaction.max} min={1} step={1000}
-          onValueChange={(max) => update({ ...value, [role]: { ...value[role], compaction: { ...value[role].compaction, max: max ?? 0 } } })} />
+        <Select label="Compact when idle above" value={String(value[role].compaction.auto)} description="After 5 minutes without messages."
+          options={compactionSizes.slice(0, -1).map(compactionOption)}
+          onValueChange={(chosen) => {
+            const auto: number = Number(chosen);
+            if (auto) update({ ...value, [role]: { ...value[role], compaction: { auto, max: Math.max(value[role].compaction.max, auto * 2) } } });
+          }} />
+        <Select label="Compact at once above" value={String(value[role].compaction.max)} description="At least twice the idle threshold."
+          options={compactionSizes.filter((size) => size >= value[role].compaction.auto * 2).map(compactionOption)}
+          onValueChange={(chosen) => {
+            const max: number = Number(chosen);
+            if (max) update({ ...value, [role]: { ...value[role], compaction: { ...value[role].compaction, max } } });
+          }} />
       </div>
       {role === "assistant" && <Traits value={value.assistant.traits} disabled={!connected}
         onChange={(traits) => update({ ...value, assistant: { ...value.assistant, traits } })} />}
@@ -493,9 +505,7 @@ export function Settings() {
     <div>
       <div className={s.content}>
         {value && <Section id="you" title="You" description="How the Assistant and the Project Managers call you.">
-          <TextField label="Your name" value={value.user.name ?? ""} disabled={!connected}
-            description="Leave it empty and the Assistant asks for it."
-            onValueChange={(name) => update({ ...value, user: { name: name.trim() ? name : null } })} />
+          <TextField label="Your name" value={value.user.name ?? ""} disabled={!connected}            onValueChange={(name) => update({ ...value, user: { name: name.trim() ? name : null } })} />
         </Section>}
         <Section id="accounts" title="Accounts" description="The AI tools and the code hosting accounts &lt;PE/CORE&gt; works with." plain>
           {accounts.feedback}
@@ -519,7 +529,7 @@ export function Settings() {
         {settings.feedback}
         {value && <>
           {roleSection("assistant", "The model you talk with in the chat.")}
-          {roleSection("pm", "The model that plans jobs for new tickets in the background.")}
+          {roleSection("pm", "The model of every project's Project Manager, which runs the project's jobs, tickets and chat.")}
 
           <Section id="projects" title="Projects" description="Where the code of new projects goes.">
             <TextField label="Projects folder" mono value={value.projectsFolder} disabled={!connected}
@@ -573,7 +583,7 @@ export function Settings() {
           </Section>
         </>}
 
-        <Section id="prerequisites" title="Diagnostics">
+        <Section id="prerequisites" title="Diagnostics" description="Checks that the tools &lt;PE/CORE&gt; needs are installed and that your &lt;PE/CORE&gt; data folder is private to you.">
           <div className={ui.stack}>
             <div className={s.sectionActions} style={{ justifyContent: "flex-start" }}>
               <Button loading={check.busy} disabled={!connected} onClick={() => void check.run()}>Recheck prerequisites</Button>
@@ -586,7 +596,7 @@ export function Settings() {
               {item.setting && connected && <Link to={settingUrl(item.setting)}>Open setting</Link>}
             </li>)}</ul>}
             <div id="home">
-              {status.data?.homeFindings.length === 0 && <span className={ui.muted}>PECORE_HOME permissions are fine.</span>}
+              {status.data?.homeFindings.length === 0 && <span className={s.dataFolder}><CheckCircleIcon className={s.ok} />Only you can read your &lt;PE/CORE&gt; data folder.</span>}
               {status.data?.homeFindings.map((finding) => <Alert key={finding.path} tone="warning" title={finding.path + " can be read by other users."}><pre className={s.log}>{finding.fix.join(" ")}</pre></Alert>)}
             </div>
           </div>

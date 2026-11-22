@@ -221,6 +221,12 @@
   gap: 8px;
 }
 
+.dataFolder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .ok {
   color: var(--success);
 }

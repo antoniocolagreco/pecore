@@ -282,7 +282,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
     const t = await setup((root) => [
       init(),
-      [...init(), ...newSession, { expect: "session/prompt" }, usage(256_000), ...replyWith("Long answer.")],
+      [...init(), ...newSession, { expect: "session/prompt" }, usage(262_144), ...replyWith("Long answer.")],
       [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "compact.json") }, usage(20_000), ...replyWith("")],
     ]);
     try {
@@ -303,8 +303,8 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
     const t = await setup((root) => [
       init(),
-      [...init(), ...newSession, { expect: "session/prompt" }, usage(127_999), ...replyWith("Short.")],
-      [...init(), ...resumed, { expect: "session/prompt" }, usage(128_000), ...replyWith("Longer.")],
+      [...init(), ...newSession, { expect: "session/prompt" }, usage(131_071), ...replyWith("Short.")],
+      [...init(), ...resumed, { expect: "session/prompt" }, usage(131_072), ...replyWith("Longer.")],
       [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "compact.json") }, ...replyWith("")],
     ]);
     try {
@@ -354,11 +354,11 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
     const t = await setup((root) => [
       init(),
-      [...init(), ...newSession, { expect: "session/prompt" }, usage(260_000), ...replyWith("Long.")],
+      [...init(), ...newSession, { expect: "session/prompt" }, usage(270_000), ...replyWith("Long.")],
       [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "compact.json") }, ...replyWith("")],
     ]);
     const settings: string = join(t.root, "home", "settings.json");
-    await writeFile(settings, JSON.stringify({ assistant: { profile: "p1", compaction: { auto: 270_000, max: 280_000 } } }));
+    await writeFile(settings, JSON.stringify({ assistant: { profile: "p1", compaction: { auto: 524_288, max: 1_048_576 } } }));
     await t.close();
     const first = await t.open();
     expect((await first.call("getChat")).supportsImages).toBe(false);
@@ -522,12 +522,13 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       await until(() => existsSync(join(t.root, "first.json")));
       const first: string = await readFile(join(t.root, "first.json"), "utf8");
       expect(first).toContain("You do not know the user's name yet");
-      expect(first).not.toContain("Your personality");
+      expect(first).not.toContain("Active personality");
+      expect(first).not.toContain("Your instructions changed");
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       expect((await m.tool("set_user_name", { name: " Antonio " })).result?.isError).toBeUndefined();
       const settings = await t.call("getSettings");
       expect(settings.value.user).toEqual({ name: "Antonio" });
-      await t.call("putSettings", { body: { value: { ...settings.value, assistant: { ...settings.value.assistant, traits: ["pragmatic", "narrative"] } }, baseSha256: settings.sha256 } });
+      await t.call("putSettings", { body: { value: { ...settings.value, assistant: { ...settings.value.assistant, traits: ["pragmatic", "critical"] } }, baseSha256: settings.sha256 } });
       await writeFile(join(t.root, "named"), "");
       await until(async () => (await t.call("getChat")).messages.some(({ text }) => text === "Nice to meet you, Antonio."));
       await t.call("sendChatMessage", { body: { text: "Thanks" } });
@@ -535,9 +536,10 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       const second: string = await readFile(join(t.root, "second.json"), "utf8");
       expect(second).toContain("The user's name is Antonio.");
       expect(second).not.toContain("You do not know the user's name yet");
-      expect(second).toContain("Your personality, chosen by the user: Pragmatic (Direct, concrete, solution-oriented. Few words.); Narrative (Expressive, uses stories, analogies and examples.).");
+      expect(second).toContain("Your instructions changed. They replace all earlier ones");
+      expect(second).toContain(JSON.stringify("Active personality, turned on by the user in Settings > Assistant > Personality. Apply every trait below in every reply from now on, without asking which one to use. Traits change how you talk and work, never what you are allowed to do:\n- Pragmatic: Answers with the concrete next step, such as the change to make or the job to start, and skips background unless asked.\n- Critical: Points out weak assumptions, risks and contradictions in your orders before passing them on.").slice(1, -1));
       const conflict = await t.call("getSettings");
-      await expect(t.call("putSettings", { body: { value: { ...conflict.value, assistant: { ...conflict.value.assistant, traits: ["minimalist", "narrative"] } }, baseSha256: conflict.sha256 } })).rejects.toThrow();
+      await expect(t.call("putSettings", { body: { value: { ...conflict.value, assistant: { ...conflict.value.assistant, traits: ["minimalist", "mentor"] } }, baseSha256: conflict.sha256 } })).rejects.toThrow();
     } finally {
       m.close();
       await t.close();
@@ -568,7 +570,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       };
       const original = await get();
       expect((await m.tool("get_project", { project: "managed" })).result?.content?.[0]?.text).toContain('"name":"Managed"');
-      expect((await m.tool("list_projects", {})).result?.content?.[0]?.text).toContain('"id":"managed","name":"Managed","repo":null,"source":null,"baseBranch":"main","pm":"Viola"');
+      expect((await m.tool("list_projects", {})).result?.content?.[0]?.text).toContain('"id":"managed","name":"Managed","repo":null,"source":null,"baseBranch":"main","projectManagerName":"Viola"');
       for (const changes of [{}, { name: " " }, { baseBranch: "bad..branch" }, { services: "../compose.yaml" }, { repo: null }]) {
         expect((await propose(changes)).result?.isError).toBe(true);
       }
@@ -845,16 +847,16 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
     const t = await setup(() => [init()], {
       source: true,
-      compaction: { auto: 500, max: 1000 },
+      compaction: { auto: 65_536, max: 131_072 },
       pm: (root) => [
-        [...init(), ...newSession, { expect: "session/prompt" }, usage(1000), ...replyWith("Planned.")],
+        [...init(), ...newSession, { expect: "session/prompt" }, usage(131_072), ...replyWith("Planned.")],
         [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "compact.json") }, ...replyWith("")],
       ],
     });
     try {
       await until(() => existsSync(join(t.root, "compact.json")));
       expect((JSON.parse(await readFile(join(t.root, "compact.json"), "utf8")) as { params: { prompt: unknown } }).params.prompt).toEqual([{ type: "text", text: "/compact" }]);
-      expect(t.engine.global().settings.assistant.compaction.max).toBe(256_000);
+      expect(t.engine.global().settings.assistant.compaction.max).toBe(262_144);
     } finally {
       await t.close();
     }
