@@ -50,7 +50,7 @@ import { InvalidArchive } from "./share/archive";
 import { beginImport, previewImport } from "./share/import";
 import { reviewProjectContents } from "./share/review";
 
-export type EngineOptions = { home: string; library: string; downloads?: string; agents?: AgentPaths; checkLogins?: boolean; detectRuntime?: () => Promise<Settings["servicesRuntime"]>; admin?: (script: string) => Promise<void>; orders?: OrderSink; notify?: (notification: Pick<Notification, "kind" | "title" | "body">) => void };
+export type EngineOptions = { home: string; templates: string; downloads?: string; agents?: AgentPaths; checkLogins?: boolean; detectRuntime?: () => Promise<Settings["servicesRuntime"]>; admin?: (script: string) => Promise<void>; orders?: OrderSink; notify?: (notification: Pick<Notification, "kind" | "title" | "body">) => void };
 
 export class EngineStartError extends Error {
   constructor(readonly errors: DefinitionError[]) {
@@ -102,7 +102,7 @@ export class Engine extends EventEmitter {
 
   private async init(): Promise<void> {
     const p = homePaths(this.opts.home);
-    await initHome(this.opts.home, { library: this.opts.library });
+    await initHome(this.opts.home, { templates: this.opts.templates });
     this.releaseLock = await takeLock(p.lock);
     const global = await loadGlobal(this.opts.home);
     if (!global.value) {
@@ -443,7 +443,7 @@ export class Engine extends EventEmitter {
     const ctx: ProjectContext = {
       id,
       dir,
-      library: homePaths(this.opts.home).library,
+      templates: homePaths(this.opts.home).templates,
       db,
       project: loaded.project,
       defs: loaded,

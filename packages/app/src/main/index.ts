@@ -20,7 +20,7 @@ import {
 import type { EngineHandle } from "./engine";
 import { startEngine } from "./engine";
 
-const userData: string = join(app.getPath("appData"), "PeCore");
+const userData: string = app.commandLine.hasSwitch("user-data-dir") ? app.getPath("userData") : join(app.getPath("appData"), "PeCore");
 mkdirSync(userData, { recursive: true });
 app.setPath("userData", userData);
 app.setPath("sessionData", userData);
@@ -68,8 +68,8 @@ async function resourcesDir(): Promise<string> {
 	await rm(dir, { recursive: true, force: true });
 	await mkdir(dir, { recursive: true });
 	await symlink(
-		join(repo, "packages/app/resources/library"),
-		join(dir, "library"),
+		join(repo, "packages/app/resources/templates"),
+		join(dir, "templates"),
 	);
 	await symlink(
 		join(repo, "packages/app/resources/connectors"),

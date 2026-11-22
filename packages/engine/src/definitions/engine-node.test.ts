@@ -3,15 +3,15 @@ import { join } from "node:path";
 import { monotonicFactory } from "ulid";
 import { describe, expect, it } from "vitest";
 import { createProjectWithRecipes } from "../../test/project";
-import { shippedLibrary, tempDir } from "../../test/tmp";
+import { shippedTemplates, tempDir } from "../../test/tmp";
 import { Engine } from "../main";
 
 const marker = (root: string) => join(root, "ran");
 
 async function setup() {
   const root = await tempDir();
-  const lib = join(root, "library");
-  await cp(shippedLibrary, lib, { recursive: true });
+  const lib = join(root, "templates");
+  await cp(shippedTemplates, lib, { recursive: true });
   await writeFile(
     join(lib, "nodes", "notify.json"),
     JSON.stringify({
@@ -34,7 +34,7 @@ async function setup() {
   await writeFile(join(lib, "nodes", "notify.sh"), `echo first >> ${marker(root)}\n`);
   await writeFile(join(lib, "recipes", "notify.json"), JSON.stringify({ name: "notify", description: "one engine node", start: "n", successOutcomes: ["n:done"], nodes: { n: { use: "notify" } } }));
   const home: string = join(root, "home");
-  const engine = await Engine.start({ home, library: lib });
+  const engine = await Engine.start({ home, templates: lib });
   await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["notify"]);
   return { root, home, lib, engine, p: engine.project("demo") };
 }
@@ -65,7 +65,7 @@ describe("engine nodes", () => {
     } finally {
       await engine.shutdown();
     }
-    const reopened: Engine = await Engine.start({ home, library: lib });
+    const reopened: Engine = await Engine.start({ home, templates: lib });
     try {
       const project = reopened.project("demo");
       expect(project.ctx.db.db.prepare("SELECT state FROM human_queue WHERE id = ?").get(itemId)).toEqual({ state: "cancelled" });

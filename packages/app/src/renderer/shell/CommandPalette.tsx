@@ -14,7 +14,7 @@ import layout from "./Layout.module.css";
 
 const screens: { name: string; path: string }[] = [
   { name: "Factory", path: "/" }, { name: "Jobs", path: "/jobs" }, { name: "Notifications", path: "/notifications" },
-  { name: "Projects", path: "/projects" }, { name: "New project", path: "/projects/new" }, { name: "Library", path: "/library" },
+  { name: "Projects", path: "/projects" }, { name: "New project", path: "/projects/new" }, { name: "Templates", path: "/templates" },
   { name: "Settings", path: "/settings" },
 ];
 
@@ -34,7 +34,7 @@ function PaletteContent({ close }: { close(): void }) {
   const jobs = useData(() => call("listJobs", { query: {} }), [], (message) => message.type === "job.updated");
   const catalog = useData(async () => {
     const projects = await call("listProjects");
-    const scopes: string[] = ["library", ...projects.map(({ id }) => "projects/" + id)];
+    const scopes: string[] = ["templates", ...projects.map(({ id }) => "projects/" + id)];
     const definitions = await Promise.allSettled(scopes.flatMap((scope) => (["node", "recipe"] as const).map(async (kind) => {
       const items = await call("listDefinitions", { query: { dir: scope + "/" + kind + "s" } });
       return items.filter((item) => item.path.endsWith(".json")).map((item) => ({

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { apiClient } from "@pecore/schemas";
 import type { EngineMessage, MainMessage } from "@pecore/schemas";
-import { shippedLibrary, tempDir } from "../test/tmp";
+import { shippedTemplates, tempDir } from "../test/tmp";
 import { until } from "../test/forge-project";
 import { host } from "./host";
 
@@ -20,7 +20,7 @@ function fakePort() {
 
 async function resources() {
   const dir = await tempDir();
-  await cp(shippedLibrary, join(dir, "library"), { recursive: true });
+  await cp(shippedTemplates, join(dir, "templates"), { recursive: true });
   await mkdir(join(dir, "connectors"));
   await mkdir(join(dir, "adapters"));
   await writeFile(join(dir, "adapters.json"), JSON.stringify({ adapters: {} }));

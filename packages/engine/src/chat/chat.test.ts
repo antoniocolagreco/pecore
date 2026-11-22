@@ -9,7 +9,7 @@ import { apiClient } from "@pecore/schemas";
 import type { ChatDetail, LiveMessage } from "@pecore/schemas";
 import { FakeForge, forgeAccount } from "../../test/fake-forge";
 import { createProjectWithRecipes } from "../../test/project";
-import { shippedLibrary, tempDir } from "../../test/tmp";
+import { shippedTemplates, tempDir } from "../../test/tmp";
 import { handlers } from "../api/handlers";
 import { startApi } from "../api/server";
 import { Engine } from "../main";
@@ -96,12 +96,12 @@ async function setup(build: (root: string) => object[][], extra: { source?: bool
   await mkdir(process.env.HOME);
   const forge: FakeForge | null = extra.forge ? await FakeForge.start() : null;
   const home = join(root, "home");
-  const library = join(root, "library");
-  await cp(shippedLibrary, library, { recursive: true });
-  await writeFile(join(library, "nodes", "write-hello.json"), JSON.stringify(writeHello));
-  await writeFile(join(library, "nodes", "big-out.json"), JSON.stringify(bigOut));
-  await writeFile(join(library, "recipes", "reviewed.json"), JSON.stringify(reviewed));
-  await writeFile(join(library, "recipes", "big.json"), JSON.stringify(big));
+  const templates = join(root, "templates");
+  await cp(shippedTemplates, templates, { recursive: true });
+  await writeFile(join(templates, "nodes", "write-hello.json"), JSON.stringify(writeHello));
+  await writeFile(join(templates, "nodes", "big-out.json"), JSON.stringify(bigOut));
+  await writeFile(join(templates, "recipes", "reviewed.json"), JSON.stringify(reviewed));
+  await writeFile(join(templates, "recipes", "big.json"), JSON.stringify(big));
   const files: string[] = [];
   for (const [i, s] of scripts.entries()) {
     const f = join(root, `script-${i}.jsonl`);
@@ -135,7 +135,7 @@ async function setup(build: (root: string) => object[][], extra: { source?: bool
   await writeFile(join(home, "tiers.json"), JSON.stringify({ tiers: { strong: ["p1"] } }));
   const agents = { connectorsDir: connectors, adaptersDir: join(root, "adapters"), adapters: {} };
   const open = async () => {
-    const engine = await Engine.start({ home, library, agents, checkLogins: false });
+    const engine = await Engine.start({ home, templates, agents, checkLogins: false });
     const api = await startApi(engine, { handlers: handlers("0.0.0-test"), validateResponses: true });
     return { engine, api, call: apiClient({ port: api.port, token: api.token }), close: async () => { await api.close(); await engine.shutdown(); } };
   };
@@ -809,7 +809,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     expect(refused.result!.content![0]!.text).toContain("unknown tool create_jobs");
     expect(ctx.db.db.prepare("SELECT count(*) AS n FROM jobs WHERE order_id = ?").get(message.id)).toEqual({ n: 0 });
     expect((await m.tool("read_definition", { path: "projects/demo/recipes/reviewed.json" })).result!.content![0]!.text).toContain("write, human review, commit");
-    expect((await m.tool("list_definitions", { dir: "library/recipes" })).result!.content![0]!.text).toContain("library/recipes/reviewed.json");
+    expect((await m.tool("list_definitions", { dir: "templates/recipes" })).result!.content![0]!.text).toContain("templates/recipes/reviewed.json");
 
     const log = await m.tool("read_artifact", { view: "log", jobId: bigJob, nodeRunId: bigRun });
     const logText = log.result!.content!.map((c) => c.text).join("");
@@ -1005,7 +1005,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect(outside.result!.content![0]!.text).toContain("acts only on its own project");
       expect((await m.tool("read_definition", { path: "projects/demo/knowledge/notes.md" })).result!.content![0]!.text).toContain("# Notes");
       expect((await m.tool("list_definitions", { dir: "projects/demo/knowledge" })).result!.content![0]!.text).toContain("projects/demo/knowledge/notes.md");
-      expect((await m.tool("read_definition", { path: "library/recipes/reviewed.json" })).result!.isError).not.toBe(true);
+      expect((await m.tool("read_definition", { path: "templates/recipes/reviewed.json" })).result!.isError).not.toBe(true);
       expect((await m.tool("read_definition", { path: "projects/other/knowledge/notes.md" })).result!.content![0]!.text).toContain("acts only on its own project");
       expect((await m.tool("list_definitions", { dir: "projects/other/knowledge" })).result!.content![0]!.text).toContain("acts only on its own project");
       expect((await m.tool("get_project", { project: "other" })).result!.isError).toBe(true);

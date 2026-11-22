@@ -7,15 +7,15 @@ import { useConnected } from "../api/live";
 import { Button, Empty, ErrorText, Field, Modal, Page, Panel, ui } from "../components/ui";
 import { DefinitionErrors, definitionUrl, object, string } from "./NodeEditor";
 
-export function Library() {
+export function Templates() {
   const connected: boolean = useConnected();
   const templates = useData(async () => {
     const [nodes, recipes] = await Promise.all([
-      call("listDefinitions", { query: { dir: "library/nodes" } }),
-      call("listDefinitions", { query: { dir: "library/recipes" } }),
+      call("listDefinitions", { query: { dir: "templates/nodes" } }),
+      call("listDefinitions", { query: { dir: "templates/recipes" } }),
     ]);
     return { node: nodes.filter((item) => item.path.endsWith(".json")), recipe: recipes.filter((item) => item.path.endsWith(".json")) };
-  }, [], (event) => event.type === "definition.changed" && event.path.startsWith("library/"));
+  }, [], (event) => event.type === "definition.changed" && event.path.startsWith("templates/"));
   const projects = useData(() => call("listProjects"), [], (event) => event.type === "project.updated" || (event.type === "definition.changed" && event.path.endsWith("/project.json")));
   const [kind, setKind] = useState("");
   const [project, setProject] = useState("");
@@ -57,7 +57,7 @@ export function Library() {
   </Panel>;
   };
 
-  return <Page title="Library">
+  return <Page title="Templates">
     <ErrorText error={templates.error} />
     {section("node", (templates.data?.node ?? []).filter((item) => !kind || object(item.value).kind === kind))}
     {section("recipe", templates.data?.recipe ?? [])}

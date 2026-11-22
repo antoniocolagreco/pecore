@@ -1,4 +1,4 @@
-import { chmod, cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { jsonSchemas } from "@pecore/schemas";
 import { commitDefinition, git } from "./git-commit";
@@ -27,9 +27,9 @@ export function homePaths(home: string) {
     autoSetup: join(home, "auto-setup.json"),
     tiers: join(home, "tiers.json"),
     chatsDb: join(home, "chats.db"),
-    library: join(home, "library"),
-    libraryNodes: join(home, "library", "nodes"),
-    libraryRecipes: join(home, "library", "recipes"),
+    templates: join(home, "templates"),
+    templateNodes: join(home, "templates", "nodes"),
+    templateRecipes: join(home, "templates", "recipes"),
     projects: join(home, "projects"),
     adapters: join(home, "adapters"),
     schemas: join(home, "schemas"),
@@ -64,12 +64,12 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-async function addShippedLibraryFiles(shipped: string, library: string): Promise<string[]> {
+async function addShippedTemplateFiles(shipped: string, templates: string): Promise<string[]> {
   const added: string[] = [];
   for (const entry of await readdir(shipped, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const path: string = relative(shipped, join(entry.parentPath, entry.name));
-    const target: string = join(library, path);
+    const target: string = join(templates, path);
     if (await exists(target)) continue;
     await mkdir(dirname(target), { recursive: true });
     await cp(join(shipped, path), target);
@@ -78,16 +78,24 @@ async function addShippedLibraryFiles(shipped: string, library: string): Promise
   return added;
 }
 
-export async function initHome(home: string, opts: { library: string }): Promise<{ created: boolean }> {
+async function renameLibrary(home: string, templates: string): Promise<void> {
+  const library: string = join(home, "library");
+  if (!(await exists(library)) || (await exists(templates))) return;
+  await rename(library, templates);
+  await commitDefinition(home, [library, templates], "templates: renamed from library");
+}
+
+export async function initHome(home: string, opts: { templates: string }): Promise<{ created: boolean }> {
   const p = homePaths(home);
   const created = !(await exists(join(home, ".git")));
   await mkdir(home, { recursive: true, mode: 0o700 });
   await mkdir(p.run, { recursive: true, mode: 0o700 });
-  for (const dir of [p.libraryNodes, p.libraryRecipes, p.projects, p.themes]) await mkdir(dir, { recursive: true });
+  if (!created) await renameLibrary(home, p.templates);
+  for (const dir of [p.templateNodes, p.templateRecipes, p.projects, p.themes]) await mkdir(dir, { recursive: true });
   await writeSchemas(home);
   if (!created) {
-    const added: string[] = await addShippedLibraryFiles(opts.library, p.library);
-    if (added.length) await commitDefinition(home, added, `library: add ${added.length} shipped ${added.length === 1 ? "file" : "files"}`);
+    const added: string[] = await addShippedTemplateFiles(opts.templates, p.templates);
+    if (added.length) await commitDefinition(home, added, `templates: add ${added.length} shipped ${added.length === 1 ? "file" : "files"}`);
     return { created };
   }
   await git(home, ["init", "-q", "-b", "main"]).catch((error: NodeJS.ErrnoException) => {
@@ -95,7 +103,7 @@ export async function initHome(home: string, opts: { library: string }): Promise
     throw error;
   });
   await writeFile(join(home, ".gitignore"), homeGitignore);
-  await cp(`${opts.library}/`, p.library, { recursive: true, force: false, errorOnExist: false, dereference: true });
+  await cp(`${opts.templates}/`, p.templates, { recursive: true, force: false, errorOnExist: false, dereference: true });
   await git(home, ["add", "-A"]);
   await git(home, ["commit", "-q", "-m", "home: created"]);
   return { created };

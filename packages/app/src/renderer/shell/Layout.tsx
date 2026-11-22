@@ -34,7 +34,7 @@ const nav: { group: string | null; items: { to: string; label: string; icon: Rea
       { to: "/projects", label: "Projects", icon: <FolderIcon size="md" /> },
       { to: "/jobs", label: "Jobs", icon: <ListIcon size="md" /> },
       { to: "/notifications", label: "Notifications", icon: <BellIcon size="md" />, badge: "notifications" },
-      { to: "/library", label: "Library", icon: <BookIcon size="md" /> },
+      { to: "/templates", label: "Templates", icon: <BookIcon size="md" /> },
       { to: "/settings", label: "Settings", icon: <GearIcon size="md" /> },
     ],
   },

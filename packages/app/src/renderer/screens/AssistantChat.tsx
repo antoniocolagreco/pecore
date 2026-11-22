@@ -122,7 +122,7 @@ function actionLinks(target: Record<string, unknown>): ActionLink[] {
     ...[...items].map((id) => ({ to: `/notifications/${encodeURIComponent(id)}`, label: `Notification ${id}` })),
   ];
   for (const path of paths) {
-    const section: string | undefined = /^(?:library|projects\/[^/]+)\/(nodes|recipes|knowledge)\/.+/.exec(path)?.[1];
+    const section: string | undefined = /^(?:templates|projects\/[^/]+)\/(nodes|recipes|knowledge)\/.+/.exec(path)?.[1];
     if (!section) continue;
     const to: string = path.endsWith(".json") && section !== "knowledge"
       ? definitionUrl(section === "nodes" ? "node" : "recipe", path)
@@ -371,7 +371,7 @@ const readTools: Record<string, string> = {
   read_replies: "ticket replies",
   job_status: "job status",
   read_artifact: "job output",
-  list_templates: "library templates",
+  list_templates: "templates",
   list_definitions: "definitions",
   read_definition: "definition",
   validate: "definition check",

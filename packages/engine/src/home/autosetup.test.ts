@@ -6,7 +6,7 @@ import type { LiveMessage } from "@pecore/schemas";
 import { fakeHarnesses } from "../../test/fake-harness";
 import type { FakeHarness } from "../../test/fake-harness";
 import { until } from "../../test/forge-project";
-import { shippedLibrary, tempDir } from "../../test/tmp";
+import { shippedTemplates, tempDir } from "../../test/tmp";
 import { handlers } from "../api/handlers";
 import { startApi } from "../api/server";
 import { Engine } from "../main";
@@ -67,7 +67,7 @@ async function setup() {
   const start = async () => {
     const engine = await Engine.start({
       home,
-      library: shippedLibrary,
+      templates: shippedTemplates,
       agents: { connectorsDir: harnesses.connectorsDir, adaptersDir: join(root, "adapters"), adapters: {} },
       notify: (n) => notices.push(n),
     });

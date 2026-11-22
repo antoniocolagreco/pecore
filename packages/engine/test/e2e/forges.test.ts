@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { Engine } from "../../src/main";
 import { until } from "../forge-project";
 import { createProjectWithRecipes } from "../project";
-import { shippedLibrary, tempDir } from "../tmp";
+import { shippedTemplates, tempDir } from "../tmp";
 
 type Request = { url: string; target: string };
 type ForgeCase = {
@@ -101,12 +101,12 @@ for (const c of cases) {
       };
       const root = await tempDir();
       const home = join(root, "home");
-      const library = join(root, "library");
+      const templates = join(root, "templates");
       const bin = join(root, "bin");
       const flag = join(root, "hang-push");
-      await cp(shippedLibrary, library, { recursive: true });
-      await writeFile(join(library, "nodes", "write-job-file.json"), JSON.stringify(writeFileNode));
-      await writeFile(join(library, "recipes", "forge-e2e.json"), JSON.stringify(recipe));
+      await cp(shippedTemplates, templates, { recursive: true });
+      await writeFile(join(templates, "nodes", "write-job-file.json"), JSON.stringify(writeFileNode));
+      await writeFile(join(templates, "recipes", "forge-e2e.json"), JSON.stringify(recipe));
       await mkdir(bin);
       await writeFile(join(bin, "git"), gitWrapper(execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim(), flag));
       await chmod(join(bin, "git"), 0o755);
@@ -115,7 +115,7 @@ for (const c of cases) {
       await mkdir(home, { recursive: true });
       await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [{ id: c.forge, kind: "forge", forge: c.forge, host: c.host, tool: c.tool, user: c.user, author: { name: "PeCore Test", email: "pecore-test@example.com" } }] }));
 
-      let engine = await Engine.start({ home, library });
+      let engine = await Engine.start({ home, templates });
       await createProjectWithRecipes(engine, { id: "e2e", name: "E2E", repo: { url, account: c.forge }, createRepo: c.createRepo }, ["forge-e2e"]);
       let p = engine.project("e2e");
       await until(async () => !(await exists(join(p.ctx.dir, "creating.json"))), 180_000);
@@ -133,7 +133,7 @@ for (const c of cases) {
       await engine.shutdown();
       await rm(flag);
 
-      engine = await Engine.start({ home, library });
+      engine = await Engine.start({ home, templates });
       p = engine.project("e2e");
       expect(p.executor.job(second)).toMatchObject({ state: "paused", waiting_reason: "quit" });
       await p.executor.play(second);

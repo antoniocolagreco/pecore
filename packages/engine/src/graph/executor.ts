@@ -77,7 +77,7 @@ type NodeRunRow = {
 export type ProjectContext = {
   id: string;
   dir: string;
-  library: string;
+  templates: string;
   db: ProjectDb;
   project: Project;
   defs: Definitions;

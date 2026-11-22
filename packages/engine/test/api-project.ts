@@ -5,7 +5,7 @@ import { handlers } from "../src/api/handlers";
 import { startApi } from "../src/api/server";
 import { Engine } from "../src/main";
 import { createProjectWithRecipes } from "./project";
-import { shippedLibrary, tempDir } from "./tmp";
+import { shippedTemplates, tempDir } from "./tmp";
 
 const writeHello = {
   name: "write-hello",
@@ -33,11 +33,11 @@ const reviewed = {
 export async function apiProject() {
   const root = await tempDir();
   const home = join(root, "home");
-  const library = join(root, "library");
-  await cp(shippedLibrary, library, { recursive: true });
-  await writeFile(join(library, "nodes", "write-hello.json"), JSON.stringify(writeHello));
-  await writeFile(join(library, "recipes", "reviewed.json"), JSON.stringify(reviewed));
-  const engine = await Engine.start({ home, library });
+  const templates = join(root, "templates");
+  await cp(shippedTemplates, templates, { recursive: true });
+  await writeFile(join(templates, "nodes", "write-hello.json"), JSON.stringify(writeHello));
+  await writeFile(join(templates, "recipes", "reviewed.json"), JSON.stringify(reviewed));
+  const engine = await Engine.start({ home, templates });
   await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["reviewed"]);
   const api = await startApi(engine, { handlers: handlers("0.0.0-test"), validateResponses: true });
   const call = apiClient({ port: api.port, token: api.token });

@@ -9,7 +9,7 @@ import { apiClient } from "@pecore/schemas";
 import { apiProject } from "../../test/api-project";
 import { forgeAccount } from "../../test/fake-forge";
 import { forgeProject, until } from "../../test/forge-project";
-import { shippedLibrary, tempDir } from "../../test/tmp";
+import { shippedTemplates, tempDir } from "../../test/tmp";
 import { handlers } from "../api/handlers";
 import { startApi } from "../api/server";
 import { Engine } from "../main";
@@ -90,11 +90,11 @@ function files(dir: string, roots: string[]): RawEntry[] {
 
 const manifest = (history: boolean) => ({ name: "manifest.json", body: JSON.stringify({ format: 1, projectId: "demo", exportedAt: "2026-11-19T10:00:00.000Z", history, logs: false }) });
 
-async function secondHome(library: string, orders?: OrderSink) {
+async function secondHome(templates: string, orders?: OrderSink) {
   const home = join(await tempDir(), "home");
   await mkdir(home, { recursive: true });
   await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [{ ...forgeAccount, id: "gh-mine" }] }));
-  const engine = await Engine.start({ home, library, ...(orders ? { orders } : {}) });
+  const engine = await Engine.start({ home, templates, ...(orders ? { orders } : {}) });
   const api = await startApi(engine, { handlers: handlers("0.0.0-test"), validateResponses: true });
   const call = apiClient({ port: api.port, token: api.token });
   const close = async () => {
@@ -218,10 +218,10 @@ describe("project import (share/, CUJ 7)", () => {
     src.append([{ jobId: null, type: "confirmation.recorded", payload: { path: "nodes/git-commit.json", sha256: "a".repeat(64) } }]);
     const out = join(await tempDir(), "demo.tar.zst");
     await p.call("exportProject", { params: { id: "demo" }, body: { path: out, history: true, logs: true } });
-    const library = join(dirname(p.home), "library");
+    const templates = join(dirname(p.home), "templates");
     await p.close();
 
-    const b = await secondHome(library);
+    const b = await secondHome(templates);
     const result = await b.call("importProject", { body: { path: out } });
     expect(result).toEqual({ state: "imported", id: "demo" });
     const dir = b.engine.projectDir("demo");
@@ -304,9 +304,9 @@ describe("project import (share/, CUJ 7)", () => {
     const p = await apiProject();
     const out = join(await tempDir(), "demo.tar.zst");
     await p.call("exportProject", { params: { id: "demo" }, body: { path: out } });
-    const library = join(dirname(p.home), "library");
+    const templates = join(dirname(p.home), "templates");
     await p.close();
-    const b = await secondHome(library);
+    const b = await secondHome(templates);
     await b.call("importProject", { body: { path: out } });
     const parent = await b.engine.createJob("demo", { title: "Parent", ticket: { text: "x" } });
     const child = await b.engine.createJob("demo", { title: "Child", ticket: { text: "x" }, parentJobId: parent });
@@ -332,7 +332,7 @@ describe("project import (share/, CUJ 7)", () => {
     expect(await f.engine.exportProject("shop", { path: out, history: false, logs: false, acceptFindings: [] })).toEqual({ state: "written", path: out });
     await f.engine.shutdown();
 
-    const b = await secondHome(f.library);
+    const b = await secondHome(f.templates);
     expect(await b.call("importProject", { body: { path: out } })).toEqual({ state: "needs-accounts", accounts: [{ id: forgeAccount.id, kind: "forge" }] });
     await expect(b.call("importProject", { body: { path: out, accounts: { [forgeAccount.id]: "nope" } } })).rejects.toMatchObject({ status: 400, message: expect.stringContaining("forge account nope not found") });
     expect(readdirSync(join(b.home, "projects"), { withFileTypes: true }).map((e) => e.name)).toEqual([]);
@@ -356,9 +356,9 @@ describe("project import (share/, CUJ 7)", () => {
     const dir = p.engine.projectDir("demo");
     const base = files(dir, ["project.json", "nodes", "recipes"]);
     const t = await tempDir();
-    const library = join(dirname(p.home), "library");
+    const templates = join(dirname(p.home), "templates");
     await p.close();
-    const b = await secondHome(library);
+    const b = await secondHome(templates);
 
     expect(await b.call("importProject", { body: { path: rawArchive(join(t, "ok.tar.zst"), [manifest(false), ...base]), id: "control" } })).toMatchObject({ state: "imported", id: "control" });
 
@@ -392,9 +392,9 @@ describe("project import (share/, CUJ 7)", () => {
     const t = await tempDir();
     p.engine.project("demo").ctx.db.db.prepare("VACUUM INTO ?").run(join(t, "pecore.db"));
     const list = [manifest(true), ...files(dir, ["project.json", "nodes", "recipes"]), { name: "pecore.db", body: readFileSync(join(t, "pecore.db")) }];
-    const library = join(dirname(p.home), "library");
+    const templates = join(dirname(p.home), "templates");
     await p.close();
-    const b = await secondHome(library);
+    const b = await secondHome(templates);
     await expect(b.call("importProject", { body: { path: rawArchive(join(t, "active.tar.zst"), list) } })).rejects.toMatchObject({ status: 400, message: expect.stringContaining("pecore.db contains 1 active job") });
     expect(readdirSync(join(b.home, "projects"))).toEqual([]);
     await b.close();
@@ -404,15 +404,15 @@ describe("project import (share/, CUJ 7)", () => {
     const p = await apiProject();
     const out = join(await tempDir(), "demo.tar.zst");
     await p.call("exportProject", { params: { id: "demo" }, body: { path: out } });
-    const library = join(dirname(p.home), "library");
+    const templates = join(dirname(p.home), "templates");
     await p.close();
     const home = join(await tempDir(), "home");
-    await (await Engine.start({ home, library })).shutdown();
+    await (await Engine.start({ home, templates })).shutdown();
     expect(await beginImport(home, { path: out }, { accounts: { accounts: [] }, knownProject: () => false })).toMatchObject({ state: "imported", id: "demo" });
     const dir = join(home, "projects", "demo");
     expect(JSON.parse(await readFile(join(dir, "creating.json"), "utf8"))).toEqual({ step: 3 });
 
-    const engine = await Engine.start({ home, library });
+    const engine = await Engine.start({ home, templates });
     expect(engine.creating.has("demo")).toBe(true);
     await engine.continueCreation("demo");
     expect(engine.creating.has("demo")).toBe(false);
@@ -440,11 +440,11 @@ describe("project import (share/, CUJ 7)", () => {
     await writeFile(join(dir, "project.json"), JSON.stringify({ ...project, source: { node: "fake-source", params: { trusted: ["alice"], pollSec: 1 } } }));
     const out = join(await tempDir(), "demo.tar.zst");
     await p.call("exportProject", { params: { id: "demo" }, body: { path: out } });
-    const library = join(dirname(p.home), "library");
+    const templates = join(dirname(p.home), "templates");
     await p.close();
 
     const hands: string[] = [];
-    const b = await secondHome(library, { hand: async (_p, order) => void hands.push(order.ticket.id) });
+    const b = await secondHome(templates, { hand: async (_p, order) => void hands.push(order.ticket.id) });
     await b.call("importProject", { body: { path: out } });
     expect(items(b.engine, "demo", "import")).toEqual([]);
     expect(items(b.engine, "demo", "source-node")).toEqual([]);
@@ -527,10 +527,10 @@ describe("project import and export from the app and the Assistant (decisions 85
   it("exports to the downloads folder the app passes, and refuses to overwrite an existing file", async () => {
     const root: string = await tempDir();
     const home: string = join(root, "home");
-    const library: string = join(root, "library");
+    const templates: string = join(root, "templates");
     const downloads: string = join(root, "Scaricati");
-    await cp(shippedLibrary, library, { recursive: true });
-    const engine: Engine = await Engine.start({ home, library, downloads });
+    await cp(shippedTemplates, templates, { recursive: true });
+    const engine: Engine = await Engine.start({ home, templates, downloads });
     try {
       await engine.createProject({ id: "demo", name: "Demo", repo: null });
       const path: string = join(downloads, "demo.tar.zst");

@@ -16,4 +16,4 @@ afterEach(async () => {
   await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
-export const shippedLibrary = fileURLToPath(new URL("../../app/resources/library/", import.meta.url));
+export const shippedTemplates = fileURLToPath(new URL("../../app/resources/templates/", import.meta.url));

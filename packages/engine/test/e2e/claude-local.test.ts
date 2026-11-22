@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { gitApp } from "../../src/workdir/git-as";
 import { Engine } from "../../src/main";
 import { createProjectWithRecipes } from "../project";
-import { shippedLibrary, tempDir } from "../tmp";
+import { shippedTemplates, tempDir } from "../tmp";
 
 const real = process.env.PECORE_REAL === "1";
 const agentsRoot = fileURLToPath(new URL("../../../agents/", import.meta.url));
@@ -19,7 +19,7 @@ describe.skipIf(!real)("phase 3 gate: local-only job with Claude Code, normal mo
     await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "sonnet", account: "claude", model: "sonnet", effort: "medium" }] }));
     await writeFile(join(home, "tiers.json"), JSON.stringify({ tiers: { frontier: ["sonnet"], strong: ["sonnet"], standard: ["sonnet"], cheap: ["sonnet"] } }));
     const adapters = (await import(join(agentsRoot, "adapters.json"), { with: { type: "json" } })).default as { adapters: Record<string, { version: string; entry: string }> };
-    const engine = await Engine.start({ home, library: shippedLibrary, agents: { connectorsDir, adaptersDir: join(agentsRoot, "out", "adapters"), adapters: adapters.adapters } });
+    const engine = await Engine.start({ home, templates: shippedTemplates, agents: { connectorsDir, adaptersDir: join(agentsRoot, "out", "adapters"), adapters: adapters.adapters } });
     engine.on("job", ({ jobId }) => {
       const j = engine.project("demo").executor.job(jobId);
       const run = engine.project("demo").ctx.db.db.prepare("SELECT node, state, outcome, failure_reason FROM node_runs ORDER BY rowid DESC LIMIT 1").get();

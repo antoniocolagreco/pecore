@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { createProjectWithRecipes } from "../../test/project";
-import { shippedLibrary, tempDir } from "../../test/tmp";
+import { shippedTemplates, tempDir } from "../../test/tmp";
 import { Engine } from "../main";
 
 const fakeAgent = fileURLToPath(new URL("../../../agents/test/fake-agent/agent.mjs", import.meta.url));
@@ -33,8 +33,8 @@ const agentNode = (extra: object = {}) => ({
 async function setup(scripts: object[][], node: object = agentNode(), recipeExtra: object = {}) {
   const root = await tempDir();
   const home = join(root, "home");
-  const lib = join(root, "library");
-  await cp(shippedLibrary, lib, { recursive: true });
+  const lib = join(root, "templates");
+  await cp(shippedTemplates, lib, { recursive: true });
   await writeFile(join(lib, "nodes", "agent-x.json"), JSON.stringify(node));
   await writeFile(join(lib, "nodes", "agent-x.md"), "Do the task {job.title}.\n");
   await writeFile(
@@ -57,7 +57,7 @@ async function setup(scripts: object[][], node: object = agentNode(), recipeExtr
   await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [{ id: "fake", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" }] }));
   await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p1", account: "fake", model: "m1" }] }));
   await writeFile(join(home, "tiers.json"), JSON.stringify({ tiers: { strong: ["p1"] } }));
-  const engine = await Engine.start({ home, library: lib, agents: { connectorsDir: connectors, adaptersDir: join(root, "adapters"), adapters: {} }, checkLogins: false });
+  const engine = await Engine.start({ home, templates: lib, agents: { connectorsDir: connectors, adaptersDir: join(root, "adapters"), adapters: {} }, checkLogins: false });
   await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["one-agent"]);
   const p = engine.project("demo");
   const id = await engine.createJob("demo", { title: "Fix it", ticket: { text: "x" } });

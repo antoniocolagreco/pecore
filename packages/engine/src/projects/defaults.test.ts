@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { shippedLibrary, tempDir } from "../../test/tmp";
+import { shippedTemplates, tempDir } from "../../test/tmp";
 import { instantiateRecipe } from "../definitions/instantiate";
 import { loadForgeDefaults, projectDefaults } from "./defaults";
 
@@ -9,13 +9,13 @@ const repo = { url: "https://gitlab.example.com/acme/shop.git", account: "work-g
 
 describe("project defaults (decision 8)", () => {
   it("a local project has no forge and no renames", async () => {
-    const d = await projectDefaults(shippedLibrary, null, null);
+    const d = await projectDefaults(shippedTemplates, null, null);
     expect(d.forge).toBeNull();
     expect(d.rename).toEqual({});
   });
 
   it("a GitLab project maps every GitHub template to its GitLab one", async () => {
-    const d = await projectDefaults(shippedLibrary, repo, "gitlab");
+    const d = await projectDefaults(shippedTemplates, repo, "gitlab");
     expect(d.rename).toMatchObject({
       "github-pr": "gitlab-mr",
       "github-issue-comment": "gitlab-issue-comment",
@@ -26,20 +26,20 @@ describe("project defaults (decision 8)", () => {
   });
 
   it("a repository project needs a forge, and the forge file must match its name", async () => {
-    await expect(projectDefaults(shippedLibrary, repo, null)).rejects.toThrow("needs a forge");
-    await expect(loadForgeDefaults(shippedLibrary, "bitbucket")).rejects.toThrow();
-    expect((await loadForgeDefaults(shippedLibrary, "github")).credentialHelper).toBe("!gh auth git-credential");
+    await expect(projectDefaults(shippedTemplates, repo, null)).rejects.toThrow("needs a forge");
+    await expect(loadForgeDefaults(shippedTemplates, "bitbucket")).rejects.toThrow();
+    expect((await loadForgeDefaults(shippedTemplates, "github")).credentialHelper).toBe("!gh auth git-credential");
   });
 
   it("a private Git server project delivers the pushed branch, skips the ticket comment, and has no repo creation or ticket source", async () => {
-    const forge = await loadForgeDefaults(shippedLibrary, "git");
+    const forge = await loadForgeDefaults(shippedTemplates, "git");
     expect(forge).toEqual({ forge: "git", tool: "git", credentialHelper: null, delivery: "git-delivery", comment: "git-no-comment", createRepo: null, source: null });
-    const d = await projectDefaults(shippedLibrary, { url: "git@git.example.com:team/app.git", account: "git-dev" }, "git");
+    const d = await projectDefaults(shippedTemplates, { url: "git@git.example.com:team/app.git", account: "git-dev" }, "git");
     expect(d.rename).toMatchObject({ "github-pr": "git-delivery", "gitlab-mr": "git-delivery", "github-issue-comment": "git-no-comment", "gitlab-issue-comment": "git-no-comment" });
     expect(d.rename).not.toHaveProperty("github-create-repo");
     expect(d.rename).not.toHaveProperty("github-issues");
     const project = await tempDir();
-    for (const name of ["feature", "bugfix"]) expect((await instantiateRecipe(shippedLibrary, project, name, d.rename)).errors).toEqual([]);
+    for (const name of ["feature", "bugfix"]) expect((await instantiateRecipe(shippedTemplates, project, name, d.rename)).errors).toEqual([]);
     const bugfix = JSON.parse(await readFile(join(project, "recipes", "bugfix.json"), "utf8"));
     expect(bugfix.nodes.pr.use).toBe("git-delivery");
     expect(bugfix.nodes.comment.use).toBe("git-no-comment");
@@ -47,8 +47,8 @@ describe("project defaults (decision 8)", () => {
 
   it("instantiating a recipe with the rename map writes the GitLab node and recipe", async () => {
     const project = await tempDir();
-    const d = await projectDefaults(shippedLibrary, repo, "gitlab");
-    const r = await instantiateRecipe(shippedLibrary, project, "bugfix", d.rename);
+    const d = await projectDefaults(shippedTemplates, repo, "gitlab");
+    const r = await instantiateRecipe(shippedTemplates, project, "bugfix", d.rename);
     expect(r.errors).toEqual([]);
     const recipe = JSON.parse(await readFile(join(project, "recipes", "bugfix.json"), "utf8"));
     expect(recipe.nodes.pr.use).toBe("gitlab-mr");

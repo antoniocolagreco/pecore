@@ -9,8 +9,8 @@ const projectFile = (engine: Engine, id: string) => join(engine.projectDir(id), 
 
 describe("Project Manager names and colours per project", () => {
   it("gives each new project the first free Project Manager, keeps a chosen one and refuses one already in use", async () => {
-    const { home, library } = await forgeHome();
-    const engine = await Engine.start({ home, library });
+    const { home, templates } = await forgeHome();
+    const engine = await Engine.start({ home, templates });
     try {
       await engine.createProject({ id: "one", name: "One", repo: null });
       await engine.createProject({ id: "two", name: "Two", repo: null, pm: { name: "Kim", color: "#123456" } });
@@ -36,8 +36,8 @@ describe("Project Manager names and colours per project", () => {
   });
 
   it("assigns free Project Managers at start to projects that have none or share one, in project order", async () => {
-    const { home, library } = await forgeHome();
-    const first = await Engine.start({ home, library });
+    const { home, templates } = await forgeHome();
+    const first = await Engine.start({ home, templates });
     await first.createProject({ id: "alpha", name: "Alpha", repo: null });
     await first.createProject({ id: "beta", name: "Beta", repo: null });
     await first.createProject({ id: "gamma", name: "Gamma", repo: null });
@@ -50,7 +50,7 @@ describe("Project Manager names and colours per project", () => {
     await strip("beta", { name: "Viola", color: "#9D57FF" });
     await strip("gamma", { name: "Viola", color: "#9D57FF" });
 
-    const engine = await Engine.start({ home, library });
+    const engine = await Engine.start({ home, templates });
     try {
       expect(engine.project("alpha").ctx.project.pm).toEqual({ name: "Eva", color: "#FFDE38" });
       expect(engine.project("beta").ctx.project.pm).toEqual({ name: "Viola", color: "#9D57FF" });

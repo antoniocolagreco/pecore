@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { gitApp, gitAppIn } from "../../src/workdir/git-as";
 import { Engine } from "../../src/main";
 import { createProjectWithRecipes } from "../project";
-import { shippedLibrary, tempDir } from "../tmp";
+import { shippedTemplates, tempDir } from "../tmp";
 
 const nodes: Record<string, object> = {
   "touch-file": {
@@ -93,9 +93,9 @@ const recipes: Record<string, object> = {
   },
 };
 
-async function library(): Promise<string> {
-  const dir = join(await tempDir(), "library");
-  await cp(shippedLibrary, dir, { recursive: true });
+async function templates(): Promise<string> {
+  const dir = join(await tempDir(), "templates");
+  await cp(shippedTemplates, dir, { recursive: true });
   for (const [name, n] of Object.entries(nodes)) await writeFile(join(dir, "nodes", `${name}.json`), JSON.stringify(n));
   for (const [name, r] of Object.entries(recipes)) await writeFile(join(dir, "recipes", `${name}.json`), JSON.stringify(r));
   return dir;
@@ -113,8 +113,8 @@ async function until<T>(fn: () => T | undefined | false, ms = 20000): Promise<T>
 
 async function setup(recipe: string) {
   const home = join(await tempDir(), "home");
-  const lib = await library();
-  const engine = await Engine.start({ home, library: lib });
+  const lib = await templates();
+  const engine = await Engine.start({ home, templates: lib });
   await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, [recipe]);
   return { home, lib, engine, project: engine.project("demo") };
 }
@@ -170,7 +170,7 @@ describe("phase 2 gate: command-only recipe on a local-only project, app user as
     const id = await engine.createJob("demo", { title: "Slow", ticket: { text: "x" } });
     await until(() => (project.ctx.db.db.prepare("SELECT pgid FROM node_runs WHERE pgid IS NOT NULL").get() as { pgid: number } | undefined)?.pgid);
     await engine.shutdown();
-    const again = await Engine.start({ home, library: lib });
+    const again = await Engine.start({ home, templates: lib });
     const p = again.project("demo");
     expect(p.executor.job(id)).toMatchObject({ state: "paused", waiting_reason: "quit" });
     expect(p.ctx.db.db.prepare("SELECT state FROM node_runs").get()).toEqual({ state: "interrupted" });
@@ -186,7 +186,7 @@ describe("project folder (decision 75)", () => {
   async function withFolder() {
     const home = join(await tempDir(), "home");
     const folder = join(await tempDir(), "demo");
-    const engine = await Engine.start({ home, library: await library() });
+    const engine = await Engine.start({ home, templates: await templates() });
     await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, folder }, ["write-commit"]);
     return { engine, folder, project: engine.project("demo") };
   }

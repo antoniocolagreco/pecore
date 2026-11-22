@@ -8,5 +8,5 @@ export { ProjectPage } from "./ProjectPage";
 export { NewProjectWizard } from "./NewProjectWizard";
 export { NodeEditor } from "./NodeEditor";
 export { RecipeEditor } from "./RecipeEditor";
-export { Library } from "./Library";
+export { Templates } from "./Templates";
 export { Settings } from "./Settings";

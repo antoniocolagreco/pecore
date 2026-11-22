@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { Engine } from "../../src/main";
 import { gitApp } from "../../src/workdir/git-as";
 import { createProjectWithRecipes } from "../project";
-import { shippedLibrary, tempDir } from "../tmp";
+import { shippedTemplates, tempDir } from "../tmp";
 
 const tsFiles = (body: string) => `set -e
 mkdir -p src
@@ -99,11 +99,11 @@ async function until<T>(fn: () => T | undefined | false, ms: number): Promise<T>
 
 async function run(recipe: string) {
   const root = await tempDir();
-  const library = join(root, "library");
-  await cp(shippedLibrary, library, { recursive: true });
-  for (const n of nodes) await writeFile(join(library, "nodes", `${n.name}.json`), JSON.stringify(n));
-  for (const r of recipes) await writeFile(join(library, "recipes", `${r.name}.json`), JSON.stringify(r));
-  const engine = await Engine.start({ home: join(root, "home"), library });
+  const templates = join(root, "templates");
+  await cp(shippedTemplates, templates, { recursive: true });
+  for (const n of nodes) await writeFile(join(templates, "nodes", `${n.name}.json`), JSON.stringify(n));
+  for (const r of recipes) await writeFile(join(templates, "recipes", `${r.name}.json`), JSON.stringify(r));
+  const engine = await Engine.start({ home: join(root, "home"), templates });
   await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, [recipe]);
   const project = engine.project("demo");
   const id = await engine.createJob("demo", { title: "Add add", ticket: { text: "add two numbers" } });

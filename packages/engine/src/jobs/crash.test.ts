@@ -27,7 +27,7 @@ describe("crash during delivery (G12, 4.8)", () => {
 
   for (const { node, hang } of deliveryNodes) {
     it(`a kill during ${node}, then a restart and play, delivers once`, async () => {
-      const { forge, home, library, engine } = await forgeProject();
+      const { forge, home, templates, engine } = await forgeProject();
       const p = engine.project("shop");
       await forge.set({ hang });
       const id = await engine.createJob("shop", { title: "Add hello", ticket: { text: "x", id: "7" } });
@@ -36,7 +36,7 @@ describe("crash during delivery (G12, 4.8)", () => {
       await engine.shutdown();
 
       await forge.set({ hang: null });
-      const again = await Engine.start({ home, library });
+      const again = await Engine.start({ home, templates });
       const q = again.project("shop");
       expect(q.executor.job(id)).toMatchObject({ state: "paused", waiting_reason: "quit" });
       await q.executor.play(id);

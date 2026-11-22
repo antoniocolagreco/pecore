@@ -28,8 +28,8 @@ describe("project creation with a remote (section Project creation, decision 13)
   });
 
   it("a new remote is created by the createRepo node in the project-setup job, then set as origin", async () => {
-    const { forge, home, library } = await forgeHome();
-    const engine = await Engine.start({ home, library });
+    const { forge, home, templates } = await forgeHome();
+    const engine = await Engine.start({ home, templates });
     await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "github-create-repo" });
     const p = engine.project("fresh");
     expect(JSON.parse(await readFile(join(p.ctx.dir, "creating.json"), "utf8"))).toMatchObject({ step: 3 });
@@ -43,8 +43,8 @@ describe("project creation with a remote (section Project creation, decision 13)
   });
 
   it("a new remote gets the project's base branch, not main", async () => {
-    const { forge, home, library } = await forgeHome();
-    const engine = await Engine.start({ home, library });
+    const { forge, home, templates } = await forgeHome();
+    const engine = await Engine.start({ home, templates });
     await engine.createProject({ id: "dev", name: "Dev", repo: { url: "https://github.com/acme/dev.git", account: "gh-test" }, baseBranch: "develop", createRepo: "github-create-repo" });
     const p = engine.project("dev");
     await until(async () => !(await exists(join(p.ctx.dir, "creating.json"))));
@@ -54,10 +54,10 @@ describe("project creation with a remote (section Project creation, decision 13)
   });
 
   it("runs a customized repository setup script without approval", async () => {
-    const { forge, home, library } = await forgeHome();
-    const engine = await Engine.start({ home, library });
+    const { forge, home, templates } = await forgeHome();
+    const engine = await Engine.start({ home, templates });
     try {
-      await appendFile(join(home, "library", "nodes", "github-create-repo.sh"), "\nprintf 'custom setup\\n'\n");
+      await appendFile(join(home, "templates", "nodes", "github-create-repo.sh"), "\nprintf 'custom setup\\n'\n");
       await engine.createProject({ id: "custom", name: "Custom", repo: { url: "https://github.com/acme/custom.git", account: "gh-test" }, createRepo: "github-create-repo" });
       const { ctx } = engine.project("custom");
       await until(async () => !(await exists(join(ctx.dir, "creating.json"))));
@@ -69,9 +69,9 @@ describe("project creation with a remote (section Project creation, decision 13)
   });
 
   it("cancel removes a project whose creation waits for the forge", async () => {
-    const { forge, home, library } = await forgeHome();
+    const { forge, home, templates } = await forgeHome();
     await forge.set({ offline: true });
-    const engine = await Engine.start({ home, library });
+    const engine = await Engine.start({ home, templates });
     await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "github-create-repo" });
     const p = engine.project("fresh");
     await until(() => p.executor.job("project-setup").waiting_reason === "network");
@@ -83,16 +83,16 @@ describe("project creation with a remote (section Project creation, decision 13)
   });
 
   it("refuses an account that does not match the repository host", async () => {
-    const { home, library } = await forgeHome();
-    const engine = await Engine.start({ home, library });
+    const { home, templates } = await forgeHome();
+    const engine = await Engine.start({ home, templates });
     await expect(engine.createProject({ id: "bad", name: "Bad", repo: { url: "https://gitlab.com/acme/x.git", account: "gh-test" } })).rejects.toThrow("step 1");
     expect(repoHost("git@github.com:acme/x.git")).toBe("github.com");
     await engine.shutdown();
   });
 
   it("creates a project with no recipes, and a job needs one (decisions 72, 77)", async () => {
-    const { home, library } = await forgeHome();
-    const engine = await Engine.start({ home, library });
+    const { home, templates } = await forgeHome();
+    const engine = await Engine.start({ home, templates });
     await engine.createProject({ id: "plain", name: "Plain", repo: null });
     const p = engine.project("plain");
     expect(p.ctx.defs.recipes.size).toBe(0);
@@ -102,8 +102,8 @@ describe("project creation with a remote (section Project creation, decision 13)
   });
 
   it("a job without a recipe uses the project's only recipe, and must choose when there are more (decision 77)", async () => {
-    const { home, library } = await forgeHome();
-    const engine = await Engine.start({ home, library });
+    const { home, templates } = await forgeHome();
+    const engine = await Engine.start({ home, templates });
     await createProjectWithRecipes(engine, { id: "one", name: "One", repo: null }, ["empty"]);
     const id = await engine.createJob("one", { title: "Nothing", ticket: { text: "nothing" } });
     expect(JSON.parse(engine.project("one").executor.job(id).recipe)).toMatchObject({ name: "empty" });
@@ -127,9 +127,9 @@ const remotes = async (folder: string) => (await gitAppIn(folder, ["remote", "-v
 
 describe("project folder (decision 75)", () => {
   it("a local-only project with a new folder gets a copy of its repository there, and the folder is repo.git's origin", async () => {
-    const { home, library } = await forgeHome();
+    const { home, templates } = await forgeHome();
     const folder = join(await tempDir(), "code", "plain");
-    const engine = await Engine.start({ home, library });
+    const engine = await Engine.start({ home, templates });
     await engine.createProject({ id: "plain", name: "Plain", repo: null, folder });
     const repo = join(engine.project("plain").ctx.dir, "repo.git");
     expect(engine.project("plain").ctx.project.folder).toBe(folder);
@@ -140,10 +140,10 @@ describe("project folder (decision 75)", () => {
   });
 
   it("a local-only project with an existing repository folder starts from its base branch", async () => {
-    const { home, library } = await forgeHome();
+    const { home, templates } = await forgeHome();
     const folder = join(await tempDir(), "mine");
     const head = await userRepo(folder);
-    const engine = await Engine.start({ home, library });
+    const engine = await Engine.start({ home, templates });
     await engine.createProject({ id: "mine", name: "Mine", repo: null, folder: `${folder}/` });
     const repo = join(engine.project("mine").ctx.dir, "repo.git");
     expect(engine.project("mine").ctx.project.folder).toBe(folder);
@@ -153,12 +153,12 @@ describe("project folder (decision 75)", () => {
   });
 
   it("expands ~ to the user's home", async () => {
-    const { home, library } = await forgeHome();
+    const { home, templates } = await forgeHome();
     const user = await tempDir();
     const saved = process.env.HOME;
     process.env.HOME = user;
     try {
-      const engine = await Engine.start({ home, library });
+      const engine = await Engine.start({ home, templates });
       await engine.createProject({ id: "tilde", name: "Tilde", repo: null, folder: "~/Projects/tilde" });
       expect(engine.project("tilde").ctx.project.folder).toBe(join(user, "Projects", "tilde"));
       expect(await exists(join(user, "Projects", "tilde", ".git"))).toBe(true);
@@ -169,13 +169,13 @@ describe("project folder (decision 75)", () => {
   });
 
   it("refuses a relative path, a file, a folder that is not a repository, and a repository without the base branch", async () => {
-    const { home, library } = await forgeHome();
+    const { home, templates } = await forgeHome();
     const root = await tempDir();
     await writeFile(join(root, "file"), "x");
     await mkdir(join(root, "stuff"));
     await writeFile(join(root, "stuff", "notes.txt"), "x");
     await userRepo(join(root, "dev"), "dev");
-    const engine = await Engine.start({ home, library });
+    const engine = await Engine.start({ home, templates });
     const create = (folder: string) => engine.createProject({ id: "bad", name: "Bad", repo: null, folder });
     await expect(create("code/bad")).rejects.toThrow("step 1: the folder code/bad is not an absolute path");
     await expect(create(join(root, "file"))).rejects.toThrow(`step 1: ${join(root, "file")} is not a folder`);
@@ -186,10 +186,10 @@ describe("project folder (decision 75)", () => {
   });
 
   it("an existing remote is cloned into an empty folder with the remote as its origin", async () => {
-    const { forge, home, library } = await forgeHome();
+    const { forge, home, templates } = await forgeHome();
     await forge.createRepo("acme/shop");
     const folder = join(await tempDir(), "shop");
-    const engine = await Engine.start({ home, library });
+    const engine = await Engine.start({ home, templates });
     await engine.createProject({ id: "shop", name: "Shop", repo: { url: "https://github.com/acme/shop.git", account: "gh-test" }, folder });
     expect(await folderHead(folder, "main")).toBe(forge.remoteHead("acme/shop", "main"));
     expect((await gitAppIn(folder, ["config", "remote.origin.url"])).trim()).toBe("https://github.com/acme/shop.git");
@@ -199,12 +199,12 @@ describe("project folder (decision 75)", () => {
   });
 
   it("an existing remote leaves a folder that is already a clone untouched", async () => {
-    const { forge, home, library } = await forgeHome();
+    const { forge, home, templates } = await forgeHome();
     await forge.createRepo("acme/shop");
     const folder = join(await tempDir(), "shop");
     const head = await userRepo(folder, "work");
     await gitAppIn(folder, ["remote", "add", "origin", "git@github.com:acme/shop.git"]);
-    const engine = await Engine.start({ home, library });
+    const engine = await Engine.start({ home, templates });
     await engine.createProject({ id: "shop", name: "Shop", repo: { url: "https://github.com/acme/shop.git", account: "gh-test" }, folder });
     expect(await folderHead(folder, "work")).toBe(head);
     expect((await gitAppIn(folder, ["config", "remote.origin.url"])).trim()).toBe("git@github.com:acme/shop.git");
@@ -212,10 +212,10 @@ describe("project folder (decision 75)", () => {
   });
 
   it("a new remote gets the code of an existing repository folder, which gets the remote as origin", async () => {
-    const { forge, home, library } = await forgeHome();
+    const { forge, home, templates } = await forgeHome();
     const folder = join(await tempDir(), "fresh");
     const head = await userRepo(folder);
-    const engine = await Engine.start({ home, library });
+    const engine = await Engine.start({ home, templates });
     await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "github-create-repo", folder });
     const p = engine.project("fresh");
     await until(async () => !(await exists(join(p.ctx.dir, "creating.json"))));
@@ -226,9 +226,9 @@ describe("project folder (decision 75)", () => {
   });
 
   it("a new remote with a new folder: the folder gets the pushed base branch after the remote exists", async () => {
-    const { forge, home, library } = await forgeHome();
+    const { forge, home, templates } = await forgeHome();
     const folder = join(await tempDir(), "fresh");
-    const engine = await Engine.start({ home, library });
+    const engine = await Engine.start({ home, templates });
     await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "github-create-repo", folder });
     const p = engine.project("fresh");
     expect(await exists(folder)).toBe(false);

@@ -23,8 +23,8 @@ function definitionError(errors: DefinitionError[]): Error {
   return new Error(errors.map(({ file, path, message }) => `${file}${path ? ` at ${path}` : ""}: ${message}`).join("\n"));
 }
 
-export async function loadForgeDefaults(libraryDir: string, forge: string): Promise<ForgeDefaults> {
-  const file = join(libraryDir, "forges", `${Name.parse(forge)}.json`);
+export async function loadForgeDefaults(templatesDir: string, forge: string): Promise<ForgeDefaults> {
+  const file = join(templatesDir, "forges", `${Name.parse(forge)}.json`);
   const { value, error } = await readJson(file);
   if (error) throw definitionError([error]);
   const result = forgeDefaults.safeParse(value);
@@ -33,15 +33,15 @@ export async function loadForgeDefaults(libraryDir: string, forge: string): Prom
   return result.data;
 }
 
-export async function projectDefaults(libraryDir: string, repo: Project["repo"], forgeName: string | null): Promise<ProjectDefaults> {
+export async function projectDefaults(templatesDir: string, repo: Project["repo"], forgeName: string | null): Promise<ProjectDefaults> {
   if (repo !== null && forgeName === null) throw new Error("A repository project needs a forge");
-  const forge = repo !== null && forgeName !== null ? await loadForgeDefaults(libraryDir, forgeName) : null;
+  const forge = repo !== null && forgeName !== null ? await loadForgeDefaults(templatesDir, forgeName) : null;
   const rename: Record<string, string> = {};
   if (forge !== null) {
-    const files = (await readdir(join(libraryDir, "forges"))).filter((file) => file.endsWith(".json")).sort();
+    const files = (await readdir(join(templatesDir, "forges"))).filter((file) => file.endsWith(".json")).sort();
     for (const file of files) {
       const name = basename(file, ".json");
-      const defaults = name === forge.forge ? forge : await loadForgeDefaults(libraryDir, name);
+      const defaults = name === forge.forge ? forge : await loadForgeDefaults(templatesDir, name);
       for (const role of ["delivery", "comment", "createRepo", "source"] as const) {
         const from: string | null = defaults[role];
         const to: string | null = forge[role];

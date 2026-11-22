@@ -135,15 +135,15 @@ export async function beginProject(home: string, input: ProjectInput, opts: Crea
     if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new ProjectCreateError(1, `project ${project.id} already exists`);
     throw new ProjectCreateError(3, (error as Error).message);
   }
-  const library = homePaths(home).library;
+  const templates = homePaths(home).templates;
   const p = projectPaths(dir);
   try {
     for (const d of [p.nodes, p.recipes, p.knowledge, p.work, p.artifacts, p.logs]) await mkdir(d, { recursive: true });
-    const forge = account ? await loadForgeDefaults(library, account.forge) : null;
+    const forge = account ? await loadForgeDefaults(templates, account.forge) : null;
     if (project.createRepo !== null && forge?.createRepo === null) {
       throw new ProjectCreateError(1, "This forge requires an existing repository.");
     }
-    if (project.createRepo !== null) check(3, await instantiateNode(library, dir, project.createRepo));
+    if (project.createRepo !== null) check(3, await instantiateNode(templates, dir, project.createRepo));
     await writeFile(p.project, JSON.stringify(project, null, 2) + "\n");
     new ProjectDb(p.db).close();
     await writeCreation(dir, 3);
@@ -166,7 +166,7 @@ export async function prepareRepo(home: string, dir: string, project: Project, o
       if (project.repo !== null) return "setup";
     } else {
       const account = forgeAccountOf(project, opts.accounts)!;
-      const defaults = await loadForgeDefaults(homePaths(home).library, account.forge);
+      const defaults = await loadForgeDefaults(homePaths(home).templates, account.forge);
       await rm(repo, { recursive: true, force: true });
       await cloneRepo(repo, project.repo.url, defaults.credentialHelper, await forgeEnv(account));
     }

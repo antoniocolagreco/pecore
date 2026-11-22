@@ -2,9 +2,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Node, Recipe } from "@pecore/schemas";
-import { shippedLibrary, tempDir } from "../../test/tmp";
+import { shippedTemplates, tempDir } from "../../test/tmp";
 import { instantiateRecipe, instantiateNode } from "./instantiate";
-import { loadGlobal, loadLibrary, loadProject } from "./load";
+import { loadGlobal, loadTemplates, loadProject } from "./load";
 import { checkRecipe, hasCommitNode } from "./recipe-check";
 
 const check = (name: string, outcomes: string[], extra: object = {}) =>
@@ -122,7 +122,7 @@ describe("recipe check", () => {
 
 describe("phase 1 gate: shipped templates", () => {
   it("every template present validates", async () => {
-    const lib = await loadLibrary(shippedLibrary);
+    const lib = await loadTemplates(shippedTemplates);
     expect(lib.errors).toEqual([]);
     expect(lib.nodes.size).toBeGreaterThan(0);
     expect(lib.recipes.has("empty")).toBe(true);
@@ -132,7 +132,7 @@ describe("phase 1 gate: shipped templates", () => {
 describe("instantiate", () => {
   it("copies a node with its script into a project, with the project schema path", async () => {
     const project = await tempDir();
-    const r = await instantiateNode(shippedLibrary, project, "git-commit");
+    const r = await instantiateNode(shippedTemplates, project, "git-commit");
     expect(r.errors).toEqual([]);
     expect(r.written.map((f) => f.slice(project.length + 1)).sort()).toEqual(["nodes/git-commit.json", "nodes/git-commit.sh"]);
     expect(JSON.parse(await readFile(join(project, "nodes", "git-commit.json"), "utf8")).$schema).toBe("../../../schemas/node.json");
@@ -142,7 +142,7 @@ describe("instantiate", () => {
     const project = await tempDir();
     await mkdir(join(project, "nodes"));
     await writeFile(join(project, "nodes", "typecheck.json"), "{}");
-    const r = await instantiateNode(shippedLibrary, project, "typecheck");
+    const r = await instantiateNode(shippedTemplates, project, "typecheck");
     expect(r.kept).toEqual([join(project, "nodes", "typecheck.json")]);
     expect(await readFile(join(project, "nodes", "typecheck.json"), "utf8")).toBe("{}");
   });
@@ -150,7 +150,7 @@ describe("instantiate", () => {
   it("instantiates a recipe and gives a valid project", async () => {
     const project = join(await tempDir(), "demo");
     await mkdir(project);
-    expect((await instantiateRecipe(shippedLibrary, project, "empty")).errors).toEqual([]);
+    expect((await instantiateRecipe(shippedTemplates, project, "empty")).errors).toEqual([]);
     await writeFile(join(project, "project.json"), JSON.stringify({
       id: "demo", name: "Demo", repo: null, defaultRecipe: "empty", limits: { jobs: 2, budget: { jobUsd: 5 } },
     }));
@@ -164,7 +164,7 @@ describe("instantiate", () => {
   it("refuses a recipe that pushes in a project without a remote repository (decision 72)", async () => {
     const project = join(await tempDir(), "demo");
     await mkdir(project);
-    expect((await instantiateRecipe(shippedLibrary, project, "feature")).errors).toEqual([]);
+    expect((await instantiateRecipe(shippedTemplates, project, "feature")).errors).toEqual([]);
     await writeFile(join(project, "project.json"), JSON.stringify({ id: "demo", name: "Demo", repo: null }));
     const loaded = await loadProject(project);
     expect(loaded.errors.map(({ path, message }) => ({ path, message }))).toEqual([

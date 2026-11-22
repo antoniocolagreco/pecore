@@ -52,20 +52,20 @@ function RecipeFile({ path, project }: { path: string; project?: string }) {
   const directory: string = scope + "/nodes";
   const definitions = useData(() => call("listDefinitions", { query: { dir: directory } }), [directory], (event) => event.type === "definition.changed" && event.path.startsWith(directory + "/"));
   const [recipeTemplate, setRecipeTemplate] = useState<string | null>(null);
-  const [libraryNode, setLibraryNode] = useState<string | null>(null);
-  const recipeTemplates = useRecipeLibrary("recipes", !!creation);
-  const nodeTemplates = useRecipeLibrary("nodes", !!creation);
+  const [templateNode, setTemplateNode] = useState<string | null>(null);
+  const recipeTemplates = useTemplates("recipes", !!creation);
+  const nodeTemplates = useTemplates("nodes", !!creation);
   const importRecipe = useAction(async () => {
     if (!project || !recipeTemplate || (file.dirty && !window.confirm("Replace your unsaved draft with this template?"))) return;
     await call("instantiate", { body: { kind: "recipe", name: recipeTemplate, project } });
     setDestination(`${scope}/recipes/${recipeTemplate}.json`);
   });
   const importNode = useAction(async () => {
-    if (!project || !libraryNode) return;
-    await call("instantiate", { body: { kind: "node", name: libraryNode, project } });
+    if (!project || !templateNode) return;
+    await call("instantiate", { body: { kind: "node", name: templateNode, project } });
     definitions.reload();
-    setTemplate(libraryNode);
-    setLibraryNode(null);
+    setTemplate(templateNode);
+    setTemplateNode(null);
   });
   const importing: boolean = importRecipe.busy || importNode.busy;
   const editable: boolean = file.editable && !importing;
@@ -155,8 +155,8 @@ function RecipeFile({ path, project }: { path: string; project?: string }) {
             </div>
             {creation && <>
               <div className={s.importRow}>
-                <Select label="Library node" value={libraryNode} onValueChange={setLibraryNode} options={nodeOptions} disabled={!editable || !nodeOptions.length} placeholder="Choose a node" />
-                <DsButton loading={importNode.busy} disabled={!editable || !libraryNode} onClick={() => void importNode.run()}>Import node</DsButton>
+                <Select label="Node template" value={templateNode} onValueChange={setTemplateNode} options={nodeOptions} disabled={!editable || !nodeOptions.length} placeholder="Choose a node" />
+                <DsButton loading={importNode.busy} disabled={!editable || !templateNode} onClick={() => void importNode.run()}>Import node</DsButton>
               </div>
               <ErrorText error={nodeTemplates.error ?? importNode.error} />
             </>}
@@ -219,8 +219,8 @@ function RecipeFile({ path, project }: { path: string; project?: string }) {
   </Page>;
 }
 
-function useRecipeLibrary(section: "recipes" | "nodes", enabled: boolean) {
-  const dir: string = `library/${section}`;
+function useTemplates(section: "recipes" | "nodes", enabled: boolean) {
+  const dir: string = `templates/${section}`;
   return useData(() => enabled ? call("listDefinitions", { query: { dir } }) : Promise.resolve([]), [dir, enabled],
     (event) => event.type === "definition.changed" && event.path.startsWith(dir + "/"));
 }

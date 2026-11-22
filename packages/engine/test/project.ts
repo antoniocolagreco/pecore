@@ -8,11 +8,11 @@ import { projectDefaults } from "../src/projects/defaults";
 export async function createProjectWithRecipes(engine: Engine, input: ProjectInput, recipes: string[]): Promise<void> {
   await engine.createProject(input);
   const { ctx } = engine.project(input.id);
-  const library: string = homePaths(engine.opts.home).library;
+  const templates: string = homePaths(engine.opts.home).templates;
   const account = forgeAccountOf(ctx.project, engine.global().accounts);
-  const { rename } = await projectDefaults(library, ctx.project.repo, account?.forge ?? null);
+  const { rename } = await projectDefaults(templates, ctx.project.repo, account?.forge ?? null);
   for (const name of recipes) {
-    const result = await instantiateRecipe(library, ctx.dir, name, rename);
+    const result = await instantiateRecipe(templates, ctx.dir, name, rename);
     if (result.errors.length) throw new Error(result.errors.map((error) => error.message).join("\n"));
   }
   const errors = await engine.reloadProject(input.id);

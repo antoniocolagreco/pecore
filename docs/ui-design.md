@@ -108,7 +108,7 @@
 | IE1 | Recipe graph editor: add and connect nodes on a grid, edges with outcomes, recipe fields | G16, 3.2 |
 | IE2 | Validation errors shown on the graph | G5 |
 | IE3 | Node editor: fields by kind, prompt (Markdown), script (shell) | 3.1 |
-| IE4 | Library: templates of nodes and recipes, instantiate into a project | G5 |
+| IE4 | Templates: templates of nodes and recipes, instantiate into a project | G5 |
 | IE5 | "Ask the AI" from an editor | G5 |
 
 ### F. Projects
@@ -148,7 +148,7 @@
 | Assistant chat | right panel, on every screen; inside a project and on a job's page it shows the project's Project Manager | IB2-IB8 |
 | Projects, project page, wizards | centre, detail page, full page | IF1-IF7 |
 | Recipe editor, node editor | detail page | IE1-IE3, IE5 |
-| Library | centre | IE4 |
+| Templates | centre | IE4 |
 | Settings | centre | IG1, IG3, IG6-IG9 |
 | Setup banner | above page content when no account works | IG5 |
 
@@ -162,7 +162,7 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 *   Window: menu on the left, the page in the centre, the Assistant chat on the right. By default the chat takes 30% of the width, between 300 and 380 px.
 *   The menu collapses and expands with a button at the top left. The choice is remembered; the first time, the menu starts collapsed below 1280 px of width. Collapsed, it is a column of icons, each showing its name on pointing.
 *   The chat panel's width changes by dragging its left edge or with the arrow keys on it.
-*   One list, without group titles. Order: Factory, Projects, Jobs, Notifications (IA2), Library, Settings.
+*   One list, without group titles. Order: Factory, Projects, Jobs, Notifications (IA2), Templates, Settings.
 *   Under the list, the open page's own sub-navigation: Settings sections.
 *   Note: a project's recipes, nodes and settings are reached through Projects; the node editor and the job view are detail pages, not menu items.
 *   Page width follows the content: pages with tables, lists or graphs (Factory, Jobs, Projects, Notifications, a project page, a job) use the full width; pages that are only a form or text to read (Settings, the wizards) are centred with a maximum width. Inside a full-width page, a form keeps its maximum width and stays aligned to the left with the tabs.
@@ -242,7 +242,7 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 *   One chat panel, always on the right of every screen. No conversation list, no page of its own. It follows the page: inside a project (the project page and its sub-pages, the recipe and node editors of its files) and on a single job's page it shows that project's Project Manager; everywhere else, the Jobs list included, it shows the Assistant. Each chat keeps its own history. Switching page switches the conversation and discards text typed and not sent.
 *   Its header shows who you talk to, "Assistant" or the Project Manager's name with its avatar, and below it in small muted text "Project Manager" and the project name for a Project Manager, then the harness, model and effort from Settings > Assistant or Settings > Project Manager, for example "Project Manager · Shop · Claude Code · claude-opus-5-5 · high" ("default effort" when none is chosen). The header also has two icon buttons: Compact, and Clear, which after a confirmation deletes the conversation and starts a new session.
 *   Each project's Project Manager has a name and a colour (design.md `pm`), for example Eva in sun yellow. Its replies, and its reports in the Assistant's chat, show an avatar shaped and shaded like the Assistant's (a rounded square with a gradient from a lighter tint to the colour) with the name's initial: white, or a dark shade of the colour on light colours such as Eva's yellow. Their text sits in a bubble with a light tint of the same colour. Avatar and bubble have the outline of the chat cards. Above the bubble the author reads "Eva - Project Manager"; in the Assistant's chat the project name follows below in small secondary text. The Assistant keeps its spark icon.
-*   The Project Manager's chat also shows the tickets it handled on its own: each appears as "Ticket 42" with its reply, without the raw ticket data. Talking to it, the user can ask what it did on a ticket. It runs the project's work: jobs, recipes, nodes, knowledge, tickets and agent questions. It writes no code itself. Project settings, creating, deleting, importing or exporting projects and editing the global library stay with the Assistant. What it does on new tickets also arrives as a notification, for example "Shop, ticket 42: The Project Manager created the job Fix login.".
+*   The Project Manager's chat also shows the tickets it handled on its own: each appears as "Ticket 42" with its reply, without the raw ticket data. Talking to it, the user can ask what it did on a ticket. It runs the project's work: jobs, recipes, nodes, knowledge, tickets and agent questions. It writes no code itself. Project settings, creating, deleting, importing or exporting projects and editing the templates stay with the Assistant. What it does on new tickets also arrives as a notification, for example "Shop, ticket 42: The Project Manager created the job Fix login.".
 *   The Assistant reads every project but does no project work. Asked for it, for example "add a job to Shop to fix the login", it passes the order to Shop's Project Manager and says so in one line, never "done". The order appears in the Project Manager's chat from "Assistant". When the Project Manager finishes, fails or is interrupted, its final reply appears in the Assistant's chat from "Eva - Project Manager" of Shop, without starting a new Assistant reply.
 *   A job agent's question also appears in the Project Manager's chat as "Agent question" with a link to the job. The Project Manager answers it when the project's knowledge, recipes or ticket already decide it; otherwise it says the user must decide, and the question waits in Notifications.
 *   Messages from the other agent (an order from the Assistant, a Project Manager's report) longer than 280 characters are cut at the last word before that length and end with "…", followed by a "Show more" button; "Show less" shortens them again.
@@ -256,7 +256,7 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 *   The Assistant can change a project's name, base branch, services Compose path and Project Manager name and colour: a "Change project" card lists each change as "old → new" with Confirm and Reject, and nothing changes before Confirm. Sending a job or other frequent operations have no card. A deletion request shows the project and what will be removed in a card with Confirm and Reject. Confirm deletes <PE/CORE>'s data only, using the same operation as the project settings page.
 *   "Ask the AI" (IE5) puts the cursor in the chat with the current screen's object as context.
 *   Context chip: one at a time, a reference with its scope (for example "Job: Fix login timeout", "Recipe feature (project progetto-1)", "Template recipe feature"). It shows the object of the current screen and changes on navigation; pinning keeps it; removing it sends the next message with no context.
-*   What the Assistant did (IB4) appears under its reply, never under the user's message. Actions that change something (create jobs, answer a job's question, add a node or recipe to a project, comment on a ticket) get a card that links to the job, definition or item to decide. A tool call the engine refuses (wrong input, a project outside the agent's reach) shows no card: the agent gets the error and retries, and when it cannot recover it explains the problem in its reply. When an agent offers choices it shows a form card instead of listing them: radio buttons for one answer, checkboxes for several, a text field for short values, and "Other" with its own field on every choice question; the recommended option carries a "Recommended" badge. Send stays disabled until every question has an answer; it posts the answers as the user's message. An answered form shows the answers; a form the user skipped by writing a message shows "Not answered". An order passed to a Project Manager gets a card with the Project Manager's avatar, "Order sent to Mara", the project name and a link "Open Mara's chat". Reads (projects, recipes, ticket, ticket replies, job status, job output, library templates, definitions, definition check) become one grey line: "Read: projects, job status".
+*   What the Assistant did (IB4) appears under its reply, never under the user's message. Actions that change something (create jobs, answer a job's question, add a node or recipe to a project, comment on a ticket) get a card that links to the job, definition or item to decide. A tool call the engine refuses (wrong input, a project outside the agent's reach) shows no card: the agent gets the error and retries, and when it cannot recover it explains the problem in its reply. When an agent offers choices it shows a form card instead of listing them: radio buttons for one answer, checkboxes for several, a text field for short values, and "Other" with its own field on every choice question; the recommended option carries a "Recommended" badge. Send stays disabled until every question has an answer; it posts the answers as the user's message. An answered form shows the answers; a form the user skipped by writing a message shows "Not answered". An order passed to a Project Manager gets a card with the Project Manager's avatar, "Order sent to Mara", the project name and a link "Open Mara's chat". Reads (projects, recipes, ticket, ticket replies, job status, job output, templates, definitions, definition check) become one grey line: "Read: projects, job status".
 *   Agent questions (IB6) appear in the conversation with an answer field.
 *   Replies to the user use the unread marker and a system notification when the window is not focused ("Assistant replied", "Shop: Project Manager replied"). Project Manager reports on new tickets appear in the Notifications log.
 
@@ -277,7 +277,7 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 
 Pages: Inputs and Create. Create runs the tasks of design.md "Project creation" in order; the project exists when Create ends.
 
-1.  **Inputs:** name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, folder, base branch, Project Manager. The Project Manager field, as in Settings, starts with the first free name and colour; when all twenty are used it starts empty and the user enters a new name and colour. Folder is the user's copy of the code: typed by hand or picked with "Choose…" (system folder dialog); it starts as the projects folder of Settings plus `<id>` and follows the name until the user edits it. No recipes: the user adds them afterwards from the Library or the project page, and a recipe that pushes or opens a PR cannot be added to a project without a remote repo. The id comes from the name.
+1.  **Inputs:** name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, folder, base branch, Project Manager. The Project Manager field, as in Settings, starts with the first free name and colour; when all twenty are used it starts empty and the user enters a new name and colour. Folder is the user's copy of the code: typed by hand or picked with "Choose…" (system folder dialog); it starts as the projects folder of Settings plus `<id>` and follows the name until the user edits it. No recipes: the user adds them afterwards from Templates or the project page, and a recipe that pushes or opens a PR cannot be added to a project without a remote repo. The id comes from the name.
 2.  **Create:** the tasks of "Project creation" (validation, project directory, clone or repo creation, `repo.git` setup and home check, access for `pecore-agent` in protected mode, commit), each with its state. A failed task undoes the tasks before it, says why, and returns to Inputs with the values kept. A repo created on the forge is never deleted by the undo: the page lists it as left on the forge.
 3.  No logins page: logins belong to the user, not to the project (Settings > Accounts).
 
@@ -301,7 +301,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 ### Recipe editor
 
-*   Two modes: an instance (from the project page) or a template (from the Library).
+*   Two modes: an instance (from the project page) or a template (from Templates).
 *   In a project's Recipes tab, New Recipe opens the graph editor with an empty draft. Import template adds a recipe and its required nodes to the project and opens it in the editor. A recipe built from scratch is added when saved.
 *   React Flow graph on a grid. Nodes are added from a palette (the project's node instances, or node templates in template mode), placed on the grid and connected by dragging from an outcome to a node. Positions are saved in the recipe's `layout`; a recipe with no `layout` (for example written by the Assistant) is laid out automatically when opened.
 *   Validation errors on the node or edge that causes them (IE2).
@@ -310,13 +310,13 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 ### Node editor
 
-*   Opened from a recipe, the project's Nodes section or the Library; the same editor for templates and instances.
+*   Opened from a recipe, the project's Nodes section or Templates; the same editor for templates and instances.
 *   Form with the fields of the node's kind (agent, command, human, source); prompt in Markdown and script in shell with CodeMirror; a JSON tab for the whole file.
 *   Validation errors next to the field. Save is disabled while the draft is invalid. The draft lives in memory until saved or discarded; leaving the page with an unsaved draft asks first.
 *   No autosave: every save is one commit in `PECORE_HOME`, or in the project's own repository for a project outside it.
 *   When live jobs use the node instance being edited, the editor says so: they will use the new version at their next run of that node.
 
-### Library
+### Templates
 
 *   Node templates (filterable by kind) and recipe templates.
 *   "Instantiate into project": instantiating a recipe template also instantiates the node templates it uses (design.md `src/definitions/instantiate.ts`); a name that already exists in the project is kept and listed.

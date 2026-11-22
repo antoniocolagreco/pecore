@@ -75,7 +75,7 @@ async function source(ctx: ProjectContext, request: SourceRequest): Promise<unkn
 }
 
 function definitionPath(path: string, scope: "template" | "instance" | "knowledge" | "any"): void {
-  const isTemplate: boolean = /^library\/(nodes|recipes)\//.test(path);
+  const isTemplate: boolean = /^templates\/(nodes|recipes)\//.test(path);
   const isInstance: boolean = /^projects\/[^/]+\/(nodes|recipes)\//.test(path);
   const isKnowledge: boolean = /^projects\/[^/]+\/knowledge\//.test(path);
   if ((scope === "template" || scope === "any") && isTemplate) return;
@@ -93,7 +93,7 @@ const readToolNames: Set<string> = new Set(["list_definitions", "read_definition
 
 function inProject(engine: Engine, project: string, name: string, input: unknown): void {
   const fields: Record<string, unknown> = input !== null && typeof input === "object" ? input as Record<string, unknown> : {};
-  const readable = (path: unknown): boolean => typeof path !== "string" || path.startsWith(`projects/${project}/`) || path.startsWith("library/");
+  const readable = (path: unknown): boolean => typeof path !== "string" || path.startsWith(`projects/${project}/`) || path.startsWith("templates/");
   const outside: boolean = (typeof fields.project === "string" && fields.project !== project)
     || (definitionToolNames.has(name) && typeof fields.path === "string" && !fields.path.startsWith(`projects/${project}/`))
     || (readToolNames.has(name) && (!readable(fields.path) || !readable(fields.dir)))
@@ -211,7 +211,7 @@ export function chatTools(engine: Engine): {
       await settings.putSettings({ params: undefined, query: undefined, body: { value: { ...file.value, user: { name } }, baseSha256: file.sha256 } });
       return { value: { saved: name } };
     }),
-    list_definitions: tool("List the definition files in library/nodes, library/recipes, projects/<id>/nodes, projects/<id>/recipes or projects/<id>/knowledge.", z.strictObject({ dir: id }), async ({ dir }) => ({
+    list_definitions: tool("List the definition files in templates/nodes, templates/recipes, projects/<id>/nodes, projects/<id>/recipes or projects/<id>/knowledge.", z.strictObject({ dir: id }), async ({ dir }) => ({
       value: (await definitions.handlers.listDefinitions({ params: undefined, query: { dir }, body: undefined })).map(({ path, errors }) => ({ path, errors })),
     })),
     read_definition: tool("Read a node, recipe, prompt, script, knowledge or project.json file by its definition path.", z.strictObject({ path: id }), async ({ path }) => ({
@@ -305,14 +305,14 @@ export function chatTools(engine: Engine): {
       await executor.answer(itemId, choice, answer, hash ?? item.subject_hash);
       return { value: { answered: true }, target: { itemId, project: ctx.id } };
     }),
-    list_templates: tool("List the node and recipe templates in the library.", z.strictObject({}), async () => ({
+    list_templates: tool("List the node and recipe templates.", z.strictObject({}), async () => ({
       value: {
-        nodes: await definitions.handlers.listDefinitions({ params: undefined, query: { dir: "library/nodes" }, body: undefined }),
-        recipes: await definitions.handlers.listDefinitions({ params: undefined, query: { dir: "library/recipes" }, body: undefined }),
+        nodes: await definitions.handlers.listDefinitions({ params: undefined, query: { dir: "templates/nodes" }, body: undefined }),
+        recipes: await definitions.handlers.listDefinitions({ params: undefined, query: { dir: "templates/recipes" }, body: undefined }),
       },
     })),
-    write_template: write("template", "Validate and save a library template or node sidecar under library/nodes or library/recipes."),
-    instantiate: tool("Add a library node or recipe to a project.", InstantiateBody, async (input) => {
+    write_template: write("template", "Validate and save a template or node sidecar under templates/nodes or templates/recipes."),
+    instantiate: tool("Add a node or recipe template to a project.", InstantiateBody, async (input) => {
       const value = await definitions.instantiate(input);
       return { value, target: { ...input, paths: value.created }, isError: value.errors.length > 0 };
     }),

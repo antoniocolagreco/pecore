@@ -4,7 +4,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { Name, Node, Project, projectManagerClash, Recipe } from "@pecore/schemas";
 import type { DefinitionEntry, InstantiateBody, RouteOutput } from "@pecore/schemas";
 import { instantiateNode, instantiateRecipe } from "../../definitions/instantiate";
-import { loadLibrary, loadProject, zodErrors } from "../../definitions/load";
+import { loadTemplates, loadProject, zodErrors } from "../../definitions/load";
 import type { DefinitionError } from "../../definitions/load";
 import { checkRecipe, remoteIssues } from "../../definitions/recipe-check";
 import { isFinal } from "../../graph/job-machine";
@@ -120,7 +120,7 @@ export function definitionOperations(engine: Engine) {
     const file: string = listing ? "" : parts.pop()!;
     const [scope, subdir, projectSection, ...nested] = parts;
     const id: string | undefined = scope === "projects" ? subdir : undefined;
-    const directory: string = (id ? projectSection : scope === "library" ? subdir : scope) ?? "";
+    const directory: string = (id ? projectSection : scope === "templates" ? subdir : scope) ?? "";
     const projectFile: boolean = !!id && parts.length === 2 && file === "project.json";
     const definitionDirectory: boolean = directory === "nodes" || directory === "recipes";
     const projectDirectory: boolean = !!id && (
@@ -128,8 +128,8 @@ export function definitionOperations(engine: Engine) {
       (directory === "knowledge" && (!listing || nested.length === 0))
     );
     const homeDirectory: string | undefined =
-      scope === "library" && parts.length === 2 && definitionDirectory
-        ? directory === "nodes" ? home.libraryNodes : home.libraryRecipes
+      scope === "templates" && parts.length === 2 && definitionDirectory
+        ? directory === "nodes" ? home.templateNodes : home.templateRecipes
         : undefined;
     const kind: DefinitionKind | undefined = projectFile ? "project" : fileKind(directory, file);
     if ((!projectFile && !projectDirectory && !homeDirectory) || (!listing && !kind)) {
@@ -274,24 +274,24 @@ export function definitionOperations(engine: Engine) {
     if (kind === "recipe" && project.repo !== null) {
       try {
         const account = forgeAccountOf(project, engine.global().accounts);
-        ({ rename } = await projectDefaults(home.library, project.repo, account?.forge ?? null));
+        ({ rename } = await projectDefaults(home.templates, project.repo, account?.forge ?? null));
       } catch (e) {
         if (e instanceof ProjectCreateError) throw new HttpError("bad_request", e.message);
         throw e;
       }
     }
     if (kind === "recipe" && project.repo === null) {
-      const library = await loadLibrary(home.library);
-      const recipe = library.recipes.get(name);
-      const errors: DefinitionError[] = recipe ? remoteIssues(recipe, library.nodes).map((issue) => ({ file: `library/recipes/${name}.json`, ...issue })) : [];
+      const templates = await loadTemplates(home.templates);
+      const recipe = templates.recipes.get(name);
+      const errors: DefinitionError[] = recipe ? remoteIssues(recipe, templates.nodes).map((issue) => ({ file: `templates/recipes/${name}.json`, ...issue })) : [];
       if (errors.length) return { created: [], kept: [], errors };
     }
     const nodesDir: string = join(projectDir, "nodes");
     await rejectSymlinks(projectDir, nodesDir);
     if (kind === "recipe") await rejectSymlinks(projectDir, join(projectDir, "recipes"));
     const result = kind === "node"
-      ? await instantiateNode(home.library, projectDir, name)
-      : await instantiateRecipe(home.library, projectDir, name, rename, async (content) => {
+      ? await instantiateNode(home.templates, projectDir, name)
+      : await instantiateRecipe(home.templates, projectDir, name, rename, async (content) => {
         const file: string = `projects/${id}/recipes/${name}.json`;
         const { nodes } = await loadProject(projectDir);
         const recipe: Recipe = Recipe.parse(JSON.parse(content));

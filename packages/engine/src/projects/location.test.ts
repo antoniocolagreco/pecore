@@ -22,7 +22,7 @@ async function save(engine: Engine, changes: Partial<Project>): Promise<void> {
 
 describe("project repository and checkout settings", () => {
   it("adds, switches and detaches a remote, while preserving the moved checkout and existing job refs", async () => {
-    const { forge, home, library } = await forgeHome();
+    const { forge, home, templates } = await forgeHome();
     const accounts: Accounts = { accounts: [forgeAccount, {
       id: "private-git", kind: "forge", forge: "git", host: "git.example.test", tool: "git", user: "tester",
       author: { name: "Test", email: "test@example.com" },
@@ -34,7 +34,7 @@ describe("project repository and checkout settings", () => {
     const second: string = forge.advance("acme/second", "main", "second.txt");
     const folder: string = join(dirname(home), "checkout");
     const destination: string = join(dirname(home), "moved");
-    const engine: Engine = await Engine.start({ home, library });
+    const engine: Engine = await Engine.start({ home, templates });
     try {
       await engine.createProject({ id: "demo", name: "Demo", repo: null, folder });
       const repo: string = join(engine.projectDir("demo"), "repo.git");
@@ -65,11 +65,11 @@ describe("project repository and checkout settings", () => {
   });
 
   it("keeps the original checkout and repository when a save fails", async () => {
-    const { forge, home, library } = await forgeHome();
+    const { forge, home, templates } = await forgeHome();
     await forge.createRepo("acme/first");
     const folder: string = join(dirname(home), "checkout");
     const destination: string = join(dirname(home), "destination");
-    const engine: Engine = await Engine.start({ home, library });
+    const engine: Engine = await Engine.start({ home, templates });
     const lock: string = join(home, ".git", "index.lock");
     try {
       await engine.createProject({ id: "demo", name: "Demo", repo: null, folder });

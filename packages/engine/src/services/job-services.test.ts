@@ -3,7 +3,7 @@ import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createProjectWithRecipes } from "../../test/project";
-import { shippedLibrary, tempDir } from "../../test/tmp";
+import { shippedTemplates, tempDir } from "../../test/tmp";
 import { Engine } from "../main";
 import { gitApp } from "../workdir/git-as";
 import { branchHead, createLocalRepo } from "../workdir/repo";
@@ -50,8 +50,8 @@ describe.skipIf(!ready())("job services (4.9)", () => {
     const root = await tempDir();
     const marker = join(root, "port");
     const home = join(root, "home");
-    const lib = join(root, "library");
-    await cp(shippedLibrary, lib, { recursive: true });
+    const lib = join(root, "templates");
+    await cp(shippedTemplates, lib, { recursive: true });
     await writeFile(
       join(lib, "nodes", "read-port.json"),
       JSON.stringify({
@@ -68,7 +68,7 @@ describe.skipIf(!ready())("job services (4.9)", () => {
     await writeFile(join(lib, "recipes", "svc.json"), JSON.stringify({ name: "svc", description: "reads a port", start: "read", successOutcomes: ["read:done"], nodes: { read: { use: "read-port" } } }));
     await mkdir(home, { recursive: true });
     await writeFile(join(home, "settings.json"), JSON.stringify({ servicesRuntime: "docker" }));
-    const engine = await Engine.start({ home, library: lib });
+    const engine = await Engine.start({ home, templates: lib });
     await createProjectWithRecipes(engine, { id: "svc", name: "Svc", repo: null, services: "compose.yaml" }, ["svc"]);
     const p = engine.project("svc");
     const repo = join(p.ctx.dir, "repo.git");
@@ -87,15 +87,15 @@ describe.skipIf(!ready())("job services (4.9)", () => {
   it("with no compose path, finds docker-compose.yml at the repository root (decision 78)", async () => {
     const root = await tempDir();
     const home = join(root, "home");
-    const lib = join(root, "library");
-    await cp(shippedLibrary, lib, { recursive: true });
+    const lib = join(root, "templates");
+    await cp(shippedTemplates, lib, { recursive: true });
     await writeFile(join(lib, "nodes", "noop.json"), JSON.stringify({
       name: "noop", description: "does nothing", kind: "command", command: ["true"], outcomes: ["done"], changesFiles: false, outcomeRules: [{ exitCode: 0, outcome: "done" }], timeoutSec: 30,
     }));
     await writeFile(join(lib, "recipes", "noop.json"), JSON.stringify({ name: "noop", description: "one node", start: "n", successOutcomes: ["n:done"], nodes: { n: { use: "noop" } } }));
     await mkdir(home, { recursive: true });
     await writeFile(join(home, "settings.json"), JSON.stringify({ servicesRuntime: "docker" }));
-    const engine = await Engine.start({ home, library: lib });
+    const engine = await Engine.start({ home, templates: lib });
     await createProjectWithRecipes(engine, { id: "auto", name: "Auto", repo: null }, ["noop"]);
     const p = engine.project("auto");
     await commitFile(join(p.ctx.dir, "repo.git"), "docker-compose.yml", compose);

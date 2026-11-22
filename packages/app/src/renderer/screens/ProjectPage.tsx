@@ -90,9 +90,9 @@ function ExistingEditor({ path }: { path: string }) {
 function Definitions({ id, kind }: { id: string; kind: "node" | "recipe" }) {
   const connected: boolean = useConnected();
   const dir: string = `projects/${id}/${kind}s`;
-  const libraryDir: string = `library/${kind}s`;
+  const templatesDir: string = `templates/${kind}s`;
   const entries = useData(() => call("listDefinitions", { query: { dir } }), [dir], (m) => m.type === "definition.changed" && m.path.startsWith(dir + "/"));
-  const library = useData(() => kind === "node" ? call("listDefinitions", { query: { dir: libraryDir } }) : Promise.resolve([]), [libraryDir], (m) => m.type === "definition.changed" && m.path.startsWith(libraryDir + "/"));
+  const available = useData(() => kind === "node" ? call("listDefinitions", { query: { dir: templatesDir } }) : Promise.resolve([]), [templatesDir], (m) => m.type === "definition.changed" && m.path.startsWith(templatesDir + "/"));
   const navigate = useNavigate();
   const [name, setName] = useState<string>("");
   const [page, setPage] = useState<number>(0);
@@ -103,13 +103,13 @@ function Definitions({ id, kind }: { id: string; kind: "node" | "recipe" }) {
     entries.reload();
   });
   const files: DefinitionEntry[] = (entries.data ?? []).filter((entry) => entry.path.endsWith(".json"));
-  const templates: DefinitionEntry[] = (library.data ?? []).filter((entry) => entry.path.endsWith(".json") && entry.errors.length === 0);
+  const templates: DefinitionEntry[] = (available.data ?? []).filter((entry) => entry.path.endsWith(".json") && entry.errors.length === 0);
   const start: number = Math.min(page, Math.max(0, Math.ceil(files.length / pageSize) - 1)) * pageSize;
   return (
     <div className={ui.stack}>
       {kind === "recipe" && <div><DsButton variant="primary" icon={<PlusIcon />} disabled={!connected}
         onClick={() => void navigate(`/projects/${encodeURIComponent(id)}/recipes/new`)}>New Recipe</DsButton></div>}
-      <ErrorText error={entries.error ?? library.error} />
+      <ErrorText error={entries.error ?? available.error} />
       {entries.loading && !entries.data ? <Spinner /> :
         files.length === 0 && !entries.error ? <Empty>{kind === "node" ? "No nodes" : "No recipes"}</Empty> : (
           <ul className={s.files}>{files.slice(start, start + pageSize).map(({ path, errors }) => (
@@ -127,14 +127,14 @@ function Definitions({ id, kind }: { id: string; kind: "node" | "recipe" }) {
       </div>}
       {kind === "node" && <div className={s.instantiate}>
         <Select
-          label="Add from the library"
+          label="Add from templates"
           value={name || null}
           disabled={!connected || instantiate.busy || templates.length === 0}
           onValueChange={(v) => { setName(v ?? ""); setResult(""); }}
-          options={templates.map(({ path }) => path.slice(libraryDir.length + 1, -5)).map((template) => ({ value: template, label: template }))}
+          options={templates.map(({ path }) => path.slice(templatesDir.length + 1, -5)).map((template) => ({ value: template, label: template }))}
           placeholder="Choose a template"
         />
-        <Button disabled={!connected || instantiate.busy || !templates.some(({ path }) => path === `${libraryDir}/${name}.json`)}
+        <Button disabled={!connected || instantiate.busy || !templates.some(({ path }) => path === `${templatesDir}/${name}.json`)}
           onClick={() => { setResult(""); void instantiate.run(); }}>Add to project</Button>
       </div>}
       <ErrorText error={instantiate.error} />

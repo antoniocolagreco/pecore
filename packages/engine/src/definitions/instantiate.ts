@@ -20,14 +20,14 @@ async function instanceJson(from: string, schema: string, update?: (value: Recor
   return JSON.stringify({ ...value, $schema: `../../../schemas/${schema}` }, null, 2) + "\n";
 }
 
-export async function instantiateNode(libraryDir: string, projectDir: string, name: string): Promise<InstantiateResult> {
+export async function instantiateNode(templatesDir: string, projectDir: string, name: string): Promise<InstantiateResult> {
   const result: InstantiateResult = { written: [], kept: [], errors: [] };
   const target = join(projectDir, "nodes", `${name}.json`);
   if (await exists(target)) {
     result.kept.push(target);
     return result;
   }
-  const source = join(libraryDir, "nodes", `${name}.json`);
+  const source = join(templatesDir, "nodes", `${name}.json`);
   const loaded = await loadNodeFile(source);
   if (!loaded.value) {
     result.errors.push(...loaded.errors);
@@ -47,7 +47,7 @@ export async function instantiateNode(libraryDir: string, projectDir: string, na
   }
   for (const file of new Set(sidecars)) {
     const to = join(projectDir, "nodes", file);
-    await copyFile(join(libraryDir, "nodes", file), to);
+    await copyFile(join(templatesDir, "nodes", file), to);
     result.written.push(to);
   }
   await writeFile(target, await instanceJson(source, "node.json"));
@@ -55,9 +55,9 @@ export async function instantiateNode(libraryDir: string, projectDir: string, na
   return result;
 }
 
-export async function instantiateRecipe(libraryDir: string, projectDir: string, name: string, rename: Record<string, string> = {}, validate?: (content: string) => Promise<DefinitionError[]>): Promise<InstantiateResult> {
+export async function instantiateRecipe(templatesDir: string, projectDir: string, name: string, rename: Record<string, string> = {}, validate?: (content: string) => Promise<DefinitionError[]>): Promise<InstantiateResult> {
   const result: InstantiateResult = { written: [], kept: [], errors: [] };
-  const source = join(libraryDir, "recipes", `${name}.json`);
+  const source = join(templatesDir, "recipes", `${name}.json`);
   const loaded = await loadRecipeFile(source);
   if (!loaded.value) {
     result.errors.push(...loaded.errors);
@@ -65,7 +65,7 @@ export async function instantiateRecipe(libraryDir: string, projectDir: string, 
   }
   const renamedUse = (use: string) => (Object.hasOwn(rename, use) ? rename[use] : undefined) ?? use;
   for (const use of new Set(Object.values(loaded.value.nodes).map((n) => renamedUse(n.use)))) {
-    const r = await instantiateNode(libraryDir, projectDir, use);
+    const r = await instantiateNode(templatesDir, projectDir, use);
     result.written.push(...r.written);
     result.kept.push(...r.kept);
     result.errors.push(...r.errors);

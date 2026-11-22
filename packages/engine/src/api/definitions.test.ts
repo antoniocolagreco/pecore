@@ -12,9 +12,9 @@ describe("definition routes", () => {
     const { home, engine, call, close } = await apiProject();
     const live: LiveMessage[] = [];
     engine.on("live", (m: LiveMessage) => live.push(m));
-    const nodes = await call("listDefinitions", { query: { dir: "library/nodes" } });
-    expect(nodes.find((n) => n.path === "library/nodes/human-review.json")).toMatchObject({ value: { kind: "human" }, errors: [] });
-    expect(nodes.some((n) => n.path === "library/nodes/git-commit.sh")).toBe(true);
+    const nodes = await call("listDefinitions", { query: { dir: "templates/nodes" } });
+    expect(nodes.find((n) => n.path === "templates/nodes/human-review.json")).toMatchObject({ value: { kind: "human" }, errors: [] });
+    expect(nodes.some((n) => n.path === "templates/nodes/git-commit.sh")).toBe(true);
     expect((await call("listDefinitions", { query: { dir: "projects/demo/recipes" } })).map((r) => r.path)).toEqual(["projects/demo/recipes/reviewed.json"]);
 
     const file = await call("getDefinition", { params: { path: "projects/demo/project.json" } });
@@ -31,11 +31,11 @@ describe("definition routes", () => {
   it("validates names and paths", async () => {
     const { call, close } = await apiProject();
     const node = JSON.stringify({ name: "other", description: "x", kind: "human", outcomes: ["ok"], changesFiles: false, timeoutSec: 10 });
-    expect((await call("validateDefinition", { body: { path: "library/nodes/mine.json", content: node } })).errors).toContainEqual(expect.objectContaining({ path: "name" }));
-    await expect(call("getDefinition", { params: { path: "library/../settings.json" } })).rejects.toMatchObject({ status: 400 });
-    await expect(call("getDefinition", { params: { path: "library/other/x.json" } })).rejects.toMatchObject({ status: 400 });
+    expect((await call("validateDefinition", { body: { path: "templates/nodes/mine.json", content: node } })).errors).toContainEqual(expect.objectContaining({ path: "name" }));
+    await expect(call("getDefinition", { params: { path: "templates/../settings.json" } })).rejects.toMatchObject({ status: 400 });
+    await expect(call("getDefinition", { params: { path: "templates/other/x.json" } })).rejects.toMatchObject({ status: 400 });
     await expect(call("getDefinition", { params: { path: "projects/nope/project.json" } })).rejects.toMatchObject({ status: 404 });
-    await expect(call("getDefinition", { params: { path: "library/nodes/missing.json" } })).rejects.toMatchObject({ status: 404 });
+    await expect(call("getDefinition", { params: { path: "templates/nodes/missing.json" } })).rejects.toMatchObject({ status: 404 });
     await close();
   });
 

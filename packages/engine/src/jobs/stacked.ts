@@ -31,14 +31,14 @@ export async function commitSha(projectDir: string, artifact: Artifact | undefin
 }
 
 export async function fetchBase(
-  ctx: { dir: string; project: Project; library: string; forgeAccount(id: string): ForgeAccount | undefined },
+  ctx: { dir: string; project: Project; templates: string; forgeAccount(id: string): ForgeAccount | undefined },
   branch: string,
 ): Promise<string> {
   const repoGit = join(ctx.dir, "repo.git");
   if (ctx.project.repo !== null) {
     const account = ctx.forgeAccount(ctx.project.repo.account);
     if (!account) throw new Error(`forge account ${ctx.project.repo.account} not found`);
-    const defaults = await loadForgeDefaults(ctx.library, account.forge);
+    const defaults = await loadForgeDefaults(ctx.templates, account.forge);
     await fetchBranch(repoGit, branch, defaults.credentialHelper, await forgeEnv(account));
   } else if (ctx.project.folder !== null) {
     await fetchBranch(repoGit, branch, null, {}).catch(() => undefined);

@@ -2,7 +2,7 @@ import { cp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createProjectWithRecipes } from "../../test/project";
-import { shippedLibrary, tempDir } from "../../test/tmp";
+import { shippedTemplates, tempDir } from "../../test/tmp";
 import { Engine } from "../main";
 import { gitApp } from "../workdir/git-as";
 import { branchHead } from "../workdir/repo";
@@ -95,11 +95,11 @@ async function until<T>(fn: () => T | undefined | false | Promise<T | undefined 
 async function setup() {
   const root = await tempDir();
   const marker = join(root, "merged");
-  const lib = join(root, "library");
-  await cp(shippedLibrary, lib, { recursive: true });
+  const lib = join(root, "templates");
+  await cp(shippedTemplates, lib, { recursive: true });
   for (const [name, n] of Object.entries(nodes(marker))) await writeFile(join(lib, "nodes", `${name}.json`), JSON.stringify(n));
   for (const [name, r] of Object.entries(recipes)) await writeFile(join(lib, "recipes", `${name}.json`), JSON.stringify(r));
-  const engine = await Engine.start({ home: join(root, "home"), library: lib });
+  const engine = await Engine.start({ home: join(root, "home"), templates: lib });
   await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, Object.keys(recipes));
   const p = engine.project("demo");
   const repo = join(p.ctx.dir, "repo.git");

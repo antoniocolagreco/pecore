@@ -55,7 +55,7 @@ export async function validateProjectCreation(engine: Engine, { name, repository
       throw new Error("Enter a Git repository URL without embedded credentials.");
     }
     if (repoHost(url) !== account.host) throw new Error(`Forge account ${accountId} requires a repository on ${account.host}.`);
-    const defaults = await loadForgeDefaults(homePaths(home).library, account.forge);
+    const defaults = await loadForgeDefaults(homePaths(home).templates, account.forge);
     if (repository.mode === "new") {
       if ((account.forge !== "github" && account.forge !== "gitlab") || !defaults.createRepo) {
         throw new Error("Creating a repository requires a GitHub or GitLab account.");

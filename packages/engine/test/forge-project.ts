@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { Engine } from "../src/main";
 import { FakeForge, forgeAccount } from "./fake-forge";
 import { createProjectWithRecipes } from "./project";
-import { shippedLibrary, tempDir } from "./tmp";
+import { shippedTemplates, tempDir } from "./tmp";
 
 const writeSpec = {
   name: "write-spec",
@@ -46,19 +46,19 @@ export async function forgeHome() {
   const forge = await FakeForge.start();
   const root = await tempDir();
   const home = join(root, "home");
-  const library = join(root, "library");
-  await cp(shippedLibrary, library, { recursive: true });
-  await writeFile(join(library, "nodes", "write-spec.json"), JSON.stringify(writeSpec));
-  await writeFile(join(library, "recipes", "deliver.json"), JSON.stringify(deliver));
+  const templates = join(root, "templates");
+  await cp(shippedTemplates, templates, { recursive: true });
+  await writeFile(join(templates, "nodes", "write-spec.json"), JSON.stringify(writeSpec));
+  await writeFile(join(templates, "recipes", "deliver.json"), JSON.stringify(deliver));
   await mkdir(home, { recursive: true });
   await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [forgeAccount] }));
-  return { forge, home, library };
+  return { forge, home, templates };
 }
 
 export async function forgeProject() {
   const h = await forgeHome();
   await h.forge.createRepo("acme/shop");
-  const engine = await Engine.start({ home: h.home, library: h.library });
+  const engine = await Engine.start({ home: h.home, templates: h.templates });
   await createProjectWithRecipes(engine, { id: "shop", name: "Shop", repo: { url: "https://github.com/acme/shop.git", account: forgeAccount.id } }, ["deliver"]);
   return { ...h, engine };
 }

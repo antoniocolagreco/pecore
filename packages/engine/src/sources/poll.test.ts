@@ -2,7 +2,7 @@ import { cp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createProjectWithRecipes } from "../../test/project";
-import { shippedLibrary, tempDir } from "../../test/tmp";
+import { shippedTemplates, tempDir } from "../../test/tmp";
 import { Engine } from "../main";
 import type { OrderSink } from "./poll";
 
@@ -32,15 +32,15 @@ describe("ticket intake (section 7, Phase 6 decision 1)", () => {
   it("confirms the source node, hands a trusted ticket, queues an untrusted one until confirmed, and polls each ticket once", async () => {
     const root = await tempDir();
     const home = join(root, "home");
-    const library = join(root, "library");
-    await cp(shippedLibrary, library, { recursive: true });
+    const templates = join(root, "templates");
+    await cp(shippedTemplates, templates, { recursive: true });
     const hands: { projectId: string; ticketId: string; author: string | null }[] = [];
     const orders: OrderSink = {
       hand: async (projectId, order) => {
         hands.push({ projectId, ticketId: order.ticket.id, author: order.ticket.author });
       },
     };
-    const engine = await Engine.start({ home, library, orders });
+    const engine = await Engine.start({ home, templates, orders });
     await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["local-only"]);
     const dir = engine.projectDir("demo");
     await writeFile(join(dir, "nodes", "fake-source.json"), JSON.stringify(fakeSource));

@@ -62,7 +62,7 @@ export async function host(port: HostPort, env: HostEnv): Promise<{ engine: Engi
     await syncAdapters(env.home, { source: join(env.resources, "adapters"), appVersion: env.version, pinned: Object.entries(pinned.adapters).map(([name, a]) => `${name}@${a.version}`) });
     engine = await Engine.start({
       home: env.home,
-      library: join(env.resources, "library"),
+      templates: join(env.resources, "templates"),
       agents: { connectorsDir: join(env.resources, "connectors"), adaptersDir: homePaths(env.home).adapters, adapters: pinned.adapters },
       admin,
       detectRuntime: detectServicesRuntime,

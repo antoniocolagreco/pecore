@@ -115,8 +115,8 @@ export async function loadDefinitions(dir: string, opts: { checkRecipes: boolean
   return { nodes, recipes, errors };
 }
 
-export function loadLibrary(libraryDir: string): Promise<Definitions> {
-  return loadDefinitions(libraryDir, { checkRecipes: true, remote: true });
+export function loadTemplates(templatesDir: string): Promise<Definitions> {
+  return loadDefinitions(templatesDir, { checkRecipes: true, remote: true });
 }
 
 export type LoadedProject = Definitions & { project: Project | null };

@@ -69,7 +69,7 @@ async function validateFolder(path: string, home: string): Promise<{ exists: boo
 
 async function fetchHead(repo: string, next: Project, url: string, ctx: ProjectContext, accounts: Accounts): Promise<string> {
   const account = forgeAccountOf(next, accounts);
-  const defaults = account ? await loadForgeDefaults(ctx.library, account.forge) : null;
+  const defaults = account ? await loadForgeDefaults(ctx.templates, account.forge) : null;
   const config: string[] = defaults?.credentialHelper ? credentialHelper(defaults.credentialHelper) : [];
   await gitApp(repo, [...config, "fetch", "--no-tags", "--no-recurse-submodules", "--", url, `refs/heads/${next.baseBranch}`], { env: account ? await forgeEnv(account) : {} });
   return (await gitApp(repo, ["rev-parse", "FETCH_HEAD^{commit}"])).trim();
