@@ -442,6 +442,13 @@ export class Engine extends EventEmitter {
       held: () => this.globalPause,
       agents: this.agents,
       orderAttachments: (orderId, attachmentIds) => this.agentChats.jobAttachments(orderId, attachmentIds),
+      agentQuestion: (itemId) => {
+        try {
+          this.agentChats.askPm(id, itemId);
+        } catch (e) {
+          console.error(`agent question ${itemId}:`, e);
+        }
+      },
       setupEnded: (state) => this.setupEnded(id, state),
       forgeAccount: (accountId) => this.accounts.accounts.find((a): a is ForgeAccount => a.kind === "forge" && a.id === accountId),
       global: () => ({ profiles: this.profiles, tiers: this.tiers }),

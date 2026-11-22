@@ -208,6 +208,24 @@
   padding: 2px 0;
 }
 
+.forwarded .bubble {
+  padding: 2px 0 2px 12px;
+  box-shadow: inset 2px 0 0 var(--separator);
+}
+
+.clamped {
+  max-height: calc(var(--line-height) * 8em);
+  overflow: hidden;
+}
+
+.faded {
+  mask-image: linear-gradient(to bottom, black 70%, transparent);
+}
+
+.more {
+  align-self: flex-start;
+}
+
 .bubble > :first-child {
   margin-top: 0;
 }

@@ -19,7 +19,7 @@ import type { ChatTurn } from "../store/chats-db";
 import type { ChatAccess } from "./chat";
 import { stageOutbound } from "./outbound";
 import { defaultFolder, ProjectCreation, projectCreationRows, validateProjectCreation } from "./project-creation";
-import { projectDeletion, ProjectSelection, ProjectUpdate, updateProject } from "./project-management";
+import { projectDeletion, ProjectSelection, ProjectUpdate, projectUpdateRows } from "./project-management";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: true };
 type ToolOutput = { value: unknown; target?: unknown; isError?: boolean };
@@ -84,13 +84,18 @@ function definitionPath(path: string, scope: "template" | "instance" | "knowledg
 }
 
 const intakeToolNames: Set<string> = new Set(["list_projects", "list_recipes", "read_ticket", "create_jobs", "job_status", "read_artifact", "comment_ticket", "read_replies"]);
-const assistantOnlyToolNames: Set<string> = new Set(["analyze_project_archive", "import_project", "export_project", "project_creation_options", "create_project", "delete_project", "write_template"]);
+const questionToolNames: Set<string> = new Set(["list_recipes", "list_definitions", "read_definition", "read_ticket", "read_replies", "job_status", "read_artifact", "answer_question"]);
+const projectWorkToolNames: Set<string> = new Set(["create_jobs", "answer_question", "instantiate", "write_instance", "write_knowledge", "comment_ticket"]);
+const assistantOnlyToolNames: Set<string> = new Set(["analyze_project_archive", "import_project", "export_project", "project_creation_options", "create_project", "update_project", "delete_project", "write_template", "delegate_to_pm"]);
 const definitionToolNames: Set<string> = new Set(["write_instance", "write_knowledge", "validate"]);
+const readToolNames: Set<string> = new Set(["list_definitions", "read_definition"]);
 
 function inProject(engine: Engine, project: string, name: string, input: unknown): void {
   const fields: Record<string, unknown> = input !== null && typeof input === "object" ? input as Record<string, unknown> : {};
+  const readable = (path: unknown): boolean => typeof path !== "string" || path.startsWith(`projects/${project}/`) || path.startsWith("library/");
   const outside: boolean = (typeof fields.project === "string" && fields.project !== project)
     || (definitionToolNames.has(name) && typeof fields.path === "string" && !fields.path.startsWith(`projects/${project}/`))
+    || (readToolNames.has(name) && (!readable(fields.path) || !readable(fields.dir)))
     || (typeof fields.jobId === "string" && engine.findJob(fields.jobId).ctx.id !== project)
     || (typeof fields.itemId === "string" && engine.findQueueItem(fields.itemId).ctx.id !== project);
   if (outside) throw new Error(`the Project Manager of ${project} acts only on its own project`);
@@ -182,10 +187,24 @@ export function chatTools(engine: Engine): {
       const { id, name, baseBranch, services, repo, folder } = projectContext(engine, project).project;
       return { value: { id, name, baseBranch, services, repo, folder }, target: { project } };
     }),
-    update_project: tool("Update the specified project settings. Omit fields that should stay as they are. Set services to null to auto-detect the Compose file.", ProjectUpdate, async (input) => {
-      await updateProject(engine, input);
-      return { value: { updated: true, ...input }, target: { project: input.project, state: "Updated" } };
+    update_project: tool("Propose changes to the specified project settings for confirmation in chat. Omit fields that should stay as they are. Set services to null to auto-detect the Compose file. Only the user can apply the changes by pressing Confirm on the chat card.", ProjectUpdate, async (input) => {
+      const rows = await projectUpdateRows(engine, input);
+      return {
+        value: { state: "awaiting_confirmation" },
+        target: { state: "awaiting_confirmation", settings: input, rows },
+      };
     }),
+    delegate_to_pm: tool("Pass an order about one project's work to its Project Manager: jobs, recipes, nodes, knowledge, tickets or agent questions. Write a complete, self-contained order: the Project Manager cannot read this chat. Attachment IDs must come from the current message. The Project Manager's final reply appears in this chat by itself.", project.extend({ order: z.string().trim().min(1), attachmentIds: z.array(id).default([]) }), async ({ project, order, attachmentIds }, message) => {
+      const messageId: string = await chats.delegate(project, order, attachmentIds, message);
+      return { value: { state: "sent" }, target: { project, messageId, state: "sent" } };
+    }),
+    list_definitions: tool("List the definition files in library/nodes, library/recipes, projects/<id>/nodes, projects/<id>/recipes or projects/<id>/knowledge.", z.strictObject({ dir: id }), async ({ dir }) => ({
+      value: (await definitions.handlers.listDefinitions({ params: undefined, query: { dir }, body: undefined })).map(({ path, errors }) => ({ path, errors })),
+    })),
+    read_definition: tool("Read a node, recipe, prompt, script, knowledge or project.json file by its definition path.", z.strictObject({ path: id }), async ({ path }) => ({
+      value: await definitions.handlers.getDefinition({ params: { path }, query: undefined, body: undefined }),
+      target: { path },
+    })),
     delete_project: tool("Propose deletion of one project. Only the user can delete it by pressing Confirm on the chat card.", project, ({ project }) => {
       const { identity, rows } = projectDeletion(engine, project);
       return {
@@ -316,8 +335,13 @@ export function chatTools(engine: Engine): {
       target: { project, ticketId },
     })),
   };
-  const allowed = (access: ChatAccess, name: string): boolean => Object.hasOwn(tools, name)
-    && (access === "assistant" || (access === "intake" ? intakeToolNames.has(name) : !assistantOnlyToolNames.has(name)));
+  const names: Record<ChatAccess, (name: string) => boolean> = {
+    assistant: (name) => !projectWorkToolNames.has(name),
+    intake: (name) => intakeToolNames.has(name),
+    question: (name) => questionToolNames.has(name),
+    project: (name) => !assistantOnlyToolNames.has(name),
+  };
+  const allowed = (access: ChatAccess, name: string): boolean => Object.hasOwn(tools, name) && names[access](name);
   return {
     list: (access) => Object.entries(tools).filter(([name]) => allowed(access, name)).map(([name, { description, inputSchema }]) => ({ name, description, inputSchema })),
     async call(name, input, message) {
@@ -326,7 +350,9 @@ export function chatTools(engine: Engine): {
         const access: ChatAccess = chats.access(message.chatId);
         if (!allowed(access, name)) throw new Error(`unknown tool ${name}`);
         const project: string | null = chats.project(message.chatId);
-        if (access === "project" && project) inProject(engine, project, name, input);
+        if ((access === "project" || access === "question") && project) inProject(engine, project, name, input);
+        const fields = input !== null && typeof input === "object" ? input as Record<string, unknown> : {};
+        if (access === "question" && name === "answer_question" && fields.itemId !== message.orderId) throw new Error("answer only the question in the current message");
         const output: ToolOutput = await tools[name]!.run(input ?? {}, message);
         chats.finishAction(message, actionId, output.target ?? { state: output.isError ? "failed" : "completed" });
         return textResult(output.value, output.isError);
