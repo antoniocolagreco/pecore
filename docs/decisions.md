@@ -114,3 +114,9 @@
 - Decision: Start and End are the node card with a play or stop icon, a green or red stripe and no kind badge, in the recipe and job graphs.
 - Why: the user did not like the circles; every box in the graph should look the same.
 - Replaces: Start and End as circles.
+
+## 2026-11-23: Start and End keep their look in the card's shape
+
+- Decision: Start and End keep their green or red fill, border and centred label. Only their shape follows the node card: 120×120 with its rounded corners.
+- Why: the user asked for the card's shape only, not its content.
+- Replaces: Start and End with a play or stop icon and a stripe.

@@ -77,14 +77,15 @@
   --recipe-node-kind: var(--status-failed);
 }
 
-.boundaryTile {
+.boundary {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 22%;
-  color: var(--recipe-node-kind);
-  background: color-mix(in srgb, var(--recipe-node-kind) 12%, var(--surface));
+  box-sizing: border-box;
+  width: 120px;
+  height: 120px;
+  border: 1px solid var(--recipe-node-kind);
+  background: color-mix(in srgb, var(--recipe-node-kind) 24%, var(--bg));
+  color: var(--text);
 }
 
 .kindBadge {
