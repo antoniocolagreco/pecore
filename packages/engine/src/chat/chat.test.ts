@@ -801,7 +801,9 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
 
     const m = mcp(tokenFile);
     expect((await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } })).result).toBeDefined();
-    const names: string[] = (await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name);
+    const listed = (await m.rpc("tools/list", {})).result!.tools! as { name: string; inputSchema: unknown }[];
+    for (const { name, inputSchema } of listed) expect({ name, inputSchema }).toEqual({ name, inputSchema: expect.objectContaining({ type: "object" }) });
+    const names: string[] = listed.map((x) => x.name);
     expect(names).toEqual(expect.arrayContaining(["create_project", "update_project", "delete_project", "write_template", "delegate_to_pm", "list_projects", "list_definitions", "read_definition", "read_artifact", "job_status"]));
     for (const name of ["create_jobs", "answer_question", "instantiate", "write_instance", "write_knowledge", "comment_ticket"]) expect(names).not.toContain(name);
     const refused = await m.tool("create_jobs", { project: "demo", plan });

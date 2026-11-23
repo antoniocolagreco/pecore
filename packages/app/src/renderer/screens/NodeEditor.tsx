@@ -14,7 +14,7 @@ import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { call } from "../api/client";
 import { errorText, useAction, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
-import { DefinitionIconField, useDefinitionIcons } from "../components/DefinitionIcon";
+import { defaultDefinitionIcon, DefinitionIconField, useDefinitionIcons } from "../components/DefinitionIcon";
 import { restorePageScroll } from "../components/usePageScroll";
 import { Button, ErrorText, Field, Modal, Page, Panel, ui } from "../components/ui";
 import { TextArea, TextField } from "../ds/field";
@@ -292,7 +292,7 @@ const sourceCommands: { key: string; label: string }[] = [
   { key: "replies", label: "Replies command" },
 ];
 const newNodeTemplate: NewDefinition = {
-  content: JSON.stringify({ $schema: "../../schemas/node.json", name: "", description: "" }, null, 2) + "\n",
+  content: JSON.stringify({ $schema: "../../schemas/node.json", name: "", description: "", icon: defaultDefinitionIcon.node }, null, 2) + "\n",
   path(content) {
     const name = Name.safeParse(parseDraft(content)?.name);
     return name.success ? `templates/nodes/${name.data}.json` : "";

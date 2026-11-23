@@ -44,7 +44,7 @@ const artifactInput = z.discriminatedUnion("view", [
 function tool<S extends z.ZodType>(description: string, schema: S, run: (input: z.output<S>, message: ChatTurn) => ToolOutput | Promise<ToolOutput>): Tool {
   return {
     description,
-    inputSchema: schema.toJSONSchema({ io: "input", target: "draft-07" }),
+    inputSchema: { ...schema.toJSONSchema({ io: "input", target: "draft-07" }), type: "object" },
     async run(input, message) {
       const parsed = schema.safeParse(input);
       if (!parsed.success) throw new Error(z.prettifyError(parsed.error));

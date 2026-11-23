@@ -9,7 +9,12 @@ import s from "./DefinitionIcon.module.css";
 
 export type DefinitionType = "node" | "recipe";
 type IconLibrary = ReadonlyMap<string, string>;
-const automaticIcon: string = "__automatic";
+export const defaultDefinitionIcon: Record<DefinitionType, string> = { node: "node-default", recipe: "recipe-default" };
+
+export function definitionIconName(icons: IconLibrary | undefined, type: DefinitionType, name: string): string {
+  const legacyName: string = `${type}-${name}`;
+  return icons?.has(legacyName) ? legacyName : defaultDefinitionIcon[type];
+}
 
 export function useDefinitionIcons() {
   return useData(async (): Promise<IconLibrary> => {
@@ -31,7 +36,8 @@ export function DefinitionIcon({ icons, type, name, selected, size = "md" }: {
   selected?: string;
   size?: IconSize;
 }) {
-  const image: string | undefined = icons?.get(selected || `${type}-${name}`);
+  const icon: string = selected || definitionIconName(icons, type, name);
+  const image: string | undefined = icons?.get(icon);
   if (image) return <span aria-hidden="true" className={s.icon} data-icon={size} style={{ "--icon-image": image } as CSSProperties} />;
   const Fallback = type === "node" ? BoxIcon : BookIcon;
   return <Fallback size={size} />;
@@ -43,16 +49,18 @@ export function DefinitionIconField({ icons, type, name, value, disabled, onChan
   name: string;
   value: string;
   disabled: boolean;
-  onChange(value: string | undefined): void;
+  onChange(value: string): void;
 }) {
+  const defaultIcon: string = defaultDefinitionIcon[type];
+  const selected: string = value || definitionIconName(icons, type, name);
   const options: IconOption[] = [
-    { value: automaticIcon, label: "Automatic", icon: <DefinitionIcon icons={icons} type={type} name={name} /> },
-    ...[...(icons?.keys() ?? [])].map((icon) => ({ value: icon, label: icon, icon: <DefinitionIcon icons={icons} type={type} name={name} selected={icon} /> })),
+    { value: defaultIcon, label: type === "node" ? "Box" : "Book", icon: <DefinitionIcon icons={icons} type={type} name={name} selected={defaultIcon} /> },
+    ...[...(icons?.keys() ?? [])].filter((icon) => icon !== defaultIcon)
+      .map((icon) => ({ value: icon, label: icon, icon: <DefinitionIcon icons={icons} type={type} name={name} selected={icon} /> })),
   ];
-  if (value && !icons?.has(value)) options.push({ value, label: value, icon: <DefinitionIcon icons={icons} type={type} name={name} selected={value} /> });
+  if (value && value !== defaultIcon && !icons?.has(value)) options.push({ value, label: value, icon: <DefinitionIcon icons={icons} type={type} name={name} selected={value} /> });
   return <div className={s.field}>
-    <span className={s.preview}><DefinitionIcon icons={icons} type={type} name={name} selected={value} /></span>
-    <IconSelect label="Icon" value={value || automaticIcon} options={options} disabled={disabled}
-      onValueChange={(next) => onChange(next === automaticIcon ? undefined : next)} />
+    <span className={s.preview}><DefinitionIcon icons={icons} type={type} name={name} selected={selected} /></span>
+    <IconSelect label="Icon" value={selected} options={options} disabled={disabled} onValueChange={onChange} />
   </div>;
 }

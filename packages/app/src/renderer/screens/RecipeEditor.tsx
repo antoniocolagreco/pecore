@@ -7,7 +7,7 @@ import { Name, Outcome } from "@pecore/schemas";
 import type { DefinitionEntry } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
-import { DefinitionIcon, DefinitionIconField, useDefinitionIcons } from "../components/DefinitionIcon";
+import { defaultDefinitionIcon, definitionIconName, DefinitionIcon, DefinitionIconField, useDefinitionIcons } from "../components/DefinitionIcon";
 import { restorePageScroll } from "../components/usePageScroll";
 import { Button, Empty, ErrorText, Field, Modal, Page, Panel, ui } from "../components/ui";
 import { Button as DsButton } from "../ds/button";
@@ -31,13 +31,14 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
   const navigate = useNavigate();
   const scope: string = newTemplate ? "templates" : project ? `projects/${project}` : path.slice(0, path.lastIndexOf("/recipes/"));
   const creation = useMemo<NewDefinition | undefined>(() => newTemplate || project ? {
-    content: JSON.stringify({ $schema: newTemplate ? "../../schemas/recipe.json" : "../../../schemas/recipe.json", name: "", description: "", nodes: {}, edges: [] }, null, 2) + "\n",
+    content: JSON.stringify({ $schema: newTemplate ? "../../schemas/recipe.json" : "../../../schemas/recipe.json", name: "", description: "", icon: defaultDefinitionIcon.recipe, nodes: {}, edges: [] }, null, 2) + "\n",
     path(content) {
       const name = Name.safeParse(parseDraft(content)?.name);
       return name.success ? `${scope}/recipes/${name.data}.json` : "";
     },
   } : undefined, [newTemplate, project, scope]);
   const file = useDefinitionDraft(path, false, creation);
+  const icons = useDefinitionIcons();
   const duplicate = useAction(async () => {
     const source = parseDraft(file.content);
     if (!source || file.dirty) return;
@@ -47,11 +48,11 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
     let name: string = base;
     for (let index: number = 2; used.has(`templates/recipes/${name}.json`); index++) name = `${base}-${index}`;
     const target: string = `templates/recipes/${name}.json`;
-    const content: string = JSON.stringify({ ...source, name }, null, 2) + "\n";
+    const icon: string = string(source.icon) || definitionIconName(icons.data, "recipe", string(source.name));
+    const content: string = JSON.stringify({ ...source, name, icon }, null, 2) + "\n";
     await call("saveDefinition", { params: { path: target }, body: { content, baseSha256: null } });
     await navigate(definitionUrl("recipe", target));
   });
-  const icons = useDefinitionIcons();
   const [destination, setDestination] = useState<string>();
   const warn = useUnsaved(file.dirty && !destination);
   useEffect(() => {
