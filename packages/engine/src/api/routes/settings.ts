@@ -87,7 +87,7 @@ export function globalFileHandlers(engine: Engine) {
       if (query.project && value.kind === "pm") engine.projectManagerFor(value, query.project);
       const saved = engine.global().agents;
       if (saved.agents.some(({ id, kind }) => id === value.id && kind !== value.kind)) throw new HttpError("conflict", "The agent ID is already in use.");
-      return { ...saved, agents: [...saved.agents.filter(({ id }) => id !== value.id), value] };
+      return { ...saved, agents: [...saved.agents.filter(({ id }) => id !== value.id), value.id === "pm-default" ? { ...value, traits: [] } : value] };
     }, () => sha256(JSON.stringify(chatSettings(query)))),
     getAgentContext: ({ params }) => engine.withGlobalFiles(async () => {
       if (!knownAgent(params.id)) throw new HttpError("not_found", "Agent not found.");

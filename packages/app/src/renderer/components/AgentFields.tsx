@@ -35,7 +35,7 @@ export function ModelPicker({ accounts, choice, onChoice, disabled, inherit }: {
   const loading: boolean = !!account && (options.loading || refresh.busy);
   const readingEfforts: boolean = !!model && (offered.loading || refresh.busy);
   const current: Account | undefined = accounts.find(({ id }) => id === account);
-  return <div className={s.grid}>
+  return <div className={s.modelGrid}>
     <Select label="Provider" value={account || (inherit ? inheritValue : null)} disabled={disabled} placeholder="Choose a provider"
       onValueChange={(next) => {
         if (next === inheritValue) onChoice(null);
@@ -60,7 +60,7 @@ export function ModelPicker({ accounts, choice, onChoice, disabled, inherit }: {
 
 export function Traits({ value, disabled, onChange }: { value: AssistantTraitId[]; disabled: boolean; onChange(traits: AssistantTraitId[]): void }) {
   return (
-    <div className={s.nested}>
+    <div>
       <span className={s.label}>Personality</span>
       <div className={s.traits} role="group" aria-label="Personality">
         {assistantTraits.map(({ id, label, description }) => {

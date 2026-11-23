@@ -144,7 +144,7 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, eff
       {!onAutoChange && <Button type="submit" variant="primary" disabled={!editable || !valid || (!dirty && !contextDirty)}>{saved ? "Save" : "Create"}</Button>}
     </>}>
       <div className={s.fields}>
-        {(agent.kind !== "pm" || scope?.project) && <div className={s.compaction}>
+        {(agent.kind !== "pm" || scope?.project) && <div className={s.pair}>
           <TextField label={agent.kind === "agent" ? "Title" : "Name"} value={agent.name} disabled={!editable}
             error={duplicate ? "This name is already in use." : tooLong ? "This name is too long." : onAutoChange && !agent.name.trim() ? "Enter a name." : undefined}
             onValueChange={(name) => changeAgent((entry) => ({ ...entry, name }))} />
@@ -156,9 +156,9 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, eff
           </label>}
         </div>}
         <ModelPicker accounts={accounts} choice={agent.model} inherit={inheritance} disabled={!editable} onChoice={(model) => changeAgent((entry) => ({ ...entry, model }))} />
-        {scope && !agent.model && effectiveModel && <p className={ui.muted}>Current model · {effectiveModel.model}{effectiveModel.effort && ` · ${effectiveModel.effort}`}</p>}
-        {!accounts.length && <p className={ui.muted}>Connect an AI provider in <Link to="/settings?section=accounts">Accounts</Link>.</p>}
-        <div className={s.compaction}>
+        {scope && !agent.model && effectiveModel && <p className={s.hint}>Current model · {effectiveModel.model}{effectiveModel.effort && ` · ${effectiveModel.effort}`}</p>}
+        {!accounts.length && <p className={s.hint}>Connect an AI provider in <Link to="/settings?section=accounts">Accounts</Link>.</p>}
+        <div className={s.pair}>
           <Select label="Auto compaction" description="After 5 minutes without messages." disabled={!editable} value={String(agent.compaction.auto)}
             options={sizeOptions(compactionSizes.slice(0, -1))} onValueChange={(value) => {
               const auto: number = Number(value);
@@ -170,7 +170,7 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, eff
               if (max) changeAgent((entry) => ({ ...entry, compaction: { ...entry.compaction, max } }));
             }} />
         </div>
-        {agent.kind !== "agent" && <Traits value={agent.traits} disabled={!editable}
+        {(agent.kind === "assistant" || (agent.kind === "pm" && scope?.project)) && <Traits value={agent.traits} disabled={!editable}
           onChange={(traits: AssistantTraitId[]) => changeAgent((entry) => entry.kind === "agent" ? entry : { ...entry, traits })} />}
         <ErrorText error={save.error} />
       </div>

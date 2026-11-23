@@ -31,7 +31,7 @@ const sections: { id: string; title: string }[] = [
   { id: "you", title: "You" },
   { id: "accounts", title: "Accounts" },
   { id: "assistant", title: "Assistant" },
-  { id: "pm", title: "Project Manager Default" },
+  { id: "pm", title: "Project Manager" },
   { id: "projects", title: "Projects" },
   { id: "limits", title: "Limits" },
   { id: "protectedMode", title: "Protected mode" },

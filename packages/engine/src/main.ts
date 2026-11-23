@@ -206,8 +206,9 @@ export class Engine extends EventEmitter {
       return saved.find((agent) => agent.kind === "assistant")
         ?? { id: "assistant", kind: "assistant", name: "Assistant", model: null, compaction, traits };
     }
-    const defaults = saved.find((agent): agent is Extract<ChatAgent, { kind: "pm" }> => agent.kind === "pm" && agent.id === "pm-default")
-      ?? { id: "pm-default", kind: "pm" as const, name: "Project Manager Default", color: "#808080", model: null, compaction: this.settings.pm.compaction, traits: [] };
+    const defaultPm = saved.find((agent): agent is Extract<ChatAgent, { kind: "pm" }> => agent.kind === "pm" && agent.id === "pm-default");
+    const defaults: Extract<ChatAgent, { kind: "pm" }> = defaultPm ? { ...defaultPm, traits: [] }
+      : { id: "pm-default", kind: "pm", name: "Project Manager Default", color: "#808080", model: null, compaction: this.settings.pm.compaction, traits: [] };
     if (project == null) return defaults;
     const pm: ProjectManagerIdentity | null | undefined = this.projects.get(project)?.ctx.project.pm;
     if (!pm) return undefined;

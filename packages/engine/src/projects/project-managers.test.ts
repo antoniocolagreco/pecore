@@ -16,11 +16,12 @@ describe("Project Manager names and colours per project", () => {
       const first = await handlers.getChatAgentSettings({ ...assistant, body: undefined });
       const second = await handlers.getChatAgentSettings({ ...pm, body: undefined });
       const editAssistant = { ...assistant, body: { value: { ...first.value, name: "Nova" }, baseSha256: first.sha256 } };
-      const editPm = { ...pm, body: { value: { ...second.value, compaction: { auto: 65536, max: 131072 } }, baseSha256: second.sha256 } };
+      const editPm = { ...pm, body: { value: { ...second.value, traits: ["pragmatic" as const], compaction: { auto: 65536, max: 131072 } }, baseSha256: second.sha256 } };
       const [updatedAssistant] = await Promise.all([handlers.putChatAgentSettings(editAssistant), handlers.putChatAgentSettings(editPm)]);
       const saved = await handlers.getChatAgentSettings({ ...assistant, body: undefined });
       expect(saved).toMatchObject({ value: { name: "Nova" }, sha256: updatedAssistant.sha256 });
       expect(engine.chatAgent(undefined, "pm")?.compaction).toEqual({ auto: 65536, max: 131072 });
+      expect(engine.chatAgent(undefined, "pm")?.traits).toEqual([]);
       await expect(handlers.putChatAgentSettings(editAssistant)).rejects.toThrow("changed since it was loaded");
     } finally {
       await engine.shutdown();
