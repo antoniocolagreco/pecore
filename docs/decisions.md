@@ -190,3 +190,9 @@
 - Decision: the knowledge decisions above are implemented. Node templates are shared across projects, so a node's Knowledge field offers the file names found in all projects; each project gives its own file with that name, and a project without it gives nothing. An upload may contain files that link to each other. Older `knowledge` globs still match flat file names; files in subfolders are no longer listed or given to agents. The Assistant can write knowledge files too.
 - Why: knowledge belongs to a project, but nodes are templates; naming files keeps one node usable in every project.
 - Replaces: the single-list Knowledge tab with a raw text box and a file-name field; the `knowledge` globs on nested paths.
+
+## 2026-11-23: The knowledge editor looks like a notepad sheet
+
+- Decision: the knowledge editor is a ruled paper sheet with a red margin line, the normal app font, wrapped lines and no line numbers; the paper is dimmed in the dark theme. The Knowledge tab fills the window, Save sits next to Rename and Delete, and Markdown files dropped on the tab are uploaded.
+- Why: knowledge is prose, not code; the user wants it to feel like writing on paper, with more room and drag and drop.
+- Replaces: the code editor with line numbers, a tab as tall as its content and upload by button only.

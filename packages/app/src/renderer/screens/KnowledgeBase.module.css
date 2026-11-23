@@ -1,14 +1,24 @@
 .layout {
+  --paper: light-dark(#fffdf6, #2b2925);
+  --paper-ink: light-dark(#26241f, #e9e4d8);
+  --paper-rule: light-dark(#d9e3ef, #3a3d44);
+  --paper-margin: light-dark(#efb3ae, #7a4642);
+
+  position: relative;
   display: grid;
   grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
   gap: var(--gap);
-  align-items: start;
+  height: 100%;
+  min-height: 24rem;
 }
 
 .list {
   display: grid;
+  align-content: start;
   gap: 8px;
+  min-height: 0;
   padding: 12px;
+  overflow: auto;
 }
 
 .listActions {
@@ -49,13 +59,19 @@
 }
 
 .content {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 .editor {
-  display: grid;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   gap: 12px;
   min-width: 0;
+  min-height: 0;
 }
 
 .editorHeader {
@@ -72,6 +88,28 @@
   overflow-wrap: anywhere;
 }
 
+.desk {
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  min-height: 0;
+  padding: 8px 0 12px;
+}
+
+.sheet {
+  width: 100%;
+  max-width: 860px;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--paper);
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 2px 4px rgb(0 0 0 / 0.06), 0 12px 28px -12px rgb(0 0 0 / 0.3);
+}
+
+.issues {
+  max-height: 7rem;
+  overflow: auto;
+}
+
 .warnings {
   margin: 0;
   padding-left: 18px;
@@ -79,8 +117,23 @@
   font-size: var(--text-size-sm);
 }
 
+.drop {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+  color: var(--accent);
+  font-weight: 600;
+  pointer-events: none;
+}
+
 @media (max-width: 760px) {
   .layout {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(24rem, 1fr);
   }
 }

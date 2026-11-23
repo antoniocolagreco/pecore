@@ -3,7 +3,7 @@ import type { ReactElement, ReactNode } from "react";
 import { Link, useBlocker, useNavigate, useParams } from "react-router";
 import { ApiError, HumanMode, isNodeKindTag, Name, normalizeLegacyHumanNode, ReviewView } from "@pecore/schemas";
 import type { DefinitionFile, Node, RouteResult } from "@pecore/schemas";
-import { basicSetup, EditorView } from "codemirror";
+import { basicSetup, EditorView, minimalSetup } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
 import { lineNumbers } from "@codemirror/view";
 import { setDiagnostics } from "@codemirror/lint";
@@ -223,11 +223,26 @@ const editorTheme = EditorView.theme({
 
 const paddedLineNumbers = lineNumbers({ formatNumber: (line, state) => String(line).padStart(String(state.doc.lines).length, "0") });
 
+const paperTheme = EditorView.theme({
+  "&": { height: "100%", backgroundColor: "transparent", color: "var(--paper-ink)" },
+  "&.cm-focused": { outline: "none" },
+  ".cm-scroller": {
+    fontFamily: "var(--font)", fontSize: "16px", lineHeight: "28px", overflow: "auto",
+    backgroundImage: "linear-gradient(to right, transparent 55px, var(--paper-margin) 55px, var(--paper-margin) 57px, transparent 57px), repeating-linear-gradient(to bottom, transparent 0 27px, var(--paper-rule) 27px 28px)",
+    backgroundAttachment: "local",
+    backgroundPosition: "0 0, 0 20px",
+  },
+  ".cm-content": { padding: "20px 32px 48px 72px", caretColor: "var(--paper-ink)" },
+  ".cm-line": { padding: "0" },
+  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": { backgroundColor: "color-mix(in srgb, var(--accent) 25%, transparent)" },
+});
+
 type EditorIssue = { line?: number; column?: number; length?: number; message: string };
 const noIssues: EditorIssue[] = [];
 
-export function Sidecar({ content, disabled, change, isMarkdown, errors = noIssues, warnings = noIssues }: {
+export function Sidecar({ content, disabled, change, isMarkdown, errors = noIssues, warnings = noIssues, paper = false, className }: {
   content: string; disabled: boolean; change(value: string): void; isMarkdown: boolean; errors?: EditorIssue[]; warnings?: EditorIssue[];
+  paper?: boolean; className?: string;
 }) {
   const parent = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView>(null);
@@ -242,7 +257,8 @@ export function Sidecar({ content, disabled, change, isMarkdown, errors = noIssu
       parent: parent.current,
       doc: binding.current.content,
       extensions: [
-        basicSetup, editorTheme, highlight, paddedLineNumbers, isMarkdown ? markdown() : StreamLanguage.define(shell),
+        ...(paper ? [minimalSetup, paperTheme, EditorView.lineWrapping] : [basicSetup, editorTheme, paddedLineNumbers]),
+        highlight, isMarkdown ? markdown() : StreamLanguage.define(shell),
         config.of([EditorState.readOnly.of(binding.current.disabled), EditorView.editable.of(!binding.current.disabled)]),
         EditorView.updateListener.of((event) => {
           if (event.docChanged && !syncing.current && !binding.current.disabled) binding.current.change(event.state.doc.toString());
@@ -251,7 +267,7 @@ export function Sidecar({ content, disabled, change, isMarkdown, errors = noIssu
     });
     view.current = editor;
     return () => { view.current = null; editor.destroy(); };
-  }, [isMarkdown]);
+  }, [isMarkdown, paper]);
   useEffect(() => {
     const editor: EditorView | null = view.current;
     if (!editor) return;
@@ -276,7 +292,7 @@ export function Sidecar({ content, disabled, change, isMarkdown, errors = noIssu
     };
     editor.dispatch(setDiagnostics(editor.state, [...errors.flatMap((issue) => place(issue, "error")), ...warnings.flatMap((issue) => place(issue, "warning"))]));
   }, [content, errors, warnings]);
-  return <div ref={parent} />;
+  return <div ref={parent} className={className} />;
 }
 
 function SidecarFile({ path, name, isMarkdown, onDirty }: { path: string; name: string; isMarkdown: boolean; onDirty(dirty: boolean): void }) {

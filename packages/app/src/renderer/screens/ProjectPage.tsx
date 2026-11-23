@@ -374,6 +374,7 @@ function ProjectDetails({ id }: { id: string }) {
   const navigate = useNavigate();
   const [query] = useSearchParams();
   const tab: string | null = query.get("tab");
+  const [activeTab, setActiveTab] = useState<string>(tab === "recipes" || tab === "variables" || tab === "knowledge" ? tab : "jobs");
   const [deleting, setDeleting] = useState<boolean>(false);
   const [exporting, setExporting] = useState<boolean>(false);
   const [creatingJob, setCreatingJob] = useState<boolean>(false);
@@ -389,7 +390,7 @@ function ProjectDetails({ id }: { id: string }) {
   const view: ProjectView | undefined = data.data;
   const project: ProjectView["project"] | undefined = view?.project;
   return (
-    <Page title={project?.name ?? id} actions={project && !view?.creating &&
+    <Page title={project?.name ?? id} fillHeight={activeTab === "knowledge"} actions={project && !view?.creating &&
       <DsButton variant="primary" icon={<PlusIcon />} disabled={!connected} onClick={() => setCreatingJob(true)}>New job</DsButton>}>
       {creatingJob && <NewJobDialog id={id} onClose={() => setCreatingJob(false)} />}
       {exporting && <ProjectExportDialog id={id} onClose={() => setExporting(false)} />}
@@ -399,7 +400,9 @@ function ProjectDetails({ id }: { id: string }) {
       {view?.creating ? <Alert tone="warning" actions={connected && <Link to={`/projects/new?resume=${id}`}>Resume creation</Link>}>This project was not fully created.</Alert> : project && (
         <>
           <Tabs
-            defaultValue={tab === "recipes" || tab === "variables" ? tab : "jobs"}
+            value={activeTab}
+            onValueChange={setActiveTab}
+            fill={activeTab === "knowledge"}
             tabs={[
               {
                 value: "jobs",

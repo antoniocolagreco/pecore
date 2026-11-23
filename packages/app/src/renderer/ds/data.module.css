@@ -55,6 +55,18 @@
   animation: panel-in var(--medium) var(--ease-out);
 }
 
+.tabsFill {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tabsFill > .tabPanel:not([hidden]) {
+  flex: 1;
+  min-height: 0;
+}
+
 @keyframes panel-in {
   from {
     opacity: 0;

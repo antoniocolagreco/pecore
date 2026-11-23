@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { DragEvent, ReactNode } from "react";
 import { KnowledgeFileName } from "@pecore/schemas";
 import type { DefinitionEntry } from "@pecore/schemas";
 import { call } from "../api/client";
@@ -36,14 +36,18 @@ function KnowledgeFile({ path, name, creating, names, actions, onCreated, onDirt
   useEffect(() => { onDirty(file.dirty); return () => onDirty(false); }, [file.dirty, onDirty]);
   useEffect(() => { if (file.savedPath) onCreated(); }, [file.savedPath, onCreated]);
   return <div className={s.editor}>
-    <header className={s.editorHeader}><h2>{name}</h2>{actions}</header>
+    <header className={s.editorHeader}><h2>{name}</h2>{actions}{file.saveButton()}</header>
     {file.feedback}
-    {file.ready && <Sidecar content={file.content} change={file.update} disabled={!file.editable} isMarkdown errors={file.errors} warnings={file.warnings} />}
-    <DefinitionErrors errors={file.errors} />
-    {!!file.warnings?.length && <ul className={s.warnings} aria-label="Formatting warnings">
-      {file.warnings.map((warning, index) => <li key={index}>{warning.message}</li>)}
-    </ul>}
-    <div>{file.saveButton()}</div>
+    <div className={s.desk}>
+      {file.ready && <Sidecar paper className={s.sheet} content={file.content} change={file.update} disabled={!file.editable} isMarkdown
+        errors={file.errors} warnings={file.warnings} />}
+    </div>
+    {(!!file.errors?.length || !!file.warnings?.length) && <div className={s.issues}>
+      <DefinitionErrors errors={file.errors} />
+      {!!file.warnings?.length && <ul className={s.warnings} aria-label="Formatting warnings">
+        {file.warnings.map((warning, index) => <li key={index}>{warning.message}</li>)}
+      </ul>}
+    </div>}
   </div>;
 }
 
@@ -58,6 +62,7 @@ export function KnowledgeBase({ id }: { id: string }) {
   const [dirty, setDirty] = useState<boolean>(false);
   const [dialog, setDialog] = useState<"new" | "rename" | "delete" | null>(null);
   const [draftName, setDraftName] = useState<string>("");
+  const [dropping, setDropping] = useState<boolean>(false);
   const input = useRef<HTMLInputElement>(null);
   const candidate: string = fileName(draftName);
   const nameError: string | undefined = !candidate ? undefined
@@ -98,7 +103,25 @@ export function KnowledgeBase({ id }: { id: string }) {
     setDialog(kind);
   };
 
-  return <div className={s.layout}>
+  const carriesFiles = (event: DragEvent): boolean => [...event.dataTransfer.types].includes("Files");
+
+  return <div className={s.layout}
+    onDragOverCapture={(event) => {
+      if (!carriesFiles(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = connected ? "copy" : "none";
+      setDropping(true);
+    }}
+    onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropping(false); }}
+    onDropCapture={(event) => {
+      if (!carriesFiles(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setDropping(false);
+      if (connected) void upload.run([...event.dataTransfer.files]);
+    }}>
+    {dropping && <div className={s.drop} aria-hidden="true">Drop Markdown files to add them to the knowledge</div>}
     <Card className={s.list} padded={false}>
       <div className={s.listActions}>
         <Button disabled={!connected} onClick={() => open("new")}>New file</Button>
@@ -127,7 +150,7 @@ export function KnowledgeBase({ id }: { id: string }) {
             <Button disabled={!connected} onClick={() => open("rename")}>Rename</Button>
             <Button disabled={!connected} onClick={() => open("delete")}>Delete</Button>
           </>} />
-        : <p className={ui.muted}>Select a file, create one or upload Markdown files. A node gives its agent the files assigned to it and the files they link to. Link another file by its name, for example [naming](naming.md).</p>}
+        : <p className={ui.muted}>Select a file, create one, or upload or drop Markdown files here. A node gives its agent the files assigned to it and the files they link to. Link another file by its name, for example [naming](naming.md).</p>}
     </Card>
     <Dialog open={dialog === "new" || dialog === "rename"} onOpenChange={(value) => { if (!value) setDialog(null); }}
       title={dialog === "rename" ? `Rename ${selected?.name ?? ""}` : "New knowledge file"}

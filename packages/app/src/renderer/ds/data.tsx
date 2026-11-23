@@ -3,15 +3,16 @@ import type { ReactNode } from "react";
 import s from "./data.module.css";
 
 export function Tabs({
-  tabs, value, defaultValue, onValueChange,
+  tabs, value, defaultValue, onValueChange, fill,
 }: {
   tabs: { value: string; label: ReactNode; content: ReactNode }[];
   value?: string;
   defaultValue?: string;
   onValueChange?: (value: string) => void;
+  fill?: boolean;
 }) {
   return (
-    <BaseTabs.Root value={value} defaultValue={defaultValue ?? tabs[0]?.value} onValueChange={(v) => onValueChange?.(v as string)}>
+    <BaseTabs.Root value={value} defaultValue={defaultValue ?? tabs[0]?.value} onValueChange={(v) => onValueChange?.(v as string)} className={fill ? s.tabsFill : undefined}>
       <BaseTabs.List className={s.tabList}>
         {tabs.map((t) => (
           <BaseTabs.Tab key={t.value} value={t.value} className={s.tab}>{t.label}</BaseTabs.Tab>
