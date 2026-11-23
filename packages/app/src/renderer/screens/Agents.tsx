@@ -87,11 +87,12 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, eff
   const [draft, setDraft] = useState<{ content: string; sha256: string | undefined } | null>(null);
   const [remove, setRemove] = useState<boolean>(false);
   const upload = useRef<HTMLInputElement>(null);
-  const context = useData(() => creating ? Promise.resolve(undefined) : call("getAgentContext", { params: { id: agent.id } }), [agent.id, creating]);
+  const showContext: boolean = !scope || !!scope.project;
+  const context = useData(() => showContext && !creating ? call("getAgentContext", { params: { id: agent.id } }) : Promise.resolve(undefined), [agent.id, creating, showContext]);
   const content: string = draft?.content ?? context.data?.content ?? "";
   const duplicate: boolean = catalog?.agents.some((entry) => entry.id !== agent.id && entry.name.toLowerCase() === agent.name.trim().toLowerCase()) ?? false;
   const dirty: boolean = JSON.stringify(agent) !== JSON.stringify(saved);
-  const contextDirty: boolean = draft !== null && content !== (context.data?.content ?? "");
+  const contextDirty: boolean = showContext && draft !== null && content !== (context.data?.content ?? "");
   const save = useAction(async () => {
     if (dirty) {
       const sha: string = edit?.sha256 ?? baseSha256;
@@ -163,7 +164,7 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, eff
         <ErrorText error={save.error} />
       </div>
     </Card>
-    <Card title="Initial context" actions={<Button disabled={!contextEditable || readContext.busy} onClick={() => upload.current?.click()}>Upload Markdown</Button>}>
+    {showContext && <Card title="Initial context" actions={<Button disabled={!contextEditable || readContext.busy} onClick={() => upload.current?.click()}>Upload Markdown</Button>}>
       <input type="file" ref={upload} accept=".md,text/markdown" hidden onChange={(event) => {
         const file: File | undefined = event.target.files?.[0];
         event.target.value = "";
@@ -171,7 +172,7 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, eff
       }} />
       <Sidecar isMarkdown paper content={content} disabled={!contextEditable} change={changeContent} className={s.markdown} />
       <ErrorText error={context.error ?? readContext.error ?? (content.length > 1_000_000 ? "Keep the Markdown file below 1,000,000 characters." : null)} />
-    </Card>
+    </Card>}
     {catalog && <Dialog open={remove} onOpenChange={setRemove} title={`Delete ${agent.name}?`} footer={<>
       <Button onClick={() => setRemove(false)}>Cancel</Button>
       <Button disabled={destroy.busy} onClick={() => void destroy.run()}>Delete</Button>
