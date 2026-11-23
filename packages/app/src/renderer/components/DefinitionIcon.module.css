@@ -47,20 +47,3 @@
   width: 62.5%;
   height: 62.5%;
 }
-
-.field {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: end;
-  gap: var(--gap);
-}
-
-.preview {
-  display: grid;
-  place-items: center;
-  width: var(--control-h);
-  height: var(--control-h);
-  color: var(--accent);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
-}

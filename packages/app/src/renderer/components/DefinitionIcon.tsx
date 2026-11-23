@@ -61,9 +61,5 @@ export function DefinitionIconField({ icons, type, name, value, disabled, onChan
       .map((icon) => ({ value: icon, label: icon, icon: <DefinitionIcon icons={icons} type={type} name={name} selected={icon} /> })),
   ];
   if (value && value !== defaultIcon && !icons?.has(value)) options.push({ value, label: value, icon: <DefinitionIcon icons={icons} type={type} name={name} selected={value} /> });
-  const preview = <DefinitionIcon icons={icons} type={type} name={name} selected={selected} />;
-  return <div className={s.field}>
-    {type === "node" ? preview : <span className={s.preview}>{preview}</span>}
-    <IconSelect label="Icon" value={selected} options={options} disabled={disabled} onValueChange={onChange} />
-  </div>;
+  return <IconSelect label="Icon" value={selected} options={options} disabled={disabled} onValueChange={onChange} />;
 }

@@ -90,14 +90,14 @@ export function IconSelect({ label, disabled, options, value, onValueChange }: F
       <BaseSelect.Root items={options.map((o) => ({ value: o.value, label: o.label }))} value={value}
         onValueChange={(next) => { if (typeof next === "string") onValueChange(next); }} disabled={disabled}>
         <BaseSelect.Trigger className={s.trigger}>
-          <span className={`${s.value} ${s.iconValue}`}>{selected?.icon}{selected?.label ?? value}</span>
+          <span className={s.iconValue}>{selected?.icon}<span className={s.value}>{selected?.label ?? value}</span></span>
           <BaseSelect.Icon className={s.chevron}>
             <ChevronUpDownIcon bold />
           </BaseSelect.Icon>
         </BaseSelect.Trigger>
         <BaseSelect.Portal>
-          <BaseSelect.Positioner className={s.positioner} sideOffset={6} alignItemWithTrigger={false}>
-            <BaseSelect.Popup className={s.popup}>
+          <BaseSelect.Positioner className={s.positioner} align="start" sideOffset={6} alignItemWithTrigger={false}>
+            <BaseSelect.Popup className={`${s.popup} ${s.iconPopup}`}>
               <BaseSelect.List className={`${s.list} ${s.iconGrid}`}>
                 {options.map((o) => (
                   <BaseSelect.Item key={o.value} value={o.value} className={s.iconItem} title={o.label} aria-label={o.label}>

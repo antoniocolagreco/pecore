@@ -162,19 +162,29 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+}
+
+.iconValue > [data-node-icon] {
+  width: var(--mini-h);
+  height: var(--mini-h);
+}
+
+.popup.iconPopup {
+  min-width: 0;
+  width: min(358px, var(--available-width));
 }
 
 .iconGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, 40px);
+  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
   gap: 4px;
-  width: min(360px, var(--available-width));
+  max-height: min(320px, max(0px, calc(var(--available-height) - 10px)));
 }
 
 .iconItem {
   display: grid;
   place-items: center;
-  width: 40px;
   height: 40px;
   border-radius: 7px;
   color: var(--text);
