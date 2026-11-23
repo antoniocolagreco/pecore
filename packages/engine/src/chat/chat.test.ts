@@ -676,6 +676,19 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     }
   });
 
+  it("shows the provider's message when the session cannot start", async () => {
+    const t = await setup(() => [
+      [...init(), { expect: "session/new" }, { send: { jsonrpc: "2.0", id: "$id", error: { code: -32602, message: "Invalid params: model not found: opencode/qwen4-max-free", data: { providerId: "opencode", modelId: "opencode/qwen4-max-free" } } } }],
+    ]);
+    try {
+      await t.call("sendChatMessage", { body: { text: "How many PMs are there?" } });
+      await until(async () => (await t.call("getChat")).messages.at(-1)?.state === "failed");
+      expect((await t.call("getChat")).messages.at(-1)?.error).toBe("Invalid params: model not found: opencode/qwen4-max-free");
+    } finally {
+      await t.close();
+    }
+  });
+
   it("validates assistant project settings before creating local or remote projects", async () => {
     const t = await setup((root) => [[
       ...init(),

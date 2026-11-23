@@ -688,7 +688,7 @@ export class AgentChats {
         if (session.resumed) {
           const result = await session.prompt(chatCompactCommand);
           if (this.closed) return;
-          if (result.error) throw new Error(errorMessage(result.error.raw));
+          if (result.error) throw new Error(result.error.raw);
           tokens = result.context?.used ?? null;
         }
         this.db.setContextTokens(chatId, tokens);
@@ -727,7 +727,7 @@ export class AgentChats {
       active.accepting = false;
       await active.pending;
       if (this.closed) return;
-      if (result.error) throw new Error(errorMessage(result.error.raw));
+      if (result.error) throw new Error(result.error.raw);
       if (result.stopReason === "cancelled") throw new Error("the connector cancelled the turn");
       this.db.db.transaction(() => {
         this.db.setMessageState(id, "completed");
@@ -750,7 +750,7 @@ export class AgentChats {
     } catch (e) {
       active.reply = null;
       if (!this.closed) {
-        const error: string = e instanceof Error ? e.message : String(e);
+        const error: string = errorMessage(e instanceof Error ? e.message : String(e));
         this.db.db.transaction(() => {
           this.db.setMessageState(id, "failed", error);
           this.report(message, `I could not finish this order: ${error}`);
