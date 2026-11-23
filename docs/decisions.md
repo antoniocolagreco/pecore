@@ -53,3 +53,4 @@
 - Decision: the app no longer ships the Empty recipe template. New Recipe starts an empty recipe. A recipe with no nodes stays valid.
 - Why: Empty duplicated New Recipe and looked like a recipe a job could use.
 - Replaces: `templates/recipes/empty.json` and its icon.
+- At start, the app removes a template file it no longer ships from an existing home, unless the user changed it.

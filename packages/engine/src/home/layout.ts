@@ -100,6 +100,22 @@ const previousShippedHashes: ReadonlyMap<string, readonly string[]> = new Map([
   ["nodes/vitest.json", ["7e29efde28b538fdc6c34c094cd2a7a5fd8bce2c415f2c448832c9b23e27ffe1"]],
 ]);
 
+const retiredShippedHashes: ReadonlyMap<string, readonly string[]> = new Map([
+  ["recipes/empty.json", ["d5aeb3f6f5d017214284b2e2dccb1cbb0637fa9a7006c7039f7d68e95a63bee7"]],
+  ["icons/recipe-empty.svg", ["b628ede0d499969ae3f7eccfbdd12dffed1ece97ba4065beae14f50d622775b2"]],
+]);
+
+async function removeRetiredTemplateFiles(templates: string): Promise<string[]> {
+  const removed: string[] = [];
+  for (const [path, hashes] of retiredShippedHashes) {
+    const target: string = join(templates, path);
+    if (!(await exists(target)) || !hashes.includes(createHash("sha256").update(await readFile(target)).digest("hex"))) continue;
+    await rm(target);
+    removed.push(target);
+  }
+  return removed;
+}
+
 async function addShippedTemplateFiles(shipped: string, templates: string): Promise<string[]> {
   const added: string[] = [];
   for (const entry of await readdir(shipped, { recursive: true, withFileTypes: true })) {
@@ -136,6 +152,8 @@ export async function initHome(home: string, opts: { templates: string }): Promi
   if (!created) {
     const added: string[] = await addShippedTemplateFiles(opts.templates, p.templates);
     if (added.length) await commitDefinition(home, added, `templates: sync ${added.length} shipped ${added.length === 1 ? "file" : "files"}`);
+    const removed: string[] = await removeRetiredTemplateFiles(p.templates);
+    if (removed.length) await commitDefinition(home, removed, `templates: remove ${removed.length} retired shipped ${removed.length === 1 ? "file" : "files"}`);
     return { created };
   }
   await git(home, ["init", "-q", "-b", "main"]).catch((error: NodeJS.ErrnoException) => {

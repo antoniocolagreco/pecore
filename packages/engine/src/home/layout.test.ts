@@ -51,6 +51,22 @@ describe("PECORE_HOME layout", () => {
     expect((await git(home, ["log", "--format=%s"])).trim().split("\n")).toHaveLength(3);
   });
 
+  it("removes template files the app no longer ships when the user did not change them, in one commit", async () => {
+    const home = join(await tempDir(), "home");
+    await initHome(home, { templates: shippedTemplates });
+    const templates: string = homePaths(home).templates;
+    const empty = '{\n  "$schema": "../../schemas/recipe.json",\n  "name": "empty",\n  "description": "A recipe with no nodes: the job ends at once as succeeded. Start here to build a recipe in the graph editor"\n}\n';
+    await writeFile(join(templates, "recipes", "empty.json"), empty);
+    await writeFile(join(templates, "icons", "recipe-empty.svg"), "<svg>mine</svg>\n");
+    await git(home, ["add", "-A"]);
+    await git(home, ["commit", "-q", "-m", "older app"]);
+    await initHome(home, { templates: shippedTemplates });
+    expect(await readdir(join(templates, "recipes"))).not.toContain("empty.json");
+    expect(await readFile(join(templates, "icons", "recipe-empty.svg"), "utf8")).toBe("<svg>mine</svg>\n");
+    expect((await git(home, ["log", "-1", "--format=%s"])).trim()).toBe("templates: remove 1 retired shipped file");
+    expect(await git(home, ["status", "--porcelain"])).toBe("");
+  });
+
   it("renames the library folder of an older home to templates in one commit, keeping the user's changes", async () => {
     const home = join(await tempDir(), "home");
     await initHome(home, { templates: shippedTemplates });
