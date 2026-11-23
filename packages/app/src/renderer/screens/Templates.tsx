@@ -15,17 +15,8 @@ import { AlertIcon, PlusIcon } from "../ds/icons";
 import { MultiCombobox } from "../ds/select";
 import type { Option } from "../ds/select";
 import { definitionUrl, object, string } from "./NodeEditor";
+import { templateTitle } from "../components/templateTitle";
 import s from "./Templates.module.css";
-
-const nameWords: ReadonlyMap<string, string> = new Map<string, string>([
-  ["bugfix", "Bug Fix"],
-  ["eslint", "ESLint"],
-  ["github", "GitHub"],
-  ["gitlab", "GitLab"],
-  ["mr", "MR"],
-  ["pr", "PR"],
-  ["typecheck", "Type Check"],
-]);
 
 function TemplateList({ type, icons }: { type: DefinitionType; icons: ReadonlyMap<string, string> | undefined }) {
   const connected: boolean = useConnected();
@@ -67,7 +58,7 @@ function TemplateList({ type, icons }: { type: DefinitionType; icons: ReadonlyMa
         {entries.map(({ path, value, errors }) => {
           const definition = object(value);
           const name: string = string(definition.name) || path.slice(dir.length + 1, -5);
-          const title: string = name.split("-").filter(Boolean).map((word) => nameWords.get(word) ?? word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+          const title: string = templateTitle(name);
           const description: string = string(definition.description);
           const contents = <>
             <Card className={s.card}>

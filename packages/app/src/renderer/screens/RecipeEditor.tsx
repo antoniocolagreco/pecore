@@ -15,6 +15,7 @@ import { TextField } from "../ds/field";
 import { Select } from "../ds/select";
 import { DefinitionErrors, definitionUrl, object, parseDraft, string, useDefinitionDraft, useUnsaved } from "./NodeEditor";
 import type { NewDefinition } from "./NodeEditor";
+import { templateTitle } from "../components/templateTitle";
 import "@xyflow/react/dist/style.css";
 import s from "./Editors.module.css";
 
@@ -158,7 +159,7 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
 
   const recipeOptions = templateOptions(recipeTemplates.data);
   const nodeOptions = templateOptions(nodeTemplates.data).filter(({ value }) => !palette.some((item) => object(item.value).name === value));
-  return <Page title={creation ? "New Recipe" : string(draft?.name) || "Recipe editor"} actions={<>
+  return <Page title={creation ? "New Recipe" : templateTitle(string(draft?.name)) || "Recipe editor"} actions={<>
     {!creation && scope === "templates" && <DsButton loading={duplicate.busy} disabled={!editable || !file.ready || !draft || file.dirty}
       onClick={() => void duplicate.run()}>Duplicate</DsButton>}
     {file.saveButton(importing)}

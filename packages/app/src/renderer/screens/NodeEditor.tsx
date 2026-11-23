@@ -7,6 +7,7 @@ import { basicSetup, EditorView } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
 import { lineNumbers } from "@codemirror/view";
 import { highlight } from "../components/CodeSnapshot";
+import { templateTitle } from "../components/templateTitle";
 import { markdown } from "@codemirror/lang-markdown";
 import { StreamLanguage } from "@codemirror/language";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
@@ -334,7 +335,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
     <TextArea label={label} description="Enter the executable and each argument on its own line." value={Array.isArray(value) ? value.join("\n") : ""}
       onValueChange={(text) => onChange(text ? text.split("\n") : undefined)} />
   );
-  return <Page title={creation ? "New Node" : string(draft?.name) || "Node editor"} actions={file.saveButton(newTemplate && sidecarDirty)}>
+  return <Page title={creation ? "New Node" : templateTitle(string(draft?.name)) || "Node editor"} actions={file.saveButton(newTemplate && sidecarDirty)}>
     {(newTemplate || path.startsWith("templates/")) && <Link to="/templates" state={restorePageScroll}>Back to templates</Link>}
     {file.feedback}
     {file.ready && <Panel>
