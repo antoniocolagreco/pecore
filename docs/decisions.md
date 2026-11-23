@@ -229,3 +229,9 @@
 - The Agents page holds one Assistant, multiple Project Managers and multiple Workers. Every name or Worker title is unique, ignoring case. Each agent has a provider, model, effort, two context compaction thresholds and an optional Markdown context file. The Assistant and Project Managers also have personality traits.
 - New projects require an available Project Manager. A Project Manager can serve one project at a time. Existing projects keep their manager and configuration.
 - Workers live in Agents. Recipe nodes continue to choose models through profiles and tiers.
+
+## 2026-11-23: Node editor shows the same fields when editing
+
+- Decision: editing a node shows the same fields as creating it, with their info icons. A command is one line written as in a terminal, with quotes around an argument with spaces. Source nodes show the command or script of each action. Runs as uses readable labels: "Project user, in the job's files" and "PeCore, with its logins".
+- Why: editing hid the command of command nodes and the actions of source nodes, showed an empty Script file instead, and gave no explanation of fields such as Runs as.
+- Replaces: one argument per line, explanations only while creating, Runs as showing `project-user` and `engine`.

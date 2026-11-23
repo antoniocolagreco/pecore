@@ -19,7 +19,7 @@ import { useConnected, useLive } from "../api/live";
 import { defaultDefinitionIcon, DefinitionIconField, useDefinitionIcons } from "../components/DefinitionIcon";
 import { restorePageScroll } from "../components/usePageScroll";
 import { Button, ErrorText, Modal, Page, Panel, ui } from "../components/ui";
-import { TextArea, TextField } from "../ds/field";
+import { TextField } from "../ds/field";
 import { FieldHelp } from "../ds/overlay";
 import { MultiCombobox, Select } from "../ds/select";
 import { nodeKindLabels } from "../components/NodeCard";
@@ -303,6 +303,33 @@ function SidecarFile({ path, name, isMarkdown, onDirty }: { path: string; name: 
   </Panel>;
 }
 
+function parseCommand(text: string): string[] {
+  return [...text.matchAll(/"([^"]*)"|'([^']*)'|([^\s"']+)/g)].map((match) => match[1] ?? match[2] ?? match[3] ?? "");
+}
+
+function formatCommand(argv: string[]): string {
+  return argv.map((arg) => /^[^\s"']+$/.test(arg) ? arg : arg.includes("\"") ? `'${arg}'` : `"${arg}"`).join(" ");
+}
+
+function CommandInput({ label, labelAction, value, onChange }: { label: string; labelAction: ReactNode; value: string[]; onChange(command: string[] | undefined): void }) {
+  const [text, setText] = useState<string>(() => formatCommand(value));
+  useEffect(() => {
+    if (JSON.stringify(parseCommand(text)) !== JSON.stringify(value)) setText(formatCommand(value));
+  }, [value]);
+  return <TextField label={label} labelAction={labelAction} mono value={text}
+    description={"Write it as in a terminal, for example npx eslint . Put an argument with spaces in quotes."}
+    onValueChange={(next) => {
+      setText(next);
+      const argv: string[] = parseCommand(next);
+      onChange(argv.length ? argv : undefined);
+    }} />;
+}
+
+const runsAsOptions: { value: string; label: string }[] = [
+  { value: "project-user", label: "Project user, in the job's files" },
+  { value: "engine", label: "PeCore, with its logins" },
+];
+
 const nodeKinds: { value: Node["kind"]; label: string }[] = [
   { value: "agent", label: nodeKindLabels.agent },
   { value: "command", label: nodeKindLabels.command },
@@ -380,13 +407,13 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   }, null, 2) + "\n");
   const inlineKeys: string[] = [
     "description", "tags", "timeoutSec",
-    ...(kind === "source" ? ["credentials"] : ["outcomes", "changesFiles"]),
+    ...(kind === "source" ? ["credentials", ...sourceCommands.map(({ key }) => key)] : ["outcomes", "changesFiles"]),
     ...(kind === "agent" ? ["prompt", "resume", "knowledge"] : []),
     ...(kind === "command" ? ["command", "script", "runsAs", "cleanCheckout"] : []),
     ...(human ? ["mode", "show", "reviewView", "answer"] : []),
   ];
   const fieldErrors = (key: string): ReactNode => <DefinitionErrors errors={file.errors?.filter(({ path }) => path.split(".")[0] === key)} />;
-  const help = (label: string, text: ReactNode): ReactNode => creation && <FieldHelp title={label}>{text}</FieldHelp>;
+  const help = (label: string, text: ReactNode): ReactNode => <FieldHelp title={label}>{text}</FieldHelp>;
   const field = (key: string, label: string, input: ReactElement<{ id?: string }>, text: string): ReactNode => {
     const id: string = `${fieldId}-${key}`;
     return <div>
@@ -407,9 +434,8 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
     {fieldErrors(key)}
   </div>;
   const commandField = (label: string, value: unknown, onChange: (command: string[] | undefined) => void): ReactNode => (
-    <TextArea label={label} labelAction={help(label, "Run an executable directly. Use Script file if the command needs shell features such as pipes or redirection.")}
-      description="Enter the executable and each argument on its own line." value={Array.isArray(value) ? value.join("\n") : ""}
-      onValueChange={(text) => onChange(text ? text.split("\n") : undefined)} />
+    <CommandInput label={label} labelAction={help(label, "Run an executable directly. Use Script file if the command needs shell features such as pipes or redirection.")}
+      value={Array.isArray(value) ? value.map(string) : []} onChange={onChange} />
   );
   return <Page title={creation ? "New Node" : templateTitle(string(draft?.name)) || "Node editor"} actions={file.saveButton(newTemplate && sidecarDirty)}>
     {(newTemplate || path.startsWith("templates/")) && <Link to="/templates" state={restorePageScroll}>Back to templates</Link>}
@@ -458,7 +484,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
               {fieldErrors("reviewView")}{fieldErrors("show")}
           </div>}
           {kind && kind !== "source" && <>
-            {field("outcomes", human && mode === "decision" ? "Choices (comma separated)" : "Outcomes (comma separated)", <input value={Array.isArray(draft.outcomes) ? draft.outcomes.join(",") : ""} onChange={(event) => update("outcomes", event.target.value ? event.target.value.split(",") : [])} />,
+            {field("outcomes", human && mode === "decision" ? "Choices (comma separated)" : "Outcomes (comma separated)", <input value={Array.isArray(draft.outcomes) ? draft.outcomes.join(",") : ""} onChange={(event) => update("outcomes", event.target.value ? event.target.value.split(",").map((outcome) => outcome.trim()) : [])} />,
               human && mode === "decision" ? "Each choice is a button in Notifications and an outcome you can connect in the recipe. For example, yes can continue to the next node and no can go to End."
                 : human ? "Review uses approve, changes and reject. Connect each result to the next node or End."
                   : "Give each possible result a name so the recipe can decide where to go next. The command's exit rules or the agent's output must return one of these names.")}
@@ -476,14 +502,22 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
           {kind === "command" && <>
             {!draft.script && <>{commandField("Command", draft.command, (command) => update("command", command))}{fieldErrors("command")}</>}
             {!draft.command && textField("script", "Script file", "Enter the name of the .sh file to run. Choose either a command or a script file.")}
-            {field("runsAs", "Runs as", <select value={string(draft.runsAs) || "project-user"} onChange={(event) => update("runsAs", event.target.value)}><option>project-user</option><option>engine</option></select>,
-              "Use project-user for commands in the job's working copy. Engine is for integrations that may need PeCore's credentials. Engine commands need a probe and must leave job files unchanged.")}
+            <div>
+              <Select label="Runs as" options={runsAsOptions} value={string(draft.runsAs) || "project-user"} onValueChange={(value) => update("runsAs", value)}
+                labelAction={help("Runs as", "Project user: runs in the job's files as the project's user, without PeCore's logins. Use it for builds, tests and linters. PeCore: runs with PeCore's logins, for example to push or open a pull request. It must leave the job's files unchanged and needs a probe.")} />
+              {fieldErrors("runsAs")}
+            </div>
             {flag("cleanCheckout", "Clean checkout", "Run a project-user command on a temporary clean copy of the job's files.")}
           </>}
           {human && flag("answer", "Allow an optional note", "Show a Note field in Notifications. The user can add text to their answer. A later node that accepts user-note can read it.")}
-          {creation && kind === "source" && sourceCommands.map(({ key, label }) => {
+          {kind === "source" && sourceCommands.map(({ key, label }) => {
             const action = object(draft[key]);
-            return !action.script && <div key={key}>{commandField(label, action.command, (command) => update(key, { ...action, command }))}</div>;
+            return <div key={key}>
+              {typeof action.script === "string"
+                ? <TextField label={label.replace("command", "script")} mono value={action.script} onValueChange={(script) => update(key, { ...action, script })} />
+                : commandField(label, action.command, (command) => update(key, { ...action, command }))}
+              {fieldErrors(key)}
+            </div>;
           })}
           {kind === "source" && field("credentials", "Credentials (comma separated)", <input value={Array.isArray(draft.credentials) ? draft.credentials.join(",") : ""} onChange={(event) => update("credentials", event.target.value ? event.target.value.split(",") : [])} />,
             "List the account names that this source needs to access its ticket system.")}
