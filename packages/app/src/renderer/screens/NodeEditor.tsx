@@ -1,4 +1,4 @@
-import { cloneElement, useEffect, useId, useRef, useState } from "react";
+import { cloneElement, useEffect, useRef, useState } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { Link, useBlocker, useNavigate, useParams } from "react-router";
 import { ApiError, HumanMode, isNodeKindTag, Name, normalizeLegacyHumanNode, ReviewView } from "@pecore/schemas";
@@ -19,7 +19,9 @@ import { useConnected, useLive } from "../api/live";
 import { defaultDefinitionIcon, DefinitionIconField, useDefinitionIcons } from "../components/DefinitionIcon";
 import { restorePageScroll } from "../components/usePageScroll";
 import { Button, ErrorText, Modal, Page, Panel, ui } from "../components/ui";
-import { TextField } from "../ds/field";
+import { Checkbox } from "../ds/choice";
+import { TextArea, TextField } from "../ds/field";
+import { NumberField } from "../ds/values";
 import { FieldHelp } from "../ds/overlay";
 import { MultiCombobox, Select } from "../ds/select";
 import { nodeKindLabels } from "../components/NodeCard";
@@ -369,7 +371,6 @@ const newNodeTemplate: NewDefinition = {
 
 function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean }) {
   const navigate = useNavigate();
-  const fieldId: string = useId();
   const creation: NewDefinition | undefined = newTemplate ? newNodeTemplate : undefined;
   const file = useDefinitionDraft(path, false, creation);
   const icons = useDefinitionIcons();
@@ -409,25 +410,20 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   ];
   const fieldErrors = (key: string): ReactNode => <DefinitionErrors errors={file.errors?.filter(({ path }) => path.split(".")[0] === key)} />;
   const help = (label: string, text: ReactNode): ReactNode => <FieldHelp title={label}>{text}</FieldHelp>;
-  const field = (key: string, label: string, input: ReactElement<{ id?: string }>, text: string): ReactNode => {
-    const id: string = `${fieldId}-${key}`;
-    return <div>
-      <div className={ui.field}>
-        <div className={s.fieldHeading}><label htmlFor={id}>{label}</label>{help(label, text)}</div>
-        {cloneElement(input, { id })}
-      </div>
-      {fieldErrors(key)}
-    </div>;
-  };
+  const field = (key: string, label: string, input: ReactElement<{ label?: string; labelAction?: ReactNode }>, text: string): ReactNode => <div>
+    {cloneElement(input, { label, labelAction: help(label, text) })}
+    {fieldErrors(key)}
+  </div>;
   const textField = (key: string, label: string, text: string): ReactNode => field(key, label,
-    <input value={string(draft?.[key])} onChange={(event) => update(key, event.target.value || undefined)} />, text);
-  const flag = (key: string, label: string, text: string): ReactNode => <div>
+    <TextField label={label} value={string(draft?.[key])} onValueChange={(value) => update(key, value || undefined)} />, text);
+  const check = (key: string, label: string, text: string, checked: boolean, onChange: (checked: boolean) => void): ReactNode => <div>
     <div className={s.fieldHeading}>
-      <label><input type="checkbox" checked={draft?.[key] === true} onChange={(event) => update(key, event.target.checked)} /> {label}</label>
+      <Checkbox label={label} checked={checked} disabled={!file.editable} onCheckedChange={onChange} />
       {help(label, text)}
     </div>
     {fieldErrors(key)}
   </div>;
+  const flag = (key: string, label: string, text: string): ReactNode => check(key, label, text, draft?.[key] === true, (checked) => update(key, checked));
   const commandField = (label: string, value: unknown, onChange: (command: string[] | undefined) => void): ReactNode => (
     <CommandInput label={label} labelAction={help(label, "Run an executable directly. Use Script file if the command needs shell features such as pipes or redirection.")}
       value={Array.isArray(value) ? value.map(string) : []} onChange={onChange} />
@@ -449,23 +445,23 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
               const { $schema, name, description, icon, params } = draft;
               file.update(JSON.stringify({ $schema, name, description, icon, tags: descriptiveTags, params, kind: next, ...initialNodeFields[next] }, null, 2) + "\n");
             }} />
-          </> : <p>Kind: {kind === "source" ? nodeKindLabels.source : nodeKinds.find((option) => option.value === kind)?.label ?? kind}</p>}
+          </> : <TextField label="Kind" readOnly description="Chosen when the node was created."
+            value={kind === "source" ? nodeKindLabels.source : nodeKinds.find((option) => option.value === kind)?.label ?? kind} />}
           {human && (creation ? <><Select label="Mode" labelAction={help("Mode", "Decision asks a question in Notifications and follows the answer you select. Review shows job artifacts and asks you to approve, request changes or reject.")}
             options={humanModes} value={mode} onValueChange={(value) => {
             const next = HumanMode.safeParse(value);
             if (next.success) file.update(JSON.stringify({ ...draft, tags: descriptiveTags, ...humanFields[next.data] }, null, 2) + "\n");
-          }} />{fieldErrors("mode")}</> : <p>Mode: {humanModes.find(({ value }) => value === mode)?.label ?? mode}</p>)}
-          {field("description", "Description", <textarea value={string(draft.description)} onChange={(event) => update("description", event.target.value)} />,
+          }} />{fieldErrors("mode")}</> : <TextField label="Mode" readOnly value={humanModes.find(({ value }) => value === mode)?.label ?? mode} />)}
+          {field("description", "Description", <TextArea label="Description" value={string(draft.description)} onValueChange={(value) => update("description", value)} />,
             human && mode === "decision" ? "Write the question the user will see in Notifications. The recipe can supply a different question if the node defines a question parameter."
               : "Say what this node does so people can identify it in Templates.")}
-          {field("tags", "Tags (comma separated)", <input value={(file.dirty ? tags : descriptiveTags).join(",")} onChange={(event) => {
-            update("tags", event.target.value === "" ? undefined : event.target.value.split(","));
-          }} onBlur={() => { if (file.dirty && tags.length !== descriptiveTags.length) update("tags", descriptiveTags); }} />,
+          {field("tags", "Tags (comma separated)", <TextField label="Tags" value={(file.dirty ? tags : descriptiveTags).join(",")}
+            onValueChange={(value) => update("tags", value === "" ? undefined : value.split(","))} />,
           "Add terms people can search for, such as lint or deployment. The kind is already searchable.")}
           <DefinitionIconField icons={icons.data} type="node" name={string(draft.name)} value={string(draft.icon)} disabled={!file.editable}
             labelAction={help("Icon", "Choose the symbol used for this node in Templates and recipe diagrams.")}
             onChange={(value) => update("icon", value)} />
-          {kind && !human && field("timeoutSec", "Timeout (seconds)", <input type="number" min={1} value={typeof draft.timeoutSec === "number" ? draft.timeoutSec : ""} onChange={(event) => update("timeoutSec", event.target.value ? Number(event.target.value) : undefined)} />,
+          {kind && !human && field("timeoutSec", "Timeout (seconds)", <NumberField label="Timeout" fullWidth min={1} value={typeof draft.timeoutSec === "number" ? draft.timeoutSec : null} onValueChange={(value) => update("timeoutSec", value ?? undefined)} />,
             "Set how long one attempt can run before PeCore stops it.")}
           {human && mode === "review" && <div>
               <Select label="Review view" options={reviewViews} value={reviewView ?? null}
@@ -479,7 +475,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
               {fieldErrors("reviewView")}{fieldErrors("show")}
           </div>}
           {kind && kind !== "source" && <>
-            {field("outcomes", human && mode === "decision" ? "Choices (comma separated)" : "Outcomes (comma separated)", <input value={Array.isArray(draft.outcomes) ? draft.outcomes.join(",") : ""} onChange={(event) => update("outcomes", event.target.value ? event.target.value.split(",").map((outcome) => outcome.trim()) : [])} />,
+            {field("outcomes", human && mode === "decision" ? "Choices (comma separated)" : "Outcomes (comma separated)", <TextField label="Outcomes" value={Array.isArray(draft.outcomes) ? draft.outcomes.join(",") : ""} onValueChange={(value) => update("outcomes", value ? value.split(",").map((outcome) => outcome.trim()) : [])} />,
               human && mode === "decision" ? "Each choice is a button in Notifications and an outcome you can connect in the recipe. For example, yes can continue to the next node and no can go to End."
                 : human ? "Review uses approve, changes and reject. Connect each result to the next node or End."
                   : "Give each possible result a name so the recipe can decide where to go next. The command's exit rules or the agent's output must return one of these names.")}
@@ -497,13 +493,8 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
           {kind === "command" && <>
             {!draft.script && <>{commandField("Command", draft.command, (command) => update("command", command))}{fieldErrors("command")}</>}
             {!draft.command && textField("script", "Script file", "Enter the name of the .sh file to run. Choose either a command or a script file.")}
-            <div>
-              <div className={s.fieldHeading}>
-                <label><input type="checkbox" checked={draft.runsAs === "engine"} onChange={(event) => update("runsAs", event.target.checked ? "engine" : undefined)} /> Use source control credentials</label>
-                {help("Use source control credentials", "Turn this on only if the command must act on GitHub or GitLab with your account, for example to push, open a pull request or comment on an issue. Builds, tests and linters do not need it. With it on, the command must not change the job's files and needs a probe.")}
-              </div>
-              {fieldErrors("runsAs")}
-            </div>
+            {check("runsAs", "Use source control credentials", "Turn this on only if the command must act on GitHub or GitLab with your account, for example to push, open a pull request or comment on an issue. Builds, tests and linters do not need it. With it on, the command must not change the job's files and needs a probe.",
+              draft.runsAs === "engine", (checked) => update("runsAs", checked ? "engine" : undefined))}
             {flag("cleanCheckout", "Clean checkout", "Run a project-user command on a temporary clean copy of the job's files.")}
           </>}
           {human && flag("answer", "Allow an optional note", "Show a Note field in Notifications. The user can add text to their answer. A later node that accepts user-note can read it.")}
@@ -516,7 +507,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
               {fieldErrors(key)}
             </div>;
           })}
-          {kind === "source" && field("credentials", "Credentials (comma separated)", <input value={Array.isArray(draft.credentials) ? draft.credentials.join(",") : ""} onChange={(event) => update("credentials", event.target.value ? event.target.value.split(",") : [])} />,
+          {kind === "source" && field("credentials", "Credentials (comma separated)", <TextField label="Credentials" value={Array.isArray(draft.credentials) ? draft.credentials.join(",") : ""} onValueChange={(value) => update("credentials", value ? value.split(",").map((name) => name.trim()) : [])} />,
             "List the account names that this source needs to access its ticket system.")}
         </fieldset>
       ) : <ErrorText error="Unable to read the node definition." />}

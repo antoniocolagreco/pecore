@@ -231,3 +231,9 @@
 - Why: editing hid the command of command nodes and the actions of source nodes, showed an empty Script file instead, and gave no explanation of fields such as Runs as.
 - Replaces: one argument per line, explanations only while creating, Runs as showing `project-user` and `engine`.
 - Then: Runs as became the checkbox "Use source control credentials", off by default, because "project user" and "PeCore" meant nothing to an average user. On sets `runsAs: engine`.
+
+## 2026-11-23: Page layout rules
+
+- Decision: five rules for every page, in ui-design.md "Page layout rules". Saving: explicit Save at the top right of the title for anything that makes a commit; app preferences save by themselves. The main action sits at the top right, primary with an icon. Pages use the whole column; forms and wizards are narrow; only the recipe editor and Knowledge fill the height. Each setting is changed in one place. Only design-system controls.
+- Why: pages had drifted apart: Save in the title, in a card or automatic; main buttons in different styles; native checkboxes next to design-system ones; the Assistant and Project Managers configured in three places.
+- Replaces: per-page choices.
