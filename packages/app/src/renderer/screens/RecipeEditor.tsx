@@ -12,7 +12,7 @@ import { Button, IconButton } from "../ds/button";
 import { Checkbox } from "../ds/choice";
 import { Card } from "../ds/feedback";
 import { TextArea, TextField } from "../ds/field";
-import { GearIcon, TrashIcon } from "../ds/icons";
+import { TrashIcon } from "../ds/icons";
 import { Dialog, FieldHelp } from "../ds/overlay";
 import { MultiCombobox, Select } from "../ds/select";
 import type { Option } from "../ds/select";
@@ -306,7 +306,6 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
             onConnect={connect} onLayout={(next) => update({ layout: next })} />
           <Card title={selected ? templateTitle(string(selectedNode.use) || selected) : "Recipe settings"}
             actions={selected ? <div className={s.inspectorActions}>
-              <IconButton label="Recipe settings" icon={<GearIcon />} onClick={() => setSelected("")} />
               <IconButton label="Remove node" icon={<TrashIcon />} disabled={!editable} onClick={removeSelected} />
             </div> : undefined}
             className={s.inspector}>

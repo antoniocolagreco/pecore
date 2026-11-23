@@ -151,3 +151,9 @@
 - Decision: the recipe inspector takes 29% of the editor's width, at most 420 px. The canvas gets the rest.
 - Why: on wide windows the inspector grew past 600 px and took space from the graph.
 - Replaces: an inspector at 29% with no maximum.
+
+## 2026-11-23: No recipe settings button in the node inspector
+
+- Decision: the node inspector shows only Remove node. Clicking the empty canvas, Start or End shows the recipe settings.
+- Why: the gear button repeated what a click on the canvas already does.
+- Replaces: the gear button labelled Recipe settings.

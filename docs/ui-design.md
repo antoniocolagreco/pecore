@@ -310,6 +310,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   Start and End are always present and can be moved on the grid. Start uses the theme’s Success colour and End uses Fail. Start can connect from any side to the first step. Connect a step outcome to any side of End and pick Success or Failure.
 *   Connections to End use separate lanes for their labels. Automatic connections can enter from different sides.
 *   Inspector for a node: read-only kind, `requires`, `optional`, `skipWhenUnchanged` and `maxRounds` of its outgoing edges. Edit definition opens the shared node. Remove node removes the selected step, its arrows and references from the draft.
+*   Clicking the empty canvas, Start or End shows the recipe settings in the inspector; the node inspector has no separate settings button.
 *   The recipe editor page does not scroll: the canvas and the inspector fill the height left under the palette, and the inspector scrolls inside its card under a fixed title.
 *   Every field in the recipe inspector is as wide as the inspector, Max rounds included. The inspector takes 29% of the editor's width, at most 420 px.
 *   The recipe inspector includes `maxNodeRuns` as Max node runs, a field as wide as the inspector. An info icon next to the label explains it: the most steps one job can run, after which the job pauses and asks whether to continue. Git Rebase appears in the graph as a Command node.
