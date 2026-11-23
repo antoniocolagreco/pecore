@@ -9,12 +9,18 @@ import s from "./CodeSnapshot.module.css";
 
 const languages = { json: json(), shell: StreamLanguage.define(shell) };
 
-const highlight = syntaxHighlighting(HighlightStyle.define([
+export const highlight = syntaxHighlighting(HighlightStyle.define([
   { tag: [tags.propertyName, tags.variableName], color: "light-dark(#17528c, #9cdcfe)" },
   { tag: tags.string, color: "light-dark(#9b3417, #f1ac8a)" },
   { tag: tags.number, color: "light-dark(#246440, #b5cea8)" },
   { tag: [tags.keyword, tags.bool, tags.null, tags.atom], color: "light-dark(#6d388e, #d4a8ec)" },
   { tag: tags.comment, color: "light-dark(#526055, #a6b5a4)" },
+  { tag: tags.heading, fontWeight: "bold", color: "light-dark(#17528c, #9cdcfe)" },
+  { tag: tags.strong, fontWeight: "bold" },
+  { tag: tags.emphasis, fontStyle: "italic" },
+  { tag: [tags.link, tags.url], color: "light-dark(#17528c, #9cdcfe)", textDecoration: "underline" },
+  { tag: tags.monospace, color: "light-dark(#9b3417, #f1ac8a)" },
+  { tag: [tags.processingInstruction, tags.list, tags.quote], color: "light-dark(#526055, #a6b5a4)" },
 ]));
 
 const theme = EditorView.theme({

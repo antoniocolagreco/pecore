@@ -12,7 +12,7 @@ export async function checkHome(home?: string): Promise<HomeFinding[]> {
   const gh = (home === undefined ? process.env.GH_CONFIG_DIR : undefined) || join(config, "gh");
   const glab = (home === undefined ? process.env.GLAB_CONFIG_DIR : undefined) || join(config, "glab-cli");
   const files = new Set([join(gh, "hosts.yml"), join(glab, "config.yml"), join(path, ".aws")]);
-  for (const name of await readdir(path)) if (name.startsWith(".claude")) files.add(join(path, name));
+  for (const name of await readdir(path)) if (name.startsWith(".claude") && !name.endsWith(".lock")) files.add(join(path, name));
   if (home === undefined) {
     for (const key of ["AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "CLAUDE_CONFIG_DIR"]) {
       const override = process.env[key];

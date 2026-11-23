@@ -251,6 +251,16 @@
   font-size: var(--text-size-sm);
 }
 
+.colorSwatch {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-right: 0.35em;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  vertical-align: -0.05em;
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;
