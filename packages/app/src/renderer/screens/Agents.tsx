@@ -64,7 +64,7 @@ export function Agents() {
             const to: string = `/agents/edit/${encodeURIComponent(agent.id)}`;
             const account: Account | undefined = modelAccounts.find(({ id }) => id === agent.model?.account);
             const provider: string | undefined = account ? harnessName(account, modelAccounts) : agent.model?.account;
-            const card = <NodeCard icon={<NodeIconTile size="lg"><SparkIcon size="md" /></NodeIconTile>} title={agent.name} kind="agent" />;
+            const card = <NodeCard icon={<NodeIconTile size="lg"><SparkIcon size="md" /></NodeIconTile>} title={agent.name} />;
             return <li key={agent.id} className={templates.entry}>
               {connected && !destroy.busy ? <Link to={to} className={s.cardLink} aria-label={agent.name}>{card}</Link> : card}
               <div className={`${templates.description} ${s.details}`}>

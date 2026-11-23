@@ -270,4 +270,4 @@
 
 ## Agents list
 
-- Agents uses the same square cards and grid as node templates. The provider, model, effort and action icons sit beside the card. New agent, the card and Edit open the editor. Saving returns to the list. Delete asks for confirmation.
+- Agents uses the square cards and grid from node templates. The card shows the icon and title. The provider, model, effort and action icons sit beside it. New agent, the card and Edit open the editor. Saving returns to the list. Delete asks for confirmation.
