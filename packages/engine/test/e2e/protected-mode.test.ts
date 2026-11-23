@@ -82,7 +82,7 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
       await until(() => project.executor.job(job).state === "succeeded");
       expect((await gitApp(join(project.ctx.dir, "repo.git"), ["show", `factory/${job}:who.txt`])).trim()).toBe(protectedUser);
 
-      for (const secret of [p.settings, p.accounts, join(appLogin, ".credentials.json"), join(project.ctx.dir, "pecore.db")]) {
+      for (const secret of [p.settings, p.accounts, p.profiles, join(appLogin, ".credentials.json"), join(project.ctx.dir, "pecore.db"), join(project.ctx.dir, "project.json"), join(p.templateNodes, "git-commit.json"), p.chatsDb]) {
         expect(await as(protectedUser, 'cat -- "$1"', secret), secret).toEqual({ ok: false, out: "" });
       }
       for (const folder of [home, p.harness, join(p.harness, appUser), appLogin, p.projects, p.templates]) {

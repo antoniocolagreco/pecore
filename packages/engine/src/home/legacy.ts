@@ -1,5 +1,5 @@
-import { lstat, mkdir, rename, rm } from "node:fs/promises";
-import { join, sep } from "node:path";
+import { chmod, lstat, mkdir, readdir, rename, rm } from "node:fs/promises";
+import { join, relative, sep } from "node:path";
 import { protectedUser } from "../accounts/agents";
 import { privateDirectory } from "../osuser/acl";
 import { appUser, baseEnv, run } from "../runners/process";
@@ -10,6 +10,25 @@ const legacyChats = ".pecore-chats";
 
 async function exists(path: string): Promise<boolean> {
   return lstat(path).then(() => true, () => false);
+}
+
+const opened: RegExp[] = [/^adapters$/, /^chats$/, /^harness\/(?!.*\/)/, /^projects\/[^/]+\/(work|repo\.git)$/];
+
+export async function closeHome(home: string): Promise<void> {
+  const walk = async (dir: string): Promise<void> => {
+    for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+      const path: string = join(dir, entry.name);
+      const rel: string = relative(home, path);
+      if (entry.isSymbolicLink() || opened.some((pattern) => pattern.test(rel))) continue;
+      const info = await lstat(path).catch(() => null);
+      if (!info) continue;
+      const mode: number = info.mode & 0o7777;
+      const closed: number = entry.isDirectory() ? mode & ~0o007 : mode & ~0o077;
+      if (closed !== mode) await chmod(path, closed);
+      if (entry.isDirectory()) await walk(path);
+    }
+  };
+  await walk(home);
 }
 
 export async function moveLegacyFolders(home: string, protectedUserExists: boolean): Promise<void> {
