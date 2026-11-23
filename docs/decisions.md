@@ -230,3 +230,4 @@
 - Decision: editing a node shows the same fields as creating it, with their info icons. A command is one line written as in a terminal, with quotes around an argument with spaces. Source nodes show the command or script of each action. Runs as uses readable labels: "Project user, in the job's files" and "PeCore, with its logins".
 - Why: editing hid the command of command nodes and the actions of source nodes, showed an empty Script file instead, and gave no explanation of fields such as Runs as.
 - Replaces: one argument per line, explanations only while creating, Runs as showing `project-user` and `engine`.
+- Then: Runs as became the checkbox "Use source control credentials", off by default, because "project user" and "PeCore" meant nothing to an average user. On sets `runsAs: engine`.

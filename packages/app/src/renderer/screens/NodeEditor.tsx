@@ -325,11 +325,6 @@ function CommandInput({ label, labelAction, value, onChange }: { label: string; 
     }} />;
 }
 
-const runsAsOptions: { value: string; label: string }[] = [
-  { value: "project-user", label: "Project user, in the job's files" },
-  { value: "engine", label: "PeCore, with its logins" },
-];
-
 const nodeKinds: { value: Node["kind"]; label: string }[] = [
   { value: "agent", label: nodeKindLabels.agent },
   { value: "command", label: nodeKindLabels.command },
@@ -503,8 +498,10 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
             {!draft.script && <>{commandField("Command", draft.command, (command) => update("command", command))}{fieldErrors("command")}</>}
             {!draft.command && textField("script", "Script file", "Enter the name of the .sh file to run. Choose either a command or a script file.")}
             <div>
-              <Select label="Runs as" options={runsAsOptions} value={string(draft.runsAs) || "project-user"} onValueChange={(value) => update("runsAs", value)}
-                labelAction={help("Runs as", "Project user: runs in the job's files as the project's user, without PeCore's logins. Use it for builds, tests and linters. PeCore: runs with PeCore's logins, for example to push or open a pull request. It must leave the job's files unchanged and needs a probe.")} />
+              <div className={s.fieldHeading}>
+                <label><input type="checkbox" checked={draft.runsAs === "engine"} onChange={(event) => update("runsAs", event.target.checked ? "engine" : undefined)} /> Use source control credentials</label>
+                {help("Use source control credentials", "Turn this on only if the command must act on GitHub or GitLab with your account, for example to push, open a pull request or comment on an issue. Builds, tests and linters do not need it. With it on, the command must not change the job's files and needs a probe.")}
+              </div>
               {fieldErrors("runsAs")}
             </div>
             {flag("cleanCheckout", "Clean checkout", "Run a project-user command on a temporary clean copy of the job's files.")}
