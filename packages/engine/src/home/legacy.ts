@@ -48,7 +48,7 @@ export async function moveLegacyFolders(home: string, protectedUserExists: boole
   const moved: boolean = await exists(agentTarget);
   await privateDirectory(agentTarget, protectedUser, home);
   const script: string = [
-    `if [ ${moved ? "1" : "0"} = 0 ] && [ -d "$1" ] && [ ! -L "$1" ]; then cp -a -- "$1"/. "$2"/ && rm -rf -- "$1" || exit 1; fi`,
+    `if [ ${moved ? "1" : "0"} = 0 ] && [ -d "$1" ] && [ ! -L "$1" ]; then find "$1" -mindepth 1 -maxdepth 1 -exec cp -a -t "$2" -- {} + && rm -rf -- "$1" || exit 1; fi`,
     'rm -rf -- "$3"',
   ].join("; ");
   const argv: string[] = ["/bin/sh", "-c", script, "sh", join(agentHome, legacyHarness), agentTarget, join(agentHome, legacyChats)];

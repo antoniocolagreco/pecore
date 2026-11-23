@@ -111,7 +111,7 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
       expect((await as(protectedUser, 'mkdir -p "$1/.pecore-harness/legacy" "$1/.pecore-chats/x" && umask 077 && echo old-secret > "$1/.pecore-harness/legacy/auth.json"', agentHome)).ok).toBe(true);
       await moveLegacyFolders(home, true);
       expect((await as(protectedUser, 'cat -- "$1"', join(p.harness, protectedUser, "legacy", "auth.json"))).out).toBe("old-secret");
-      expect((await execFileP("stat", ["-c", "%U %a", join(p.harness, protectedUser, "legacy", "auth.json")])).stdout.trim()).toBe(`${protectedUser} 600`);
+      expect((await as(protectedUser, 'stat -c "%U %a" -- "$1"', join(p.harness, protectedUser, "legacy", "auth.json"))).out).toBe(`${protectedUser} 600`);
       expect((await as(protectedUser, 'test -e "$1/.pecore-harness" || test -e "$1/.pecore-chats"', agentHome)).ok).toBe(false);
       expect((await as("nobody", 'cat -- "$1"', join(p.harness, protectedUser, "legacy", "auth.json"))).ok).toBe(false);
 

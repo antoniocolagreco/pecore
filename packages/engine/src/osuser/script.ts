@@ -96,6 +96,7 @@ export function projectAccessScript(projectDir: string, appUser: string, protect
     `find -P ${quote(work)} -mindepth 1 -maxdepth 1 -type d -exec chown -hRP -- ${owner}:${group} {} +`,
   );
   if (protectedMode) {
+    commands.push(`setfacl -RP -m ${quote(`u:${app}:rwX,d:u:${app}:rwX`)} -- ${quote(repo)}`);
     commands.push(...traverseAclCommands(work, protectedUser).map((argv) => argv.map(quote).join(" ")));
   }
   return [...commands, ""].join("\n");

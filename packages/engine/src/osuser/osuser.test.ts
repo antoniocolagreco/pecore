@@ -74,6 +74,7 @@ describe("project access script", () => {
     expect(script).toContain("chmod 2770 -- '/home/ann/pecore/projects/demo/work'");
     expect(script).toContain("chown -- 'ann':'pecore-agent' '/home/ann/pecore/projects/demo/repo.git' '/home/ann/pecore/projects/demo/work'");
     expect(script).toContain("chown -hRP -- 'ann' '/home/ann/pecore/projects/demo/repo.git/hooks'");
+    expect(script).toContain("setfacl -RP -m 'u:ann:rwX,d:u:ann:rwX' -- '/home/ann/pecore/projects/demo/repo.git'");
     expect(script).toContain("'setfacl' '-m' 'u:pecore-agent:x' '--' '/home/ann/pecore/projects/demo'");
   });
 
