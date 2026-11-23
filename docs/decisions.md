@@ -133,3 +133,9 @@
 - Decision: Start and End have a plain green or red fill and a left stripe in the same colour, like the other node cards.
 - Why: the user did not like the fade.
 - Replaces: the fill fading from the top-left corner.
+
+## 2026-11-23: The recipe inspector scrolls inside its card
+
+- Decision: the recipe editor page keeps the window's height. The inspector scrolls inside its card and its title stays visible.
+- Why: a node with many arrows made the whole page scroll, moving the canvas out of view.
+- Replaces: a page that grew with the inspector's content.
