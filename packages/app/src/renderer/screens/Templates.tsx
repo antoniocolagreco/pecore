@@ -8,7 +8,7 @@ import { DefinitionIcon, useDefinitionIcons } from "../components/DefinitionIcon
 import type { DefinitionType } from "../components/DefinitionIcon";
 import { ErrorText, Page, ui } from "../components/ui";
 import { Button } from "../ds/button";
-import { Tabs } from "../ds/data";
+import { SidebarItem, SidebarSection } from "../shell/sidebar";
 import { Card, EmptyState, Spinner } from "../ds/feedback";
 import { AlertIcon, PlusIcon } from "../ds/icons";
 import { MultiCombobox } from "../ds/select";
@@ -93,16 +93,17 @@ export function Templates() {
   const connected: boolean = useConnected();
   const icons = useDefinitionIcons();
   const navigate = useNavigate();
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
   const type: DefinitionType = params.get("tab") === "recipes" ? "recipe" : "node";
-  return <Page title="Templates" actions={
+  return <Page title={type === "node" ? "Node templates" : "Recipe templates"} actions={
     <Button variant="primary" icon={<PlusIcon />} disabled={!connected} onClick={() => void navigate(`/templates/${type}s/new`)}>
       {type === "node" ? "New Node" : "New Recipe"}
     </Button>
   }>
-    <Tabs value={type} onValueChange={(value) => setParams(value === "recipe" ? { tab: "recipes" } : {}, { replace: true })} tabs={[
-      { value: "node", label: "Node templates", content: <TemplateList type="node" icons={icons.data} /> },
-      { value: "recipe", label: "Recipe templates", content: <TemplateList type="recipe" icons={icons.data} /> },
-    ]} />
+    <SidebarSection title="Templates" label="Template types">
+      <SidebarItem to="/templates" active={type === "node"}>Nodes</SidebarItem>
+      <SidebarItem to="/templates?tab=recipes" active={type === "recipe"}>Recipes</SidebarItem>
+    </SidebarSection>
+    <TemplateList key={type} type={type} icons={icons.data} />
   </Page>;
 }

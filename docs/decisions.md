@@ -17,3 +17,9 @@
 - Decision: the Assistant mentions or offers icons only while creating or editing a node or recipe template, or when the user asks for one.
 - Why: it listed icons among the things it can create in unrelated conversations.
 - Replaces: icons offered as a standalone thing to create.
+
+## 2026-11-23: Templates sub-navigation in the sidebar
+
+- Decision: like Settings, the sidebar shows Nodes and Recipes under Templates. Each opens its own list.
+- Why: the same navigation as Settings, one click from anywhere in the page.
+- Replaces: the Node templates and Recipe templates tabs on the Templates page.
