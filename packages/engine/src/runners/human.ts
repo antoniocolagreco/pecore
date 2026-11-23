@@ -5,6 +5,7 @@ export type HumanSubject = {
   nodeRunId: string;
   node: string;
   description: string;
+  mode: "decision" | "review";
   contentState: string | null;
   show: Artifact[];
   answer: boolean;
@@ -14,11 +15,13 @@ export function subjectHash(subject: unknown): string {
   return createHash("sha256").update(JSON.stringify(subject)).digest("hex");
 }
 
-export function humanItem(nodeRunId: string, recipeNodeId: string, node: HumanNode, artifacts: Artifact[], contentState: string | null) {
+export function humanItem(nodeRunId: string, recipeNodeId: string, node: HumanNode, artifacts: Artifact[], contentState: string | null, question?: unknown) {
+  const mode: HumanSubject["mode"] = node.kind === "human-decision" ? "decision" : "review";
   const subject: HumanSubject = {
     nodeRunId,
     node: recipeNodeId,
-    description: node.description,
+    description: mode === "decision" && typeof question === "string" && question.trim() ? question.trim() : node.description,
+    mode,
     contentState,
     show: artifacts.filter((a) => a.type !== "attachment" && node.show.includes(a.type)),
     answer: node.answer,

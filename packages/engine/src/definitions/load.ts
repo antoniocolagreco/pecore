@@ -1,7 +1,8 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { z } from "zod";
-import { Accounts, Node, Profiles, Project, Recipe, Settings, Tiers, unknownPlaceholders } from "@pecore/schemas";
+import { Accounts, Profiles, Project, Recipe, Settings, StoredNode, Tiers, unknownPlaceholders } from "@pecore/schemas";
+import type { Node } from "@pecore/schemas";
 import { checkRecipe } from "./recipe-check";
 
 export type DefinitionError = { file: string; path: string; message: string };
@@ -42,13 +43,7 @@ async function parseFile<S extends z.ZodType>(file: string, schema: S, prepare?:
   return r.success ? { value: r.data, errors: [] } : { value: null, errors: zodErrors(file, r.error) };
 }
 
-export async function loadNodeFile(file: string): Promise<Loaded<Node>> {
-  const loaded = await parseFile(file, Node);
-  const node = loaded.value;
-  if (!node) return loaded;
-  const errors: DefinitionError[] = [];
-  const dir = dirname(file);
-  if (node.name !== basename(file, ".json")) errors.push({ file, path: "name", message: `name must match the file name ${basename(file, ".json")}` });
+export function nodeSidecars(node: Node): [string, string][] {
   const sidecars: [string, string][] = [];
   if (node.kind === "agent") sidecars.push(["prompt", node.prompt]);
   if (node.kind === "command") {
@@ -62,7 +57,17 @@ export async function loadNodeFile(file: string): Promise<Loaded<Node>> {
       if (s) sidecars.push([`${key}.script`, s]);
     }
   }
-  for (const [path, name] of sidecars) {
+  return sidecars;
+}
+
+export async function loadNodeFile(file: string): Promise<Loaded<Node>> {
+  const loaded = await parseFile(file, StoredNode);
+  const node = loaded.value;
+  if (!node) return loaded;
+  const errors: DefinitionError[] = [];
+  const dir = dirname(file);
+  if (node.name !== basename(file, ".json")) errors.push({ file, path: "name", message: `name must match the file name ${basename(file, ".json")}` });
+  for (const [path, name] of nodeSidecars(node)) {
     if (!(await exists(join(dir, name)))) errors.push({ file, path, message: `${name} not found next to the node file` });
   }
   if (node.kind === "agent" && (await exists(join(dir, node.prompt)))) {
@@ -86,6 +91,7 @@ async function jsonFiles(dir: string): Promise<string[]> {
 }
 
 export type Definitions = {
+  nodeDir: string;
   nodes: Map<string, Node>;
   recipes: Map<string, Recipe>;
   errors: DefinitionError[];
@@ -112,7 +118,7 @@ export async function loadDefinitions(dir: string, opts: { checkRecipes: boolean
       if (recipe) errors.push(...checkRecipe(recipe, nodes, opts.remote).map((e) => ({ file, ...e })));
     }
   }
-  return { nodes, recipes, errors };
+  return { nodeDir: join(dir, "nodes"), nodes, recipes, errors };
 }
 
 export function loadTemplates(templatesDir: string): Promise<Definitions> {
@@ -121,13 +127,25 @@ export function loadTemplates(templatesDir: string): Promise<Definitions> {
 
 export type LoadedProject = Definitions & { project: Project | null };
 
-export async function loadProject(projectDir: string): Promise<LoadedProject> {
+export async function loadProject(projectDir: string, templatesDir?: string): Promise<LoadedProject> {
   const file = join(projectDir, "project.json");
   const p = await parseFile(file, Project);
-  const defs = await loadDefinitions(projectDir, { checkRecipes: true, remote: p.value?.repo !== null });
-  const errors = [...p.errors, ...defs.errors];
+  const shared: boolean = templatesDir !== undefined && p.value?.recipes !== undefined;
+  const defs = await loadDefinitions(shared ? templatesDir! : projectDir, { checkRecipes: !shared, remote: p.value?.repo !== null });
+  const errors = shared ? [...p.errors] : [...p.errors, ...defs.errors];
   const project = p.value;
   if (project) {
+    if (shared) {
+      const available: Map<string, Recipe> = new Map(defs.recipes);
+      defs.recipes.clear();
+      for (const name of project.recipes ?? []) {
+        const recipe: Recipe | undefined = available.get(name);
+        if (recipe) {
+          defs.recipes.set(name, recipe);
+          errors.push(...checkRecipe(recipe, defs.nodes, project.repo !== null).map((issue) => ({ file: join(templatesDir!, "recipes", `${name}.json`), ...issue })));
+        } else errors.push({ file, path: "recipes", message: `recipe template ${name} not found` });
+      }
+    }
     if (project.id !== basename(projectDir)) errors.push({ file, path: "id", message: `id must match the directory name ${basename(projectDir)}` });
     if (project.createRepo !== null && !defs.nodes.has(project.createRepo)) errors.push({ file, path: "createRepo", message: `node ${project.createRepo} not found in the project` });
     if (project.source !== null) {

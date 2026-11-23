@@ -1,6 +1,7 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "git-commit",
+  "tags": ["source control", "command"],
   "description": "Commit every change in the workdir to the job branch; done also when there is nothing new to commit",
   "kind": "command",
   "script": "git-commit.sh",

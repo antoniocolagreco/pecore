@@ -1,6 +1,7 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "git-rebase",
+  "tags": ["source control", "command"],
   "description": "Rebase the job branch onto its new base and restore uncommitted changes.",
   "kind": "command",
   "runsAs": "project-user",

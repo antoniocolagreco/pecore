@@ -108,7 +108,7 @@
 | IE1 | Recipe graph editor: add and connect nodes on a grid, edges with outcomes, recipe fields | G16, 3.2 |
 | IE2 | Validation errors shown on the graph | G5 |
 | IE3 | Node editor: fields by kind, prompt (Markdown), script (shell) | 3.1 |
-| IE4 | Templates: templates of nodes and recipes, instantiate into a project | G5 |
+| IE4 | Templates, the shared catalog of nodes and recipes | G5 |
 | IE5 | "Ask the AI" from an editor | G5 |
 
 ### F. Projects
@@ -267,9 +267,9 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 *   Project page header: a "New job" button that opens a dialog with Title, What to do and Recipe. Recipe is chosen by itself and locked when the project has one recipe; with none, the dialog says to add one in the Recipes tab. "Create job" creates it and closes the dialog; the job appears in the Jobs tab.
 *   Project page, full width, in tabs:
     *   Jobs, the first tab and open by default: the project's jobs, in the same table as the Jobs page without the Project column.
-    *   Settings, Recipes, Nodes and Knowledge: a panel with a maximum width, aligned to the left.
+    *   Settings, Recipes and Knowledge each use a panel aligned to the left.
     *   Settings shows the fixed project ID and editable name, base branch, Project Manager, repository, folder and Compose file. The Project Manager field holds the name, with a round colour swatch at its start that opens the system colour picker; a name or colour used by another project shows an error and blocks Save. Select an existing remote and its forge account, or choose "Local only" to disconnect it. Type a new path or use "Choose…" to move the checkout to an empty folder. The Compose path is relative to the project folder and can be picked there. Leave it empty for automatic detection.
-    *   Recipes (recipe editor), Nodes (node editor), Knowledge (IF4), Services, Ticket source (`label`, `pollSec`, trusted users).
+    *   Recipes shows the selected templates with links to their shared editors. Settings includes project variables that recipes can reference.
     *   Delete project (IF7) and Export sit at the left of the Settings actions, apart from Discard and Save.
 *   No "Jobs of this project" button.
 
@@ -301,27 +301,26 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 ### Recipe editor
 
-*   Two modes: an instance (from the project page) or a template (from Templates).
-*   In a project's Recipes tab, New Recipe opens the graph editor with an empty draft. Import template adds a recipe and its required nodes to the project and opens it in the editor. A recipe built from scratch is added when saved.
-*   React Flow graph on a grid. Nodes are added from a palette (the project's node instances, or node templates in template mode), placed on the grid and connected by dragging from an outcome to a node. Positions are saved in the recipe's `layout`; a recipe with no `layout` (for example written by the Assistant) is laid out automatically when opened.
+*   Edit a shared recipe in Templates. Duplicate opens a new copy with the same graph. In a project's Recipes tab, Add to project selects a template and Remove clears the selection.
+*   Add nodes from the shared palette, place them on the graph and connect outcomes to other nodes. The editor saves positions in `layout` and arranges nodes without saved positions.
 *   Validation errors on the node or edge that causes them (IE2).
 *   Inspector for a node: kind, outcomes, `requires`, `optional`, `skipWhenUnchanged`, `maxRounds` of its outgoing edges, "Edit node", "Ask the AI".
 *   Inspector for the recipe: `start`, `onBaseChanged`, `maxNodeRuns`, `successOutcomes`.
 
 ### Node editor
 
-*   Opened from a recipe, the project's Nodes section or Templates; the same editor for templates and instances.
+*   Opened from a recipe or from Templates. New Node offers Command, Agent, Human Decision and Human Review. The Human Decision template offers Yes and No by default. Set the question on the recipe step.
 *   Form with the fields of the node's kind (agent, command, human, source); prompt in Markdown and script in shell with CodeMirror; a JSON tab for the whole file.
 *   Validation errors next to the field. Save is disabled while the draft is invalid. The draft lives in memory until saved or discarded; leaving the page with an unsaved draft asks first.
 *   No autosave: every save is one commit in `PECORE_HOME`, or in the project's own repository for a project outside it.
-*   When live jobs use the node instance being edited, the editor says so: they will use the new version at their next run of that node.
+*   Saved changes affect new jobs. Existing jobs keep their saved definitions.
 
 ### Templates
 
 *   Separate tabs for node templates and recipe templates.
 *   Each tab explains what its templates do and has a New Node or New Recipe button that opens the editor.
 *   Entries form a grid that adds columns as space allows. Each entry pairs a square card with its description. The card shows a large icon above a title such as Cargo Check. Hovering anywhere on the entry highlights it. Clicking it opens the editor. The page scrolls with the full grid.
-*   Add node templates from the project's Nodes tab. Import recipe templates from the project's recipe editor.
+*   Select tags from the node templates. Each selected tag appears in the filter and can be removed. Selecting `github` and `source control` shows templates with both tags.
 *   The automatic icon uses `node-<name>.svg` or `recipe-<name>.svg` from the shared library, with a built-in default. The editor can select another icon. The Assistant saves new SVGs under `templates/icons/`.
 
 ### Settings

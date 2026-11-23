@@ -34,7 +34,7 @@ An engine written in TypeScript runs the jobs. It executes recipes. A recipe is 
 
 The engine contains no language-specific or forge-specific code. A toolchain (Rust, Go, TypeScript, ...) is supported by adding nodes that call its commands. A forge is supported by adding nodes that call its commands or API.
 
-Nodes start as global templates. To use one, the user instantiates it: the template is copied into the project and customised. A template and its copies are not linked. The user creates and edits templates and instances by hand, or asks the AI to create, correct or modify them.
+Nodes and recipes live in Templates. Each project selects recipes and supplies values for their steps. The user can edit templates or ask the Assistant to do it.
 
 Agent nodes run the original harness programs and talk to them through ACP: Claude Code (through the `claude-agent-acp` adapter), Codex (`codex-acp`), opencode (`opencode acp`), and any other harness with an ACP mode or adapter, such as GitHub Copilot CLI, Gemini CLI or pi. Each harness uses its own login and subscription. One job can use models from several providers. Claude Code is the first connector built; the others follow (Build order).
 
@@ -69,7 +69,7 @@ What none of them offers together:
 *   **G2. No built-in language.** Support for a new language or toolchain needs only new node templates, with no change to engine code. Verified by running the same recipe shape on a TypeScript project and on a Rust project, with different check nodes.
 *   **G3. No built-in forge.** Support for a new delivery target needs only new node templates. Verified by delivering the same job to GitHub, to GitLab, and to the local repo only, changing only the delivery nodes.
 *   **G4. Every operation is a node.** Agents, checks, human reviews, commit, rebase, push and PR/MR are nodes. A recipe can put a human review before the commit node. The engine handles only workdirs, job branches, and clone and fetch of the project's remote with the project's account: it creates workdirs and branches when a job needs them, removes workdirs when the job ends `succeeded` or `not_delivered` (or, for a failed or stopped job, when it is archived or deleted) and branches when the job is deleted.
-*   **G5. Templates and instances.** Node and recipe definitions are JSON files validated by JSON Schema. Both nodes and recipes have global templates and instances in the project. The user can create a template or an instance by hand or by asking the AI in chat; the AI can also correct or modify existing ones. A new or changed file passes schema validation and is usable at once.
+*   **G5. Shared templates.** Templates holds node and recipe definitions. A project saves its chosen recipe names, variables and account bindings. A job saves the recipe, node definitions, prompt and script contents, and their hashes at creation. Saving a template affects jobs created after the save.
 *   **G6. Several providers at once.** One job can run agents from at least three different harnesses (for example Claude Code builder, Codex reviewer, opencode with a DeepSeek model for tests). Verified by an end-to-end test of the `feature` recipe with three harnesses.
 *   **G7. Parallel jobs with waits, not failures.** The number of parallel jobs and agents is configuration. A job that hits a quota, rate limit, concurrency limit, network outage or expired login enters a visible waiting state with a reason from a fixed list (4.3), and resumes when the cause clears. It does not fail for those reasons. Verified per built-in connector with recorded ACP traffic of quota, rate limit and auth errors (section 5).
 *   **G8. Self-contained projects.** A project directory holds settings, definitions, knowledge, job history, artifacts and logs. The GUI, Assistant and CLI can share a project without its clone or workdirs. History is optional and raw logs stay local (section 8). A project can link one remote and one account. The engine uses that account and the configured node to create a new remote.
@@ -98,7 +98,6 @@ What none of them offers together:
 *   **Deploy** to any environment.
 *   **Agents in containers.** Agents run on the host as an OS user (D9). Containers are used only for services a job's tests need (Postgres, Kafka).
 *   **Network control per node.** Agents have the network access of their OS user.
-*   **Link between a template and its instances.** Changing a template never changes an existing instance.
 *   **Checking the behaviour of new nodes** beyond schema validation.
 *   **Several machines** running the same `PECORE_HOME` at the same time.
 *   **Several human users** on one app, or a hosted service.
@@ -181,7 +180,7 @@ Project Settings shows the fixed project ID and lets the user edit the name, bas
 
 *   **Given**: a Rust project with no node for `clippy`.
 *   **When**: the user asks the Assistant "create a check that runs clippy with warnings as errors, and add it to my Rust project".
-*   **Then**: the Assistant writes a `cargo-clippy` template to the global templates and passes the rest to the project's Project Manager, which instantiates it into the project and adds it to the project's recipe. The engine validates the new template, the new instance and the changed recipe. The next job uses the new node.
+*   **Then**: the Project Manager proposes a `cargo-clippy` template and where to use it. The Assistant can save the node and recipe in Templates. The project's next job uses the updated recipe.
 
 ### CUJ 4: Local-only project
 
@@ -203,9 +202,9 @@ Project Settings shows the fixed project ID and lets the user edit the name, bas
 
 ### CUJ 7: Share one project
 
-*   **Given**: project `progetto-1` with its instances, knowledge base and job history.
+*   **Given**: project `progetto-1` with selected recipe templates, a knowledge base and job history.
 *   **When**: the user exports the project from Settings or asks the Assistant for it. Another user chooses the export file or its extracted folder in Projects or supplies its local path to the Assistant. The CLI still supports sharing via archives.
-*   **Then**: before importing, the recipient sees the warning about scripts and prompts, findings and coverage, and the local forge account choices. They choose a new ID only if the original is taken. The imported project contains its node and recipe instances, knowledge base and any included history.
+*   **Then**: the recipient reviews the scripts, prompts, findings and local account choices. The imported project refers to shared templates and retains its knowledge base and any included history.
 
 --------------------------------------------------------------------------------
 
@@ -265,10 +264,6 @@ $PECORE_HOME/                         default ~/.pecore; its path is stored in E
     recipes/<template>.json           recipe templates
   projects/<project-id>/              one self-contained project (path can be moved in settings)
     project.json                      repo, account, services
-    nodes/<instance>.json             node instances (copied from templates, customised)
-    nodes/<instance>.md
-    nodes/<instance>.sh
-    recipes/<instance>.json           recipe instances
     knowledge/**.md                   knowledge base
     pecore.db                         events and views of this project's jobs (SQLite)
     repo.git/                         bare repo: clone of the remote, or local only
@@ -291,9 +286,9 @@ $PECORE_HOME/                         default ~/.pecore; its path is stored in E
 
 ### 3. Definitions
 
-#### 3.1 Node template and instance
+#### 3.1 Node templates
 
-A node template and a node instance use the same schema. An instance is a copy of a template saved in a project, with its values customised. The instance keeps no reference to the template.
+A node template contains its defaults and references to the prompt or scripts it runs. Recipe steps supply parameter values and agent settings.
 
 Fields common to every node:
 
@@ -302,16 +297,16 @@ Fields common to every node:
 | `name` | unique among the templates or in its project |
 | `description` | what the node does; the Assistant and the Project Manager read it to pick and build recipes |
 | `icon` | optional SVG icon name from `templates/icons/`, without the file extension |
-| `kind` | `agent`, `command`, `human` or `source` (section 7; a source node is used by the project, not by recipes) |
+| `kind` | `agent`, `command`, `human-decision`, `human-review` or `source` (section 7) |
 | `params` | JSON Schema of the values a recipe can set |
 | `inputs` | artifact types the node reads (see 3.3) |
 | `optionalInputs` | artifact types the node reads when the job has them (for example the builder reads `findings` after a review asked for changes); the validator does not require them on every path |
 | `outputs` | artifact types the node writes |
 | `outcomes` | the outcome names the node can produce |
 | `failOutcomes` | the outcomes that mean failure (for example `failed`); with no edge, they end the job as `failed` (4.2) |
-| `changesFiles` | `true` if the node may modify the workdir; `false` makes it read-only (see 4.4) |
+| `changesFiles` | whether a command or agent may modify the workdir (see 4.4) |
 | `scratchPaths` | glob patterns of files the node may create and that are thrown away after it (for example `coverage/**`, `**/*.tmp`); default empty |
-| `timeoutSec` | hard time limit for one attempt |
+| `timeoutSec` | hard time limit for one command, agent or ticket source attempt |
 | `retry` | extra attempts after a process failure (not after a `failed` outcome), default 1 |
 
 Fields by kind:
@@ -333,7 +328,7 @@ Fields by kind:
     *   `outputSchema`: JSON Schema of the structured output the agent must write to `.pecore/output.json` (section 5); it contains a field `outcome` whose value must be one of `outcomes`.
     *   `knowledge`: glob patterns of knowledge base files the node receives.
     *   `resume`: `true` to resume the harness session when the node runs again in the same job.
-*   **`human`**
+*   **`human-decision` and `human-review`**
     *   `show`: artifact types to display (summary, diff, check logs, `risk`). The approver's `risk` artifact exists for this: the human review shows risky hunks first.
     *   The outcomes are the buttons the user sees (for example `approve`, `changes`, `reject`).
     *   `answer`: whether the user can attach text, which becomes an artifact for the next node.
@@ -376,9 +371,15 @@ else
 fi
 ```
 
-#### 3.2 Recipe template and instance
+#### 3.2 Recipe templates
 
-A recipe is a graph. Recipe templates live in `templates/`; a project uses recipe instances, which reference only node instances of the same project.
+A recipe is a graph. Shared recipes in `templates/recipes/` refer to nodes in `templates/nodes/`. The project selects recipe names in `project.json`. A step can set parameters directly or use a value from the project's `variables` object, for example `"directory": "{project.vars.rust-path}"`. Each step can pass a different value to the same node. Job creation checks the resolved parameters and which inputs reach each step.
+
+At startup PeCore moves legacy project definitions to Templates. Equal copies become references to existing definitions. A different definition with the same name receives a name derived from the project ID. A job without a saved copy can use the definitions available at migration time. A project export includes the templates it uses. On import PeCore reuses matching local templates, adds missing ones and reports conflicts while keeping the local versions.
+
+Human Decision asks the user to choose an outcome. Human Review shows artifacts and offers `approve`, `changes` and `reject`. Only Human Review approval satisfies a human prerequisite. An approval for changed worktree content becomes stale. Both wait for the user's response without a timeout.
+
+A GitHub recipe can use `write-pr` to write a title and description and `github-pr` to publish them. With a `ci` configuration such as `{"after":"pr","on":"opened","checks":["tests"],"intervalSec":30,"timeoutSec":1800,"maxCorrections":2}`, the scheduler waits for the listed checks on the recorded commit. Connect `ci_failed` to a correction step and use `ci_passed`, `ci_exhausted` and `ci_timeout` to route the other outcomes. Persisted deadlines and correction counts survive restarts. If the PR head changes unexpectedly, the job waits for the user.
 
 ```json
 {
@@ -442,8 +443,8 @@ Recipe fields:
 | `maxNodeRuns` | cap on node runs per job (4.2) |
 | `layout` | optional node positions for the graph editor (`{ "<node id>": { "x", "y" } }`, on a grid); ignored by the engine; a recipe without it is laid out automatically when opened |
 | `successOutcomes` | the final outcomes, as `<node>:<outcome>`, that mean the work was delivered (for example `pr:opened`, `commit:done`); they end the job as `succeeded` (4.1, 4.2). The validator requires each to be an outcome of that node with no edge and not in its `failOutcomes`, and at least one in every recipe that has nodes |
-| `nodes.<id>.use` | a node instance of the same project |
-| `nodes.<id>.params`, `nodes.<id>.agent` | overrides of the instance's values. `params` overrides are not allowed on `runsAs: engine` nodes: their arguments are fixed by the node instance (section 8) |
+| `nodes.<id>.use` | a node template name |
+| `nodes.<id>.params`, `nodes.<id>.agent` | step parameters and agent settings. Engine-user commands take their arguments from the node template |
 | `nodes.<id>.requires` | nodes whose latest outcome must be `passed` on the current content state (4.4) |
 | `nodes.<id>.optional` | runs only if the `spec` names it (4.2) |
 | `nodes.<id>.session` | a session group name for agent nodes. Agent nodes of the same job with the same group and the same profile share one harness session: each run resumes the session of the previous run in the group, so the fixed prompt is paid once. A node with no group gets a new session (or its own, with `resume`). A profile change (for example a fallback on quota) starts a new session for the group. Reviewers should have no group, so they judge the code without the builder's history |
@@ -514,10 +515,13 @@ A node receives the latest artifact of each type in its `inputs`. The recipe val
 | `repo` | `url` of the remote, or `null` for a local-only project; `account` from `accounts.json` |
 | `folder` | Absolute path to the user's copy of the code, or `null`. Paths beginning with `~/` expand to the user's home. The wizard and chat propose `<projectsFolder>/<id>` and the default projects folder is the user's home. Settings can move the checkout or set a folder for an imported project. |
 | `baseBranch` | branch new jobs start from and deliver to, for example `dev` or a feature branch; the Assistant, the Project Manager or the user can set another one per job |
-| `createRepo` | node instance that creates the remote repo when it does not exist (section 2); `null` if not needed |
+| `createRepo` | node template that creates the remote repo when needed |
+| `recipes` | recipe template names selected by the project |
+| `variables` | project values that steps can reference |
+| `credentials` | account IDs bound to credential names used by templates |
 | `pm` | the Project Manager's `name` and `color` (`#RRGGBB`), unique across projects (name in any case, colour exactly). They tell projects apart in chats and lists. A new project gets the first free pair of twenty, in this order: Eva `#FFDE38`, Viola `#9D57FF`, Mara `#2F8E76`, Nora `#D65C05`, Cleo `#75C6FF`, Rosa `#FC9CC4`, Luna `#919191`, Zoe `#9C7D21`, Ada `#9FFF1A`, Enya `#75FFFF`, Ivy `#E1EDC9`, Olivia `#699C21`, Jade `#05D690`, Iris `#007DFA`, Mila `#EDD2C9`, Ruby `#F91F44`, Lin `#C3B8FF`, Faye `#F406A5`, Alba `#FFAB57`, Mary `#1391AA`. The user or the Assistant can choose another. When all twenty are used, creation needs a custom name and colour. At start and after an import, a project with no Project Manager, or one whose name or colour another project already uses, gets the first free pair, in project id order; `null` stays only when none is free |
 | `services` | path of a compose file for job services, relative to the repo (4.9); `null` (the default) means automatic: the first of `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml` found at the root of the job's base commit, and none when the services runtime is not set |
-| `source` | node instance of kind `source` that brings tickets into the project (section 7), with its `params` (for example the label), or `null` |
+| `source` | ticket source template and its parameters, with an optional separate forge account |
 
 Settings can connect, replace or disconnect an existing remote. The engine validates the base branch with the selected forge account before changing its `origin`. Changing the remote URL clears its repo creation node and disables a ticket source that uses the project account. Existing recipes and job history are preserved. Review the recipes if they use a specific forge.
 
@@ -792,7 +796,7 @@ Recipes can perform the external actions they define. Outside a recipe, an exter
 
 ### 7. Sources
 
-*   A ticket source is a node of kind `source`, with a template in `templates/` and an instance in the project, named by `source` in `project.json`. The engine contains no code for any tracker.
+*   A ticket source is a template of kind `source`. The project selects it and supplies parameters in `project.json`.
 *   A source node declares four commands, each with `command` or `script`, `outputRules` and `credentials` like a `command` node: `list` (open tickets that match its params, JSON array of ids and titles on stdout), `read` (one ticket as JSON: title, body, attachment URLs), `comment` (post text), `replies` (comments after a given time). Placeholders add `{ticket.id}` and `{comment.path}`.
 *   Its `params` are set per project: for example `label` (default `factory`, any label the user wants), repo, `pollSec` (default 300) and `trusted` (list of tracker user names; default the project account's user).
 *   `read` returns the ticket's author and, where the tracker exposes it, who applied the label. Trust rule: a new ticket starts automatically only if the author or the user who applied the label is in `trusted`. Any other ticket goes into the confirmation queue (section 8) and is not shown to the Project Manager until confirmed.
@@ -886,7 +890,6 @@ Each entry: option, status (Rejected or Deferred, with the decision if any), rea
 *   **Built-in support for languages and forges (a closed list of check types, a `Forge` interface).** Rejected (D3, D13). Every operation is a node written as data: checks, commit, rebase, push, PR or MR, repo creation. A new language or forge needs new nodes, created by hand or with AI, not engine code.
 *   **Workdirs and branches as nodes.** Rejected (D15). Content states (4.4), crash recovery and permissions (section 8) assume the engine controls the workdir's whole life; a recipe that skipped or reordered these steps would break them.
 *   **Commit and rebase done by the engine.** Rejected (D16, D17). Commit is a node, so a recipe can put a human review before it. Rebase is a node, because conflicts need an agent.
-*   **A link from each instance to its template.** Rejected (D19, D21). An instance is a copy. Changing a template never changes the nodes and recipes already copied into projects.
 
 ### Existing tools
 
@@ -994,7 +997,7 @@ Tables (`src/store/migrations/001-init.sql`):
 
 | Table | Columns |
 |---|---|
-| `jobs` | `id` pk, `title`, `recipe` (copy of the recipe instance at job start), `state`, `waiting_reason`, `failure_reason`, `parent_job_id`, `base_branch`, `base`, `old_base`, `target`, `branch`, `archived`, `merged_at`, `created_at`, `updated_at`; index on `state`, `parent_job_id` |
+| `jobs` | `id` pk, `title`, `recipe` (resolved recipe at job creation), `state`, `waiting_reason`, `failure_reason`, `parent_job_id`, `base_branch`, `base`, `old_base`, `target`, `branch`, `archived`, `merged_at`, `created_at`, `updated_at`; index on `state`, `parent_job_id` |
 | `node_runs` | `id` pk (`<job>/<node>#<round>`), `job_id`, `node`, `round`, `via_edge`, `state`, `outcome`, `waiting_reason`, `reset_at`, `queue_item_id`, `auth_account`, `auth_os_user`, `auth_kind`, `failure_reason`, `content_before`, `content_after`, `git_before` (JSON), `pgid`, `os_user`, `started_at`, `ended_at`; index on `job_id` |
 | `attempts` | `id` pk (ULID), `node_run_id`, `profile`, `connector`, `harness_version` (first semver in the version check output), `connector_version` (`agentInfo.version` from `initialize`), `model` (resolved id, 5.3), `account`, `os_user`, `session_group`, `session_id` (the ACP session id), `resumed`, `tokens_in`, `tokens_out`, `cache_read`, `cache_write`, `cost`, `end_reason`, `log_path`, `started_at`, `ended_at` |
 | `human_queue` | `id` pk, `job_id` (nullable), `kind` (`human-node`, `agent-question`, `engine-node`, `source-node`, `connector`, `recipe-change`, `import`, `ticket`, `services`, `round-limit`, `outbound`), `subject` (JSON: a snapshot of everything the user must see to decide, for example the full node definition and script, never re-read from disk at decision time), `subject_hash` (sha256 of `subject`), `state` (`open`, `resolved`, `cancelled`), `choices` (JSON), `choice`, `note`, `created_at`, `resolved_at` |
@@ -1316,7 +1319,7 @@ The screens below come from G16. Their layout is designed in [ui-design.md](ui-d
 | `src/renderer/screens/NewProjectWizard.tsx` | collects inputs, shows creation progress and opens the project |
 | `src/renderer/screens/RecipeEditor.tsx` | recipe graph editor on a grid, `layout` saving, instance and template modes |
 | `src/renderer/screens/NodeEditor.tsx` | node template and instance editor, JSON tab, save with `If-Match` |
-| `src/renderer/screens/Templates.tsx` | templates, instantiate into a project |
+| `src/renderer/screens/Templates.tsx` | shared node and recipe templates |
 | `src/renderer/screens/Settings.tsx` | accounts and logins, protected mode, Assistant and Project Manager, projects, global limits, runtime, updates and appearance |
 | `src/renderer/components/NewJobModal.tsx` | New job form |
 | `src/renderer/components/ConfirmItem.tsx` | one confirmation, from the item's `subject` snapshot, sending its hash; used by Notifications (UI18) |

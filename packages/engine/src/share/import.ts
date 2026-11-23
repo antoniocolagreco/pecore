@@ -9,6 +9,7 @@ import { Unpack } from "tar";
 import { ImportProjectBody, projectIdCandidate } from "@pecore/schemas";
 import type { Accounts, ImportProjectPreview, ImportProjectResult, Project } from "@pecore/schemas";
 import { loadProject } from "../definitions/load";
+import { importCatalog, saveLegacyJobDefinitions } from "../definitions/catalog";
 import { homePaths } from "../home/layout";
 import { forgeAccountOf, repoHost, writeCreation } from "../projects/create";
 import { ProjectDb } from "../store/project-db";
@@ -154,11 +155,15 @@ async function loadImport(dir: string): Promise<LoadedProject> {
 function requiredAccounts(loaded: LoadedProject): Set<string> {
   const ids: Set<string> = new Set();
   if (loaded.project.repo) ids.add(loaded.project.repo.account);
+  if (loaded.project.source?.account) ids.add(loaded.project.source.account);
+  for (const id of Object.values(loaded.project.credentials ?? {})) ids.add(id);
   for (const node of loaded.nodes.values()) {
     if (node.kind !== "command" && node.kind !== "source") continue;
     for (const credential of node.credentials) {
-      if (credential !== "project.account") ids.add(credential);
-      else if (!loaded.project.repo) throw new InvalidArchive(`node ${node.name} uses project.account without a repo`);
+      if (credential !== "project.account") ids.add(loaded.project.credentials && Object.hasOwn(loaded.project.credentials, credential) ? loaded.project.credentials[credential]! : credential);
+      else if (!loaded.project.repo && !(node.kind === "source" && loaded.project.source?.account)) {
+        throw new InvalidArchive(`node ${node.name} uses project.account without an account`);
+      }
     }
   }
   return ids;
@@ -226,30 +231,41 @@ export async function beginImport(home: string, input: ImportProjectBody, option
       if (!options.accounts.accounts.some((account) => account.id === target && account.kind === "forge")) throw new InvalidArchive(`forge account ${target} not found`);
     }
     if (project.repo) project.repo.account = accounts[project.repo.account]!;
+    if (project.source?.account) project.source.account = accounts[project.source.account]!;
     forgeAccountOf(project, options.accounts);
+    const aliases: Record<string, string> = project.credentials ?? {};
+    const mapped: Record<string, string> = Object.fromEntries([
+      ...Object.entries(aliases).map(([key, account]) => [key, accounts[account]!]),
+      ...[...loaded.nodes.values()].flatMap((node) => {
+        if (node.kind !== "command" && node.kind !== "source") return [];
+        return node.credentials.filter((name) => name !== "project.account").map((name) => [name, accounts[Object.hasOwn(aliases, name) ? aliases[name]! : name]!]);
+      }),
+    ]);
+    if (Object.keys(mapped).length > 0) project.credentials = mapped;
+    else delete project.credentials;
+    project.recipes ??= [...loaded.recipes.keys()];
     project.id = id;
     project.createRepo = null;
     project.folder = null;
     await writeFile(join(original, "project.json"), JSON.stringify(project, null, 2) + "\n");
-    for (const node of loaded.nodes.values()) {
-      if (node.kind === "command" || node.kind === "source") {
-        node.credentials = node.credentials.map((id) => id === "project.account" ? id : accounts[id]!);
-      }
-      await writeFile(join(original, "nodes", `${node.name}.json`), JSON.stringify(node, null, 2) + "\n");
-    }
     await rm(join(original, "manifest.json"));
-    for (const name of [...definitionDirs, "artifacts", "logs", "work"]) await mkdir(join(original, name), { recursive: true, mode: 0o700 });
+    for (const name of ["knowledge", "artifacts", "logs", "work"]) await mkdir(join(original, name), { recursive: true, mode: 0o700 });
     const dbPath: string = join(original, "pecore.db");
     if (manifest.history) migrateHistory(dbPath);
     const db: ProjectDb = new ProjectDb(dbPath);
     try {
-      if (manifest.history) resetHistory(db, original);
+      if (manifest.history) {
+        resetHistory(db, original);
+        await saveLegacyJobDefinitions(loaded, db);
+      }
     } finally {
       db.close();
     }
     await writeCreation(original, 3);
     checkId(dest, id, options.knownProject);
+    const differences: string[] = await importCatalog(home, homePaths(home).templates, loaded);
+    for (const name of ["nodes", "recipes"]) await rm(join(original, name), { recursive: true, force: true });
     renameSync(original, dest);
-    return { state: "imported", id };
+    return { state: "imported", id, ...(differences.length ? { differences } : {}) };
   }, digest === undefined ? "archive" : "local");
 }

@@ -89,40 +89,46 @@ function ExistingEditor({ path }: { path: string }) {
   );
 }
 
-function Definitions({ id, kind }: { id: string; kind: "node" | "recipe" }) {
+function Recipes({ id }: { id: string }) {
   const connected: boolean = useConnected();
   const icons = useDefinitionIcons();
-  const dir: string = `projects/${id}/${kind}s`;
-  const templatesDir: string = `templates/${kind}s`;
-  const entries = useData(() => call("listDefinitions", { query: { dir } }), [dir], (m) => m.type === "definition.changed" && m.path.startsWith(dir + "/"));
-  const available = useData(() => kind === "node" ? call("listDefinitions", { query: { dir: templatesDir } }) : Promise.resolve([]), [templatesDir], (m) => m.type === "definition.changed" && m.path.startsWith(templatesDir + "/"));
-  const navigate = useNavigate();
+  const dir: string = `projects/${id}/recipes`;
+  const templatesDir: string = "templates/recipes";
+  const entries = useData(() => call("listDefinitions", { query: { dir } }), [dir], (m) => m.type === "project.updated" && m.projectId === id);
+  const available = useData(() => call("listDefinitions", { query: { dir: templatesDir } }), [], (m) => m.type === "definition.changed" && m.path.startsWith(templatesDir + "/"));
   const [name, setName] = useState<string>("");
   const [page, setPage] = useState<number>(0);
-  const [result, setResult] = useState<string>("");
-  const instantiate = useAction(async () => {
-    const response = await call("instantiate", { body: { kind, name, project: id } });
-    setResult(response.created.length === 0 ? "Template files already exist." : "Template instantiated.");
+  const add = useAction(async () => {
+    await call("instantiate", { body: { kind: "recipe", name, project: id } });
+    setName("");
+    entries.reload();
+  });
+  const remove = useAction(async (name: string) => {
+    const path: string = `projects/${id}/project.json`;
+    const project = await call("getDefinition", { params: { path } });
+    const value = object(JSON.parse(project.content));
+    if (!Array.isArray(value.recipes)) return;
+    const content: string = JSON.stringify({ ...value, recipes: value.recipes.filter((recipe) => recipe !== name) }, null, 2) + "\n";
+    await call("saveDefinition", { params: { path }, body: { content, baseSha256: project.sha256 } });
     entries.reload();
   });
   const files: DefinitionEntry[] = (entries.data ?? []).filter((entry) => entry.path.endsWith(".json"));
-  const templates: DefinitionEntry[] = (available.data ?? []).filter((entry) => entry.path.endsWith(".json") && entry.errors.length === 0);
+  const templates: DefinitionEntry[] = (available.data ?? []).filter((entry) => entry.path.endsWith(".json") && entry.errors.length === 0 && !files.some(({ path }) => entry.path === path));
   const start: number = Math.min(page, Math.max(0, Math.ceil(files.length / pageSize) - 1)) * pageSize;
   return (
     <div className={ui.stack}>
-      {kind === "recipe" && <div><DsButton variant="primary" icon={<PlusIcon />} disabled={!connected}
-        onClick={() => void navigate(`/projects/${encodeURIComponent(id)}/recipes/new`)}>New Recipe</DsButton></div>}
       <ErrorText error={entries.error ?? available.error} />
       {entries.loading && !entries.data ? <Spinner /> :
-        files.length === 0 && !entries.error ? <Empty>{kind === "node" ? "No nodes" : "No recipes"}</Empty> : (
+        files.length === 0 && !entries.error ? <Empty>No recipes selected</Empty> : (
           <ul className={s.files}>{files.slice(start, start + pageSize).map(({ path, value, errors }) => {
-            const name: string = path.slice(dir.length + 1, -5);
-            const label = <><DefinitionIcon icons={icons.data} type={kind} name={name} selected={string(object(value).icon)} size="sm" /> {name}</>;
+            const name: string = string(object(value).name);
+            const label = <><DefinitionIcon icons={icons.data} type="recipe" name={name} selected={string(object(value).icon)} size="sm" /> {name}</>;
             return <li key={path}>
               {connected
-                ? <Link className={s.file} to={`/edit/${kind}/${path.split("/").map(encodeURIComponent).join("/")}`}>{label}</Link>
+                ? <Link className={s.file} to={`/edit/recipe/${path.split("/").map(encodeURIComponent).join("/")}`}>{label}</Link>
                 : <span className={s.file}>{label}</span>}
               {errors.length > 0 && <span className={ui.error}> · Definition errors</span>}
+              {path.startsWith("templates/") && <Button disabled={!connected || remove.busy} onClick={() => void remove.run(name)}>Remove</Button>}
             </li>;
           })}</ul>
         )}
@@ -130,20 +136,18 @@ function Definitions({ id, kind }: { id: string; kind: "node" | "recipe" }) {
         <Button disabled={!connected || start === 0} onClick={() => setPage(start / pageSize - 1)}>Previous</Button>
         <Button disabled={!connected || start + pageSize >= files.length} onClick={() => setPage(start / pageSize + 1)}>Show more</Button>
       </div>}
-      {kind === "node" && <div className={s.instantiate}>
+      <div className={s.instantiate}>
         <Select
           label="Add from templates"
           value={name || null}
-          disabled={!connected || instantiate.busy || templates.length === 0}
-          onValueChange={(v) => { setName(v ?? ""); setResult(""); }}
+          disabled={!connected || add.busy || templates.length === 0}
+          onValueChange={(v) => setName(v ?? "")}
           options={templates.map(({ path }) => path.slice(templatesDir.length + 1, -5)).map((template) => ({ value: template, label: template }))}
           placeholder="Choose a template"
         />
-        <Button disabled={!connected || instantiate.busy || !templates.some(({ path }) => path === `${templatesDir}/${name}.json`)}
-          onClick={() => { setResult(""); void instantiate.run(); }}>Add to project</Button>
-      </div>}
-      <ErrorText error={instantiate.error} />
-      {result && <p role="status">{result}</p>}
+        <Button disabled={!connected || add.busy || !name} onClick={() => void add.run()}>Add to project</Button>
+      </div>
+      <ErrorText error={add.error ?? remove.error} />
     </div>
   );
 }
@@ -197,7 +201,7 @@ function Knowledge({ id }: { id: string }) {
   );
 }
 
-type SettingsForm = { name: string; baseBranch: string; services: string; folder: string; remote: boolean; account: string; url: string; pm: ProjectManagerIdentity };
+type SettingsForm = { name: string; baseBranch: string; services: string; folder: string; remote: boolean; account: string; url: string; pm: ProjectManagerIdentity; variables: string; credentials: string };
 
 function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: string; onSaved(): void; projectActions: ReactNode; deleteNotice: ReactNode }) {
   const connected: boolean = useConnected();
@@ -226,6 +230,8 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
     remote: repo !== null,
     account: repo?.account ?? "",
     url: repo?.url ?? "",
+    variables: JSON.stringify(raw.variables ?? {}, null, 2),
+    credentials: JSON.stringify(raw.credentials ?? {}, null, 2),
     pm: ProjectManagerIdentity.safeParse(raw.pm).data ?? { name: "", color: "#808080" },
   };
   const value: SettingsForm | null = draft?.values ?? current;
@@ -235,6 +241,12 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
   };
   const save = useAction(async () => {
     if (!raw || !value || !draft) return;
+    const variables: unknown = JSON.parse(value.variables);
+    if (variables === null || typeof variables !== "object" || Array.isArray(variables)) throw new Error("Project variables must be a JSON object.");
+    const credentials: unknown = JSON.parse(value.credentials);
+    if (credentials === null || typeof credentials !== "object" || Array.isArray(credentials) || Object.values(credentials).some((id) => typeof id !== "string")) {
+      throw new Error("Account bindings must map names to account IDs.");
+    }
     const next = {
       ...raw,
       name: value.name.trim(),
@@ -244,6 +256,8 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
       repo: value.remote ? { url: value.url.trim(), account: value.account } : null,
       createRepo: value.remote && value.url.trim() === repo?.url ? raw.createRepo ?? null : null,
       pm: { name: value.pm.name.trim(), color: value.pm.color },
+      variables,
+      credentials,
     };
     Reflect.deleteProperty(next, "limits");
     Reflect.deleteProperty(next, "defaultRecipe");
@@ -296,6 +310,10 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
       <TextField label="Services compose file" mono value={value.services} onValueChange={(services) => { setPickError(null); set({ services }); }} disabled={disabled}
         placeholder="Automatic" error={pickError ?? undefined} description="Empty: a compose file at the repository root, if there is one."
         action={<DsButton disabled={disabled} onClick={() => void pickCompose()}>Choose…</DsButton>} />
+      <TextArea label="Project variables" mono value={value.variables} onValueChange={(variables) => set({ variables })} disabled={disabled}
+        description="Use a JSON object. A recipe can refer to a value with {project.vars.name}." />
+      <TextArea label="Account bindings" mono value={value.credentials} onValueChange={(credentials) => set({ credentials })} disabled={disabled}
+        description="Map the credential names a node expects to account IDs from Settings." />
       <ErrorText error={save.error} />
       {deleteNotice}
       <div className={s.formActions}>
@@ -311,8 +329,8 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
 function NewJobDialog({ id, onClose }: { id: string; onClose(): void }) {
   const connected: boolean = useConnected();
   const dir: string = `projects/${id}/recipes`;
-  const recipes = useData(() => call("listDefinitions", { query: { dir } }), [dir], (m) => m.type === "definition.changed" && m.path.startsWith(dir + "/"));
-  const names: string[] = (recipes.data ?? []).filter(({ path, errors }) => path.endsWith(".json") && errors.length === 0).map(({ path }) => path.slice(dir.length + 1, -5));
+  const recipes = useData(() => call("listDefinitions", { query: { dir } }), [dir], (m) => m.type === "project.updated" && m.projectId === id);
+  const names: string[] = (recipes.data ?? []).filter(({ path, errors }) => path.endsWith(".json") && errors.length === 0).map(({ value }) => string(object(value).name));
   const [title, setTitle] = useState<string>("");
   const [text, setText] = useState<string>("");
   const [chosen, setChosen] = useState<string | null>(null);
@@ -397,8 +415,7 @@ function ProjectDetails({ id }: { id: string }) {
                   </Card>
                 ),
               },
-              { value: "recipes", label: "Recipes", content: <Card padded className={s.narrow}><Definitions id={id} kind="recipe" /></Card> },
-              { value: "nodes", label: "Nodes", content: <Card padded className={s.narrow}><Definitions id={id} kind="node" /></Card> },
+              { value: "recipes", label: "Recipes", content: <Card padded className={s.narrow}><Recipes id={id} /></Card> },
               { value: "knowledge", label: "Knowledge", content: <Card padded className={s.narrow}><Knowledge id={id} /></Card> },
             ]}
           />

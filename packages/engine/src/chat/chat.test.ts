@@ -143,7 +143,7 @@ async function setup(build: (root: string) => object[][], extra: { source?: bool
   await createProjectWithRecipes(first.engine, { id: "demo", name: "Demo", repo: null }, ["reviewed", "big"]);
   if (extra.source) {
     const dir = first.engine.projectDir("demo");
-    await writeFile(join(dir, "nodes", "fake-source.json"), JSON.stringify({ ...fakeSource, comment: { command: ["/bin/sh", "-c", `echo posted >> '${join(root, "comments")}'`] } }));
+    await writeFile(join(first.engine.project("demo").ctx.defs.nodeDir, "fake-source.json"), JSON.stringify({ ...fakeSource, comment: { command: ["/bin/sh", "-c", `echo posted >> '${join(root, "comments")}'`] } }));
     const project = JSON.parse(await readFile(join(dir, "project.json"), "utf8")) as Record<string, unknown>;
     await writeFile(join(dir, "project.json"), JSON.stringify({ ...project, source: { node: "fake-source", params: { trusted: ["alice"] } } }));
     expect(await first.engine.reloadProject("demo")).toEqual([]);
@@ -808,7 +808,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     expect(refused.result!.isError).toBe(true);
     expect(refused.result!.content![0]!.text).toContain("unknown tool create_jobs");
     expect(ctx.db.db.prepare("SELECT count(*) AS n FROM jobs WHERE order_id = ?").get(message.id)).toEqual({ n: 0 });
-    expect((await m.tool("read_definition", { path: "projects/demo/recipes/reviewed.json" })).result!.content![0]!.text).toContain("write, human review, commit");
+    expect((await m.tool("read_definition", { path: "templates/recipes/reviewed.json" })).result!.content![0]!.text).toContain("write, human review, commit");
     expect((await m.tool("list_definitions", { dir: "templates/recipes" })).result!.content![0]!.text).toContain("templates/recipes/reviewed.json");
     const iconPath: string = "templates/icons/node-reviewed.svg";
     const icon: string = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>';
@@ -1001,7 +1001,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       const m = mcp(tokenFileOf(intakeChat(t)));
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       const names: string[] = (await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name);
-      expect(names).toEqual(expect.arrayContaining(["write_knowledge", "write_instance", "instantiate", "create_jobs", "comment_ticket", "answer_question", "read_definition", "list_definitions", "ask_user"]));
+      expect(names).toEqual(expect.arrayContaining(["write_knowledge", "instantiate", "create_jobs", "comment_ticket", "answer_question", "read_definition", "list_definitions", "ask_user"]));
       for (const name of ["create_project", "update_project", "delete_project", "import_project", "export_project", "write_template", "delegate_to_pm"]) expect(names).not.toContain(name);
       expect((await m.tool("write_knowledge", { path: "projects/demo/knowledge/notes.md", content: "# Notes\n" })).result!.isError).not.toBe(true);
       const outside = await m.tool("write_knowledge", { path: "projects/other/knowledge/notes.md", content: "# Notes\n" });
@@ -1020,9 +1020,9 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       await m.tool("create_jobs", { project: "demo", plan: [{ key: "other", title: "Other", ticketText: "x", recipe: "reviewed", dependsOn: [] }] });
       expect(ctx.db.db.prepare("SELECT order_key FROM jobs WHERE order_id = ? ORDER BY order_key").all(sent.id)).toEqual([{ order_key: "api" }, { order_key: "ui" }]);
       const changed = JSON.stringify({ ...reviewed, description: "changed by the Project Manager" }, null, 2) + "\n";
-      expect((await m.tool("write_instance", { path: "projects/demo/recipes/reviewed.json", content: changed })).result?.isError).toBeUndefined();
+      expect((await m.tool("write_instance", { path: "projects/demo/recipes/reviewed.json", content: changed })).result?.isError).toBe(true);
       m.close();
-      expect(JSON.parse(await readFile(join(t.engine.projectDir("demo"), "recipes", "reviewed.json"), "utf8"))).toMatchObject({ description: "changed by the Project Manager" });
+      expect(JSON.parse(await readFile(join(ctx.templates, "recipes", "reviewed.json"), "utf8"))).toMatchObject({ description: reviewed.description });
       expect((await readFile(comments, "utf8")).trim().split("\n")).toHaveLength(1);
       expect(ctx.db.db.prepare("SELECT count(*) AS n FROM human_queue WHERE kind = 'outbound'").get()).toEqual({ n: 0 });
 

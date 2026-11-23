@@ -1,6 +1,7 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "code-reviewer",
+  "tags": ["agent", "review"],
   "description": "Reviews the job's diff against the spec and the ticket; writes findings with file, line and severity; approves or asks for changes",
   "kind": "agent",
   "prompt": "code-reviewer.md",

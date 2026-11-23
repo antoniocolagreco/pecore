@@ -11,7 +11,7 @@ const forgeDefaults = z.strictObject({
   tool: Name,
   credentialHelper: z.string().min(1).nullable(),
   delivery: Name,
-  comment: Name,
+  comment: Name.nullable(),
   createRepo: Name.nullable(),
   source: Name.nullable(),
 });

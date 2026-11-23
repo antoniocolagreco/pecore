@@ -33,16 +33,16 @@ describe("project defaults (decision 8)", () => {
 
   it("a private Git server project delivers the pushed branch, skips the ticket comment, and has no repo creation or ticket source", async () => {
     const forge = await loadForgeDefaults(shippedTemplates, "git");
-    expect(forge).toEqual({ forge: "git", tool: "git", credentialHelper: null, delivery: "git-delivery", comment: "git-no-comment", createRepo: null, source: null });
+    expect(forge).toEqual({ forge: "git", tool: "git", credentialHelper: null, delivery: "git-delivery", comment: null, createRepo: null, source: null });
     const d = await projectDefaults(shippedTemplates, { url: "git@git.example.com:team/app.git", account: "git-dev" }, "git");
-    expect(d.rename).toMatchObject({ "github-pr": "git-delivery", "gitlab-mr": "git-delivery", "github-issue-comment": "git-no-comment", "gitlab-issue-comment": "git-no-comment" });
+    expect(d.rename).toMatchObject({ "github-pr": "git-delivery", "gitlab-mr": "git-delivery" });
+    expect(d.rename).not.toHaveProperty("github-issue-comment");
     expect(d.rename).not.toHaveProperty("github-create-repo");
     expect(d.rename).not.toHaveProperty("github-issues");
     const project = await tempDir();
-    for (const name of ["feature", "bugfix"]) expect((await instantiateRecipe(shippedTemplates, project, name, d.rename)).errors).toEqual([]);
-    const bugfix = JSON.parse(await readFile(join(project, "recipes", "bugfix.json"), "utf8"));
-    expect(bugfix.nodes.pr.use).toBe("git-delivery");
-    expect(bugfix.nodes.comment.use).toBe("git-no-comment");
+    expect((await instantiateRecipe(shippedTemplates, project, "feature", d.rename)).errors).toEqual([]);
+    const feature = JSON.parse(await readFile(join(project, "recipes", "feature.json"), "utf8"));
+    expect(feature.nodes.pr.use).toBe("git-delivery");
   });
 
   it("instantiating a recipe with the rename map writes the GitLab node and recipe", async () => {

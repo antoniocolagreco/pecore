@@ -36,6 +36,19 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
     },
   } : undefined, [newTemplate, project, scope]);
   const file = useDefinitionDraft(path, false, creation);
+  const duplicate = useAction(async () => {
+    const source = parseDraft(file.content);
+    if (!source || file.dirty) return;
+    const recipes = await call("listDefinitions", { query: { dir: "templates/recipes" } });
+    const used: Set<string> = new Set(recipes.map((entry) => entry.path));
+    const base: string = string(source.name) + "-copy";
+    let name: string = base;
+    for (let index: number = 2; used.has(`templates/recipes/${name}.json`); index++) name = `${base}-${index}`;
+    const target: string = `templates/recipes/${name}.json`;
+    const content: string = JSON.stringify({ ...source, name }, null, 2) + "\n";
+    await call("saveDefinition", { params: { path: target }, body: { content, baseSha256: null } });
+    await navigate(definitionUrl("recipe", target));
+  });
   const icons = useDefinitionIcons();
   const [destination, setDestination] = useState<string>();
   const warn = useUnsaved(file.dirty && !destination);
@@ -73,6 +86,7 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
   const draft = parseDraft(file.content);
   const nodes = object(draft?.nodes);
   const layout = object(draft?.layout);
+  const ci = object(draft?.ci);
   const entries = Object.entries(nodes);
   const edges: unknown[] = Array.isArray(draft?.edges) ? draft.edges : [];
   useEffect(() => { void flow?.fitView(); }, [entries.length]);
@@ -81,6 +95,7 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
   const nodeIcons = new Map<string, string>(palette.map(({ value }) => [string(object(value).name), string(object(value).icon)]));
   const definition = palette.find((item) => object(item.value).name === selectedNode.use);
   const nodeValue = object(definition?.value);
+  const questionParameter = object(object(object(nodeValue.params).properties).question);
   const update = (changes: Record<string, unknown>): void => file.update(JSON.stringify({ ...draft, ...changes }, null, 2) + "\n");
   const updateNode = (key: string, value: unknown): void => update({ nodes: { ...nodes, [selected]: { ...selectedNode, [key]: value } } });
   const layoutNow = (): Record<string, unknown> => ({ ...layout, ...Object.fromEntries(entries.map(([id], index) => [id, position(layout, id, index)])) });
@@ -132,14 +147,25 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
     <option value="">None</option>{entries.map(([id]) => <option key={id}>{id}</option>)}
   </select></Field>;
   const outcomeSource = connection && palette.find((item) => object(item.value).name === object(nodes[connection.from]).use);
-  const outcomes: unknown = object(outcomeSource?.value).outcomes;
+  const sourceOutcomes: unknown = object(outcomeSource?.value).outcomes;
+  const outcomes: string[] = Array.isArray(sourceOutcomes) ? [...sourceOutcomes] : [];
+  if (connection && connection.from === ci.after) {
+    const index: number = outcomes.indexOf(string(ci.on));
+    if (index >= 0) outcomes.splice(index, 1);
+    outcomes.push("ci_passed", "ci_failed", "ci_exhausted", "ci_timeout");
+  }
 
   const recipeOptions = templateOptions(recipeTemplates.data);
   const nodeOptions = templateOptions(nodeTemplates.data).filter(({ value }) => !palette.some((item) => object(item.value).name === value));
-  return <Page title={creation ? "New Recipe" : string(draft?.name) || "Recipe editor"} actions={file.saveButton(importing)}>
+  return <Page title={creation ? "New Recipe" : string(draft?.name) || "Recipe editor"} actions={<>
+    {!creation && scope === "templates" && <DsButton loading={duplicate.busy} disabled={!editable || !file.ready || !draft || file.dirty}
+      onClick={() => void duplicate.run()}>Duplicate</DsButton>}
+    {file.saveButton(importing)}
+  </>}>
     {projectId && <Link to={`/projects/${encodeURIComponent(projectId)}?tab=recipes`}>Back to recipes</Link>}
     {scope === "templates" && <Link to="/templates?tab=recipes">Back to templates</Link>}
     {file.feedback}
+    <ErrorText error={duplicate.error} />
     {project && <Panel><div className={s.importRow}>
       <Select label="Recipe template" value={recipeTemplate} onValueChange={setRecipeTemplate} options={recipeOptions} disabled={!editable || !recipeOptions.length} placeholder="Choose a template" />
       <DsButton loading={importRecipe.busy} disabled={!editable || !recipeTemplate} onClick={() => void importRecipe.run()}>Import template</DsButton>
@@ -184,6 +210,9 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
                 {palette.map((item) => <option key={item.path}>{string(object(item.value).name)}</option>)}
               </select></Field>
               {definition && <><span>{string(nodeValue.kind)}{Array.isArray(nodeValue.outcomes) && " · " + nodeValue.outcomes.join(", ")}</span>{file.editable && <Link to={definitionUrl("node", definition.path)}>Edit node</Link>}</>}
+              {nodeValue.kind === "human-decision" && questionParameter.type === "string" && <TextField label="Question"
+                value={string(object(selectedNode.params).question)} placeholder={string(questionParameter.default)}
+                onValueChange={(question) => updateNode("params", { ...object(selectedNode.params), question: question.trim() ? question : undefined })} />}
               <Field label="Requires (comma separated)"><input value={Array.isArray(selectedNode.requires) ? selectedNode.requires.join(",") : ""} onChange={(event) => updateNode("requires", event.target.value ? event.target.value.split(",") : [])} /></Field>
               <label><input type="checkbox" checked={selectedNode.optional === true} onChange={(event) => updateNode("optional", event.target.checked)} /> Optional</label>
               <label><input type="checkbox" checked={selectedNode.skipWhenUnchanged === true} onChange={(event) => updateNode("skipWhenUnchanged", event.target.checked)} /> Skip when unchanged</label>
@@ -196,14 +225,26 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
               })}
             </> : <>
               <strong>Recipe settings</strong>
-              {creation && <>
-                <TextField label="Name" required value={string(draft.name)} onValueChange={(name) => update({ name })} description="Lowercase letters, digits and hyphens. Start with a letter." />
-                <TextField label="Description" required value={string(draft.description)} onValueChange={(description) => update({ description })} />
-              </>}
+              {creation && <TextField label="Name" required value={string(draft.name)} onValueChange={(name) => update({ name })} description="Lowercase letters, digits and hyphens. Start with a letter." />}
+              <TextField label="Description" required value={string(draft.description)} onValueChange={(description) => update({ description })} />
               <DefinitionIconField icons={icons.data} type="recipe" name={string(draft.name)} value={string(draft.icon)} disabled={!editable}
                 onChange={(icon) => update({ icon })} />
               {nodeSelect("start", "Start")}
               {nodeSelect("onBaseChanged", "On base changed")}
+              <Field label="Wait for GitHub CI after"><select value={string(ci.after)} onChange={(event) => {
+                const after: string = event.target.value;
+                update({ ci: after ? { on: "opened", checks: [], intervalSec: 30, timeoutSec: 1800, maxCorrections: 2, ...ci, after } : undefined });
+              }}><option value="">None</option>{entries.map(([id]) => <option key={id}>{id}</option>)}</select></Field>
+              {typeof ci.after === "string" && <>
+                <TextField label="Trigger outcome" value={string(ci.on)} onValueChange={(on) => update({ ci: { ...ci, on } })} />
+                <TextField label="CI checks (comma separated)" value={Array.isArray(ci.checks) ? ci.checks.join(",") : ""}
+                  onValueChange={(value) => update({ ci: { ...ci, checks: value.split(",") } })} />
+                {(["intervalSec", "timeoutSec", "maxCorrections"] as const).map((key) => <Field key={key}
+                  label={{ intervalSec: "Poll every (seconds)", timeoutSec: "Timeout (seconds)", maxCorrections: "Maximum corrections" }[key]}>
+                  <input type="number" min={key === "maxCorrections" ? 0 : 1} value={typeof ci[key] === "number" ? ci[key] : ""}
+                    onChange={(event) => update({ ci: { ...ci, [key]: event.target.value ? Number(event.target.value) : undefined } })} />
+                </Field>)}
+              </>}
               <Field label="Max node runs"><input type="number" min={1} value={typeof draft.maxNodeRuns === "number" ? draft.maxNodeRuns : ""} placeholder="100" onChange={(event) => update({ maxNodeRuns: event.target.value ? Number(event.target.value) : undefined })} /></Field>
               <Field label="Success outcomes (comma separated)"><input value={Array.isArray(draft.successOutcomes) ? draft.successOutcomes.join(",") : ""} onChange={(event) => update({ successOutcomes: event.target.value ? event.target.value.split(",") : [] })} /></Field>
             </>}

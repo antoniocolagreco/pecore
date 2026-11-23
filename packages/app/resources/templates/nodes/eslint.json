@@ -1,6 +1,7 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "eslint",
+  "tags": ["command", "lint"],
   "description": "Run ESLint on the whole project",
   "kind": "command",
   "command": ["npx", "--no-install", "eslint", "."],

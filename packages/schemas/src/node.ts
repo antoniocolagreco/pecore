@@ -57,6 +57,7 @@ const Base = {
   name: Name,
   description: z.string().min(1),
   icon: Name.optional(),
+  tags: z.array(z.string().trim().min(1)).default([]),
   params: JsonSchemaObject.default({}),
 };
 
@@ -66,16 +67,18 @@ const Runnable = {
   outputs: z.array(ArtifactType).default([]),
   outcomes: z.array(Outcome).min(1),
   failOutcomes: z.array(Outcome).default([]),
-  changesFiles: z.boolean(),
   scratchPaths: z.array(z.string()).default([]),
-  timeoutSec: z.number().int().positive(),
   retry: z.number().int().nonnegative().default(1),
 };
+
+const Timeout = z.number().int().positive();
 
 export const CommandNode = z
   .object({
     ...Base,
     ...Runnable,
+    timeoutSec: Timeout,
+    changesFiles: z.boolean(),
     kind: z.literal("command"),
     runsAs: z.enum(["project-user", "engine"]).default("project-user"),
     command: Argv.optional(),
@@ -95,6 +98,8 @@ export const AgentNode = z
   .object({
     ...Base,
     ...Runnable,
+    timeoutSec: Timeout,
+    changesFiles: z.boolean(),
     kind: z.literal("agent"),
     prompt: z.string().regex(/^[A-Za-z0-9._-]+\.md$/),
     agent: z
@@ -110,15 +115,35 @@ export const AgentNode = z
   })
   .strict();
 
-export const HumanNode = z
-  .object({
-    ...Base,
-    ...Runnable,
-    kind: z.literal("human"),
-    show: z.array(ArtifactType).default([]),
-    answer: z.boolean().default(false),
-  })
-  .strict();
+const HumanFields = {
+  ...Base,
+  ...Runnable,
+  show: z.array(ArtifactType).default([]),
+  answer: z.boolean().default(false),
+};
+
+const HumanDecisionNode = z.strictObject({ ...HumanFields, kind: z.literal("human-decision") });
+const HumanReviewNode = z.strictObject({ ...HumanFields, kind: z.literal("human-review") });
+const LegacyHumanNode = z.strictObject({
+  ...HumanFields,
+  kind: z.literal("human"),
+  mode: z.enum(["decision", "review"]).optional(),
+  timeoutSec: Timeout,
+  changesFiles: z.boolean(),
+});
+export type HumanNode = z.infer<typeof HumanDecisionNode> | z.infer<typeof HumanReviewNode>;
+
+export function normalizeLegacyHumanNode(value: Record<string, unknown>): Record<string, unknown> {
+  if (value.kind !== "human") return value;
+  const { mode } = value;
+  const review: boolean = mode === "review" || (mode === undefined && Array.isArray(value.show) && value.show.length > 0
+    && Array.isArray(value.outcomes) && value.outcomes.includes("approve"));
+  const definition: Record<string, unknown> = { ...value, kind: review ? "human-review" : "human-decision" };
+  delete definition.mode;
+  delete definition.timeoutSec;
+  delete definition.changesFiles;
+  return definition;
+}
 
 const SourceCommand = z
   .object({
@@ -148,7 +173,7 @@ function argvPlaceholders(argv: string[] | undefined, path: (string | number)[],
   return argv.flatMap((arg, i) => unknownPlaceholders(arg, { source }).map((p) => ({ path: [...path, i], message: `unknown placeholder ${p}` })));
 }
 
-function checkNode(node: z.infer<typeof CommandNode> | z.infer<typeof AgentNode> | z.infer<typeof HumanNode> | z.infer<typeof SourceNode>): Issue[] {
+function checkNode(node: z.infer<typeof CommandNode> | z.infer<typeof AgentNode> | HumanNode | z.infer<typeof SourceNode>, strictReview = true): Issue[] {
   const issues: Issue[] = [];
   if (node.kind === "source") {
     for (const key of ["list", "read", "comment", "replies"] as const) {
@@ -184,15 +209,36 @@ function checkNode(node: z.infer<typeof CommandNode> | z.infer<typeof AgentNode>
     const props = node.outputSchema.properties as Record<string, unknown> | undefined;
     if (!props || typeof props !== "object" || !("outcome" in props)) issues.push({ path: ["outputSchema"], message: "outputSchema needs a property outcome" });
   }
+  if (node.kind === "human-review" && strictReview) {
+    if (node.show.length === 0) issues.push({ path: ["show"], message: "select at least one artifact for review" });
+    if (node.outcomes.length !== 3 || !["approve", "changes", "reject"].every((outcome) => node.outcomes.includes(outcome))) {
+      issues.push({ path: ["outcomes"], message: "a review needs approve, changes and reject" });
+    }
+  }
   return issues;
 }
 
-export const Node = z.discriminatedUnion("kind", [CommandNode, AgentNode, HumanNode, SourceNode]).superRefine((node, ctx) => {
+const NodeShape = z.discriminatedUnion("kind", [CommandNode, AgentNode, HumanDecisionNode, HumanReviewNode, SourceNode]);
+export const Node = NodeShape.superRefine((node, ctx) => {
   for (const issue of checkNode(node)) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
 });
 export type Node = z.infer<typeof Node>;
 export type NodeInput = z.input<typeof Node>;
 export type CommandNode = z.infer<typeof CommandNode>;
 export type AgentNode = z.infer<typeof AgentNode>;
-export type HumanNode = z.infer<typeof HumanNode>;
 export type SourceNode = z.infer<typeof SourceNode>;
+
+export const StoredNode = z.union([
+  NodeShape.superRefine((node, ctx) => {
+    for (const issue of checkNode(node, false)) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
+  }),
+  LegacyHumanNode.transform((legacy, ctx): HumanNode => {
+    const node = normalizeLegacyHumanNode(legacy) as HumanNode;
+    for (const issue of checkNode(node, legacy.mode === "review")) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
+    return node;
+  }),
+]);
+
+export function isHumanNode(node: Node): node is HumanNode {
+  return node.kind === "human-decision" || node.kind === "human-review";
+}

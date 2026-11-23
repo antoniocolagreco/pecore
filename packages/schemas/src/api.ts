@@ -41,7 +41,7 @@ export type ImportProjectBody = z.infer<typeof ImportProjectBody>;
 
 export const ImportProjectResult = z.discriminatedUnion("state", [
   z.object({ state: z.literal("needs-accounts"), accounts: z.array(z.object({ id: z.string(), kind: z.enum(["model", "forge", "service"]) })) }),
-  z.object({ state: z.literal("imported"), id: ProjectId }),
+  z.object({ state: z.literal("imported"), id: ProjectId, differences: z.array(z.string()).optional() }),
 ]);
 export type ImportProjectResult = z.infer<typeof ImportProjectResult>;
 
@@ -517,7 +517,7 @@ export const routes = {
   importProject: { method: "POST", path: "/projects/import", body: ImportProjectBody, response: ImportProjectResult },
   analyzeArchive: { method: "POST", path: "/projects/import/analysis", body: ArchiveReviewBody, response: ArchiveReview },
   previewProjectImport: { method: "POST", path: "/projects/import/preview", body: ArchiveReviewBody, response: ImportProjectPreview },
-  completeProjectImport: { method: "POST", path: "/projects/import/complete", body: CompleteProjectImportBody, response: z.object({ id: ProjectId }) },
+  completeProjectImport: { method: "POST", path: "/projects/import/complete", body: CompleteProjectImportBody, response: z.object({ id: ProjectId, differences: z.array(z.string()).optional() }) },
   getProject: { method: "GET", path: "/projects/:id", params: IdParams, response: ProjectView },
   deleteProject: { method: "DELETE", path: "/projects/:id", params: IdParams, response: Ok },
   getArtifact: {

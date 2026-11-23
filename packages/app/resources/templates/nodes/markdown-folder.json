@@ -1,6 +1,7 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "markdown-folder",
+  "tags": ["issue tracker"],
   "description": "Read Markdown tickets and append replies in the configured folder.",
   "kind": "source",
   "credentials": ["project.account"],

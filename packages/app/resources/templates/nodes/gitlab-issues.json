@@ -1,6 +1,7 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "gitlab-issues",
+  "tags": ["issue tracker"],
   "description": "Read and comment on labeled GitLab issues.",
   "kind": "source",
   "credentials": ["project.account"],

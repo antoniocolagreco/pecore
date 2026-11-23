@@ -17,6 +17,7 @@ export type AgentContinuation = AgentQuestion & { answer: string };
 export type AgentRun = {
   node: AgentNode;
   nodeDir: string;
+  sidecars?: Readonly<Record<string, string>> | undefined;
   params: Record<string, unknown>;
   user: string;
   workdir: string;
@@ -132,7 +133,8 @@ export async function runAgentNode(r: AgentRun): Promise<AgentOutcome> {
   }
   await writeFileAs(r.user, r.workdir, ".pecore/output.schema.json", JSON.stringify(r.node.outputSchema, null, 2));
   const values = placeholderValues({ ...r.context, params: r.params, workdir: r.workdir, inputs });
-  const template = await readFile(join(r.nodeDir, r.node.prompt), "utf8");
+  const template: string | undefined = r.sidecars ? r.sidecars[r.node.prompt] : await readFile(join(r.nodeDir, r.node.prompt), "utf8");
+  if (template === undefined) throw new Error(`${r.node.name}: missing saved prompt ${r.node.prompt}`);
   let text = buildPrompt(substitute(template, values), r.node, listed, knowledge, r.attachments);
 
   let pgid: number | null = null;

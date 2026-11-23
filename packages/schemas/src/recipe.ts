@@ -41,6 +41,14 @@ export const Recipe = z
     icon: Name.optional(),
     start: NodeId.optional(),
     onBaseChanged: NodeId.optional(),
+    ci: z.object({
+      after: NodeId,
+      on: Outcome,
+      intervalSec: z.number().int().positive().default(30),
+      timeoutSec: z.number().int().positive(),
+      maxCorrections: z.number().int().nonnegative(),
+      checks: z.array(z.string().trim().min(1)).min(1),
+    }).strict().optional(),
     maxNodeRuns: z.number().int().positive().default(100),
     successOutcomes: z.array(z.string().regex(/^[a-z][a-z0-9-]*:[a-z][a-z0-9_]*$/)).default([]),
     layout: z.record(NodeId, z.object({ x: z.number(), y: z.number() }).strict()).optional(),
@@ -59,6 +67,7 @@ export const Recipe = z
     if (r.start === undefined) issue(["start"], "required when the recipe has nodes");
     else if (!ids.has(r.start)) issue(["start"], `${r.start} is not a recipe node`);
     if (r.onBaseChanged !== undefined && !ids.has(r.onBaseChanged)) issue(["onBaseChanged"], `${r.onBaseChanged} is not a recipe node`);
+    if (r.ci && !ids.has(r.ci.after)) issue(["ci", "after"], `${r.ci.after} is not a recipe node`);
     if (r.successOutcomes.length === 0) issue(["successOutcomes"], "at least one success outcome");
     const seen = new Set<string>();
     for (const [i, e] of r.edges.entries()) {

@@ -12,6 +12,7 @@ export type ForgeState = {
   prs: Pr[];
   comments: { issue: string; body: string }[];
   calls: string[];
+  checks?: Record<string, { name: string; bucket: string; link: string; description?: string }[]>;
 };
 
 const gh = String.raw`#!/usr/bin/env node
@@ -65,9 +66,18 @@ if (cmd === "pr edit") {
   done();
 }
 if (cmd === "pr view") {
-  const pr = s.prs.find((p) => p.repo === repo && (p.head === positional[0] || p.url === positional[0]));
+  const pr = s.prs.find((p) => p.repo === repo?.replace(/^github\.com\//, "") && (p.head === positional[0] || p.url === positional[0] || String(p.number) === positional[0]));
   if (!pr) fail("no pull requests found for branch " + positional[0]);
+  if (flag("--json") === "headRefOid") {
+    done(execFileSync("git", ["--git-dir", path.join(dir, "remotes", pr.repo + ".git"), "rev-parse", "refs/heads/" + pr.head], { encoding: "utf8" }).trim());
+  }
   done(pr.state === "MERGED" ? "MERGED" : undefined);
+}
+if (cmd === "pr checks") {
+  const pr = s.prs.find((p) => String(p.number) === positional[0] && p.repo === repo?.replace(/^github\.com\//, ""));
+  if (!pr) fail("no pull request " + positional[0]);
+  const sha = execFileSync("git", ["--git-dir", path.join(dir, "remotes", pr.repo + ".git"), "rev-parse", "refs/heads/" + pr.head], { encoding: "utf8" }).trim();
+  done(JSON.stringify(s.checks?.[sha] ?? []));
 }
 if (cmd === "issue view") done(JSON.stringify(s.comments.filter((c) => c.issue === positional[0]).map((c) => ({ body: c.body }))));
 if (cmd === "issue comment") {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useBlocker, useNavigate, useParams } from "react-router";
-import { ApiError, Name } from "@pecore/schemas";
+import { ApiError, ArtifactType, Name, normalizeLegacyHumanNode } from "@pecore/schemas";
 import type { DefinitionFile, Node, RouteResult } from "@pecore/schemas";
 import { basicSetup, EditorView } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
@@ -260,8 +260,8 @@ function SidecarFile({ path, name, isMarkdown, onDirty }: { path: string; name: 
 const nodeKinds: { value: Node["kind"]; label: string }[] = [
   { value: "agent", label: "Agent" },
   { value: "command", label: "Command" },
-  { value: "human", label: "Human" },
-  { value: "source", label: "Source" },
+  { value: "human-decision", label: "Human Decision" },
+  { value: "human-review", label: "Human Review" },
 ];
 const initialNodeFields: Record<Node["kind"], Record<string, unknown>> = {
   agent: {
@@ -272,7 +272,8 @@ const initialNodeFields: Record<Node["kind"], Record<string, unknown>> = {
     outcomes: ["passed", "failed"], failOutcomes: ["failed"], changesFiles: false, timeoutSec: 120,
     outcomeRules: [{ exitCode: 0, outcome: "passed" }, { exitCode: "other", outcome: "failed" }],
   },
-  human: { outcomes: ["approve", "reject"], changesFiles: false, timeoutSec: 120 },
+  "human-decision": { outcomes: ["yes", "no"] },
+  "human-review": { show: ["diff"], answer: true, outcomes: ["approve", "changes", "reject"] },
   source: { list: {}, read: {}, comment: {}, replies: {} },
 };
 const sourceCommands: { key: string; label: string }[] = [
@@ -301,19 +302,21 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   useEffect(() => {
     if (file.savedPath) void navigate(definitionUrl("node", file.savedPath), { replace: true });
   }, [file.savedPath, navigate]);
-  const draft = parseDraft(file.content);
+  const parsed = parseDraft(file.content);
+  const draft = parsed && normalizeLegacyHumanNode(parsed);
   const kind: string = string(draft?.kind);
+  const human: boolean = kind === "human-decision" || kind === "human-review";
   const definitionPath: string = creation ? creation.path(file.content) : path;
   const reference: string = string(draft?.[kind === "agent" ? "prompt" : "script"]);
   const validSidecar: string = (kind === "agent" && /^[\w.-]+\.md$/.test(reference)) || (kind === "command" && /^[\w.-]+\.sh$/.test(reference)) ? reference : "";
   useEffect(() => { if (!sidecarDirty) setSidecarName(validSidecar); }, [validSidecar, sidecarDirty]);
   const update = (key: string, value: unknown): void => file.update(JSON.stringify({ ...draft, [key]: value }, null, 2) + "\n");
   const inlineKeys: string[] = [
-    "description", "timeoutSec",
+    "description", "tags", "timeoutSec",
     ...(kind === "source" ? ["credentials"] : ["outcomes", "changesFiles"]),
     ...(kind === "agent" ? ["prompt", "resume"] : []),
     ...(kind === "command" ? ["script", "runsAs", "cleanCheckout"] : []),
-    ...(kind === "human" ? ["answer"] : []),
+    ...(human ? ["show", "answer"] : []),
   ];
   const fieldErrors = (key: string): ReactNode => <DefinitionErrors errors={file.errors?.filter(({ path }) => path.split(".")[0] === key)} />;
   const field = (key: string, label: string, input: ReactNode): ReactNode => <div><Field label={label}>{input}</Field>{fieldErrors(key)}</div>;
@@ -325,7 +328,6 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   );
   return <Page title={creation ? "New Node" : string(draft?.name) || "Node editor"} actions={file.saveButton(newTemplate && sidecarDirty)}>
     {(newTemplate || path.startsWith("templates/")) && <Link to="/templates">Back to templates</Link>}
-    {path.startsWith("projects/") && <p className={ui.muted}>Jobs using this node use the new version at their next run of it</p>}
     {file.feedback}
     {file.ready && <Panel>
       <div className={ui.row}>
@@ -340,17 +342,32 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
             <Select label="Kind" options={nodeKinds} value={kind || null} disabled={sidecarDirty} onValueChange={(value) => {
               const next: Node["kind"] | undefined = nodeKinds.find((option) => option.value === value)?.value;
               if (!next) return;
-              const { $schema, name, description, icon, params } = draft;
-              file.update(JSON.stringify({ $schema, name, description, icon, params, kind: next, ...initialNodeFields[next] }, null, 2) + "\n");
+              const { $schema, name, description, icon, tags, params } = draft;
+              const baseTag: string = next === "human-decision" || next === "human-review" ? "human" : next;
+              const oldTag: string = human ? "human" : kind;
+              const nextTags: string[] = Array.isArray(tags) ? tags.map(string).filter((tag) => tag && tag !== oldTag && tag !== baseTag) : [];
+              file.update(JSON.stringify({ $schema, name, description, icon, tags: [...nextTags, baseTag], params, kind: next, ...initialNodeFields[next] }, null, 2) + "\n");
             }} />
-          </> : <p>Kind: {kind}</p>}
+          </> : <p>Kind: {nodeKinds.find((option) => option.value === kind)?.label ?? kind}</p>}
           {field("description", "Description", <textarea value={string(draft.description)} onChange={(event) => update("description", event.target.value)} />)}
+          {field("tags", "Tags (comma separated)", <input value={Array.isArray(draft.tags) ? draft.tags.join(",") : ""} onChange={(event) => {
+            update("tags", event.target.value === "" ? undefined : event.target.value.split(","));
+          }} />)}
           <DefinitionIconField icons={icons.data} type="node" name={string(draft.name)} value={string(draft.icon)} disabled={!file.editable}
             onChange={(value) => update("icon", value)} />
-          {kind && field("timeoutSec", "Timeout (seconds)", <input type="number" min={1} value={typeof draft.timeoutSec === "number" ? draft.timeoutSec : ""} onChange={(event) => update("timeoutSec", event.target.value ? Number(event.target.value) : undefined)} />)}
+          {kind && !human && field("timeoutSec", "Timeout (seconds)", <input type="number" min={1} value={typeof draft.timeoutSec === "number" ? draft.timeoutSec : ""} onChange={(event) => update("timeoutSec", event.target.value ? Number(event.target.value) : undefined)} />)}
+          {kind === "human-review" && <div>
+            <p>Artifacts to review</p>
+            {ArtifactType.options.map((type) => {
+              const show: unknown[] = Array.isArray(draft.show) ? draft.show : [];
+              return <label key={type}><input type="checkbox" checked={show.includes(type)} onChange={(event) =>
+                update("show", event.target.checked ? [...show, type] : show.filter((entry) => entry !== type))} /> {type}</label>;
+            })}
+            {fieldErrors("show")}
+          </div>}
           {kind && kind !== "source" && <>
-            {field("outcomes", "Outcomes (comma separated)", <input value={Array.isArray(draft.outcomes) ? draft.outcomes.join(",") : ""} onChange={(event) => update("outcomes", event.target.value ? event.target.value.split(",") : [])} />)}
-            {flag("changesFiles", "Changes files")}
+            {field("outcomes", kind === "human-decision" ? "Choices (comma separated)" : "Outcomes (comma separated)", <input value={Array.isArray(draft.outcomes) ? draft.outcomes.join(",") : ""} onChange={(event) => update("outcomes", event.target.value ? event.target.value.split(",") : [])} />)}
+            {!human && flag("changesFiles", "Changes files")}
           </>}
           {kind === "agent" && <>{textField("prompt", "Prompt file")}{flag("resume", "Resume session")}</>}
           {kind === "command" && <>
@@ -359,7 +376,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
             {field("runsAs", "Runs as", <select value={string(draft.runsAs) || "project-user"} onChange={(event) => update("runsAs", event.target.value)}><option>project-user</option><option>engine</option></select>)}
             {flag("cleanCheckout", "Clean checkout")}
           </>}
-          {kind === "human" && flag("answer", "Accept an answer")}
+          {human && flag("answer", "Allow an optional note")}
           {creation && kind === "source" && sourceCommands.map(({ key, label }) => {
             const action = object(draft[key]);
             return !action.script && <div key={key}>{commandField(label, action.command, (command) => update(key, { ...action, command }))}</div>;

@@ -63,11 +63,15 @@ const ProjectDefinition = z
     folder: z.string().min(1).nullable().default(null),
     baseBranch: z.string().min(1).default("main"),
     createRepo: Name.nullable().default(null),
+    recipes: z.array(Name).optional(),
+    variables: JsonSchemaObject.optional(),
+    credentials: z.record(z.string(), z.string().min(1)).optional(),
     services: z.string().min(1).nullable().default(null),
     pm: ProjectManagerIdentity.nullable().default(null),
     source: z
       .object({
         node: Name,
+        account: z.string().min(1).optional(),
         params: JsonSchemaObject.default({}),
       })
       .strict()

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { Name, Node, Project, projectManagerClash, Recipe } from "@pecore/schemas";
+import { Name, Node, normalizeLegacyHumanNode, Project, projectManagerClash, Recipe, StoredNode } from "@pecore/schemas";
 import type { DefinitionEntry, InstantiateBody, RouteOutput } from "@pecore/schemas";
 import { validIcon } from "../../definitions/icon";
 import { instantiateNode, instantiateRecipe } from "../../definitions/instantiate";
@@ -137,7 +137,10 @@ export function definitionOperations(engine: Engine) {
     if ((!projectFile && !projectDirectory && !homeDirectory) || (!listing && !kind)) {
       throw new HttpError("bad_request", `invalid definition path ${path}`);
     }
-    if (id) projectContext(engine, id);
+    if (id) {
+      const ctx = projectContext(engine, id);
+      if (definitionDirectory && ctx.project.recipes !== undefined) throw new HttpError("bad_request", "Edit nodes and recipes in Templates.");
+    }
     const projectDir: string | undefined = id ? resolve(engine.projectDir(id)) : undefined;
     const root: string = projectDir ?? home.home;
     const dir: string = projectDir ? join(projectDir, ...parts.slice(2)) : homeDirectory!;
@@ -145,7 +148,7 @@ export function definitionOperations(engine: Engine) {
     return { id, projectDir, root, absPath, directory, kind, file };
   }
 
-  function inspect(path: string, kind: DefinitionKind | undefined, id: string | undefined, content: string): Pick<DefinitionEntry, "value" | "errors"> {
+  function inspect(path: string, kind: DefinitionKind | undefined, id: string | undefined, content: string, reading = false): Pick<DefinitionEntry, "value" | "errors"> {
     const errors: DefinitionError[] = [];
     if (kind === "knowledge" || kind === "prompt" || kind === "script") return { value: null, errors };
     if (kind === "icon") return validIcon(content)
@@ -167,7 +170,7 @@ export function definitionOperations(engine: Engine) {
       }
       return { value, errors };
     }
-    const schema: typeof Node | typeof Project = kind === "node" ? Node : Project;
+    const schema = kind === "node" ? (reading ? StoredNode : Node) : Project;
     const result = schema.safeParse(value);
     if (!result.success) return { value, errors: zodErrors(path, result.error) };
     const name: string = basename(path, ".json");
@@ -177,11 +180,27 @@ export function definitionOperations(engine: Engine) {
     if (kind === "project" && "id" in result.data && result.data.id !== id) {
       errors.push({ file: path, path: "id", message: `id must match the directory name ${id}` });
     }
-    return { value, errors };
+    return { value: kind === "node" && reading ? normalizeLegacyHumanNode(value as Record<string, unknown>) : value, errors };
   }
 
   const handlers = {
     listDefinitions: async ({ query: { dir } }) => {
+      const projectRecipes: RegExpExecArray | null = /^projects\/([^/]+)\/recipes$/.exec(dir);
+      if (projectRecipes) {
+        const ctx = projectContext(engine, projectRecipes[1]!);
+        if (ctx.project.recipes !== undefined) {
+          const entries: DefinitionEntry[] = [];
+          for (const name of ctx.project.recipes) {
+            const path: string = `templates/recipes/${name}.json`;
+            const target = location(path, false);
+            await rejectSymlinks(target.root, target.absPath);
+            const bytes: Buffer | null = await optionalBytes(target.absPath);
+            if (!bytes) continue;
+            entries.push({ path, sha256: sha256(bytes), ...inspect(path, "recipe", ctx.id, bytes.toString("utf8")) });
+          }
+          return entries;
+        }
+      }
       const target = location(dir, true);
       await rejectSymlinks(target.root, target.absPath);
       const files: string[] = await definitionFiles(target.absPath, target.directory);
@@ -190,7 +209,7 @@ export function definitionOperations(engine: Engine) {
         const bytes: Buffer | null = await optionalBytes(join(target.absPath, file));
         if (!bytes) continue;
         const path: string = `${dir}/${file}`;
-        entries.push({ path, sha256: sha256(bytes), ...inspect(path, fileKind(target.directory, basename(file)), target.id, bytes.toString("utf8")) });
+        entries.push({ path, sha256: sha256(bytes), ...inspect(path, fileKind(target.directory, basename(file)), target.id, bytes.toString("utf8"), true) });
       }
       return entries;
     },
@@ -226,7 +245,14 @@ export function definitionOperations(engine: Engine) {
     const name: string = kind === "project" ? id! : basename(file, extname(file));
     const persist = async (data: Buffer): Promise<void> => {
       await mkdir(dirname(absPath), { recursive: true });
-      await writeFile(absPath, data);
+      const stage: string = await mkdtemp(join(dirname(absPath), ".definition-"));
+      try {
+        const draft: string = join(stage, file);
+        await writeFile(draft, data);
+        await rename(draft, absPath);
+      } finally {
+        await rm(stage, { recursive: true, force: true });
+      }
       await commitFiles(home.home, projectDir, [absPath], commitMessage(kind!, name, before === null ? "created" : "edited"));
     };
     let saved: Buffer = bytes;
@@ -234,6 +260,17 @@ export function definitionOperations(engine: Engine) {
       const loaded = engine.project(id);
       const current: Project = loaded.ctx.project;
       const next: Project = Project.parse(value);
+      if (current.recipes !== undefined && next.recipes === undefined) throw new HttpError("bad_request", "Keep the list of selected recipe templates.");
+      const missing: string[] = (next.recipes ?? []).filter((name) => !loaded.ctx.defs.recipes.has(name));
+      if (missing.length > 0) {
+        const templates = await loadTemplates(home.templates);
+        for (const name of missing) {
+          const recipe: Recipe | undefined = templates.recipes.get(name);
+          if (!recipe) throw new HttpError("bad_request", `recipe template ${name} not found`);
+          const issues = checkRecipe(recipe, templates.nodes, next.repo !== null);
+          if (issues.length) throw new HttpError("bad_request", issues.map(({ message }) => message).join("\n"));
+        }
+      }
       const clash = next.pm && projectManagerClash(next.pm, engine.projectManagers(id));
       if (clash) throw new HttpError("bad_request", `Another project's Project Manager already uses this ${clash === "name" ? "name" : "colour"}.`);
       if (current.folder !== next.folder || !sameRepository(current.repo, next.repo)) {
@@ -245,7 +282,7 @@ export function definitionOperations(engine: Engine) {
           if (next.repo?.url !== current.repo?.url) {
             next.createRepo = null;
             const source = next.source && loaded.ctx.defs.nodes.get(next.source.node);
-            if (source?.kind === "source" && source.credentials.includes("project.account")) next.source = null;
+            if (!next.source?.account && source?.kind === "source" && source.credentials.includes("project.account")) next.source = null;
           }
           saved = Buffer.from(JSON.stringify(next, null, 2) + "\n");
           await changeProjectLocation(loaded.ctx, current, next, engine.global().accounts, async () => {
@@ -267,6 +304,9 @@ export function definitionOperations(engine: Engine) {
     }
     await persist(saved);
     if (id) await engine.reloadProject(id);
+    else if (kind === "node" || kind === "recipe" || kind === "prompt" || kind === "script") {
+      for (const [projectId, project] of engine.projects) if (project.ctx.project.recipes !== undefined) await engine.reloadProject(projectId);
+    }
     const hash: string = sha256(saved);
     engine.definitionChanged(path, hash);
     return { sha256: hash };
@@ -275,6 +315,24 @@ export function definitionOperations(engine: Engine) {
   async function instantiate({ kind, name, project: id }: InstantiateBody): Promise<RouteOutput<"instantiate"> & { errors: DefinitionError[] }> {
     const { project } = projectContext(engine, id);
     const projectDir: string = resolve(engine.projectDir(id));
+    if (project.recipes !== undefined) {
+      const path: string = `templates/recipes/${name}.json`;
+      if (kind === "node") return { created: [], kept: [], errors: [{ file: `templates/nodes/${name}.json`, path: "", message: "Add the node to a recipe in Templates." }] };
+      if (project.recipes.includes(name)) return { created: [], kept: [path], errors: [] };
+      const templates = await loadTemplates(home.templates);
+      const recipe: Recipe | undefined = templates.recipes.get(name);
+      const errors: DefinitionError[] = recipe
+        ? checkRecipe(recipe, templates.nodes, project.repo !== null).map((issue) => ({ file: path, ...issue }))
+        : [{ file: path, path: "name", message: `recipe template ${name} not found` }];
+      if (errors.length > 0) return { created: [], kept: [], errors };
+      const projectPath: string = `projects/${id}/project.json`;
+      const target = location(projectPath, false);
+      const before: Buffer | null = await optionalBytes(target.absPath);
+      if (!before) throw new NotFoundError(`project ${id} not found`);
+      const updated: Project = { ...Project.parse(JSON.parse(before.toString("utf8"))), recipes: [...project.recipes, name] };
+      await save(projectPath, JSON.stringify(updated, null, 2) + "\n", sha256(before));
+      return { created: [path], kept: [], errors: [] };
+    }
     let rename: Record<string, string> = {};
     if (kind === "recipe" && project.repo !== null) {
       try {

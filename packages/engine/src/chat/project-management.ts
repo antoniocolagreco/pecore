@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { z } from "zod";
-import { Project, ProjectId, ProjectManagerIdentity } from "@pecore/schemas";
+import { JsonSchemaObject, Name, Project, ProjectId, ProjectManagerIdentity } from "@pecore/schemas";
 import type { ChatConfirmationRow } from "@pecore/schemas";
 import { definitionOperations } from "../api/routes/definitions";
 import type { Engine } from "../main";
@@ -17,6 +17,10 @@ export const ProjectUpdate = ProjectSelection.extend({
     services: text.refine((path) => !isAbsolute(path) && !path.split("/").some((part) => part === "." || part === "..") && !path.includes("\0"),
       "Enter a Compose path relative to the repository root.").nullable().optional(),
     pm: ProjectManagerIdentity.optional(),
+    recipes: z.array(Name).optional(),
+    variables: JsonSchemaObject.optional(),
+    credentials: z.record(z.string(), text).optional(),
+    source: z.strictObject({ node: Name, account: text.optional(), params: JsonSchemaObject.default({}) }).nullable().optional(),
   }).refine((changes) => Object.keys(changes).length > 0, "Provide at least one setting to change."),
 });
 
@@ -36,6 +40,10 @@ export async function projectUpdateRows(engine: Engine, { project, changes }: z.
     ...(changes.baseBranch !== undefined ? [{ label: "Base branch", value: `${current.baseBranch} → ${changes.baseBranch}` }] : []),
     ...(changes.services !== undefined ? [{ label: "Compose file", value: `${compose(current.services)} → ${compose(changes.services)}` }] : []),
     ...(changes.pm !== undefined ? [{ label: "Project Manager", value: `${manager(current.pm)} → ${manager(changes.pm)}` }] : []),
+    ...(changes.recipes !== undefined ? [{ label: "Recipes", value: changes.recipes.join(", ") || "None" }] : []),
+    ...(changes.variables !== undefined ? [{ label: "Variables", value: JSON.stringify(changes.variables) }] : []),
+    ...(changes.credentials !== undefined ? [{ label: "Account bindings", value: JSON.stringify(changes.credentials) }] : []),
+    ...(changes.source !== undefined ? [{ label: "Ticket source", value: changes.source ? JSON.stringify(changes.source) : "None" }] : []),
   ];
 }
 

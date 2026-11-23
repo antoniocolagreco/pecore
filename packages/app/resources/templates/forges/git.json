@@ -3,7 +3,7 @@
   "tool": "git",
   "credentialHelper": null,
   "delivery": "git-delivery",
-  "comment": "git-no-comment",
+  "comment": null,
   "createRepo": null,
   "source": null
 }

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const ArtifactType = z.enum(["ticket", "spec", "findings", "risk", "check-log", "diff", "user-note", "commit", "delivery"]);
+export const ArtifactType = z.enum(["ticket", "spec", "findings", "risk", "check-log", "diff", "user-note", "commit", "delivery", "pull-request"]);
 export type ArtifactType = z.infer<typeof ArtifactType>;
 
 export const Artifact = z.object({

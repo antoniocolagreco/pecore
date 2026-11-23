@@ -1,6 +1,7 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "gitlab-mr",
+  "tags": ["gitlab", "source control", "command"],
   "description": "Open a GitLab merge request for the job branch or move it to the job's target branch.",
   "kind": "command",
   "runsAs": "engine",

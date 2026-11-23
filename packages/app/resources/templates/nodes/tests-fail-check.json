@@ -1,6 +1,7 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "tests-fail-check",
+  "tags": ["test", "command"],
   "description": "Run Vitest in a clean checkout to check that the tests fail before the fix.",
   "kind": "command",
   "params": {

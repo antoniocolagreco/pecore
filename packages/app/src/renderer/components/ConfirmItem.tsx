@@ -17,7 +17,8 @@ const positive: ReadonlySet<string> = new Set(["approve", "confirm", "accept", "
 const negative: ReadonlySet<string> = new Set(["reject", "deny", "stop", "no", "abort", "cancel", "fail"]);
 
 export const queueKindLabel: Record<QueueItemView["kind"], string> = {
-  "human-node": "Human review",
+  "human-node": "Human step",
+  "ci-head": "Pull request head changed",
   "engine-node": "Engine node",
   "source-node": "Source node",
   "recipe-change": "Recipe change",
@@ -72,7 +73,7 @@ function Subject({ item, connected }: { item: QueueItemView; connected: boolean 
         <>
           {typeof subject.node === "string" && <div>Node: {subject.node}</div>}
           {typeof subject.description === "string" && <div>{subject.description}</div>}
-          {typeof subject.contentState === "string" && <div>Content state: <code>{subject.contentState}</code></div>}
+          {subject.mode !== "decision" && typeof subject.contentState === "string" && <div>Content state: <code>{subject.contentState}</code></div>}
           {connected && item.jobId ? <Link to={`/jobs/${item.jobId}`}>Open the job</Link> : null}
           {artifacts.success && <ReviewArtifacts artifacts={artifacts.data} />}
           {!artifacts.success && <Snapshot value={item.subject} />}
@@ -86,6 +87,11 @@ function Subject({ item, connected }: { item: QueueItemView; connected: boolean 
           <Snapshot value={subject.text} />
         </>
       );
+    case "ci-head":
+      return <>
+        <p>The pull request points to a different commit. Restore the expected commit and choose Recheck, or stop the job.</p>
+        <Snapshot value={item.subject} />
+      </>;
     case "round-limit":
       return (
         <dl className={ui.kv}>
@@ -133,7 +139,7 @@ function ItemDetail({ item, replacement, reload, onDone }: {
           {item.note && <div>{item.note}</div>}
         </Alert>
       )}
-      <h2 className={s.kind}>{queueKindLabel[item.kind]}</h2>
+      <h2 className={s.kind}>{item.kind === "human-node" ? record(item.subject).mode === "decision" ? "Decision" : "Review" : queueKindLabel[item.kind]}</h2>
       <Subject item={item} connected={connected} />
       <div className={s.hash}>SHA-256 <code>{item.subjectHash}</code></div>
       {!locked && (
