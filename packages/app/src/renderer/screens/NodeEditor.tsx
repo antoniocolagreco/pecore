@@ -12,6 +12,7 @@ import { call } from "../api/client";
 import { errorText, useAction, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
 import { DefinitionIconField, useDefinitionIcons } from "../components/DefinitionIcon";
+import { restorePageScroll } from "../components/usePageScroll";
 import { Button, ErrorText, Field, Modal, Page, Panel, ui } from "../components/ui";
 import { TextArea, TextField } from "../ds/field";
 import { Select } from "../ds/select";
@@ -327,7 +328,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
       onValueChange={(text) => onChange(text ? text.split("\n") : undefined)} />
   );
   return <Page title={creation ? "New Node" : string(draft?.name) || "Node editor"} actions={file.saveButton(newTemplate && sidecarDirty)}>
-    {(newTemplate || path.startsWith("templates/")) && <Link to="/templates">Back to templates</Link>}
+    {(newTemplate || path.startsWith("templates/")) && <Link to="/templates" state={restorePageScroll}>Back to templates</Link>}
     {file.feedback}
     {file.ready && <Panel>
       <div className={ui.row}>

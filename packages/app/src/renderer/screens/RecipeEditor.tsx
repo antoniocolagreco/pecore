@@ -8,6 +8,7 @@ import type { DefinitionEntry } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { DefinitionIcon, DefinitionIconField, useDefinitionIcons } from "../components/DefinitionIcon";
+import { restorePageScroll } from "../components/usePageScroll";
 import { Button, Empty, ErrorText, Field, Modal, Page, Panel, ui } from "../components/ui";
 import { Button as DsButton } from "../ds/button";
 import { TextField } from "../ds/field";
@@ -162,8 +163,8 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
       onClick={() => void duplicate.run()}>Duplicate</DsButton>}
     {file.saveButton(importing)}
   </>}>
-    {projectId && <Link to={`/projects/${encodeURIComponent(projectId)}?tab=recipes`}>Back to recipes</Link>}
-    {scope === "templates" && <Link to="/templates?tab=recipes">Back to templates</Link>}
+    {projectId && <Link to={`/projects/${encodeURIComponent(projectId)}?tab=recipes`} state={restorePageScroll}>Back to recipes</Link>}
+    {scope === "templates" && <Link to="/templates?tab=recipes" state={restorePageScroll}>Back to templates</Link>}
     {file.feedback}
     <ErrorText error={duplicate.error} />
     {project && <Panel><div className={s.importRow}>
