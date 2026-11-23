@@ -127,3 +127,9 @@
 - Decision: the Max node runs field fills the inspector's width. An info icon next to its label explains that it caps the steps of one job, repeats included, and that the job then pauses and asks whether to continue.
 - Why: the user could not tell what the field does, and the inspector has no room for a description under it.
 - Replaces: a narrow field with no explanation.
+
+## 2026-11-23: Start and End have a stripe instead of a fade
+
+- Decision: Start and End have a plain green or red fill and a left stripe in the same colour, like the other node cards.
+- Why: the user did not like the fade.
+- Replaces: the fill fading from the top-left corner.
