@@ -1,8 +1,8 @@
 import { appName, ChatConfirmationRow, ChatForm, ChatImageMime, ExportFinding, ImportProjectPreview, chatAttachmentMaxBytes, chatCompactCommand, chatFormProblem, roleProfile } from "@pecore/schemas";
 import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatFormAnswer, ChatFormAnswers, ChatFormQuestion, ChatMessageView, ChatSender, ProjectManagerIdentity, Role } from "@pecore/schemas";
 import { ProjectManagerAvatar } from "../components/ProjectManager";
-import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import { Fragment, createContext, useContext, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties, ReactNode, RefObject } from "react";
 import ReactMarkdown from "react-markdown";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { call } from "../api/client";
@@ -23,13 +23,13 @@ import { definitionUrl, object, settingUrl, string } from "./NodeEditor";
 import { harnessName } from "./Settings";
 import s from "./AssistantChat.module.css";
 
-type SelectedImage = { key: number; file: File; mime: ChatImageMime; attachmentId?: string };
+type SelectedFile = { key: number; file: File; image: boolean; attachmentId?: string };
 type ActionLink = { to: string; label: string };
 type ChatApi = {
   get(): Promise<ChatDetail>;
   clear(): Promise<unknown>;
   send(body: { text: string; attachmentIds: string[] }): Promise<unknown>;
-  upload(body: { mime: ChatImageMime; data: string }): Promise<ChatAttachmentView>;
+  upload(body: { name: string; mime: string; data: string }): Promise<ChatAttachmentView>;
   retry(id: string): Promise<unknown>;
   read(): Promise<unknown>;
   answerForm(id: string, body: ChatFormAnswers): Promise<unknown>;
@@ -457,7 +457,7 @@ function Message({ message, attachments, actions, connected, reload, working = f
         {ticket === undefined && sender !== "job" && bubble}
         {ticket === undefined && sender !== "job" && long && <Button size="sm" variant="ghost" className={s.more} aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Show less" : "Show more"}</Button>}
         {attachments.length > 0 && <ul className={s.chips} aria-label="Message attachments">
-          {attachments.map(({ id, mime, size }) => <li className={s.chip} key={id} title={`${size} bytes`}>{mime} · {fileSize(size)}</li>)}
+          {attachments.map(({ id, name, size }) => <li className={s.chip} key={id} title={`${size} bytes`}>{name} · {fileSize(size)}</li>)}
         </ul>}
         <ErrorText error={message?.error} />
         {message?.state === "interrupted" && <div><Button size="sm" disabled={!connected || retry.busy} loading={retry.busy} onClick={() => void retry.run()}>Retry</Button></div>}
@@ -487,66 +487,103 @@ function Compaction({ message }: { message: ChatMessageView }) {
   );
 }
 
-function Composer({ supportsImages, connected, ready, reload, autoFocus }: {
+function Composer({ supportsImages, connected, ready, reload, autoFocus, dropTarget }: {
   supportsImages: ChatDetail["supportsImages"];
   connected: boolean;
   ready: boolean;
   reload(): void;
   autoFocus?: boolean;
+  dropTarget: RefObject<HTMLElement | null>;
 }) {
   const [message, setMessage] = useState<string>("");
-  const [images, setImages] = useState<SelectedImage[]>([]);
-  const [imageError, setImageError] = useState<string | null>(null);
+  const [files, setFiles] = useState<SelectedFile[]>([]);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState<boolean>(false);
   const nextKey = useRef<number>(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const { api, agent } = useContext(ChatContext);
   const send = useAction(async () => {
     const attachmentIds: string[] = [];
-    for (const image of images) {
-      let attachmentId: string | undefined = image.attachmentId;
+    for (const selected of files) {
+      let attachmentId: string | undefined = selected.attachmentId;
       if (!attachmentId) {
-        const data: string = await base64(image.file);
-        const attachment: ChatAttachmentView = await api.upload({ mime: image.mime, data });
+        const data: string = await base64(selected.file);
+        const attachment: ChatAttachmentView = await api.upload({ name: selected.file.name, mime: selected.file.type, data });
         attachmentId = attachment.id;
-        setImages((pending) => pending.map((entry) => entry.key === image.key ? { ...entry, attachmentId: attachment.id } : entry));
+        setFiles((pending) => pending.map((entry) => entry.key === selected.key ? { ...entry, attachmentId: attachment.id } : entry));
       }
       attachmentIds.push(attachmentId);
     }
     await api.send({ text: message, attachmentIds });
     setMessage("");
-    setImages([]);
-    setImageError(null);
+    setFiles([]);
+    setFileError(null);
     input.current?.focus();
     reload();
   });
   const disabled: boolean = !connected || send.busy;
-  const canSend: boolean = !disabled && ready && (!!message.trim() || images.length > 0) && (images.length === 0 || supportsImages === true);
-  const imageReason: string = supportsImages === true ? "Add images: PNG, JPEG, GIF or WebP, up to 10 MB each"
+  const canSend: boolean = !disabled && ready && (!!message.trim() || files.length > 0);
+  const noImages: string | null = supportsImages === true ? null
     : supportsImages === false ? `The current ${agent} cannot read images` : `Checking whether the ${agent} can read images…`;
 
-  function addImages(files: File[]): void {
-    const selected: SelectedImage[] = [];
-    const invalid: string[] = [];
-    for (const file of files) {
-      const mime = ChatImageMime.safeParse(file.type);
-      if (!mime.success || file.size === 0 || file.size > chatAttachmentMaxBytes) invalid.push(file.name);
-      else selected.push({ key: nextKey.current++, file, mime: mime.data });
+  function addFiles(chosen: File[]): void {
+    if (disabled) return;
+    const selected: SelectedFile[] = [];
+    const problems: string[] = [];
+    for (const file of chosen) {
+      const image: boolean = ChatImageMime.safeParse(file.type).success;
+      if (file.size > chatAttachmentMaxBytes) problems.push(`${file.name} is larger than 10 MB.`);
+      else if (image && noImages) problems.push(`${noImages}: ${file.name}.`);
+      else selected.push({ key: nextKey.current++, file, image });
     }
-    setImages((pending) => [...pending, ...selected]);
-    setImageError(invalid.length ? `Could not attach ${invalid.join(", ")}. Choose PNG, JPEG, GIF or WebP images up to 10 MB each.` : null);
+    setFiles((pending) => [...pending, ...selected]);
+    setFileError(problems.length ? problems.join(" ") : null);
   }
+  const dropFiles = useEffectEvent((dropped: File[]): void => addFiles(dropped));
+
+  useEffect(() => {
+    const pane: HTMLElement | null = dropTarget.current;
+    if (!pane) return;
+    const carriesFiles = (event: DragEvent): boolean => event.dataTransfer?.types.includes("Files") === true;
+    const stop = (): void => setDragging(false);
+    const over = (event: DragEvent): void => {
+      if (!carriesFiles(event)) return;
+      event.preventDefault();
+      setDragging(true);
+    };
+    const leave = (event: DragEvent): void => {
+      if (!(event.relatedTarget instanceof Node) || !pane.contains(event.relatedTarget)) stop();
+    };
+    const drop = (event: DragEvent): void => {
+      if (!carriesFiles(event)) return;
+      event.preventDefault();
+      stop();
+      dropFiles(Array.from(event.dataTransfer!.files));
+    };
+    pane.addEventListener("dragover", over);
+    pane.addEventListener("dragleave", leave);
+    pane.addEventListener("drop", drop);
+    window.addEventListener("dragend", stop);
+    return () => {
+      pane.removeEventListener("dragover", over);
+      pane.removeEventListener("dragleave", leave);
+      pane.removeEventListener("drop", drop);
+      window.removeEventListener("dragend", stop);
+    };
+  }, [dropTarget]);
 
   return (
     <div className={s.composerWrap}>
+      {dragging && <div className={s.dropNotice} role="status">{disabled ? "The chat is not available" : "Drop files to attach"}</div>}
       <form className={s.composer} onSubmit={(event) => {
         event.preventDefault();
         if (canSend) void send.run();
       }}>
-        {images.length > 0 && <ul className={s.chips} aria-label="Selected images">
-          {images.map(({ key, file }) => <li key={key} className={s.thumb}>
-            <Thumbnail file={file} />
-            <IconButton size="sm" className={s.thumbRemove} label={`Remove ${file.name}`} icon={<XIcon />} disabled={disabled} onClick={() => setImages((pending) => pending.filter((image) => image.key !== key))} />
+        {files.length > 0 && <ul className={s.chips} aria-label="Selected files">
+          {files.map(({ key, file, image }) => <li key={key} className={s.thumb}>
+            {image ? <Thumbnail file={file} /> : <span className={s.thumbName}>{file.name}</span>}
+            <IconButton size="sm" className={s.thumbRemove} label={`Remove ${file.name}`} icon={<XIcon />} disabled={disabled} onClick={() => setFiles((pending) => pending.filter((entry) => entry.key !== key))} />
           </li>)}
         </ul>}
         <textarea
@@ -560,12 +597,10 @@ function Composer({ supportsImages, connected, ready, reload, autoFocus }: {
           readOnly={send.busy}
           onChange={(event) => setMessage(event.target.value)}
           onPaste={(event) => {
-            const files: File[] = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
-            if (!files.length) return;
+            const pasted: File[] = Array.from(event.clipboardData.files);
+            if (!pasted.length) return;
             event.preventDefault();
-            if (disabled) return;
-            if (supportsImages !== true) setImageError(imageReason);
-            else addImages(files.map((file, index) => new File([file], `Pasted image ${nextKey.current + index + 1}.${file.type.slice(6)}`, { type: file.type })));
+            addFiles(pasted.map((file, index) => file.type.startsWith("image/") ? new File([file], `Pasted image ${nextKey.current + index + 1}.${file.type.slice(6)}`, { type: file.type }) : file));
           }}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -580,21 +615,20 @@ function Composer({ supportsImages, connected, ready, reload, autoFocus }: {
             className={s.hiddenInput}
             type="file"
             multiple
-            aria-label="Attach images"
-            accept={ChatImageMime.options.join(",")}
-            disabled={disabled || supportsImages !== true}
+            aria-label="Attach files"
+            disabled={disabled}
             tabIndex={-1}
             onChange={(event) => {
-              addImages(Array.from(event.currentTarget.files ?? []));
+              addFiles(Array.from(event.currentTarget.files ?? []));
               event.currentTarget.value = "";
             }}
           />
-          <IconButton label={imageReason} icon={<ClipIcon />} disabled={disabled || supportsImages !== true} onClick={() => fileInput.current?.click()} />
+          <IconButton label="Attach files, up to 10 MB each" icon={<ClipIcon />} disabled={disabled} onClick={() => fileInput.current?.click()} />
           <span className={s.composerHint}>{send.busy ? "Sending…" : "Enter to send · Shift Enter for a new line"}</span>
           <Button type="submit" variant="primary" className={s.composerAction} aria-label="Send" disabled={!canSend} icon={send.busy ? <Spinner /> : <ArrowUpIcon bold />} />
         </div>
       </form>
-      {(imageError || send.error) && <div className={s.footnote}><ErrorText error={imageError ?? send.error} /></div>}
+      {(fileError || send.error) && <div className={s.footnote}><ErrorText error={fileError ?? send.error} /></div>}
     </div>
   );
 }
@@ -646,6 +680,7 @@ function Chat({ project }: { project: string | null }) {
   const [query, setQuery] = useSearchParams();
   const definition: string | null = query.get("definition");
   const [active, setActive] = useState<boolean>(() => document.visibilityState === "visible" && document.hasFocus());
+  const pane = useRef<HTMLElement>(null);
   const history = useRef<HTMLDivElement>(null);
   const followHistory = useRef<boolean>(true);
   const marked = useRef<string | null>(null);
@@ -713,7 +748,7 @@ function Chat({ project }: { project: string | null }) {
   }
   return (
     <ChatContext.Provider value={people}>
-    <aside className={s.panel} aria-label={agent}><section className={s.pane}>
+    <aside className={s.panel} aria-label={agent}><section ref={pane} className={s.pane}>
       <div className={s.toolbar} role="group" aria-label="Conversation controls">
         {pm && <ProjectManagerAvatar pm={pm} />}
         <div className={s.heading}>
@@ -757,7 +792,7 @@ function Chat({ project }: { project: string | null }) {
           </Alert>
         </div>
       )}
-      {chat && <Composer connected={connected} ready={ready === true && !clear.busy} supportsImages={chat.supportsImages} reload={detail.reload} autoFocus={project === null} />}
+      {chat && <Composer connected={connected} ready={ready === true && !clear.busy} supportsImages={chat.supportsImages} reload={detail.reload} autoFocus={project === null} dropTarget={pane} />}
       {definition && <DefinitionPreview key={definition} path={definition} onClose={() => setQuery({}, { replace: true })} />}
     </section></aside>
     </ChatContext.Provider>

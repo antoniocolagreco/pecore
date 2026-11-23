@@ -32,7 +32,7 @@ export function chatHandlers(engine: Engine) {
       await chats.answerProjectShare(params.id, { tool: "export_project", ...body });
       return { ok: true as const };
     },
-    uploadChatAttachment: async ({ body }) => chats.upload(body.mime, body.data),
+    uploadChatAttachment: async ({ body }) => chats.upload(body),
     retryChatMessage: async ({ params }) => chats.retry(params.id),
     markChatRead: async () => {
       chats.markRead();
@@ -44,7 +44,7 @@ export function chatHandlers(engine: Engine) {
       return { ok: true as const };
     },
     sendProjectChatMessage: async ({ params, body }) => chats.send(body, params.id),
-    uploadProjectChatAttachment: async ({ params, body }) => chats.upload(body.mime, body.data, params.id),
+    uploadProjectChatAttachment: async ({ params, body }) => chats.upload(body, params.id),
     retryProjectChatMessage: async ({ params }) => chats.retry(params.messageId, params.id),
     markProjectChatRead: async ({ params }) => {
       chats.markRead(params.id);

@@ -9,6 +9,7 @@
 }
 
 .pane {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -283,6 +284,15 @@
   animation: chip-in var(--spring-time) var(--spring);
 }
 
+.thumbName {
+  max-width: 100%;
+  padding: 0 24px 0 8px;
+  overflow: hidden;
+  font-size: var(--text-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .thumbImage {
   display: block;
   width: 100%;
@@ -437,6 +447,19 @@
 
 .composerWrap {
   padding: 8px 12px 12px;
+}
+
+.dropNotice {
+  position: absolute;
+  z-index: 1;
+  inset: 8px;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  font-weight: 600;
+  pointer-events: none;
 }
 
 .composer {

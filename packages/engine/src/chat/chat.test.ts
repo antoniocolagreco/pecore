@@ -1069,7 +1069,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     });
     try {
       const { ctx } = t.engine.project("demo");
-      const attachment = await t.call("uploadChatAttachment", { body: { mime: "image/png", data: png } });
+      const attachment = await t.call("uploadChatAttachment", { body: { name: "screenshot.png", mime: "image/png", data: png } });
       await t.call("sendChatMessage", { body: { text: "Ask Demo for an API job like in this screenshot", attachmentIds: [attachment.id] } });
       await until(() => existsSync(join(t.root, "assistant.json")));
       const assistantPrompt: string = await readFile(join(t.root, "assistant.json"), "utf8");
@@ -1090,7 +1090,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect(pmPrompt).toContainEqual(expect.objectContaining({ type: "image", mimeType: "image/png", data: png }));
       const pmChat: ChatDetail = await t.call("getProjectChat", { params: { id: "demo" } });
       expect(pmChat.messages).toMatchObject([{ role: "user", sender: "assistant", text: "Create an API job like in the screenshot.", context: [{ project: "demo" }] }]);
-      expect(pmChat.attachments).toEqual([{ id: expect.not.stringMatching(attachment.id), messageId: pmChat.messages[0]!.id, mime: "image/png", size: attachment.size }]);
+      expect(pmChat.attachments).toEqual([{ id: expect.not.stringMatching(attachment.id), messageId: pmChat.messages[0]!.id, name: "screenshot.png", mime: "image/png", size: attachment.size }]);
       const pm = mcp(tokenFileOf(intakeChat(t)));
       await pm.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       expect((await pm.tool("create_jobs", { project: "demo", plan: [{ key: "api", title: "API", ticketText: "add the endpoint", recipe: "reviewed", dependsOn: [], attachmentIds: [pmChat.attachments[0]!.id] }] })).result!.isError).not.toBe(true);
@@ -1216,7 +1216,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       [...init(true)],
       [...init(true), ...newSession, { expect: "session/prompt" }, { dump: join(root, "prompt.json") }, ...replyWith("Seen.")],
     ]);
-    const attachment = await t.call("uploadChatAttachment", { body: { mime: "image/png", data: png } });
+    const attachment = await t.call("uploadChatAttachment", { body: { name: "bug.png", mime: "image/png", data: png } });
     await t.call("sendChatMessage", { body: { text: "This is the bug", attachmentIds: [attachment.id] } });
     await until(() => existsSync(join(t.root, "prompt.json")));
     const prompt = (JSON.parse(await readFile(join(t.root, "prompt.json"), "utf8")) as { params: { prompt: { type: string; mimeType?: string; data?: string }[] } }).params.prompt;
@@ -1224,10 +1224,32 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     await t.close();
   }, 60000);
 
+  it("puts any other file where the agent can open it, names its path in the prompt, and removes it when the chat is cleared", async () => {
+    const t = await setup((root) => [
+      [...init(false), ...newSession, { expect: "session/prompt" }, { dump: join(root, "prompt.json") }, ...replyWith("Read it.")],
+      [...init(false)],
+    ]);
+    const log = "error: build failed at step 3\n";
+    const attachment = await t.call("uploadChatAttachment", { body: { name: "build.log", mime: "", data: Buffer.from(log).toString("base64") } });
+    expect(attachment).toMatchObject({ name: "build.log", mime: "application/octet-stream", size: log.length });
+    await expect(t.call("uploadChatAttachment", { body: { name: "../escape.log", mime: "text/plain", data: "" } })).rejects.toMatchObject({ status: expect.any(Number) });
+    await t.call("sendChatMessage", { body: { text: "Why did the build fail?", attachmentIds: [attachment.id] } });
+    await until(() => existsSync(join(t.root, "prompt.json")));
+    const prompt = (JSON.parse(await readFile(join(t.root, "prompt.json"), "utf8")) as { params: { prompt: { type: string; text?: string }[] } }).params.prompt;
+    expect(prompt.map(({ type }) => type)).toEqual(["text"]);
+    const listed = prompt[0]!.text!.split("\n\n").find((line) => line.includes('"name":"build.log"'));
+    const [file] = JSON.parse(listed!) as { name: string; path: string }[];
+    expect(await readFile(file!.path, "utf8")).toBe(log);
+    await until(async () => (await t.call("getChat")).messages.some(({ text }) => text === "Read it."));
+    expect(await t.call("clearChat")).toEqual({ ok: true });
+    expect(existsSync(file!.path)).toBe(false);
+    await t.close();
+  }, 60000);
+
   it("refuses an image when the connector does not support images", async () => {
     const t = await setup(() => [[...init(false)], [...init(false)], [...init(false)]]);
     const refused = async () => {
-      const attachment = await t.call("uploadChatAttachment", { body: { mime: "image/png", data: png } });
+      const attachment = await t.call("uploadChatAttachment", { body: { name: "bug.png", mime: "image/png", data: png } });
       await t.call("sendChatMessage", { body: { text: "This is the bug", attachmentIds: [attachment.id] } });
     };
     await expect(refused()).rejects.toMatchObject({ status: expect.any(Number) });

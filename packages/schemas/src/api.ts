@@ -180,6 +180,11 @@ export const chatCompactCommand = "/compact";
 const chatAttachmentMaxBase64 = 4 * Math.ceil(chatAttachmentMaxBytes / 3);
 export const ChatImageMime = z.enum(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 export type ChatImageMime = z.infer<typeof ChatImageMime>;
+const ChatAttachmentUpload = z.strictObject({
+  name: z.string().trim().min(1).max(200).refine((name) => !/[/\\\0]/.test(name) && name !== "." && name !== "..", "a file name without folders"),
+  mime: z.string().max(200),
+  data: z.base64().max(chatAttachmentMaxBase64),
+});
 export const ChatReference = z.strictObject({
   project: ProjectId.optional(),
   jobId: z.string().min(1).optional(),
@@ -207,7 +212,8 @@ export type ChatMessageView = z.infer<typeof ChatMessageView>;
 export const ChatAttachmentView = z.object({
   id: z.string(),
   messageId: z.string().nullable(),
-  mime: ChatImageMime,
+  name: z.string(),
+  mime: z.string(),
   size: z.number().int().nonnegative(),
 });
 export type ChatAttachmentView = z.infer<typeof ChatAttachmentView>;
@@ -568,7 +574,7 @@ export const routes = {
   uploadChatAttachment: {
     method: "POST",
     path: "/chat/attachments",
-    body: z.strictObject({ mime: ChatImageMime, data: z.base64().max(chatAttachmentMaxBase64) }),
+    body: ChatAttachmentUpload,
     bodyLimit: chatAttachmentMaxBase64 + 1024,
     response: ChatAttachmentView,
   },
@@ -581,7 +587,7 @@ export const routes = {
     method: "POST",
     path: "/projects/:id/chat/attachments",
     params: IdParams,
-    body: z.strictObject({ mime: ChatImageMime, data: z.base64().max(chatAttachmentMaxBase64) }),
+    body: ChatAttachmentUpload,
     bodyLimit: chatAttachmentMaxBase64 + 1024,
     response: ChatAttachmentView,
   },

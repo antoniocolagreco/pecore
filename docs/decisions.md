@@ -41,3 +41,9 @@
 - Decision: every text the user reads takes the app's name from `appName` in `packages/schemas`. Packaging keeps its own copy in `package.json` and `electron-builder.yml`. Internal names (`pecore`, `PECORE_*`, `pecore-agent`, `.pecore`) stay.
 - Why: the app may be renamed (for example to Harmonica). With one constant the rename touches three files; internal names would need moving every user's data and OS users for no visible gain.
 - Replaces: "<PE/CORE>" written by hand in about 30 source files.
+
+## 2026-11-23: Any file can be attached or dropped in the chats
+
+- Decision: both chats accept any file up to 10 MB, from the clip button, a paste or a drop anywhere on the chat panel. Images still reach the model as images. Other files go to a folder the agent can read, and the message tells it where they are.
+- Why: the user wants to drop logs, documents and archives into the chat, not only images.
+- Replaces: image-only attachments, with no drop.

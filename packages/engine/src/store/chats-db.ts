@@ -13,7 +13,7 @@ export type Notification = { id: string; kind: string; title: string; body: stri
 export type Chat = { id: string; project: string | null };
 export type ChatSession = { sessionId: string | null; sessionKey: string | null };
 export type ChatTurn = Omit<ChatMessageView, "sender"> & { chatId: string; orderId: string; orderProject: string | null; sender: ChatSender | null };
-export type ChatAttachment = ChatAttachmentView & { path: string };
+export type ChatAttachment = Omit<ChatAttachmentView, "name"> & { path: string };
 type MessageRow = Omit<ChatTurn, "context"> & { context: string };
 type ActionRow = Omit<ChatActionView, "target"> & { target: string };
 
