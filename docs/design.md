@@ -286,7 +286,8 @@ $PECORE_HOME/                         default ~/.pecore; its path is stored in E
 *   Clone and fetch are engine operations: the engine runs them as the app user with `--git-dir=repo.git`, with the project's account selected by `forge-env.ts` as for `credentials` (3.1). It clones at project creation, fetches the job's base branch before every job starts, and fetches on merge detection (4.6).
 *   `knowledge/` holds Markdown documents about the project: architecture, conventions, domain terms. Knowledge exists only inside a project; there is no global knowledge. The directory is flat: `.md` files only, all at the same level, no subfolders. A file links to another by its bare name, for example `[naming](naming.md)`, never by an absolute or nested path.
 *   Files come from four places: the user writes a new file in the GUI, uploads a `.md` file, asks the Project Manager or the Assistant to write or improve one, or a project bootstrap or wizard writes them. Job agents never write there.
-*   An agent node receives the files named in its `knowledge` list, copied flat into `.pecore/context/` so the links between them still resolve.
+*   An agent node receives the files named in its `knowledge` list and every knowledge file they link to, directly or through other files, copied flat into `.pecore/context/` so the links between them still resolve.
+*   The engine checks a knowledge file on every save, from the GUI, an upload, `write_knowledge` or a bootstrap. Links: a link that is not a web address must be the bare name of an existing file of the same project (no `/`, no `..`); otherwise the save is refused with the line and the link. Formatting: `markdownlint` with a small rule set (headings, lists, code fences, no line-length rule); its findings are returned as warnings and do not block the save. Deleting or renaming a file that other files link to lists those files; a rename updates their links.
 
 ### 3. Definitions
 

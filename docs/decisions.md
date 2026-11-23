@@ -177,3 +177,10 @@
 - Why: the current tab is a single list with a raw text box and a file-name field; the user wants to organise, write and assign documents like in a file manager.
 - Replaces: `knowledge/**.md` with subfolders, `knowledge` globs on agent nodes, and `write_knowledge` reserved to the Project Manager.
 - Not implemented yet.
+
+## 2026-11-23: Knowledge links are followed and checked on save
+
+- Decision: a node also receives every knowledge file its files link to. The engine checks each knowledge file on save: a link to a missing file, or with a path, refuses the save; `markdownlint` formatting findings are warnings. The editor is CodeMirror with Markdown highlighting and live underlines. A rename updates the links that point to the file.
+- Why: an agent cannot follow a link to a file it did not receive, and broken links or bad formatting should be caught when the file is written, by the user or by an agent.
+- Replaces: nothing; knowledge files had no checks.
+- Formatting findings warn instead of blocking, so a long file is never stuck on a style rule. Not implemented yet.
