@@ -13,12 +13,11 @@
 }
 
 .list {
-  --entry-width: 392px;
   --card-size: 120px;
   --glyph-size: calc(var(--icon-size) * 2);
 
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--entry-width)), var(--entry-width)));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--entry-width, 392px)), var(--entry-width, 392px)));
   gap: var(--gap) calc(var(--gap) * 2);
   margin: 0;
   padding: 0;

@@ -17,11 +17,11 @@ export function RecipeNodeKindBadge({ kind }: { kind: RecipeNodeKind }) {
   return <span className={`${s.kindBadge} ${s[kind]}`}><Badge dot>{nodeKindLabels[kind]}</Badge></span>;
 }
 
-export function NodeCard({ icon, title, kind }: { icon: ReactNode; title: string; kind?: RecipeNodeKind | "source" }) {
+export function NodeCard({ icon, title, kind, badge }: { icon: ReactNode; title: string; kind?: RecipeNodeKind | "source"; badge?: ReactNode }) {
   return <Card className={[s.card, kind && s[kind]].filter(Boolean).join(" ")}>
     <span className={s.glyph}>{icon}</span>
     <strong title={title}><span>{title}</span></strong>
-    {kind && <div className={s.kind}>{kind === "source" ? <Badge tone="success" dot>Source</Badge> : <RecipeNodeKindBadge kind={kind} />}</div>}
+    {(badge || kind) && <div className={s.kind}>{badge ?? (kind === "source" ? <Badge tone="success" dot>Source</Badge> : kind && <RecipeNodeKindBadge kind={kind} />)}</div>}
   </Card>;
 }
 

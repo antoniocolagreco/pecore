@@ -1,25 +1,33 @@
 import { useEffect, useId, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { ChatAgent, NodeAgentCatalog, Compaction, compactionSizes } from "@pecore/schemas";
-import type { Account, AgentDefinition, AssistantTraitId, NodeAgent, Role } from "@pecore/schemas";
+import { BuiltInHarness, ChatAgent, NodeAgentCatalog, Compaction, compactionSizes } from "@pecore/schemas";
+import type { Account, AgentDefinition, AssistantTraitId, ModelAccount, NodeAgent, Role } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useAutoSave, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { PageActions } from "../components/PageActions";
 import { ErrorText, Page } from "../components/ui";
 import { restorePageScroll } from "../components/usePageScroll";
-import { harnessName, ModelPicker, Traits } from "../components/AgentFields";
+import { ModelPicker, Traits } from "../components/AgentFields";
 import { NodeIconTile } from "../components/DefinitionIcon";
 import { NodeCard } from "../components/NodeCard";
-import { Button, IconButton } from "../ds/button";
-import { Card, EmptyState, Skeleton, Spinner } from "../ds/feedback";
+import { Button } from "../ds/button";
+import { Badge, Card, EmptyState, Skeleton, Spinner } from "../ds/feedback";
 import { TextArea, TextField } from "../ds/field";
-import { EditIcon, PlusIcon, SparkIcon, TrashIcon } from "../ds/icons";
+import { PlusIcon, SparkIcon, TrashIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
+import { install } from "../shell/SetupBanner";
 import { Sidecar, useUnsaved } from "./NodeEditor";
 import s from "./Agents.module.css";
 import templates from "./Templates.module.css";
+
+const harnessColors: Readonly<Record<BuiltInHarness, string>> = {
+  "claude-code": "light-dark(#9b492f, #d97757)",
+  codex: "light-dark(#5143b9, #a89aff)",
+  opencode: "light-dark(#626262, #aeaeae)",
+};
 
 function sizeOptions(sizes: readonly number[]): { value: string; label: string }[] {
   return sizes.map((size) => ({ value: String(size), label: `${size / 1024}K tokens` }));
@@ -28,7 +36,7 @@ function sizeOptions(sizes: readonly number[]): { value: string; label: string }
 function useAgentCatalog() {
   const catalog = useData(() => call("getAgents"), [], (event) => event.type === "definition.changed" && event.path === "agents.json");
   const accounts = useData(() => call("getAccounts"), [], (event) => event.type === "definition.changed" && event.path === "accounts.json");
-  const modelAccounts: Account[] = accounts.data?.value.accounts.filter(({ kind }) => kind === "model") ?? [];
+  const modelAccounts: ModelAccount[] = accounts.data?.value.accounts.filter((account) => account.kind === "model") ?? [];
   return { catalog, modelAccounts, accountsError: accounts.error };
 }
 
@@ -36,21 +44,13 @@ export function Agents() {
   const navigate = useNavigate();
   const { catalog, modelAccounts, accountsError } = useAgentCatalog();
   const connected: boolean = useConnected();
-  const [removing, setRemoving] = useState<NodeAgent | null>(null);
   const agents: NodeAgent[] = catalog.data?.value.agents ?? [];
-  const destroy = useAction(async () => {
-    if (!removing || !catalog.data) return;
-    const { value, sha256 } = catalog.data;
-    await call("putAgents", { body: { value: { ...value, agents: agents.filter(({ id }) => id !== removing.id) }, baseSha256: sha256 } });
-    catalog.reload();
-    setRemoving(null);
-  });
   const newAgent = <Button variant="primary" icon={<PlusIcon />} disabled={!connected || !catalog.data}
     onClick={() => void navigate("/agents/edit")}>New agent</Button>;
 
   return <Page title="Agents" actions={catalog.data && agents.length === 0 ? undefined : newAgent}>
     <ErrorText error={catalog.error ?? accountsError} />
-    {catalog.loading && !catalog.data && <ul className={templates.list} aria-hidden="true">
+    {catalog.loading && !catalog.data && <ul className={`${templates.list} ${s.list}`} aria-hidden="true">
       {[0, 1, 2].map((index) => <li key={index} className={templates.entry}>
         <Skeleton height={120} />
         <div className={s.details}><Skeleton width="65%" /><Skeleton width="90%" /></div>
@@ -59,35 +59,31 @@ export function Agents() {
     {catalog.data && (
       agents.length === 0
         ? <Card padded><EmptyState icon={<SparkIcon size="md" />} title="No agents yet" action={newAgent} /></Card>
-        : <ul className={templates.list} aria-label="Agents">
+        : <ul className={`${templates.list} ${s.list}`} aria-label="Agents">
           {agents.map((agent) => {
             const to: string = `/agents/edit/${encodeURIComponent(agent.id)}`;
-            const account: Account | undefined = modelAccounts.find(({ id }) => id === agent.model?.account);
-            const provider: string | undefined = account ? harnessName(account, modelAccounts) : agent.model?.account;
-            const card = <NodeCard icon={<NodeIconTile size="lg"><SparkIcon size="md" /></NodeIconTile>} title={agent.name} />;
-            return <li key={agent.id} className={templates.entry}>
-              {connected && !destroy.busy ? <Link to={to} className={s.cardLink} aria-label={agent.name}>{card}</Link> : card}
-              <div className={`${templates.description} ${s.details}`}>
-                {agent.model ? <div>
-                  <div>{provider}</div>
-                  <div>{agent.model.model} · {agent.model.effort ?? "Default effort"}</div>
-                </div> : <span>No model configured</span>}
-                <div className={s.rowActions}>
-                  <IconButton icon={<EditIcon />} label={`Edit ${agent.name}`} disabled={!connected || destroy.busy} onClick={() => void navigate(to)} />
-                  <IconButton icon={<TrashIcon />} label={`Delete ${agent.name}`} disabled={!connected || destroy.busy}
-                    onClick={() => { destroy.clear(); setRemoving(agent); }} />
-                </div>
-              </div>
+            const modelAccount: ModelAccount | undefined = modelAccounts.find(({ id }) => id === agent.model?.account);
+            const builtIn: BuiltInHarness | undefined = BuiltInHarness.safeParse(modelAccount?.connector).data;
+            const harness: string = builtIn ? install[builtIn].name : modelAccount?.connector ?? "Not set";
+            const contents = <>
+              <NodeCard icon={<NodeIconTile size="lg"><SparkIcon size="md" /></NodeIconTile>} title={agent.name} badge={
+                <span className={s.harnessBadge} style={builtIn ? { "--harness-color": harnessColors[builtIn] } as CSSProperties : undefined}>
+                  <Badge dot><span className={s.harnessName} title={modelAccount ? harness : undefined}>{modelAccount ? harness : "No harness"}</span></Badge>
+                </span>
+              } />
+              <dl className={`${templates.description} ${s.agentSettings}`}>
+                <dt>Provider</dt><dd>{modelAccount?.provider ?? "Not set"}</dd>
+                <dt>Harness</dt><dd>{harness}</dd>
+                <dt>Model</dt><dd>{agent.model?.model ?? "Not set"}</dd>
+                <dt>Effort</dt><dd>{agent.model ? agent.model.effort ?? "Default" : "Not set"}</dd>
+              </dl>
+            </>;
+            return <li key={agent.id}>
+              {connected ? <Link to={to} className={templates.entry} aria-label={agent.name}>{contents}</Link> : <div className={templates.entry}>{contents}</div>}
             </li>;
           })}
         </ul>
     )}
-    {removing && <Dialog open onOpenChange={(open) => { if (!open && !destroy.busy) setRemoving(null); }} title={`Delete ${removing.name}?`} footer={<>
-      <Button disabled={destroy.busy} onClick={() => setRemoving(null)}>Cancel</Button>
-      <Button variant="danger" loading={destroy.busy} disabled={!connected} onClick={() => void destroy.run()}>Delete</Button>
-    </>}>
-      <ErrorText error={destroy.error} />
-    </Dialog>}
   </Page>;
 }
 
@@ -152,6 +148,7 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, accountsEr
   onAutoChange?(update: (agent: AgentDefinition) => AgentDefinition): void;
 }) {
   const [completed, setCompleted] = useState<boolean>(false);
+  const [removing, setRemoving] = useState<boolean>(false);
   const [edit, setEdit] = useState<{ value: AgentDefinition; base: AgentDefinition | null; sha256: string } | null>(null);
   useEffect(() => {
     if (!creating && edit && edit.base === edit.value && edit.sha256 === baseSha256) setEdit(null);
@@ -199,8 +196,16 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, accountsEr
     else setCompleted(true);
   });
   const changeContent = (content: string): void => setDraft((prior) => ({ content, sha256: prior?.sha256 ?? context.data?.sha256 }));
+  const destroy = useAction(async () => {
+    if (!catalog) return;
+    const value: NodeAgentCatalog = { ...catalog, agents: catalog.agents.filter(({ id }) => id !== agent.id) };
+    await call("putAgents", { body: { value, baseSha256 } });
+    setRemoving(false);
+    setCompleted(true);
+  });
   const readContext = useAction(async (file: File) => changeContent(await file.text()));
-  const editable: boolean = !disabled && !save.busy && !completed;
+  const busy: boolean = save.busy || destroy.busy;
+  const editable: boolean = !disabled && !busy && !completed;
   const contextEditable: boolean = editable && (creating || context.data !== undefined);
   const contextError: string | undefined = context.error?.message ?? (content.length > 1_000_000 ? "Keep the context below 1,000,000 characters." : undefined);
   const tooLong: boolean = agent.name.trim().length > (agent.kind === "pm" ? 24 : 80);
@@ -258,10 +263,19 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, accountsEr
     </Card>
   </form>;
   if (scope) return form;
-  return <Page title={title} width={820} actions={submit}>
+  return <Page title={title} width={820} actions={<>
+    {!creating && <Button icon={<TrashIcon />} disabled={!editable} onClick={() => { destroy.clear(); setRemoving(true); }}>Delete</Button>}
+    {submit}
+  </>}>
     <CatalogNavigation dirty={contextDirty || (dirty && (!creating || edit !== null))} completed={completed} />
-    {save.busy ? <span className={s.hint}>Back to agents</span> : <Link to="/agents" state={restorePageScroll}>Back to agents</Link>}
+    {busy ? <span className={s.hint}>Back to agents</span> : <Link to="/agents" state={restorePageScroll}>Back to agents</Link>}
     <ErrorText error={accountsError} />
     {form}
+    {removing && <Dialog open onOpenChange={(open) => { if (!open && !destroy.busy) setRemoving(false); }} title={`Delete ${initial.name}?`} footer={<>
+      <Button disabled={destroy.busy} onClick={() => setRemoving(false)}>Cancel</Button>
+      <Button variant="danger" loading={destroy.busy} disabled={disabled} onClick={() => void destroy.run()}>Delete</Button>
+    </>}>
+      <ErrorText error={destroy.error} />
+    </Dialog>}
   </Page>;
 }

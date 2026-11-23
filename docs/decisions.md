@@ -270,4 +270,4 @@
 
 ## Agents list
 
-- Agents uses the square cards and grid from node templates. The card shows the icon and title. The provider, model, effort and action icons sit beside it. New agent, the card and Edit open the editor. Saving returns to the list. Delete asks for confirmation.
+- Agents uses the cards, grid and hover style from node templates. A coloured badge inside each card names the harness. Provider, harness, model and effort appear beside it. Clicking the entry opens the editor, where the agent can be edited or deleted. Delete asks for confirmation.
