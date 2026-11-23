@@ -370,6 +370,16 @@ Goal: minimum friction. The user opens <PE/CORE> and it works, with no setting t
 
 ## Cross-cutting behaviour
 
+### Page layout rules
+
+Every page follows these rules; an exception is written in that page's section.
+
+1.  Saving: what makes a commit (nodes, recipes, knowledge files, project settings, variables and a project's Project Manager) has an explicit Save at the top right of the page title, disabled until something changes; leaving with unsaved changes asks first. App preferences (Settings), which have no history, save by themselves.
+2.  Actions: the page's main action sits at the top right of the title, primary style with an icon ("New job", "New Node"). Every other action is secondary. A project tab puts its actions in the same place.
+3.  Width and height: pages use the whole content column. Forms and wizards (New project) are narrow and centred, with their buttons at the bottom. Only editors with a work area fill the window height: the recipe editor and Knowledge.
+4.  One place: each setting is changed on one page; other pages show it read-only with a link to that page.
+5.  Controls: only design-system components (text fields, selects, checkboxes, switches); no native browser controls.
+
 ### Empty, loading and disconnected states
 
 *   Empty lists show the next action. Projects offers New project and Import. An empty Notifications page says "Nothing new".
