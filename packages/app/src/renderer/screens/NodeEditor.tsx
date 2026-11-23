@@ -164,7 +164,7 @@ export function useDefinitionDraft(existingPath: string, sidecar = false, creati
   const canSave: boolean = connected && !!path && !save.busy && !compare.busy && !reload.busy && (sidecar || errors?.length === 0);
 
   return {
-    content, dirty, ready: !!baseline && (!!creation || sidecar || baseline.sha256 !== null || dirty), errors, connected, savedPath,
+    content, dirty, ready: !!baseline && (!!creation || sidecar || baseline.sha256 !== null || dirty), errors, savedPath,
     editable: connected && !save.busy && !reload.busy,
     update(value: string): void { if (!base && baseline) setBase(baseline); setDraft(value); },
     feedback: <>
@@ -311,7 +311,6 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   const creation: NewDefinition | undefined = newTemplate ? newNodeTemplate : undefined;
   const file = useDefinitionDraft(path, false, creation);
   const icons = useDefinitionIcons();
-  const [json, setJson] = useState(false);
   const [sidecarDirty, setSidecarDirty] = useState(false);
   const [sidecarName, setSidecarName] = useState("");
   const warn = useUnsaved(file.dirty || sidecarDirty);
@@ -351,12 +350,8 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
     {(newTemplate || path.startsWith("templates/")) && <Link to="/templates" state={restorePageScroll}>Back to templates</Link>}
     {file.feedback}
     {file.ready && <Panel>
-      <div className={ui.row}>
-        <Button disabled={!file.connected || !draft} aria-pressed={!json && !!draft} onClick={() => setJson(false)}>Form</Button>
-        <Button disabled={!file.connected} aria-pressed={json || !draft} onClick={() => setJson(true)}>JSON</Button>
-      </div>
-      <fieldset className={s.fields} disabled={!file.editable}>
-        {json || !draft ? <Field label="Definition JSON"><textarea className={s.json} value={file.content} onChange={(event) => { setJson(true); file.update(event.target.value); }} /></Field> : <>
+      {draft ? (
+        <fieldset className={s.fields} disabled={!file.editable}>
           {creation ? <>
             <TextField label="Name" required value={string(draft.name)} disabled={sidecarDirty}
               description="Lowercase letters, digits and hyphens. Start with a letter." onValueChange={(name) => update("name", name)} />
@@ -404,9 +399,9 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
             return !action.script && <div key={key}>{commandField(label, action.command, (command) => update(key, { ...action, command }))}</div>;
           })}
           {kind === "source" && field("credentials", "Credentials (comma separated)", <input value={Array.isArray(draft.credentials) ? draft.credentials.join(",") : ""} onChange={(event) => update("credentials", event.target.value ? event.target.value.split(",") : [])} />)}
-        </>}
-      </fieldset>
-      <DefinitionErrors errors={json || !draft ? file.errors : file.errors?.filter(({ path }) => !inlineKeys.includes(path.split(".")[0] ?? ""))} />
+        </fieldset>
+      ) : <ErrorText error="Unable to read the node definition." />}
+      <DefinitionErrors errors={draft ? file.errors?.filter(({ path }) => !inlineKeys.includes(path.split(".")[0] ?? "")) : file.errors} />
     </Panel>}
     {sidecarDirty && sidecarName !== validSidecar && <p className={ui.banner}>Save the open sidecar before switching files.</p>}
     {sidecarName && definitionPath && <SidecarFile key={sidecarName} path={definitionPath.slice(0, definitionPath.lastIndexOf("/") + 1) + sidecarName} name={sidecarName} isMarkdown={sidecarName.endsWith(".md")} onDirty={setSidecarDirty} />}

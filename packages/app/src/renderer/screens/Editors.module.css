@@ -7,13 +7,6 @@
   min-width: 0;
 }
 
-.json {
-  width: 100%;
-  min-height: 18rem;
-  resize: vertical;
-  font-family: var(--mono);
-}
-
 .smallJson {
   min-height: 7rem;
   resize: vertical;
