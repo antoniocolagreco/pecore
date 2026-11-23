@@ -387,6 +387,7 @@ Every page follows these rules; an exception is written in that page's section.
 
 ### Controls
 
+*   Every control comes from the design system in `packages/app/src/renderer/ds/`. The showcase (`pnpm showcase`, a browser page from `src/renderer/gallery/`) shows every component; a new or changed component is added there too.
 *   A select and a combobox look the same: same arrow, no clear button. A focused field shows one focus ring.
 *   Engine or WebSocket disconnected: a banner "Disconnected, reconnecting", every control disabled, data marked stale. On reconnect the GUI refetches every open view.
 

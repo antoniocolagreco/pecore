@@ -7,12 +7,13 @@ import { useAction, useAutoSave, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { PageActions } from "../components/PageActions";
 import { ErrorText, Page } from "../components/ui";
+import { restorePageScroll } from "../components/usePageScroll";
 import { harnessName, ModelPicker, Traits } from "../components/AgentFields";
 import { Button, IconButton } from "../ds/button";
 import { Table } from "../ds/data";
 import { Card, EmptyState, Skeleton, Spinner } from "../ds/feedback";
 import { TextArea, TextField } from "../ds/field";
-import { PlusIcon, TrashIcon } from "../ds/icons";
+import { PlusIcon, SparkIcon, TrashIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
 import { Sidecar, useUnsaved } from "./NodeEditor";
@@ -48,22 +49,28 @@ export function Agents() {
   return <Page title="Agents" actions={catalog.data && agents.length === 0 ? undefined : newAgent}>
     <ErrorText error={catalog.error ?? accountsError} />
     {catalog.loading && !catalog.data && <Card padded className={s.fields}><Skeleton /><Skeleton /><Skeleton /></Card>}
-    {catalog.data && <Table label="Agents" rows={agents} rowKey={({ id }) => id} empty={<Card padded><EmptyState title="No agents yet" action={newAgent} /></Card>}
-      columns={[
-        { key: "title", header: "Title", cell: ({ name }) => name },
-        { key: "provider", header: "Provider", cell: ({ model }) => {
-          const account: Account | undefined = modelAccounts.find(({ id }) => id === model?.account);
-          return account ? harnessName(account, modelAccounts) : model?.account ?? "Not set";
-        } },
-        { key: "model", header: "Model", cell: ({ model }) => model?.model ?? "Not set" },
-        { key: "effort", header: "Effort", cell: ({ model }) => model?.effort ?? "Default" },
-        { key: "actions", header: "Actions", align: "end", cell: (agent) => <div className={s.rowActions}>
-          <Button size="sm" disabled={!connected || destroy.busy} aria-label={`Edit ${agent.name}`}
-            onClick={() => void navigate(`/agents/edit/${encodeURIComponent(agent.id)}`)}>Edit</Button>
-          <IconButton size="sm" icon={<TrashIcon />} label={`Delete ${agent.name}`} disabled={!connected || destroy.busy}
-            onClick={() => { destroy.clear(); setRemoving(agent); }} />
-        </div> },
-      ]} />}
+    {catalog.data && (
+      agents.length === 0
+        ? <Card padded><EmptyState icon={<SparkIcon size="md" />} title="No agents yet" action={newAgent} /></Card>
+        : <Card padded={false} className={s.tableCard}>
+          <Table label="Agents" rows={agents} rowKey={({ id }) => id}
+            columns={[
+              { key: "title", header: "Title", cell: ({ name }) => <strong className={s.agentTitle}>{name}</strong> },
+              { key: "provider", header: "Provider", muted: true, cell: ({ model }) => {
+                const account: Account | undefined = modelAccounts.find(({ id }) => id === model?.account);
+                return account ? harnessName(account, modelAccounts) : model?.account ?? "Not set";
+              } },
+              { key: "model", header: "Model", muted: true, cell: ({ model }) => model?.model ?? "Not set" },
+              { key: "effort", header: "Effort", muted: true, cell: ({ model }) => model?.effort ?? "Default" },
+              { key: "actions", header: "Actions", align: "end", width: "6rem", cell: (agent) => <div className={s.rowActions}>
+                <Button size="sm" variant="ghost" disabled={!connected || destroy.busy} aria-label={`Edit ${agent.name}`}
+                  onClick={() => void navigate(`/agents/edit/${encodeURIComponent(agent.id)}`)}>Edit</Button>
+                <IconButton size="sm" icon={<TrashIcon />} label={`Delete ${agent.name}`} disabled={!connected || destroy.busy}
+                  onClick={() => { destroy.clear(); setRemoving(agent); }} />
+              </div> },
+            ]} />
+        </Card>
+    )}
     {removing && <Dialog open onOpenChange={(open) => { if (!open && !destroy.busy) setRemoving(null); }} title={`Delete ${removing.name}?`} footer={<>
       <Button disabled={destroy.busy} onClick={() => setRemoving(null)}>Cancel</Button>
       <Button variant="danger" loading={destroy.busy} disabled={!connected} onClick={() => void destroy.run()}>Delete</Button>
@@ -75,12 +82,12 @@ export function Agents() {
 
 export function AgentCatalogEditor() {
   const { id } = useParams();
-  const navigate = useNavigate();
   const { catalog, modelAccounts, accountsError } = useAgentCatalog();
   const connected: boolean = useConnected();
   const [draft] = useState<NodeAgent>(() => ({ id: `agent-${crypto.randomUUID()}`, kind: "agent", name: "", model: null, compaction: Compaction.parse({}) }));
   const agent: NodeAgent | undefined = id ? catalog.data?.value.agents.find((entry) => entry.id === id) : draft;
-  if (!catalog.data || !agent) return <Page title="Agents" actions={<Button onClick={() => void navigate("/agents")}>Back to agents</Button>}>
+  if (!catalog.data || !agent) return <Page title="Agents">
+    <Link to="/agents" state={restorePageScroll}>Back to agents</Link>
     <ErrorText error={catalog.error ?? (catalog.data && !agent ? "Agent not found." : null)} />
     {catalog.loading && <Spinner />}
   </Page>;
@@ -92,7 +99,7 @@ function CatalogNavigation({ dirty, completed }: { dirty: boolean; completed: bo
   const navigate = useNavigate();
   const warning = useUnsaved(dirty && !completed);
   useEffect(() => {
-    if (completed) void navigate("/agents", { replace: true });
+    if (completed) void navigate("/agents", { replace: true, state: restorePageScroll });
   }, [completed, navigate]);
   return warning;
 }
@@ -133,7 +140,6 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, accountsEr
   onSaved?(): void;
   onAutoChange?(update: (agent: AgentDefinition) => AgentDefinition): void;
 }) {
-  const navigate = useNavigate();
   const [completed, setCompleted] = useState<boolean>(false);
   const [edit, setEdit] = useState<{ value: AgentDefinition; base: AgentDefinition | null; sha256: string } | null>(null);
   useEffect(() => {
@@ -236,11 +242,9 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, accountsEr
     </Card>}
   </form>;
   if (scope) return form;
-  return <Page title={title} width={900} actions={<>
-    <Button disabled={save.busy} onClick={() => void navigate("/agents")}>Cancel</Button>
-    {submit}
-  </>}>
+  return <Page title={title} width={820} actions={submit}>
     <CatalogNavigation dirty={contextDirty || (dirty && (!creating || edit !== null))} completed={completed} />
+    {save.busy ? <span className={s.hint}>Back to agents</span> : <Link to="/agents" state={restorePageScroll}>Back to agents</Link>}
     <ErrorText error={accountsError} />
     {form}
   </Page>;
