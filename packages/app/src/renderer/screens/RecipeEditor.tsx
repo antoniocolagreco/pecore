@@ -21,7 +21,7 @@ import { DefinitionErrors, definitionUrl, object, parseDraft, string, useDefinit
 import type { NewDefinition } from "./NodeEditor";
 import { RecipeGraph } from "./RecipeGraph";
 import type { RecipeCanvas, RecipeGraphLink, RecipeGraphNode } from "./RecipeGraph";
-import { NodeCard, RecipeNodeKindBadge, recipeNodeKind } from "../components/NodeCard";
+import { BoundaryCard, NodeCard, RecipeNodeKindBadge, recipeNodeKind } from "../components/NodeCard";
 import { RecipePalette } from "./RecipePalette";
 import type { PaletteNode } from "./RecipePalette";
 import { arrangeRecipe, freeRecipeSlot, recipeEnd, recipeLayout, recipeStart, snapRecipePosition, withRecipeBoundaries } from "./recipeLayout";
@@ -199,7 +199,7 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
     });
   }
   const boundaryNodes: RecipeGraphNode[] = [recipeStart, recipeEnd].map((id) => ({
-    id, label: <strong>{graphTitle(id)}</strong>, invalid: id === recipeStart && highlight("start"),
+    id, label: <BoundaryCard boundary={id === recipeStart ? "start" : "end"} />, invalid: id === recipeStart && highlight("start"),
   }));
   const add = (template: string, point: XYPosition): void => {
     if (!editable || !nodeDefinitions.has(template)) return;

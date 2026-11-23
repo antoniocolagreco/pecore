@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef } from "react";
-import type { CSSProperties } from "react";
 import { BaseEdge, MarkerType, Position, ReactFlow } from "@xyflow/react";
 import type { Edge, EdgeProps, Node, ReactFlowInstance } from "@xyflow/react";
 import { Node as NodeDefinition, Recipe } from "@pecore/schemas";
@@ -8,7 +7,7 @@ import { call } from "../api/client";
 import { useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { DefinitionIcon, useDefinitionIcons } from "./DefinitionIcon";
-import { NodeCard, recipeNodeKind } from "./NodeCard";
+import { BoundaryCard, NodeCard, recipeNodeKind } from "./NodeCard";
 import { templateTitle } from "./templateTitle";
 import { nodeRunState, StateLabel, toneColor } from "./states";
 import type { Tone } from "./states";
@@ -158,10 +157,10 @@ export function JobGraph({ recipe, definitions, runs, selected, onSelect }: {
     const last: number = Math.max(first, ...nodes.map(({ position }) => position.y));
     const x: number = nodes.find(({ id }) => id === recipe.start)?.position.x ?? 0;
     nodes.push(
-      { id: "@start", position: recipe.layout?.["@start"] ?? { x, y: first - 176 }, data: { label: <strong>Start</strong> },
-        className: s.boundary, style: { "--tone": toneColor("success") } as CSSProperties, sourcePosition: Position.Bottom, selectable: false },
-      { id: "@end", position: recipe.layout?.["@end"] ?? { x, y: last + 176 }, data: { label: <strong>End</strong> },
-        className: s.boundary, style: { "--tone": toneColor("failed") } as CSSProperties, targetPosition: Position.Top, selectable: false },
+      { id: "@start", position: recipe.layout?.["@start"] ?? { x, y: first - 176 }, data: { label: <BoundaryCard boundary="start" /> },
+        className: s.node, sourcePosition: Position.Bottom, selectable: false },
+      { id: "@end", position: recipe.layout?.["@end"] ?? { x, y: last + 176 }, data: { label: <BoundaryCard boundary="end" /> },
+        className: s.node, targetPosition: Position.Top, selectable: false },
     );
     edges.push({
       id: "start", source: "@start", target: recipe.start ?? "@end", type: "smoothstep",

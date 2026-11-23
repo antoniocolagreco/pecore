@@ -48,18 +48,6 @@
   white-space: nowrap;
 }
 
-.graph .boundary {
-  display: grid;
-  place-items: center;
-  width: 120px;
-  height: 120px;
-  padding: 0;
-  border: 1px solid var(--tone) !important;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--tone) 24%, var(--surface));
-  color: var(--text);
-}
-
 .graph :global(.react-flow__handle) {
   width: 6px;
   height: 6px;

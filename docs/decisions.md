@@ -108,3 +108,9 @@
 - Why: different shapes for the same node confused the user.
 - Replaces: the wide palette tiles with tags, the 168×68 graph nodes, the 200 px job graph nodes and the text-only drag preview.
 - Kind, mode and review view keep their current rules: kind and mode are chosen only when creating a node.
+
+## 2026-11-23: Start and End use the node card
+
+- Decision: Start and End are the node card with a play or stop icon, a green or red stripe and no kind badge, in the recipe and job graphs.
+- Why: the user did not like the circles; every box in the graph should look the same.
+- Replaces: Start and End as circles.

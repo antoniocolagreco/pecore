@@ -69,8 +69,22 @@
   --recipe-node-stripe: light-dark(#ad6500, #ffc866);
 }
 
-.source {
+.source, .start {
   --recipe-node-kind: var(--status-success);
+}
+
+.end {
+  --recipe-node-kind: var(--status-failed);
+}
+
+.boundaryTile {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 22%;
+  color: var(--recipe-node-kind);
+  background: color-mix(in srgb, var(--recipe-node-kind) 12%, var(--surface));
 }
 
 .kindBadge {

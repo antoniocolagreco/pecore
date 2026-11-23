@@ -1,6 +1,7 @@
 import type { Node } from "@pecore/schemas";
 import type { ReactNode } from "react";
 import { Badge, Card } from "../ds/feedback";
+import { PlayIcon, StopIcon } from "../ds/icons";
 import s from "./NodeCard.module.css";
 
 export type RecipeNodeKind = "agent" | "command" | "human";
@@ -22,5 +23,12 @@ export function NodeCard({ icon, title, kind }: { icon: ReactNode; title: string
     <span className={s.glyph}>{icon}</span>
     <strong title={title}><span>{title}</span></strong>
     {kind && <div className={s.kind}>{kind === "source" ? <Badge tone="success" dot>Source</Badge> : <RecipeNodeKindBadge kind={kind} />}</div>}
+  </Card>;
+}
+
+export function BoundaryCard({ boundary }: { boundary: "start" | "end" }) {
+  return <Card className={`${s.card} ${s[boundary]}`}>
+    <span className={s.glyph}><span className={s.boundaryTile}>{boundary === "start" ? <PlayIcon /> : <StopIcon />}</span></span>
+    <strong><span>{boundary === "start" ? "Start" : "End"}</span></strong>
   </Card>;
 }

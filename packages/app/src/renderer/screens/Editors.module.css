@@ -239,26 +239,6 @@
   white-space: nowrap;
 }
 
-.graph :global(.react-flow__node).startNode {
-  --recipe-boundary-tone: var(--status-success);
-}
-
-.graph :global(.react-flow__node).endNode {
-  --recipe-boundary-tone: var(--status-failed);
-}
-
-.graph :global(.react-flow__node):is(.startNode, .endNode) {
-  display: grid;
-  place-items: center;
-  background: color-mix(in srgb, var(--recipe-boundary-tone) 24%, var(--bg));
-  border: 1px solid var(--recipe-boundary-tone);
-  border-radius: 50%;
-}
-
-.graph :global(.react-flow__node).invalidNode:is(.startNode, .endNode) {
-  border-color: var(--status-failed);
-}
-
 .graph :global(.react-flow__handle) {
   width: 10px;
   height: 10px;

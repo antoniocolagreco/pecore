@@ -66,7 +66,7 @@ export function RecipeGraph({ ref, steps, links, layout, automatic, start, edita
     data: { label },
     position: layout[id]!,
     selected: selected === id,
-    className: [invalid && s.invalidNode, id === recipeStart ? s.startNode : id === recipeEnd ? s.endNode : s.stepNode].filter(Boolean).join(" "),
+    className: [s.stepNode, invalid && s.invalidNode].filter(Boolean).join(" "),
     width: 120,
     height: 120,
     zIndex: 1,
