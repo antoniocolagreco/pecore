@@ -218,3 +218,9 @@
 - Decision: asked to create a file, the Project Manager saves it in the project's knowledge. A file for the repository needs a job, which it starts when the order asks for it and otherwise offers. It never leaves a file for the user in its working folder.
 - Why: asked for "a new file with a poem", it saved the file in its private working folder, which the user cannot see in the app.
 - Replaces: the Project Manager choosing where to put files.
+
+## 2026-11-23: Projects list in the sidebar
+
+- Decision: on the Projects list and on a project's page, the sidebar shows a Projects section with every project, like the Templates and Settings sections.
+- Why: switching project took a trip back to the Projects list.
+- Replaces: nothing.

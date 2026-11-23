@@ -10,10 +10,20 @@ import { ErrorText, Page, ui } from "../components/ui";
 import { Button } from "../ds/button";
 import { Badge, Card, EmptyState, Skeleton } from "../ds/feedback";
 import { FolderIcon, LinkIcon, PlusIcon } from "../ds/icons";
+import { SidebarItem, SidebarSection } from "../shell/sidebar";
 import { ProjectImportDialog } from "./ProjectShareDialogs";
 import s from "./Projects.module.css";
 
 type JobCounts = { attention: number; failed: number; running: number; auth: boolean };
+
+export function ProjectsSidebar({ active }: { active?: string }) {
+  const projects = useData(() => call("listProjects"), [], (m) => m.type === "project.updated" || m.type === "definition.changed");
+  if (!projects.data?.length) return null;
+  return <SidebarSection title="Projects" label="Projects list">
+    {projects.data.map(({ id, project, creating }) => <SidebarItem key={id} to={creating ? `/projects/new?resume=${id}` : `/projects/${id}`} active={id === active}
+      trailing={<ProjectDot pm={project?.pm ?? null} />}>{project?.name ?? id}</SidebarItem>)}
+  </SidebarSection>;
+}
 
 export function Projects() {
   const navigate = useNavigate();
@@ -36,6 +46,7 @@ export function Projects() {
   </div>;
   return (
     <Page title="Projects" actions={projects.data?.length === 0 ? undefined : actions}>
+      <ProjectsSidebar />
       {importing && <ProjectImportDialog onClose={() => setImporting(false)} onImported={(id) => {
         setImporting(false);
         void navigate(`/projects/${encodeURIComponent(id)}`);

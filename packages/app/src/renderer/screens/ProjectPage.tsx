@@ -20,6 +20,7 @@ import { Select } from "../ds/select";
 import { JobTable, useJobs } from "./Jobs";
 import { KnowledgeBase } from "./KnowledgeBase";
 import { object, string } from "./NodeEditor";
+import { ProjectsSidebar } from "./Projects";
 import { ProjectExportDialog } from "./ProjectShareDialogs";
 import s from "./ProjectPage.module.css";
 
@@ -456,5 +457,8 @@ function ProjectDetails({ id }: { id: string }) {
 
 export function ProjectPage() {
   const { id } = useParams();
-  return id ? <ProjectDetails key={id} id={id} /> : <Page title="Project"><Empty>Project not found</Empty></Page>;
+  return <>
+    <ProjectsSidebar active={id} />
+    {id ? <ProjectDetails key={id} id={id} /> : <Page title="Project"><Empty>Project not found</Empty></Page>}
+  </>;
 }
