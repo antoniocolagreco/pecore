@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { KnowledgeFileName } from "@pecore/schemas";
 import type { DefinitionEntry } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
+import { ProjectTabActions } from "../components/ProjectTabActions";
 import { Button, ErrorText, ui } from "../components/ui";
 import { Card, Spinner } from "../ds/feedback";
 import { TextField } from "../ds/field";
@@ -25,8 +27,8 @@ function links(entry: DefinitionEntry): string[] {
   return Array.isArray(value) ? value.filter((link): link is string => typeof link === "string") : [];
 }
 
-function KnowledgeFile({ path, name, creating, names, actions, onCreated, onDirty }: {
-  path: string; name: string; creating: boolean; names: string; actions: ReactNode; onCreated(): void; onDirty(dirty: boolean): void;
+function KnowledgeFile({ path, name, creating, names, actions, saveTarget, onCreated, onDirty }: {
+  path: string; name: string; creating: boolean; names: string; actions: ReactNode; saveTarget: HTMLElement | null; onCreated(): void; onDirty(dirty: boolean): void;
 }) {
   const creation: NewDefinition | undefined = useMemo(
     () => creating ? { content: `# ${name.slice(0, -3)}\n`, path: () => path } : undefined,
@@ -36,9 +38,10 @@ function KnowledgeFile({ path, name, creating, names, actions, onCreated, onDirt
   useEffect(() => { onDirty(file.dirty); return () => onDirty(false); }, [file.dirty, onDirty]);
   useEffect(() => { if (file.savedPath) onCreated(); }, [file.savedPath, onCreated]);
   return <div className={s.editor}>
+    {saveTarget && createPortal(file.saveButton(), saveTarget)}
     <header className={s.editorHeader}>
       <h2>{name}</h2>
-      <span className={s.headerActions}>{actions}{file.saveButton()}</span>
+      {actions && <span className={s.headerActions}>{actions}</span>}
     </header>
     {file.feedback}
     <div className={s.desk}>
@@ -66,6 +69,7 @@ export function KnowledgeBase({ id }: { id: string }) {
   const [dialog, setDialog] = useState<"new" | "rename" | "delete" | null>(null);
   const [draftName, setDraftName] = useState<string>("");
   const [dropping, setDropping] = useState<boolean>(false);
+  const [saveTarget, setSaveTarget] = useState<HTMLDivElement | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const candidate: string = fileName(draftName);
   const nameError: string | undefined = !candidate ? undefined
@@ -117,7 +121,7 @@ export function KnowledgeBase({ id }: { id: string }) {
 
   const carriesFiles =(event: DragEvent): boolean => [...event.dataTransfer.types].includes("Files");
 
-  return <div className={s.layout}
+  return <div className={s.workspace}
     onDragOverCapture={(event) => {
       if (!carriesFiles(event)) return;
       event.preventDefault();
@@ -134,41 +138,45 @@ export function KnowledgeBase({ id }: { id: string }) {
       if (connected) void upload.run([...event.dataTransfer.files]);
     }}>
     {dropping && <div className={s.drop} aria-hidden="true">Drop Markdown files to add them to the knowledge</div>}
-    <Card className={s.list} padded={false}>
-      <div className={s.listActions}>
+    <ProjectTabActions title="Knowledge" leading={<>
         <Button disabled={!connected} onClick={() => open("new")}>New file</Button>
         <Button disabled={!connected || upload.busy} onClick={() => input.current?.click()}>{upload.busy ? "Uploading…" : "Upload"}</Button>
-        <input ref={input} type="file" accept=".md,text/markdown" multiple hidden onChange={(event) => {
-          const chosen: File[] = [...(event.target.files ?? [])];
-          event.target.value = "";
-          if (chosen.length) void upload.run(chosen);
-        }} />
-      </div>
-      <ErrorText error={entries.error ?? upload.error} />
-      {entries.loading && !entries.data && <Spinner />}
-      {entries.data && !files.length && !selected?.creating && <p className={ui.muted}>No knowledge files yet.</p>}
-      <ul className={s.files} aria-label="Knowledge files">
-        {files.map(({ name }) => <li key={name}>
-          <button type="button" className={s.file} aria-pressed={selected?.name === name} disabled={!connected} onClick={() => choose({ name, creating: false })}>{name}</button>
-        </li>)}
-        {selected?.creating && <li><button type="button" className={s.file} aria-pressed>{selected.name}</button></li>}
-      </ul>
-    </Card>
-    <Card className={s.content} padded>
-      {selected
-        ? <KnowledgeFile key={`${selected.name}:${selected.creating}`} path={`${dir}/${selected.name}`} name={selected.name} creating={selected.creating}
-          names={names.join("\n")} onCreated={created} onDirty={setDirty}
-          actions={!selected.creating && <>
-            <Button disabled={!connected} onClick={() => open("rename")}>Rename</Button>
-            <Button disabled={!connected} onClick={() => open("delete")}>Delete</Button>
-          </>} />
-        : <div className={s.desk}>
-          <div className={`${s.sheet} ${s.blank}`}>
-            <p>Select a file, create one, or upload or drop Markdown files here.</p>
-            <p>A node gives its agent the files assigned to it and the files they link to. Link another file by its name, for example [naming](naming.md).</p>
-          </div>
-        </div>}
-    </Card>
+    </>}>
+      {selected && <div ref={setSaveTarget} />}
+    </ProjectTabActions>
+    <input ref={input} type="file" accept=".md,text/markdown" multiple hidden onChange={(event) => {
+      const chosen: File[] = [...(event.target.files ?? [])];
+      event.target.value = "";
+      if (chosen.length) void upload.run(chosen);
+    }} />
+    <div className={s.layout}>
+      <Card className={s.list} padded={false}>
+        <ErrorText error={entries.error ?? upload.error} />
+        {entries.loading && !entries.data && <Spinner />}
+        {entries.data && !files.length && !selected?.creating && <p className={ui.muted}>No knowledge files yet.</p>}
+        <ul className={s.files} aria-label="Knowledge files">
+          {files.map(({ name }) => <li key={name}>
+            <button type="button" className={s.file} aria-pressed={selected?.name === name} disabled={!connected} onClick={() => choose({ name, creating: false })}>{name}</button>
+          </li>)}
+          {selected?.creating && <li><button type="button" className={s.file} aria-pressed>{selected.name}</button></li>}
+        </ul>
+      </Card>
+      <Card className={s.content} padded>
+        {selected
+          ? <KnowledgeFile key={`${selected.name}:${selected.creating}`} path={`${dir}/${selected.name}`} name={selected.name} creating={selected.creating}
+            names={names.join("\n")} saveTarget={saveTarget} onCreated={created} onDirty={setDirty}
+            actions={!selected.creating && <>
+              <Button disabled={!connected} onClick={() => open("rename")}>Rename</Button>
+              <Button disabled={!connected} onClick={() => open("delete")}>Delete</Button>
+            </>} />
+          : <div className={s.desk}>
+            <div className={`${s.sheet} ${s.blank}`}>
+              <p>Select a file, create one, or upload or drop Markdown files here.</p>
+              <p>A node gives its agent the files assigned to it and the files they link to. Link another file by its name, for example [naming](naming.md).</p>
+            </div>
+          </div>}
+      </Card>
+    </div>
     <Dialog open={dialog === "new" || dialog === "rename"} onOpenChange={(value) => { if (!value) setDialog(null); }}
       title={dialog === "rename" ? `Rename ${selected?.name ?? ""}` : "New knowledge file"}
       description={dialog === "rename" ? "Links to it in the other files are updated." : undefined}

@@ -1,0 +1,38 @@
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  min-height: calc(var(--control-h) + 16px);
+  margin-bottom: var(--gap);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--separator);
+  background: var(--bg);
+}
+
+.group,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.group {
+  column-gap: 16px;
+}
+
+.group > h2 {
+  margin: 0;
+  font-size: var(--text-size-md);
+  font-weight: 650;
+}
+
+.actions {
+  justify-content: flex-end;
+  margin-left: auto;
+}

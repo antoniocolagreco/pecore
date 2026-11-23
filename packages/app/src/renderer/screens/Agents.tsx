@@ -7,6 +7,7 @@ import { useAction, useAutoSave, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { ErrorText, Page, ui } from "../components/ui";
 import { ModelPicker, Traits } from "../components/AgentFields";
+import { ProjectTabActions } from "../components/ProjectTabActions";
 import { Button } from "../ds/button";
 import { Card, Spinner } from "../ds/feedback";
 import { TextArea, TextField } from "../ds/field";
@@ -15,6 +16,7 @@ import { Select } from "../ds/select";
 import { SidebarItem, SidebarSection } from "../shell/sidebar";
 import { Sidecar } from "./NodeEditor";
 import s from "./Agents.module.css";
+import projectStyles from "./ProjectPage.module.css";
 
 function sizeOptions(sizes: readonly number[]): { value: string; label: string }[] {
   return sizes.map((size) => ({ value: String(size), label: `${size / 1024}K tokens` }));
@@ -55,10 +57,11 @@ export function ChatAgentSettings({ role, project }: { role: Role; project?: str
   const automatic: boolean = project === undefined;
   const autosave = useAutoSave(settings, (body) => call("putChatAgentSettings", { query, body }), (value) => ChatAgent.safeParse(value).success);
   return <>
+    {!data && project && <ProjectTabActions title="Project Manager" />}
     <ErrorText error={settings.error ?? accounts.error ?? autosave.error} />
     {settings.loading && !data && <Spinner />}
     {data && <AgentEditor key={data.value.id} initial={automatic ? autosave.value ?? data.value : data.value} baseSha256={data.sha256} scope={query}
-      title={project ? "Project Manager" : "Configuration"}
+      title={project ? undefined : "Configuration"}
       effectiveModel={data.effectiveModel} accounts={accounts.data?.value.accounts.filter(({ kind }) => kind === "model") ?? []}
       creating={false} disabled={!connected} onSaved={() => settings.reload()}
       onAutoChange={automatic ? (update) => autosave.update((current) => {
@@ -139,10 +142,14 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, eff
   const tooLong: boolean = agent.name.trim().length > (agent.kind === "pm" ? 24 : 80);
   const valid: boolean = !!agent.name.trim() && !duplicate && !tooLong && (agent.model === null ? !!scope : !!agent.model.model) && content.length <= 1_000_000;
   const inheritance: string | undefined = scope?.project ? "Project Manager Default" : scope?.role === "pm" ? "Default model" : scope ? "Auto-configured model" : undefined;
-  return <form className={s.form} onSubmit={(event) => { event.preventDefault(); if (!onAutoChange && editable && valid && (dirty || contextDirty)) void save.run(); }}>
-    <Card title={title} actions={<>
+  return <form className={scope?.project ? undefined : s.form} onSubmit={(event) => { event.preventDefault(); if (!onAutoChange && editable && valid && (dirty || contextDirty)) void save.run(); }}>
+    {scope?.project && <ProjectTabActions title="Project Manager">
+      <Button disabled={!editable || (!dirty && !contextDirty)} onClick={() => { setEdit(null); setDraft(null); save.clear(); }}>Discard</Button>
+      <Button type="submit" variant="primary" disabled={!editable || !valid || (!dirty && !contextDirty)} loading={save.busy}>Save</Button>
+    </ProjectTabActions>}
+    <Card title={title} padded={scope?.project ? true : undefined} className={scope?.project ? projectStyles.narrow : undefined} actions={<>
       {!creating && catalog && <Button disabled={!editable} onClick={() => setRemove(true)}>Delete</Button>}
-      {!onAutoChange && <Button type="submit" variant="primary" disabled={!editable || !valid || (!dirty && !contextDirty)}>{saved ? "Save" : "Create"}</Button>}
+      {!onAutoChange && !scope?.project && <Button type="submit" variant="primary" disabled={!editable || !valid || (!dirty && !contextDirty)}>{saved ? "Save" : "Create"}</Button>}
     </>}>
       <div className={s.fields}>
         {(agent.kind !== "pm" || scope?.project) && <div className={s.pair}>

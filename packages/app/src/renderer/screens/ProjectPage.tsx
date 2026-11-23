@@ -8,14 +8,15 @@ import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { DefinitionIcon, useDefinitionIcons } from "../components/DefinitionIcon";
+import { ProjectTabActions } from "../components/ProjectTabActions";
 import { Button, Empty, ErrorText, Page, ui } from "../components/ui";
 import { Button as DsButton, IconButton } from "../ds/button";
 import { RadioGroup } from "../ds/choice";
 import { Table, Tabs } from "../ds/data";
 import { Alert, Card, Spinner } from "../ds/feedback";
 import { TextArea, TextField } from "../ds/field";
-import { PlusIcon, TrashIcon } from "../ds/icons";
-import { Dialog } from "../ds/overlay";
+import { MoreIcon, PlusIcon, TrashIcon } from "../ds/icons";
+import { Dialog, Menu } from "../ds/overlay";
 import { Select } from "../ds/select";
 import { JobTable, useJobs } from "./Jobs";
 import { KnowledgeBase } from "./KnowledgeBase";
@@ -34,10 +35,12 @@ function Recipes({ id }: { id: string }) {
   const entries = useData(() => call("listDefinitions", { query: { dir } }), [dir], (m) => m.type === "project.updated" && m.projectId === id);
   const available = useData(() => call("listDefinitions", { query: { dir: templatesDir } }), [], (m) => m.type === "definition.changed" && m.path.startsWith(templatesDir + "/"));
   const [name, setName] = useState<string>("");
+  const [adding, setAdding] = useState<boolean>(false);
   const [page, setPage] = useState<number>(0);
   const add = useAction(async () => {
     await call("instantiate", { body: { kind: "recipe", name, project: id } });
     setName("");
+    setAdding(false);
     entries.reload();
   });
   const remove = useAction(async (name: string) => {
@@ -53,39 +56,48 @@ function Recipes({ id }: { id: string }) {
   const templates: DefinitionEntry[] = (available.data ?? []).filter((entry) => entry.path.endsWith(".json") && entry.errors.length === 0 && !files.some(({ path }) => entry.path === path));
   const start: number = Math.min(page, Math.max(0, Math.ceil(files.length / pageSize) - 1)) * pageSize;
   return (
-    <div className={ui.stack}>
-      <ErrorText error={entries.error ?? available.error} />
-      {entries.loading && !entries.data ? <Spinner /> :
-        files.length === 0 && !entries.error ? <Empty>No recipes selected</Empty> : (
-          <ul className={s.files}>{files.slice(start, start + pageSize).map(({ path, value, errors }) => {
-            const name: string = string(object(value).name);
-            const label = <><DefinitionIcon icons={icons.data} type="recipe" name={name} selected={string(object(value).icon)} size="sm" /> {name}</>;
-            return <li key={path}>
-              {connected
-                ? <Link className={s.file} to={`/edit/recipe/${path.split("/").map(encodeURIComponent).join("/")}`}>{label}</Link>
-                : <span className={s.file}>{label}</span>}
-              {errors.length > 0 && <span className={ui.error}> · Definition errors</span>}
-              {path.startsWith("templates/") && <Button disabled={!connected || remove.busy} onClick={() => void remove.run(name)}>Remove</Button>}
-            </li>;
-          })}</ul>
-        )}
-      {files.length > pageSize && <div className={ui.row}>
-        <Button disabled={!connected || start === 0} onClick={() => setPage(start / pageSize - 1)}>Previous</Button>
-        <Button disabled={!connected || start + pageSize >= files.length} onClick={() => setPage(start / pageSize + 1)}>Show more</Button>
-      </div>}
-      <div className={s.instantiate}>
+    <>
+      <ProjectTabActions title="Recipes">
+        <DsButton variant="primary" icon={<PlusIcon />} disabled={!connected || templates.length === 0} onClick={() => { add.clear(); setName(""); setAdding(true); }}>Add from templates</DsButton>
+      </ProjectTabActions>
+      <Card padded className={`${s.narrow} ${ui.stack}`}>
+        <ErrorText error={entries.error ?? available.error} />
+        {entries.loading && !entries.data ? <Spinner /> :
+          files.length === 0 && !entries.error ? <Empty>No recipes selected</Empty> : (
+            <ul className={s.files}>{files.slice(start, start + pageSize).map(({ path, value, errors }) => {
+              const name: string = string(object(value).name);
+              const label = <><DefinitionIcon icons={icons.data} type="recipe" name={name} selected={string(object(value).icon)} size="sm" /> {name}</>;
+              return <li key={path}>
+                {connected
+                  ? <Link className={s.file} to={`/edit/recipe/${path.split("/").map(encodeURIComponent).join("/")}`}>{label}</Link>
+                  : <span className={s.file}>{label}</span>}
+                {errors.length > 0 && <span className={ui.error}> · Definition errors</span>}
+                {path.startsWith("templates/") && <Button disabled={!connected || remove.busy} onClick={() => void remove.run(name)}>Remove</Button>}
+              </li>;
+            })}</ul>
+          )}
+        {files.length > pageSize && <div className={ui.row}>
+          <Button disabled={!connected || start === 0} onClick={() => setPage(start / pageSize - 1)}>Previous</Button>
+          <Button disabled={!connected || start + pageSize >= files.length} onClick={() => setPage(start / pageSize + 1)}>Show more</Button>
+        </div>}
+        <ErrorText error={remove.error} />
+      </Card>
+      <Dialog open={adding} onOpenChange={(open) => { if (!open && !add.busy) setAdding(false); }} title="Add recipe from templates"
+        footer={<>
+          <Button disabled={add.busy} onClick={() => setAdding(false)}>Cancel</Button>
+          <DsButton variant="primary" disabled={!connected || add.busy || !name} loading={add.busy} onClick={() => void add.run()}>Add to project</DsButton>
+        </>}>
         <Select
-          label="Add from templates"
+          label="Recipe template"
           value={name || null}
           disabled={!connected || add.busy || templates.length === 0}
           onValueChange={(v) => setName(v ?? "")}
           options={templates.map(({ path }) => path.slice(templatesDir.length + 1, -5)).map((template) => ({ value: template, label: template }))}
           placeholder="Choose a template"
         />
-        <Button disabled={!connected || add.busy || !name} onClick={() => void add.run()}>Add to project</Button>
-      </div>
-      <ErrorText error={add.error ?? remove.error} />
-    </div>
+        <ErrorText error={add.error} />
+      </Dialog>
+    </>
   );
 }
 
@@ -147,7 +159,7 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
     file.reload();
     onSaved();
   });
-  if (!value || !current) return <ErrorText error={file.error ?? (file.data ? "project.json is not valid JSON." : null)} />;
+  if (!value || !current) return <><ProjectTabActions title="Settings" leading={projectActions} /><ErrorText error={file.error ?? (file.data ? "project.json is not valid JSON." : null)} /></>;
   const disabled: boolean = !connected || save.busy;
   const folder: string | null = current.folder.replace(/\/+$/, "") || null;
   const account: ForgeAccount | undefined = forgeAccounts.find(({ id }) => id === value.account);
@@ -161,41 +173,42 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
     else set({ services: picked.slice(folder.length + 1) });
   };
   return (
-    <form className={s.form} onSubmit={(e) => { e.preventDefault(); if (dirty && valid && !disabled) void save.run(); }}>
-      <dl className={`${ui.kv} ${s.details}`}>
-        <dt>Project ID</dt><dd>{id}</dd>
-      </dl>
-      <div className={s.pair}>
-        <TextField label="Name" value={value.name} onValueChange={(name) => set({ name })} disabled={disabled} error={value.name.trim() ? undefined : "Give the project a name."} />
-        <TextField label="Base branch" mono value={value.baseBranch} onValueChange={(baseBranch) => set({ baseBranch })} disabled={disabled} description="New jobs start from here." />
-      </div>
-      <RadioGroup label="Repository" value={value.remote ? "remote" : "local"} disabled={disabled}
-        options={[{ value: "local", label: "Local only" }, { value: "remote", label: "Existing remote repository" }]}
-        onValueChange={(mode) => set({ remote: mode === "remote", account: value.account || (forgeAccounts.length === 1 ? forgeAccounts[0]!.id : "") })} />
-      {value.remote && <div className={s.pair}>
-        <Select label="Forge account" value={account?.id ?? null} disabled={disabled || forgeAccounts.length === 0}
-          options={forgeAccounts.map(({ id, host }) => ({ value: id, label: `${id} · ${host}` }))} placeholder="Select an account"
-          onValueChange={(id) => set({ account: id ?? "", url: forgeAccounts.find((entry) => entry.id === id)?.host === account?.host ? value.url : "" })} />
-        <TextField label="Repository URL" mono value={value.url} onValueChange={(url) => set({ url })} disabled={disabled || !account}
-          placeholder={account ? `https://${account.host}/owner/name.git` : undefined} />
-      </div>}
-      {value.remote && <ErrorText error={accounts.error} />}
-      {value.remote && accounts.data && forgeAccounts.length === 0 && <Alert tone="warning">Add a forge account in <Link to="/settings">Settings</Link>.</Alert>}
-      {repo && (value.remote ? value.url.trim() !== repo.url : true) && <span className={ui.muted}>Changing the remote keeps your local files and the old repository. Review the project's recipes for the new setup.</span>}
-      <TextField label="Folder" mono value={value.folder} onValueChange={(folder) => set({ folder })} disabled={disabled}
-        description={folder ? "Enter a new path or choose an empty folder to move your copy of the code." : "Choose an existing checkout or an empty folder to create a local copy."}
-        action={<DsButton disabled={disabled} onClick={() => void window.pecore.pickFolder().then((picked) => picked && set({ folder: picked }))}>Choose…</DsButton>} />
-      <TextField label="Services compose file" mono value={value.services} onValueChange={(services) => { setPickError(null); set({ services }); }} disabled={disabled}
-        placeholder="Automatic" error={pickError ?? undefined} description="Empty: a compose file at the repository root, if there is one."
-        action={<DsButton disabled={disabled} onClick={() => void pickCompose()}>Choose…</DsButton>} />
-      <ErrorText error={save.error} />
-      {deleteNotice}
-      <div className={s.formActions}>
-        <div className={`${s.grow} ${ui.row}`}>{projectActions}</div>
+    <form onSubmit={(e) => { e.preventDefault(); if (dirty && valid && !disabled) void save.run(); }}>
+      <ProjectTabActions title="Settings" leading={projectActions}>
         {savedAt && !dirty && <span className={ui.muted} role="status">Saved</span>}
         <DsButton disabled={!dirty || disabled} onClick={() => setDraft(null)}>Discard</DsButton>
-        <DsButton type="submit" variant="primary" disabled={!dirty || !valid || disabled} loading={save.busy}>Save settings</DsButton>
-      </div>
+        <DsButton type="submit" variant="primary" disabled={!dirty || !valid || disabled} loading={save.busy}>Save</DsButton>
+      </ProjectTabActions>
+      <Card padded className={`${s.narrow} ${s.form}`}>
+        <dl className={`${ui.kv} ${s.details}`}>
+          <dt>Project ID</dt><dd>{id}</dd>
+        </dl>
+        <div className={s.pair}>
+          <TextField label="Name" value={value.name} onValueChange={(name) => set({ name })} disabled={disabled} error={value.name.trim() ? undefined : "Give the project a name."} />
+          <TextField label="Base branch" mono value={value.baseBranch} onValueChange={(baseBranch) => set({ baseBranch })} disabled={disabled} description="New jobs start from here." />
+        </div>
+        <RadioGroup label="Repository" value={value.remote ? "remote" : "local"} disabled={disabled}
+          options={[{ value: "local", label: "Local only" }, { value: "remote", label: "Existing remote repository" }]}
+          onValueChange={(mode) => set({ remote: mode === "remote", account: value.account || (forgeAccounts.length === 1 ? forgeAccounts[0]!.id : "") })} />
+        {value.remote && <div className={s.pair}>
+          <Select label="Forge account" value={account?.id ?? null} disabled={disabled || forgeAccounts.length === 0}
+            options={forgeAccounts.map(({ id, host }) => ({ value: id, label: `${id} · ${host}` }))} placeholder="Select an account"
+            onValueChange={(id) => set({ account: id ?? "", url: forgeAccounts.find((entry) => entry.id === id)?.host === account?.host ? value.url : "" })} />
+          <TextField label="Repository URL" mono value={value.url} onValueChange={(url) => set({ url })} disabled={disabled || !account}
+            placeholder={account ? `https://${account.host}/owner/name.git` : undefined} />
+        </div>}
+        {value.remote && <ErrorText error={accounts.error} />}
+        {value.remote && accounts.data && forgeAccounts.length === 0 && <Alert tone="warning">Add a forge account in <Link to="/settings">Settings</Link>.</Alert>}
+        {repo && (value.remote ? value.url.trim() !== repo.url : true) && <span className={ui.muted}>Changing the remote keeps your local files and the old repository. Review the project's recipes for the new setup.</span>}
+        <TextField label="Folder" mono value={value.folder} onValueChange={(folder) => set({ folder })} disabled={disabled}
+          description={folder ? "Enter a new path or choose an empty folder to move your copy of the code." : "Choose an existing checkout or an empty folder to create a local copy."}
+          action={<DsButton disabled={disabled} onClick={() => void window.pecore.pickFolder().then((picked) => picked && set({ folder: picked }))}>Choose…</DsButton>} />
+        <TextField label="Services compose file" mono value={value.services} onValueChange={(services) => { setPickError(null); set({ services }); }} disabled={disabled}
+          placeholder="Automatic" error={pickError ?? undefined} description="Empty: a compose file at the repository root, if there is one."
+          action={<DsButton disabled={disabled} onClick={() => void pickCompose()}>Choose…</DsButton>} />
+        <ErrorText error={save.error} />
+        {deleteNotice}
+      </Card>
     </form>
   );
 }
@@ -309,24 +322,22 @@ function ProjectVariables({ id, onSaved }: { id: string; onSaved(): void }) {
     file.reload();
     onSaved();
   });
-  if (!rows) return file.loading ? <Spinner /> : <ErrorText error={file.error ?? "Unable to read the project definition."} />;
+  if (!rows) return <><ProjectTabActions title="Variables" />{file.loading ? <Spinner /> : <ErrorText error={file.error ?? "Unable to read the project definition."} />}</>;
   const disabled: boolean = !connected || save.busy;
   return (
-    <form className={s.form} onSubmit={(event) => { event.preventDefault(); if (dirty && !disabled) void save.run(); }}>
-      <section className={s.keyValues}>
-        <h2>Project variables</h2>
-        <p className={ui.muted}>A recipe can use a variable such as <code>build-dir</code> with <code>{"{project.vars.build-dir}"}</code>.</p>
-        <VariableTable label="Project variables" keyLabel="Name" rows={rows} disabled={disabled} onChange={set} />
-      </section>
-      <ErrorText error={save.error ?? file.error} />
-      <div className={s.formActions}>
-        <div className={`${s.grow} ${ui.row}`}>
-          <DsButton icon={<PlusIcon />} disabled={disabled} onClick={() => set([...rows, newVariable()])}>Add variable</DsButton>
-        </div>
+    <form onSubmit={(event) => { event.preventDefault(); if (dirty && !disabled) void save.run(); }}>
+      <ProjectTabActions title="Variables" leading={<DsButton icon={<PlusIcon />} disabled={disabled} onClick={() => set([...rows, newVariable()])}>Add variable</DsButton>}>
         {saved && <span className={ui.muted} role="status">Saved</span>}
         <DsButton disabled={!dirty || disabled} onClick={() => { setDraft(null); save.clear(); }}>Discard</DsButton>
-        <DsButton type="submit" variant="primary" disabled={!dirty || disabled} loading={save.busy}>Save changes</DsButton>
-      </div>
+        <DsButton type="submit" variant="primary" disabled={!dirty || disabled} loading={save.busy}>Save</DsButton>
+      </ProjectTabActions>
+      <Card padded className={s.narrow}>
+        <section className={s.keyValues}>
+          <p className={ui.muted}>A recipe can use a variable such as <code>build-dir</code> with <code>{"{project.vars.build-dir}"}</code>.</p>
+          <VariableTable label="Project variables" keyLabel="Name" rows={rows} disabled={disabled} onChange={set} />
+        </section>
+        <ErrorText error={save.error ?? file.error} />
+      </Card>
     </form>
   );
 }
@@ -388,8 +399,7 @@ function ProjectDetails({ id }: { id: string }) {
   const view: ProjectView | undefined = data.data;
   const project: ProjectView["project"] | undefined = view?.project;
   return (
-    <Page title={project?.name ?? id} fillHeight={activeTab === "knowledge"} actions={project && !view?.creating &&
-      <DsButton variant="primary" icon={<PlusIcon />} disabled={!connected} onClick={() => setCreatingJob(true)}>New job</DsButton>}>
+    <Page title={project?.name ?? id} fillHeight={activeTab === "knowledge"}>
       {creatingJob && <NewJobDialog id={id} onClose={() => setCreatingJob(false)} />}
       {exporting && <ProjectExportDialog id={id} onClose={() => setExporting(false)} />}
       <ErrorText error={data.error} />
@@ -405,32 +415,34 @@ function ProjectDetails({ id }: { id: string }) {
               {
                 value: "jobs",
                 label: "Jobs",
-                content: <><ErrorText error={jobs.error} /><JobTable jobs={jobs.data ?? []} project={false} loading={jobs.loading} empty="No jobs in this project yet." /></>,
+                content: <>
+                  <ProjectTabActions title="Jobs"><DsButton variant="primary" icon={<PlusIcon />} disabled={!connected} onClick={() => setCreatingJob(true)}>New job</DsButton></ProjectTabActions>
+                  <ErrorText error={jobs.error} /><JobTable jobs={jobs.data ?? []} project={false} loading={jobs.loading} empty="No jobs in this project yet." />
+                </>,
               },
               {
                 value: "settings",
                 label: "Settings",
                 content: (
-                  <Card padded className={s.narrow}>
                     <ProjectSettings
                       id={id}
                       onSaved={data.reload}
-                      projectActions={<>
-                        <DsButton variant="danger" disabled={!connected || !jobs.data || !!jobs.error || running} onClick={() => setDeleting(true)}>Delete project</DsButton>
-                        <DsButton disabled={!connected} onClick={() => setExporting(true)}>Export</DsButton>
-                      </>}
+                      projectActions={<Menu align="start" trigger={<DsButton variant="ghost" aria-label="Project actions" icon={<MoreIcon />} disabled={!connected} />} items={[
+                        { label: "Export", onSelect: () => setExporting(true) },
+                        "separator",
+                        { label: "Delete project", danger: true, disabled: !jobs.data || !!jobs.error || running, onSelect: () => setDeleting(true) },
+                      ]} />}
                       deleteNotice={<>
                         <ErrorText error={jobs.error} />
                         {running && <span className={ui.muted}>Stop the running jobs, in the Jobs tab, before deleting this project.</span>}
                       </>}
                     />
-                  </Card>
                 ),
               },
-              { value: "variables", label: "Variables", content: <Card padded className={s.narrow}><ProjectVariables id={id} onSaved={data.reload} /></Card> },
-              { value: "recipes", label: "Recipes", content: <Card padded className={s.narrow}><Recipes id={id} /></Card> },
+              { value: "variables", label: "Variables", content: <ProjectVariables id={id} onSaved={data.reload} /> },
+              { value: "recipes", label: "Recipes", content: <Recipes id={id} /> },
               { value: "knowledge", label: "Knowledge", content: <KnowledgeBase id={id} /> },
-              { value: "project-manager", label: "Project Manager", content: <div className={s.narrow}><ChatAgentSettings role="pm" project={id} /></div> },
+              { value: "project-manager", label: "Project Manager", content: <ChatAgentSettings role="pm" project={id} /> },
             ]}
           />
           <Dialog
