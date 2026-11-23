@@ -13,15 +13,19 @@ export function chatHandlers(engine: Engine) {
     answerChatForm: async ({ params, body }) => chats.answerForm(params.id, body),
     answerProjectChatForm: async ({ params, body }) => chats.answerForm(params.actionId, body, params.id),
     answerChatProjectCreation: async ({ params, body }) => {
-      await chats.answerProjectAction("create_project", params.id, body.decision);
+      await chats.answerAction("create_project", params.id, body.decision);
       return { ok: true as const };
     },
     answerChatProjectDeletion: async ({ params, body }) => {
-      await chats.answerProjectAction("delete_project", params.id, body.decision);
+      await chats.answerAction("delete_project", params.id, body.decision);
       return { ok: true as const };
     },
     answerChatProjectUpdate: async ({ params, body }) => {
-      await chats.answerProjectAction("update_project", params.id, body.decision);
+      await chats.answerAction("update_project", params.id, body.decision);
+      return { ok: true as const };
+    },
+    answerChatAgentDeletion: async ({ params, body }) => {
+      await chats.answerAction("delete_agent", params.id, body.decision);
       return { ok: true as const };
     },
     answerChatProjectImport: async ({ params, body }) => {

@@ -130,6 +130,8 @@ function actionLinks(target: Record<string, unknown>): ActionLink[] {
     ...[...jobs].map((id) => ({ to: `/jobs/${encodeURIComponent(id)}`, label: `Job ${id}` })),
     ...[...items].map((id) => ({ to: `/notifications/${encodeURIComponent(id)}`, label: `Notification ${id}` })),
   ];
+  const agent: string = string(target.agentId);
+  if (agent) links.push({ to: `/agents/edit/${encodeURIComponent(agent)}`, label: string(target.agentName) || agent });
   for (const path of paths) {
     const section: string | undefined = /^(?:templates|projects\/[^/]+)\/(nodes|recipes|knowledge)\/.+/.exec(path)?.[1];
     if (!section) continue;
@@ -147,27 +149,29 @@ const confirmationStatuses: Record<string, string> = {
   creating_project: "Creating project…",
   updating_project: "Updating project…",
   deleting_project: "Deleting project…",
+  deleting_agent: "Deleting agent…",
   approved: "Confirmed",
   cancelled: "Rejected",
 };
 
-function ProjectConfirmation({ action, rows, connected }: { action: ChatActionView; rows: ChatConfirmationRow[]; connected: boolean }) {
+function ActionConfirmation({ action, rows, connected }: { action: ChatActionView; rows: ChatConfirmationRow[]; connected: boolean }) {
   const target: Record<string, unknown> = object(action.target);
   const state: string = string(target.state);
   const project: string = string(target.project);
   const id: string = encodeURIComponent(project);
-  const deleting: boolean = action.tool === "delete_project";
+  const deletingAgent: boolean = action.tool === "delete_agent";
+  const deleting: boolean = action.tool === "delete_project" || deletingAgent;
   const updating: boolean = action.tool === "update_project";
   const operation: string = deleting ? "Deletion" : updating ? "Update" : "Creation";
   const status: string = state === "failed" ? `${operation} failed`
     : state === "interrupted" ? `${operation} interrupted`
-    : deleting && state === "approved" ? "Project deleted"
+    : deleting && state === "approved" ? deletingAgent ? "Agent deleted" : "Project deleted"
     : updating && state === "approved" ? "Project updated" : confirmationStatuses[state] ?? "";
   const answer = useAction(async (decision: "approve" | "cancel") => {
-    await call(deleting ? "answerChatProjectDeletion" : updating ? "answerChatProjectUpdate" : "answerChatProjectCreation", { params: { id: action.id }, body: { decision } });
+    await call(deletingAgent ? "answerChatAgentDeletion" : deleting ? "answerChatProjectDeletion" : updating ? "answerChatProjectUpdate" : "answerChatProjectCreation", { params: { id: action.id }, body: { decision } });
   });
   return (
-    <ChatConfirmation title={deleting ? "Delete project" : updating ? "Change project" : "Create project"} rows={rows} status={status} destructive={deleting}
+    <ChatConfirmation title={deletingAgent ? "Delete agent" : deleting ? "Delete project" : updating ? "Change project" : "Create project"} rows={rows} status={status} destructive={deleting}
       pending={state === "awaiting_confirmation"} disabled={!connected} busy={answer.busy}
       error={answer.error ?? (string(target.error) || null)} onDecision={(decision) => void answer.run(decision)}>
       {project && connected && <Link to={target.creating === true ? `/projects/new?resume=${id}` : `/projects/${id}`}>
@@ -321,9 +325,9 @@ function ActionCard({ action, connected }: { action: ChatActionView; connected: 
     if (form.success) return <FormCard action={action} form={form.data} connected={connected} />;
   }
   if (action.tool === "delegate_to_pm" && string(target.project)) return <DelegationCard project={string(target.project)} error={string(target.error)} connected={connected} />;
-  if (action.tool === "create_project" || action.tool === "update_project" || action.tool === "delete_project") {
+  if (action.tool === "create_project" || action.tool === "update_project" || action.tool === "delete_project" || action.tool === "delete_agent") {
     const rows = confirmationRows.safeParse(target.rows);
-    if (rows.success) return <ProjectConfirmation action={action} rows={rows.data} connected={connected} />;
+    if (rows.success) return <ActionConfirmation action={action} rows={rows.data} connected={connected} />;
   }
   if (action.tool === "import_project") {
     const preview = ImportProjectPreview.safeParse(target.preview);
@@ -376,6 +380,9 @@ function ActionCard({ action, connected }: { action: ChatActionView; connected: 
 }
 
 const readTools: Record<string, string> = {
+  list_agents: "agents",
+  get_agent: "agent settings",
+  agent_model_options: "model options",
   list_projects: "projects",
   get_project: "project settings",
   list_recipes: "recipes",

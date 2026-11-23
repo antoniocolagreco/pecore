@@ -578,6 +578,7 @@ export const routes = {
   clearChat: { method: "DELETE", path: "/chat", response: Ok },
   answerChatProjectCreation: { method: "POST", path: "/chat/actions/:id/project-creation", params: IdParams, body: z.strictObject({ decision: z.enum(["approve", "cancel"]) }), response: Ok },
   answerChatProjectDeletion: { method: "POST", path: "/chat/actions/:id/project-deletion", params: IdParams, body: z.strictObject({ decision: z.enum(["approve", "cancel"]) }), response: Ok },
+  answerChatAgentDeletion: { method: "POST", path: "/chat/actions/:id/agent-deletion", params: IdParams, body: z.strictObject({ decision: z.enum(["approve", "cancel"]) }), response: Ok },
   answerChatProjectUpdate: { method: "POST", path: "/chat/actions/:id/project-update", params: IdParams, body: z.strictObject({ decision: z.enum(["approve", "cancel"]) }), response: Ok },
   answerChatProjectImport: { method: "POST", path: "/chat/actions/:id/project-import", params: IdParams, body: z.discriminatedUnion("decision", [
     z.strictObject({ decision: z.literal("approve"), selection: ImportProjectSelection }),

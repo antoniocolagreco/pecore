@@ -596,6 +596,59 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     }
   }, 60000);
 
+  it("manages the Agents catalog from Assistant chat and requires confirmation to delete", async () => {
+    const t = await setup((root) => [[
+      ...init(), ...newSession, { expect: "session/prompt" },
+      { dump: join(root, "manage-agent.json") }, { waitFile: join(root, "done") }, ...replyWith("Agents checked."),
+    ]]);
+    const m = mcp(tokenFileOf("assistant"));
+    try {
+      await t.call("sendChatMessage", { body: { text: "Manage Reviewer." } });
+      await until(() => existsSync(join(t.root, "manage-agent.json")));
+      const run = (name: string, input: unknown = {}) => m.tool(name, input);
+      const catalog = async () => (await t.call("getAgents")).value.agents;
+      const model = { account: "fake", model: "m1", effort: null };
+      expect((await run("list_agents")).result?.content?.[0]?.text).toContain('"provider":"fakeco","harness":"fake"');
+      expect((await run("agent_model_options", { account: "missing" })).result?.isError).toBe(true);
+      expect((await run("create_agent", { name: "Reviewer", model })).result?.isError).toBeUndefined();
+      const [created] = await catalog();
+      expect(created).toMatchObject({ kind: "agent", name: "Reviewer", model, compaction: { auto: 131_072, max: 262_144 } });
+      expect((await run("create_agent", { name: "reviewer", model })).result?.isError).toBe(true);
+      const params = { id: created!.id };
+      const { sha256 } = await t.call("getAgentContext", { params });
+      expect((await run("get_agent", params)).result?.content?.[0]?.text).toContain(sha256);
+      expect((await run("get_agent", { id: "assistant" })).result?.isError).toBe(true);
+      expect((await run("write_agent_context", { ...params, content: "# Review", baseSha256: sha256 })).result?.isError).toBeUndefined();
+      expect((await t.call("getAgentContext", { params })).content).toBe("# Review");
+      expect((await run("write_agent_context", { ...params, content: "Stale", baseSha256: sha256 })).result?.isError).toBe(true);
+
+      const propose = async (name: string): Promise<string> => {
+        expect((await run("delete_agent", params)).result?.content?.[0]?.text).toBe('{"state":"awaiting_confirmation"}');
+        const action = (await t.call("getChat")).actions.at(-1)!;
+        expect(action).toMatchObject({ tool: "delete_agent", target: { rows: [{ label: "Agent", value: name }] } });
+        return action.id;
+      };
+      const answer = (id: string, decision: "approve" | "cancel") => t.call("answerChatAgentDeletion", { params: { id }, body: { decision } });
+      const cancelled: string = await propose("Reviewer");
+      await answer(cancelled, "cancel");
+      await expect(answer(cancelled, "approve")).rejects.toThrow("no longer pending");
+      const stale: string = await propose("Reviewer");
+      expect((await run("update_agent", { ...params, name: "Code Reviewer", compaction: { auto: 262_144, max: 524_288 } })).result?.isError).toBeUndefined();
+      await answer(stale, "approve");
+      expect((await t.call("getChat")).actions.find(({ id }) => id === stale)?.target).toMatchObject({ state: "failed" });
+      expect(await catalog()).toEqual([{ ...created, name: "Code Reviewer", compaction: { auto: 262_144, max: 524_288 } }]);
+      const approved: string = await propose("Code Reviewer");
+      expect(await catalog()).toHaveLength(1);
+      await answer(approved, "approve");
+      expect(await catalog()).toEqual([]);
+      expect((await t.call("getChat")).actions.find(({ id }) => id === approved)?.target).toMatchObject({ state: "approved" });
+    } finally {
+      m.close();
+      await writeFile(join(t.root, "done"), "");
+      await t.close();
+    }
+  }, 15_000);
+
   it("changes validated settings and deletes a project only after their chat cards are confirmed", async () => {
     const t = await setup((root) => [[
       ...init(), ...newSession, { expect: "session/prompt" },
@@ -1028,7 +1081,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       const names: string[] = (await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name);
       expect(names).toEqual(expect.arrayContaining(["write_knowledge", "instantiate", "create_jobs", "comment_ticket", "answer_question", "read_definition", "list_definitions", "ask_user"]));
-      for (const name of ["create_project", "update_project", "delete_project", "import_project", "export_project", "write_template", "delegate_to_pm"]) expect(names).not.toContain(name);
+      for (const name of ["create_project", "update_project", "delete_project", "import_project", "export_project", "write_template", "delegate_to_pm", "list_agents", "get_agent", "agent_model_options", "create_agent", "update_agent", "write_agent_context", "delete_agent"]) expect(names).not.toContain(name);
       expect((await m.tool("write_knowledge", { path: "projects/demo/knowledge/notes.md", content: "# Notes\n" })).result!.isError).not.toBe(true);
       const outside = await m.tool("write_knowledge", { path: "projects/other/knowledge/notes.md", content: "# Notes\n" });
       expect(outside.result!.isError).toBe(true);

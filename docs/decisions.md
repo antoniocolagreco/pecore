@@ -271,3 +271,4 @@
 ## Agents list
 
 - Agents uses the cards, grid and hover style from node templates. A coloured badge inside each card names the harness. Provider, harness, model and effort appear beside it. Clicking the entry opens the editor, where the agent can be edited or deleted. Delete asks for confirmation.
+- The Assistant can list, create and edit agents, read model and effort options, and edit initial Markdown context. Deleting through the Assistant requires confirmation in chat.

@@ -167,7 +167,8 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, accountsEr
   const contextLabelId: string = useId();
   const upload = useRef<HTMLInputElement>(null);
   const showContext: boolean = !scope || !!scope.project;
-  const context = useData(() => showContext && !creating ? call("getAgentContext", { params: { id: agent.id } }) : Promise.resolve(undefined), [agent.id, creating, showContext]);
+  const context = useData(() => showContext && !creating ? call("getAgentContext", { params: { id: agent.id } }) : Promise.resolve(undefined), [agent.id, creating, showContext],
+    (event) => showContext && event.type === "definition.changed" && event.path === `agents/${agent.id}.md`);
   const content: string = draft?.content ?? context.data?.content ?? "";
   const duplicate: boolean = catalog?.agents.some((entry) => entry.id !== agent.id && entry.name.toLowerCase() === agent.name.trim().toLowerCase()) ?? false;
   const dirty: boolean = JSON.stringify(agent) !== JSON.stringify(saved);
