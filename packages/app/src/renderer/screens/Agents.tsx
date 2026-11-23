@@ -13,7 +13,7 @@ import { Button, IconButton } from "../ds/button";
 import { Table } from "../ds/data";
 import { Card, EmptyState, Skeleton, Spinner } from "../ds/feedback";
 import { TextArea, TextField } from "../ds/field";
-import { PlusIcon, SparkIcon, TrashIcon } from "../ds/icons";
+import { EditIcon, PlusIcon, SparkIcon, TrashIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
 import { Sidecar, useUnsaved } from "./NodeEditor";
@@ -63,9 +63,9 @@ export function Agents() {
               { key: "model", header: "Model", muted: true, cell: ({ model }) => model?.model ?? "Not set" },
               { key: "effort", header: "Effort", muted: true, cell: ({ model }) => model?.effort ?? "Default" },
               { key: "actions", header: "Actions", align: "end", width: "6rem", cell: (agent) => <div className={s.rowActions}>
-                <Button size="sm" variant="ghost" disabled={!connected || destroy.busy} aria-label={`Edit ${agent.name}`}
-                  onClick={() => void navigate(`/agents/edit/${encodeURIComponent(agent.id)}`)}>Edit</Button>
-                <IconButton size="sm" icon={<TrashIcon />} label={`Delete ${agent.name}`} disabled={!connected || destroy.busy}
+                <IconButton icon={<EditIcon />} label={`Edit ${agent.name}`} disabled={!connected || destroy.busy}
+                  onClick={() => void navigate(`/agents/edit/${encodeURIComponent(agent.id)}`)} />
+                <IconButton icon={<TrashIcon />} label={`Delete ${agent.name}`} disabled={!connected || destroy.busy}
                   onClick={() => { destroy.clear(); setRemoving(agent); }} />
               </div> },
             ]} />
@@ -156,6 +156,7 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, accountsEr
   };
   const [draft, setDraft] = useState<{ content: string; sha256: string | undefined } | null>(null);
   const formId: string = useId();
+  const contextLabelId: string = useId();
   const upload = useRef<HTMLInputElement>(null);
   const showContext: boolean = !scope || !!scope.project;
   const context = useData(() => showContext && !creating ? call("getAgentContext", { params: { id: agent.id } }) : Promise.resolve(undefined), [agent.id, creating, showContext]);
@@ -195,7 +196,7 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, accountsEr
   const valid: boolean = !!agent.name.trim() && !duplicate && !tooLong && (agent.model === null ? !!scope : !!agent.model.model) && content.length <= 1_000_000;
   const inheritance: string | undefined = scope?.project ? "Project Manager Default" : scope?.role === "pm" ? "Default model" : scope ? "Auto-configured model" : undefined;
   const submit = <Button type="submit" form={formId} variant="primary" disabled={!editable || !valid || (!dirty && !contextDirty)}>{saved ? "Save" : "Create"}</Button>;
-  const form = <form id={formId} className={s.form} onSubmit={(event) => { event.preventDefault(); if (!onAutoChange && editable && valid && (dirty || contextDirty)) void save.run(); }}>
+  const form = <form id={formId} onSubmit={(event) => { event.preventDefault(); if (!onAutoChange && editable && valid && (dirty || contextDirty)) void save.run(); }}>
     <Card title={scope ? title : "Configuration"} actions={scope && !onAutoChange && <PageActions>{submit}</PageActions>}>
       <div className={s.fields}>
         {(agent.kind !== "pm" || scope?.project) && <div className={s.pair}>
@@ -228,18 +229,22 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, accountsEr
           onChange={(traits: AssistantTraitId[]) => changeAgent((entry) => entry.kind === "agent" ? entry : { ...entry, traits })} />}
         {scope?.project && <TextArea label="Initial context" rows={5} value={content} onValueChange={changeContent}
           disabled={!contextEditable} error={contextError} />}
+        {!scope && <div className={s.context} role="group" aria-labelledby={contextLabelId}>
+          <div className={s.contextHeader}>
+            <span id={contextLabelId}>Initial context</span>
+            <Button disabled={!contextEditable || readContext.busy} onClick={() => upload.current?.click()}>Upload Markdown</Button>
+          </div>
+          <input type="file" ref={upload} accept=".md,text/markdown" hidden onChange={(event) => {
+            const file: File | undefined = event.target.files?.[0];
+            event.target.value = "";
+            if (file) void readContext.run(file);
+          }} />
+          <Sidecar isMarkdown paper content={content} disabled={!contextEditable} change={changeContent} className={s.markdown} />
+          <ErrorText error={contextError ?? readContext.error} />
+        </div>}
         <ErrorText error={save.error} />
       </div>
     </Card>
-    {!scope && <Card title="Initial context" actions={<Button disabled={!contextEditable || readContext.busy} onClick={() => upload.current?.click()}>Upload Markdown</Button>}>
-      <input type="file" ref={upload} accept=".md,text/markdown" hidden onChange={(event) => {
-        const file: File | undefined = event.target.files?.[0];
-        event.target.value = "";
-        if (file) void readContext.run(file);
-      }} />
-      <Sidecar isMarkdown paper content={content} disabled={!contextEditable} change={changeContent} className={s.markdown} />
-      <ErrorText error={contextError ?? readContext.error} />
-    </Card>}
   </form>;
   if (scope) return form;
   return <Page title={title} width={820} actions={submit}>

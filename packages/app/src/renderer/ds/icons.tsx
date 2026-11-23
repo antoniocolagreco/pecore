@@ -47,6 +47,7 @@ export const ArrowRightIcon = icon(<path d="M3 8h10M9 4l4 4-4 4" />);
 export const ArrowUpIcon = icon(<path d="M8 13V3M4 7l4-4 4 4" />);
 export const CompactIcon = icon(<path d="M1.5 8h4.75m-2.5-2.5L6.25 8l-2.5 2.5M14.5 8H9.75m2.5-2.5L9.75 8l2.5 2.5" />);
 export const ClipIcon = icon(<path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551" />, "0 0 24 24");
+export const EditIcon = icon(<path d="m2.5 13.5.75-3.25 7.5-7.5a1.77 1.77 0 0 1 2.5 2.5l-7.5 7.5-3.25.75ZM9.5 4l2.5 2.5" />);
 export const TrashIcon = icon(<path d="M2.75 4.25h10.5M6.25 4.25V2.75h3.5v1.5M4 4.25l.6 8.6c.05.66.6 1.15 1.25 1.15h4.3c.66 0 1.2-.5 1.25-1.15l.6-8.6M6.75 7v4.5M9.25 7v4.5" />);
 export const RefreshIcon = icon(<><path d="M13.25 8A5.25 5.25 0 1 1 11.6 4.2" /><path d="M13.25 2.5v3h-3" /></>);
 export const InfoIcon = icon(<><circle cx="8" cy="8" r="6.25" /><path d="M8 7.25V11" /><circle cx="8" cy="5" r="0.4" fill="currentColor" /></>);
