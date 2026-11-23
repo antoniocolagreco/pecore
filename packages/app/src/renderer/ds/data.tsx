@@ -75,6 +75,14 @@ export function Table<T>({ columns, rows, rowKey, onRowClick, empty, label }: {
   );
 }
 
+export function TextTable({ children }: { children?: ReactNode }) {
+  return (
+    <div className={s.tableWrap}>
+      <table className={s.table}>{children}</table>
+    </div>
+  );
+}
+
 export function Stats({ children }: { children: ReactNode }) {
   return <div className={s.stats}>{children}</div>;
 }

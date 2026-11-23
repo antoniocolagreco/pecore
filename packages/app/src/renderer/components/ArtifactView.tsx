@@ -3,9 +3,11 @@ import type { Artifact, ReviewView } from "@pecore/schemas";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { call } from "../api/client";
 import { useData } from "../api/hooks";
 import { useConnected } from "../api/live";
+import { TextTable } from "../ds/data";
 import { CodeSnapshot } from "./CodeSnapshot";
 import { DiffView } from "./DiffView";
 import { Button, Empty, ErrorText, ui } from "./ui";
@@ -29,10 +31,11 @@ function json(content: string): unknown {
 
 function Markdown({ children }: { children: string }) {
   const connected: boolean = useConnected();
-  return <ReactMarkdown skipHtml disallowedElements={["img"]} components={{
+  return <ReactMarkdown skipHtml disallowedElements={["img"]} remarkPlugins={[remarkGfm]} components={{
     a: ({ href, children: text }) => connected && href?.startsWith("https://")
       ? <a href={href} target="_blank" rel="noreferrer">{text}</a>
       : <span>{text}</span>,
+    table: ({ children: rows }) => <TextTable>{rows}</TextTable>,
   }}>{children}</ReactMarkdown>;
 }
 

@@ -272,3 +272,9 @@
 
 - Agents uses the cards, grid and hover style from node templates. A coloured badge inside each card names the harness. Provider, harness, model and effort appear beside it. Clicking the entry opens the editor, where the agent can be edited or deleted. Delete asks for confirmation.
 - The Assistant can list, create and edit agents, read model and effort options, and edit initial Markdown context. Deleting through the Assistant requires confirmation in chat.
+
+## 2026-11-24: Tables in chat
+
+- Decision: chat replies and job reports render GitHub Markdown (`remark-gfm`), so tables show as tables, with the design system table.
+- Why: agents often write tables; without it a table showed as one run-on line of pipes.
+- Replaces: plain Markdown without tables, strikethrough or task lists.

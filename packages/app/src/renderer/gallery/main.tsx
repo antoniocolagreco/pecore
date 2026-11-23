@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import "../ds/tokens.css";
 import { Button, IconButton } from "../ds/button";
 import { Checkbox, RadioGroup, Switch } from "../ds/choice";
-import { Stat, Stats, Table, Tabs } from "../ds/data";
+import { Stat, Stats, Table, Tabs, TextTable } from "../ds/data";
 import { Alert, Badge, Card, Count, EmptyState, Kbd, Progress, Skeleton, Spinner } from "../ds/feedback";
 import { PasswordField, SearchField, TextArea, TextField } from "../ds/field";
 import { ArrowUpIcon, BellIcon, ChatIcon, FolderIcon, InboxIcon, LinkIcon, MonitorIcon, MoonIcon, MoreIcon, PauseIcon, PlayIcon, PlusIcon, RefreshIcon, StopIcon, SunIcon, TrashIcon } from "../ds/icons";
@@ -422,6 +422,15 @@ function MoreComponents() {
               ]}
             />
           </Card>
+        </div>
+        <div className={g.wide}>
+          <TextTable>
+            <thead><tr><th>Agent</th><th>Model</th><th>Effort</th></tr></thead>
+            <tbody>
+              <tr><td>Agent A</td><td><code>opus</code></td><td>high</td></tr>
+              <tr><td>Agent B</td><td><code>gpt-6.2-sol</code></td><td>high</td></tr>
+            </tbody>
+          </TextTable>
         </div>
         <div className={g.wide}>
           <Tabs

@@ -5,6 +5,7 @@ import { Fragment, createContext, useContext, useEffect, useEffectEvent, useLayo
 import type { CSSProperties, ReactNode, RefObject } from "react";
 import ReactMarkdown from "react-markdown";
 import { Link, useLocation, useSearchParams } from "react-router";
+import remarkGfm from "remark-gfm";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
@@ -15,6 +16,7 @@ import type { StateInfo } from "../components/states";
 import { ErrorText, dateTime, time } from "../components/ui";
 import { Button, IconButton } from "../ds/button";
 import { Checkbox, RadioGroup } from "../ds/choice";
+import { TextTable } from "../ds/data";
 import { Alert, Badge, Spinner } from "../ds/feedback";
 import { TextField } from "../ds/field";
 import { ArrowUpIcon, ClipIcon, CompactIcon, SparkIcon, TrashIcon, XIcon } from "../ds/icons";
@@ -449,10 +451,11 @@ function Message({ message, attachments, actions, connected, reload, working = f
   const cut: number = text.lastIndexOf(" ", previewLength);
   const shown: string = long && !open ? `${text.slice(0, cut > previewLength / 2 ? cut : previewLength).trimEnd()}…` : text;
   const bubble = text && <div className={s.bubble}>
-    <ReactMarkdown skipHtml disallowedElements={["img"]} components={{
+    <ReactMarkdown skipHtml disallowedElements={["img"]} remarkPlugins={[remarkGfm]} components={{
       a: ({ href, children }) => connected && href?.startsWith("https://")
         ? <a href={href} target="_blank" rel="noreferrer">{children}</a>
         : <span>{children}</span>,
+      table: ({ children }) => <TextTable>{children}</TextTable>,
       code: ({ className, children }) => typeof children === "string" && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(children)
         ? <code className={className}><span className={s.colorSwatch} style={{ background: children }} aria-hidden />{children}</code>
         : <code className={className}>{children}</code>,
