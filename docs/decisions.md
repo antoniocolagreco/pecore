@@ -73,3 +73,18 @@
 - Why: a two-line title moved the icon up on that card only.
 - Replaces: a title as tall as its text.
 - A one-line title is centred in the two-line space. Node and recipe names are limited to 24 characters, so every title fits on its card.
+
+## 2026-11-23: Recipe editor uses a drag-and-drop palette
+
+- Drag a node from the horizontal palette into the graph. Drag sideways to scroll the palette. Its title bar has a name and tag filter.
+- Agent, Command and Human nodes use distinct labels and colours. A recipe step keeps its node type. Remove node deletes the step and its references from the draft.
+- Arrange lays out the flow horizontally. Nodes snap to invisible cells on release. Arrows update during a drag, stay behind cards and use separate attachment points. Drop a connection on a card to let the editor pick its entry side.
+
+## 2026-11-23: Recipes start at Start and finish at End
+
+- Start and End are always present and can be moved. Start has one output and uses the theme’s Success colour. End has multiple inputs, no output and uses the theme’s Fail colour.
+- Start can connect from any of its four sides. End can receive connections on any side. The recipe remembers explicitly chosen sides.
+- The editor spreads connections to End across separate lanes and places their labels on those lanes. It uses multiple sides for automatic attachments.
+- Each outcome can continue at another step or reach End. The connection to End sets the result. A Human Review can send acceptance to Success, a request for changes to the Builder and rejection to Failure.
+- Recipes with explicit End connections must route every outcome of each reachable step. An empty recipe connects Start directly to End. The engine can still stop a job on cancellation or an execution error.
+- Previously saved recipes keep their results. Editing their connections records those results explicitly. Existing Not delivered results stay available in saved flows.

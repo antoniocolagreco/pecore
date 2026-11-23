@@ -7,6 +7,7 @@ export type Allowances = { extraRounds: Record<number, number>; extraNodeRuns: n
 export type Decision =
   | { kind: "run"; nodeId: string; round: number; viaEdge: number | null }
   | { kind: "end"; state: "succeeded" | "not_delivered" | "failed"; reason: string | null }
+  | { kind: "invalid_route"; reason: string }
   | { kind: "round_limit"; edge: number | null; cap: "maxRounds" | "maxNodeRuns" };
 
 export const noAllowances: Allowances = { extraRounds: {}, extraNodeRuns: 0 };
@@ -35,7 +36,12 @@ export function nextStep(recipe: Recipe, byId: Map<string, Node>, history: RunRe
   const last = history.at(-1);
   if (!last) return runIfAllowed(recipe, history, recipe.start!, null, allow);
   const edgeIndex = recipe.edges.findIndex((e) => e.from === last.nodeId && e.on === last.outcome);
-  if (edgeIndex < 0) return endOf(recipe, byId, last.nodeId, last.outcome);
+  if (edgeIndex < 0) {
+    if (recipe.ends === undefined) return endOf(recipe, byId, last.nodeId, last.outcome);
+    const reason: string = `${last.nodeId}:${last.outcome}`;
+    const end = recipe.ends.find(({ from, on }) => from === last.nodeId && on === last.outcome);
+    return end ? { kind: "end", state: end.result, reason } : { kind: "invalid_route", reason: `unrouted_outcome:${reason}` };
+  }
   const edge = recipe.edges[edgeIndex]!;
   if (edge.maxRounds !== undefined) {
     const taken = history.filter((h) => h.viaEdge === edgeIndex).length;

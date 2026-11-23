@@ -4,7 +4,12 @@
   "description": "Feature on a local repository with one provider: spec, tests, code, checks, review, human approval, commit to the job branch",
   "start": "spec",
   "maxNodeRuns": 60,
-  "successOutcomes": ["commit:done"],
+  "ends": [
+    { "from": "spec", "on": "rejected", "result": "not_delivered" },
+    { "from": "human", "on": "reject", "result": "not_delivered" },
+    { "from": "commit", "on": "done", "result": "succeeded" },
+    { "from": "commit", "on": "failed", "result": "failed" }
+  ],
   "nodes": {
     "spec": { "use": "spec-writer" },
     "tests": { "use": "tests-writer" },

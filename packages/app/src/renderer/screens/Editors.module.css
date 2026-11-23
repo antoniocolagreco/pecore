@@ -52,7 +52,179 @@
 }
 
 .workspace {
-  grid-template-columns: minmax(0, 3fr) minmax(14rem, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 29%);
+  align-items: start;
+}
+
+.recipePanel {
+  container-type: inline-size;
+}
+
+.palettePanel, .inspector {
+  min-width: 0;
+}
+
+.paletteFilter {
+  flex: 0 1 14rem;
+  min-width: 0;
+}
+
+.paletteBody {
+  min-width: 0;
+  padding: 8px 16px;
+}
+
+.paletteRail {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 4px 4px 9px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--fill-strong) transparent;
+  list-style: none;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.paletteRail > li {
+  flex: none;
+}
+
+.paletteRail[data-gesture],
+.paletteRail[data-gesture] .paletteNode {
+  cursor: grabbing;
+}
+
+.paletteNode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 12rem;
+  min-height: 60px;
+  justify-content: flex-start;
+  padding: 8px 10px;
+  cursor: grab;
+}
+
+.paletteNodeText {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  text-align: left;
+}
+
+.inspectorActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.paletteTitle, .paletteTags {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paletteMeta, .inspectorMeta, .graphNodeMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.paletteTags, .paletteEmpty, .inspectorMeta {
+  color: var(--text-muted);
+  font-size: var(--text-size-sm);
+}
+
+.paletteEmpty {
+  display: flex;
+  min-height: 60px;
+  align-items: center;
+}
+
+.nodePreview {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  transform: translate(12px, 12px);
+  pointer-events: none;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--popover-shadow);
+}
+
+.projectPalette {
+  margin-top: var(--gap);
+}
+
+.inspectorFields {
+  display: grid;
+  gap: var(--gap);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.inspectorOutcomes {
+  display: grid;
+  gap: 3px;
+  overflow-wrap: anywhere;
+}
+
+.inspectorOutcomes > span {
+  color: var(--text-muted);
+  font-size: var(--text-size-sm);
+}
+
+.inspectorEdge {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--separator);
+}
+
+.inspectorEdgeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.recipeDescription textarea {
+  min-height: 5rem;
+}
+
+.agent {
+  --recipe-node-kind: light-dark(#68389a, #d3a9fc);
+}
+
+.command {
+  --recipe-node-kind: light-dark(#1c58a1, #85b9f5);
+}
+
+.human {
+  --recipe-node-kind: light-dark(#805000, #f1bf69);
+}
+
+.kindBadge {
+  flex: none;
+}
+
+.kindBadge > span {
+  --tone: var(--recipe-node-kind);
+  --tag-h: 20px;
+  padding: 0 6px;
 }
 
 .importRow {
@@ -68,16 +240,99 @@
 }
 
 .graph {
-  height: 32rem;
+  --recipe-edge-forward: color-mix(in srgb, var(--status-success) 84%, transparent);
+  --recipe-edge-return: color-mix(in srgb, var(--status-warning) 84%, transparent);
+  --recipe-edge-failed: color-mix(in srgb, var(--status-failed) 84%, transparent);
+  height: clamp(25rem, 54vh, 44rem);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.graphPaper {
+  opacity: 0.24;
 }
 
 .graph :global(.react-flow__node) {
-  background: var(--surface-raised);
-  border-color: var(--border);
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  background: linear-gradient(var(--surface-raised), var(--surface-raised)), var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   color: var(--text);
+  padding: 8px;
+  box-shadow: inset 3px 0 var(--recipe-node-kind, transparent);
+  font-size: var(--font-small, 14px);
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.graph :global(svg.react-flow__connectionline) {
+  z-index: 0;
+}
+
+.graph :global(.react-flow:has(.react-flow__connection) .react-flow__node:hover) {
+  border-color: var(--accent);
+}
+
+.graph :global(.react-flow__node.selected) {
+  border-color: var(--accent);
+}
+
+.graph :global(.react-flow__node).invalidNode {
+  border-color: var(--status-failed);
+}
+
+.graph :global(.react-flow__node).startNode {
+  --recipe-boundary-tone: var(--status-success);
+}
+
+.graph :global(.react-flow__node).endNode {
+  --recipe-boundary-tone: var(--status-failed);
+}
+
+.graph :global(.react-flow__node):is(.startNode, .endNode) {
+  background: color-mix(in srgb, var(--recipe-boundary-tone) 24%, var(--bg));
+  border-color: var(--recipe-boundary-tone);
+  border-radius: 34px;
+  text-align: center;
+}
+
+:is(.startNode, .endNode) strong {
+  justify-content: center;
+}
+
+.graph :global(.react-flow__node) strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.graph :global(.react-flow__node) strong > span:last-child,
+.graphNodeMeta > small {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.graph :global(.react-flow__node) small {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.graph :global(.react-flow__handle) {
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  opacity: 0;
+}
+
+.graph :global(.react-flow__node:not(.dragging):is(:hover, :focus-visible)) .availablePort:global(.connectable) {
+  opacity: 1;
 }
 
 .graph :global(.react-flow__edge-textbg) {
@@ -86,19 +341,19 @@
 
 .graph :global(.react-flow__edge-text) {
   fill: var(--text);
+  font-size: 13px;
 }
 
-.graph :global(.react-flow__controls-button) {
-  width: var(--icon-button-size);
-  height: var(--icon-button-size);
+.graphControls {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
-.graph :global(.react-flow__controls-button) svg {
-  max-width: var(--icon-size);
-  max-height: var(--icon-size);
-}
-
-@media (max-width: 850px) {
+@container (max-width: 650px) {
   .workspace {
     grid-template-columns: 1fr;
   }

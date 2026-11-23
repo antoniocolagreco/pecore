@@ -109,6 +109,30 @@ describe("graph rules (4.2), examples", () => {
     expect(endOf(recipe, byId, "commit", "rejected")).toEqual({ kind: "end", state: "not_delivered", reason: "commit:rejected" });
   });
 
+  it("uses the result configured on each connection to End", () => {
+    const explicit: Recipe = Recipe.parse({
+      name: "review",
+      description: "Review before delivery",
+      start: "review",
+      nodes: { review: { use: "human-review" }, fix: { use: "builder" } },
+      edges: [{ from: "review", on: "changes", to: "fix" }, { from: "fix", on: "done", to: "review" }],
+      ends: [{ from: "review", on: "approve", result: "succeeded" }, { from: "review", on: "reject", result: "failed" }],
+    });
+    expect(nextStep(explicit, byId, [])).toEqual({ kind: "run", nodeId: "review", round: 0, viaEdge: null });
+    expect(nextStep(explicit, byId, [{ nodeId: "review", outcome: "approve", viaEdge: null }])).toEqual({
+      kind: "end", state: "succeeded", reason: "review:approve",
+    });
+    expect(nextStep(explicit, byId, [{ nodeId: "review", outcome: "reject", viaEdge: null }])).toEqual({
+      kind: "end", state: "failed", reason: "review:reject",
+    });
+    expect(nextStep(explicit, byId, [{ nodeId: "review", outcome: "changes", viaEdge: null }])).toEqual({
+      kind: "run", nodeId: "fix", round: 0, viaEdge: 0,
+    });
+    expect(nextStep(explicit, byId, [{ nodeId: "review", outcome: "unknown", viaEdge: null }])).toEqual({
+      kind: "invalid_route", reason: "unrouted_outcome:review:unknown",
+    });
+  });
+
   it("asks at the round limit and continues with allowances", () => {
     const h: RunRecord[] = [
       { nodeId: "lint", outcome: "failed", viaEdge: null },

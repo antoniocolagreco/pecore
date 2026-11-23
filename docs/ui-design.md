@@ -302,10 +302,15 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 ### Recipe editor
 
 *   Edit a shared recipe in Templates. Duplicate opens a new copy with the same graph. In a project's Recipes tab, Add to project selects a template and Remove clears the selection.
-*   Add nodes from the shared palette, place them on the graph and connect outcomes to other nodes. The editor saves positions in `layout` and arranges nodes without saved positions.
+*   Drag nodes from the horizontal palette into the graph. Grab the palette and drag sideways to scroll. The field in its title bar filters names and tags. Agent, Command and Human use distinct labels and colours in the palette, graph and inspector.
+*   Hover over a node to reveal the free connection point on each side. Drop an arrow on the target card to let it choose the entry side, or on a specific point to fix that side. Each arrow has its own attachment at both ends and routes as its nodes move.
+*   The background shows small square grid lines. Drag freely and release to snap to a larger, invisible cell. A drop on an occupied cell returns the node to its previous position.
+*   Arrange places the flow from left to right, with the base-change step below it and retry arrows above it. Arrows stay behind the cards. Success paths are green, failures red and other returns amber. The editor uses this arrangement when no positions are saved. Save records the draft positions in `layout`.
 *   Validation errors on the node or edge that causes them (IE2).
-*   Inspector for a node: kind, outcomes, `requires`, `optional`, `skipWhenUnchanged`, `maxRounds` of its outgoing edges, "Edit node", "Ask the AI".
-*   Inspector for the recipe: `start`, `onBaseChanged`, `maxNodeRuns`, `successOutcomes`.
+*   Start and End are always present and can be moved on the grid. Start uses the theme’s Success colour and End uses Fail. Start can connect from any side to the first step. Connect a step outcome to any side of End and pick Success or Failure.
+*   Connections to End use separate lanes for their labels. Automatic connections can enter from different sides.
+*   Inspector for a node: read-only kind, `requires`, `optional`, `skipWhenUnchanged` and `maxRounds` of its outgoing edges. Edit definition opens the shared node. Remove node removes the selected step, its arrows and references from the draft.
+*   Inspector for the recipe: `onBaseChanged`, `maxNodeRuns` and the CI settings.
 
 ### Node editor
 

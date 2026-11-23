@@ -108,6 +108,12 @@ export function JobGraph({ recipe, definitions, runs, selected, onSelect }: {
     const run: NodeRunView | undefined = latest.get(id);
     const node: NodeDefinition | undefined = definitions.get(definition.use);
     const tone = (outcome: string): Tone => {
+      if (recipe.ends !== undefined) {
+        const result = recipe.ends.find(({ from, on }) => from === id && on === outcome)?.result;
+        if (result === "succeeded") return "success";
+        if (result === "failed") return "failed";
+        return result === "not_delivered" ? "inactive" : "none";
+      }
       if (outcome === "stale" || (node && node.kind !== "source" && node.failOutcomes.includes(outcome))) return "failed";
       if (recipe.successOutcomes.includes(`${id}:${outcome}`)) return "success";
       return recipe.edges.some((edge) => edge.from === id && edge.on === outcome) ? "none" : "inactive";
@@ -139,6 +145,28 @@ export function JobGraph({ recipe, definitions, runs, selected, onSelect }: {
     selectable: false,
     focusable: false,
   }));
+  if (recipe.ends !== undefined) {
+    const first: number = Math.min(0, ...nodes.map(({ position }) => position.y));
+    const last: number = Math.max(first, ...nodes.map(({ position }) => position.y));
+    const x: number = nodes.find(({ id }) => id === recipe.start)?.position.x ?? 0;
+    nodes.push(
+      { id: "@start", position: recipe.layout?.["@start"] ?? { x, y: first - 116 }, data: { label: <strong>Start</strong> },
+        className: s.node, style: { "--tone": toneColor("success") } as CSSProperties, sourcePosition: Position.Bottom, selectable: false },
+      { id: "@end", position: recipe.layout?.["@end"] ?? { x, y: last + 116 }, data: { label: <strong>End</strong> },
+        className: s.node, style: { "--tone": toneColor("failed") } as CSSProperties, targetPosition: Position.Top, selectable: false },
+    );
+    edges.push({
+      id: "start", source: "@start", target: recipe.start ?? "@end", type: "smoothstep",
+      markerEnd: { type: MarkerType.ArrowClosed, color: "var(--text-muted)" },
+    });
+    for (const [index, end] of recipe.ends.entries()) {
+      const color: string = toneColor(end.result === "succeeded" ? "success" : end.result === "failed" ? "failed" : "inactive");
+      edges.push({
+        id: `end-${index}`, source: end.from, target: "@end", type: "smoothstep", label: end.on,
+        markerEnd: { type: MarkerType.ArrowClosed, color }, style: { stroke: color }, selectable: false, focusable: false,
+      });
+    }
+  }
   const box = useRef<HTMLDivElement>(null);
   const flow = useRef<ReactFlowInstance | null>(null);
   useEffect(() => {

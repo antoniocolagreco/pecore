@@ -76,6 +76,19 @@ describe("recipe check", () => {
     expect(hasCommitNode(recipe(local), nodes)).toBe(true);
   });
 
+  it("requires each outcome to continue or reach End", () => {
+    const valid: Recipe = recipe({
+      start: "lint",
+      nodes: { lint: { use: "lint" } },
+      ends: [{ from: "lint", on: "passed", result: "succeeded" }, { from: "lint", on: "failed", result: "failed" }],
+    });
+    const missing: Recipe = recipe({ ...valid, ends: [{ from: "lint", on: "passed", result: "succeeded" }] });
+    const unknown: Recipe = recipe({ ...valid, ends: [{ from: "lint", on: "missing", result: "succeeded" }] });
+    expect(checkRecipe(valid, nodes, false)).toEqual([]);
+    expect(checkRecipe(missing, nodes, false)).toContainEqual({ path: "nodes.lint", message: "connect these outcomes: failed" });
+    expect(checkRecipe(unknown, nodes, false)).toContainEqual({ path: "ends.0.on", message: "missing is not an outcome of lint" });
+  });
+
   it("rejects a missing node instance", () => {
     expect(checkRecipe(recipe({ ...local, nodes: { ...local.nodes, lint: { use: "eslint" } } }), nodes, true)).toContainEqual({ path: "nodes.lint.use", message: "node eslint not found" });
   });
