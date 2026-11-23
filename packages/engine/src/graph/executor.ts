@@ -3,12 +3,14 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, join, matchesGlob, relative } from "node:path";
 import { monotonicFactory } from "ulid";
 import type { RawLine, Usage } from "@pecore/agents";
-import type { AgentNode, Artifact, ArtifactType, DeliveryArtifact, FailureReason, ForgeAccount, JobState, Node, Profiles, Project, Settings, Tiers, WaitingReason } from "@pecore/schemas";
-import { Recipe, SpecArtifact } from "@pecore/schemas";
+import type { AgentNode, Artifact, ArtifactType, DeliveryArtifact, FailureReason, ForgeAccount, JobDefinitions, JobState, Node, Profiles, Project, Settings, Tiers, WaitingReason } from "@pecore/schemas";
+import { isHumanNode, Recipe, SpecArtifact } from "@pecore/schemas";
 import { spawnFor } from "../accounts/agents";
 import type { AgentServices } from "../accounts/agents";
 import type { Definitions } from "../definitions/load";
+import { jobDefinitions, jobNodes, snapshotDefinitions } from "../definitions/snapshot";
 import { effectRecorder } from "../jobs/effects";
+import { checkGithubCi, githubHead } from "../jobs/github-ci";
 import type { JobAttachment } from "../jobs/create";
 import { LogWriter } from "../observability/logs";
 import { runAgentNode } from "../runners/agent";
@@ -95,6 +97,7 @@ export type ProjectContext = {
   live?: (attemptId: string, line: RawLine) => void;
   orderAttachments?: (orderId: string, attachmentIds: string[]) => Promise<JobAttachment[]>;
   agentQuestion?: (itemId: string) => void;
+  ciScheduled?: () => void;
 };
 
 type AttemptExtra = { usage?: Usage; model?: string; cost?: number | null; log: string };
@@ -118,6 +121,7 @@ type QuestionSubject = AgentQuestion & {
   retries: number;
 };
 type QueueItem = Omit<Extract<NewEvent, { type: "queue.added" }>["payload"], "itemId">;
+type CiCheck = Extract<NewEvent, { type: "job.ci_check" }>["payload"];
 
 const backoffMs = [60_000, 120_000, 240_000, 480_000];
 
@@ -218,15 +222,15 @@ export class JobExecutor {
     return JSON.parse(job.recipe) as Recipe;
   }
 
-  private nodeFor(recipe: Recipe, id: string): Node {
+  private nodeFor(recipe: Recipe, id: string, nodes: Map<string, Node>): Node {
     const r = recipe.nodes[id]!;
-    const def = this.ctx.defs.nodes.get(r.use);
+    const def = nodes.get(r.use);
     if (!def) throw new Error(`node instance ${r.use} not found`);
     return def;
   }
 
-  private byId(recipe: Recipe): Map<string, Node> {
-    return new Map(Object.keys(recipe.nodes).map((id) => [id, this.nodeFor(recipe, id)]));
+  private byId(recipe: Recipe, nodes: Map<string, Node>): Map<string, Node> {
+    return new Map(Object.keys(recipe.nodes).map((id) => [id, this.nodeFor(recipe, id, nodes)]));
   }
 
   private history(jobId: string): RunRecord[] {
@@ -254,6 +258,7 @@ export class JobExecutor {
         out.push(...(e.payload.attachments ?? []));
       }
       if (e.type === "node_run.completed") out.push(...e.payload.artifacts);
+      if (e.type === "job.ci_check" && e.payload.log) out.push(e.payload.log);
     }
     return out;
   }
@@ -289,16 +294,27 @@ export class JobExecutor {
         return;
       }
       const recipe = this.recipe(job);
+      const definitions: JobDefinitions | null = jobDefinitions(this.ctx.db, jobId);
+      const nodes: Map<string, Node> = jobNodes(definitions, this.ctx.defs.nodes);
       const runs = this.runs(jobId);
       const open = runs.find((r) => r.state === "pending" || r.state === "waiting" || r.state === "running");
       if (open) {
-        const done = await this.runNode(job, recipe, open);
+        const done = await this.runNode(job, recipe, open, nodes, definitions);
         if (!done) return;
         continue;
       }
-      const d = reentryPending(this.ctx.db.events(jobId), recipe.onBaseChanged)
-        ? reenterOnBaseChange(recipe, this.history(jobId), this.allowances(jobId))!
-        : nextStep(recipe, this.byId(recipe), this.history(jobId), this.allowances(jobId));
+      const history: RunRecord[] = this.history(jobId);
+      const last: RunRecord | undefined = history.at(-1);
+      const reentry: boolean = reentryPending(this.ctx.db.events(jobId), recipe.onBaseChanged);
+      if (!reentry && recipe.ci && last?.nodeId === recipe.ci.after && last.outcome === recipe.ci.on) {
+        const run: NodeRunRow = runs.findLast((entry) => entry.node === last.nodeId && entry.state === "completed")!;
+        const check: CiCheck | null = await this.waitForCi(job, recipe.ci, run.id);
+        if (!check || check.result === "pending") return;
+        last.outcome = check.result;
+      }
+      const d = reentry
+        ? reenterOnBaseChange(recipe, history, this.allowances(jobId))!
+        : nextStep(recipe, this.byId(recipe, nodes), history, this.allowances(jobId));
       if (d.kind === "end") {
         await this.finish(job, d.state, d.reason);
         return;
@@ -409,7 +425,8 @@ export class JobExecutor {
     const baseBranch = this.ctx.project.baseBranch;
     const base = await branchHead(join(this.ctx.dir, "repo.git"), baseBranch);
     if (!base) throw new Error(`branch ${baseBranch} not found`);
-    this.ctx.db.append([{ jobId: setupJobId, type: "job.created", payload: { title: "Create the remote repository", recipe, ticket: null, parentJobId: null, baseBranch, base, target: baseBranch, branch: jobBranch(setupJobId) } }]);
+    const definitions: JobDefinitions = await snapshotDefinitions(recipe, new Map([[createRepo, node]]), this.ctx.defs.nodeDir);
+    this.ctx.db.append([{ jobId: setupJobId, type: "job.created", payload: { title: "Create the remote repository", recipe, definitions, ticket: null, parentJobId: null, baseBranch, base, target: baseBranch, branch: jobBranch(setupJobId) } }]);
     this.ctx.changed(setupJobId);
     void this.tick(setupJobId);
   }
@@ -507,6 +524,105 @@ export class JobExecutor {
     }
   }
 
+  async checkCi(): Promise<void> {
+    for (const job of this.jobs()) {
+      if (job.state !== "waiting" || job.waiting_reason !== "ci") continue;
+      await this.pollCi(job.id).catch((error: unknown) => {
+        if (error instanceof ProjectLocationConflict) return;
+        const current: JobRow = this.job(job.id);
+        if (current.state === "waiting" && current.waiting_reason === "ci") this.setState(job.id, "running", null);
+        this.crash(job.id, error);
+      });
+    }
+  }
+
+  nextCiCheck(): number | null {
+    const row = this.ctx.db.db.prepare(`SELECT min(next_check) AS next_check FROM (
+      SELECT (SELECT min(payload ->> '$.nextCheck', payload ->> '$.deadline') FROM events
+        WHERE job_id = j.id AND type = 'job.ci_check' ORDER BY id DESC LIMIT 1) AS next_check
+      FROM jobs j WHERE state = 'waiting' AND waiting_reason = 'ci'
+    )`).get() as { next_check: number | null };
+    return row.next_check;
+  }
+
+  private ciCheck(jobId: string): CiCheck | null {
+    const row = this.ctx.db.db.prepare("SELECT payload FROM events WHERE job_id = ? AND type = 'job.ci_check' ORDER BY id DESC LIMIT 1").get(jobId) as { payload: string } | undefined;
+    return row ? JSON.parse(row.payload) as CiCheck : null;
+  }
+
+  private async waitForCi(job: JobRow, ci: NonNullable<Recipe["ci"]>, runId: string): Promise<CiCheck | null> {
+    const previous: CiCheck | null = this.ciCheck(job.id);
+    if (previous?.runId === runId && previous.result !== "pending") return previous;
+    if (previous?.runId !== runId) {
+      const commit = await commitSha(this.ctx.dir, this.latest(job.id).get("commit"));
+      const delivery: Artifact | undefined = this.latest(job.id).get("delivery");
+      const link: string | undefined = delivery ? (JSON.parse(await readFile(join(this.ctx.dir, delivery.path), "utf8")) as DeliveryArtifact).url : undefined;
+      const pullRequest: number = Number(link ? /\/pull\/(\d+)\/?$/.exec(link)?.[1] : undefined);
+      const account: ForgeAccount | undefined = this.ctx.project.repo ? this.ctx.forgeAccount(this.ctx.project.repo.account) : undefined;
+      if (!commit || !Number.isSafeInteger(pullRequest) || pullRequest < 1 || account?.forge !== "github") {
+        throw new Error("CI needs a saved commit and a GitHub pull request");
+      }
+      const now: number = Date.now();
+      this.ctx.db.append([{ jobId: job.id, type: "job.ci_check", payload: {
+        runId, commit, pullRequest, deadline: previous?.deadline ?? now + ci.timeoutSec * 1000, nextCheck: now,
+        corrections: previous?.corrections ?? 0, result: "pending",
+      } }]);
+    }
+    this.setState(job.id, "waiting", "ci");
+    this.ctx.ciScheduled?.();
+    return null;
+  }
+
+  private async pollCi(jobId: string): Promise<void> {
+    await this.exclusive(jobId, () => withProjectLocation(this.ctx, async () => {
+      const job: JobRow = this.job(jobId);
+      const check: CiCheck | null = this.ciCheck(jobId);
+      const config: Recipe["ci"] = this.recipe(job).ci;
+      if (job.state !== "waiting" || job.waiting_reason !== "ci" || !check || !config) return;
+      const now: number = Date.now();
+      if (check.result !== "pending") {
+        this.setState(jobId, "running", null);
+        void this.tick(jobId);
+        return;
+      }
+      if (check.deadline > now && check.nextCheck > now) return;
+      const repo: Project["repo"] = this.ctx.project.repo;
+      const account: ForgeAccount | undefined = repo ? this.ctx.forgeAccount(repo.account) : undefined;
+      const result = now < check.deadline && repo && account?.forge === "github"
+        ? await checkGithubCi({ account, url: repo.url, dir: this.ctx.dir, pullRequest: check.pullRequest, commit: check.commit,
+          checks: config.checks, timeoutMs: Math.min(30_000, check.deadline - now) }).catch(() => ({ state: "pending" as const }))
+        : { state: "pending" as const };
+      if (this.closing) return;
+      if (result.state === "changed") {
+        this.holdCiHead(job, check, result.head);
+        return;
+      }
+      const next: CiCheck = { ...check, nextCheck: Date.now() + config.intervalSec * 1000 };
+      if (Date.now() >= check.deadline) next.result = "ci_timeout";
+      else if (result.state === "passed") next.result = "ci_passed";
+      else if (result.state === "failed") {
+        next.result = check.corrections >= config.maxCorrections ? "ci_exhausted" : "ci_failed";
+        if (next.result === "ci_failed") next.corrections += 1;
+        next.log = await this.saveArtifact(jobId, `${runDirName(check.runId)}-ci`, "check-log", result.report, null);
+      }
+      this.ctx.db.append([{ jobId, type: "job.ci_check", payload: next }]);
+      if (next.result !== "pending") {
+        this.setState(jobId, "running", null);
+        void this.tick(jobId);
+      }
+    }));
+  }
+
+  private holdCiHead(job: JobRow, check: CiCheck, actual: string): void {
+    const subject = { expected: check.commit, actual, pullRequest: check.pullRequest };
+    this.ctx.db.append([
+      { jobId: job.id, type: "queue.added", payload: { itemId: ulid(), kind: "ci-head", subject, subjectHash: subjectHash(subject), choices: ["recheck", "stop"] } },
+      { jobId: job.id, type: "job.state_changed", payload: { state: "waiting", reason: "ci_head" } },
+    ]);
+    this.ctx.changed(job.id);
+    this.ctx.notify({ kind: "needs-user", title: job.title, body: "The pull request head changed", jobId: job.id });
+  }
+
   async checkMerge(jobId: string): Promise<boolean> {
     return withProjectLocation(this.ctx, async () => {
       const job = this.job(jobId);
@@ -525,14 +641,17 @@ export class JobExecutor {
     const producer = events.find((e) => e.type === "node_run.completed" && e.payload.artifacts.some((a) => a.path === delivery.path));
     if (producer?.type !== "node_run.completed") return null;
     const nodeId = producer.payload.nodeRunId.split("/")[1]!.split("#")[0]!;
-    const node = this.nodeFor(this.recipe(parent), nodeId);
+    const recipe: Recipe = this.recipe(parent);
+    const definitions: JobDefinitions | null = jobDefinitions(this.ctx.db, parent.id);
+    const node = this.nodeFor(recipe, nodeId, jobNodes(definitions, this.ctx.defs.nodes));
     if (node.kind !== "command" || !node.mergedCheck) return null;
     const env: Record<string, string> = {};
-    for (const a of toolAccounts(node.credentials, this.ctx.project.repo?.account, this.ctx.forgeAccount)) Object.assign(env, await forgeEnv(a));
+    for (const a of toolAccounts(node.credentials, this.ctx.project.repo?.account, this.ctx.forgeAccount, this.ctx.project.credentials)) Object.assign(env, await forgeEnv(a));
     const result = await runMergedCheck({
       node,
-      nodeDir: join(this.ctx.dir, "nodes"),
-      params: paramsWithDefaults(node.params, this.recipe(parent).nodes[nodeId]?.params),
+      nodeDir: this.ctx.defs.nodeDir,
+      sidecars: definitions?.nodes[node.name]?.sidecars,
+      params: paramsWithDefaults(node.params, recipe.nodes[nodeId]?.params),
       context: await this.placeholderContext(parent),
       inputs: [{ type: "delivery", path: join(this.ctx.dir, delivery.path) }],
       extraEnv: env,
@@ -551,13 +670,13 @@ export class JobExecutor {
     }
   }
 
-  private requiresMet(jobId: string, recipe: Recipe, nodeId: string, current: string): boolean {
+  private requiresMet(jobId: string, recipe: Recipe, nodeId: string, current: string, nodes: Map<string, Node>): boolean {
     const runs = this.runs(jobId).filter((r) => r.state === "completed");
     for (const req of recipe.nodes[nodeId]!.requires) {
       const last = runs.filter((r) => r.node === req).at(-1);
       if (!last) return false;
-      const node = this.nodeFor(recipe, req);
-      const ok = last.outcome === "passed" || (node.kind === "human" && last.outcome === "approve");
+      const node = this.nodeFor(recipe, req, nodes);
+      const ok: boolean = isHumanNode(node) ? node.kind === "human-review" && last.outcome === "approve" : last.outcome === "passed";
       if (!ok || last.content_before !== current || last.content_after !== current) return false;
     }
     return true;
@@ -589,8 +708,9 @@ export class JobExecutor {
     return row ? { subject: JSON.parse(row.subject) as QuestionSubject, answer: row.note } : null;
   }
 
-  private async runNode(job: JobRow, recipe: Recipe, run: NodeRunRow): Promise<boolean> {
-    const node = this.nodeFor(recipe, run.node);
+  private async runNode(job: JobRow, recipe: Recipe, run: NodeRunRow, nodes: Map<string, Node>, definitions: JobDefinitions | null): Promise<boolean> {
+    const node = this.nodeFor(recipe, run.node, nodes);
+    const sidecars: Record<string, string> | undefined = definitions?.nodes[node.name]?.sidecars;
     const recipeNode = recipe.nodes[run.node]!;
     const wd = workdirOf(this.ctx.dir, job.id);
     const runDir = runDirName(run.id);
@@ -608,17 +728,29 @@ export class JobExecutor {
     const question = node.kind === "agent" ? this.agentQuestion(job.id, run.id) : null;
     const continuation: (QuestionSubject & AgentContinuation) | null = question?.answer != null ? { ...question.subject, answer: question.answer } : null;
     const before: string = continuation?.contentState ?? await contentState(this.ctx.user, wd);
-    if (recipeNode.requires.length > 0 && !this.requiresMet(job.id, recipe, run.node, before)) {
+    if (recipeNode.requires.length > 0 && !this.requiresMet(job.id, recipe, run.node, before, nodes)) {
       this.complete(job.id, run.id, "stale", before, before, []);
       return true;
     }
 
-    if (node.kind === "human") {
-      const item = humanItem(run.id, run.node, node, [...this.latest(job.id).values()], before);
-      this.waitForHuman(job, run, item, `${run.node} waits for your review`);
+    if (isHumanNode(node)) {
+      const { question } = paramsWithDefaults(node.params, recipeNode.params);
+      const item = humanItem(run.id, run.node, node, [...this.latest(job.id).values()], before, question);
+      this.waitForHuman(job, run, item, `${run.node} waits for your ${item.subject.mode}`);
       return false;
     }
     if (node.kind === "source") throw new Error("source nodes cannot run in a recipe");
+    const previousCi: CiCheck | null = recipe.ci && node.kind === "command" && node.name === "git-push" ? this.ciCheck(job.id) : null;
+    const repo: Project["repo"] = this.ctx.project.repo;
+    const account: ForgeAccount | undefined = previousCi && repo ? this.ctx.forgeAccount(repo.account) : undefined;
+    if (previousCi && repo && account?.forge === "github") {
+      const updated: string | null = await commitSha(this.ctx.dir, this.latest(job.id).get("commit"));
+      const actual: string | null = await githubHead({ account, url: repo.url, dir: this.ctx.dir, pullRequest: previousCi.pullRequest, timeoutMs: 15_000 }).catch(() => null);
+      if (actual && actual !== updated && actual !== previousCi.commit) {
+        this.holdCiHead(job, previousCi, actual);
+        return false;
+      }
+    }
 
     let servicesEnv: Record<string, string> = {};
     if (job.id !== setupJobId) {
@@ -629,7 +761,7 @@ export class JobExecutor {
       if (this.job(job.id).state === "waiting") this.setState(job.id, "running", null);
     }
 
-    const tools: ForgeAccount[] = node.kind === "command" ? toolAccounts(node.credentials, this.ctx.project.repo?.account, this.ctx.forgeAccount) : [];
+    const tools: ForgeAccount[] = node.kind === "command" ? toolAccounts(node.credentials, this.ctx.project.repo?.account, this.ctx.forgeAccount, this.ctx.project.credentials) : [];
     const toolEnv: Record<string, string> = {};
     try {
       for (const a of tools) Object.assign(toolEnv, await forgeEnv(a));
@@ -706,18 +838,19 @@ export class JobExecutor {
           node.kind === "command"
             ? await runCommandNode({
                 node,
-                nodeDir: join(this.ctx.dir, "nodes"),
+                nodeDir: this.ctx.defs.nodeDir,
+                sidecars,
                 params: paramsWithDefaults(node.params, recipeNode.params),
                 user: this.ctx.user,
                 workdir: wd,
                 context,
                 inputs,
                 cleanTree: node.cleanCheckout ? before : null,
-                extraEnv: { ...servicesEnv, ...toolEnv },
+                extraEnv: { ...servicesEnv, ...toolEnv, ...(previousCi ? { PECORE_CI_EXPECTED_HEAD: previousCi.commit } : {}) },
                 onStart,
                 effect: effectRecorder(this.ctx.db, job.id, run.id, run.node),
               })
-            : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, sessionGroup, { wd, context, inputs, log, onStart, env: servicesEnv, continuation: resumed });
+            : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, sessionGroup, { wd, context, inputs, log, onStart, env: servicesEnv, continuation: resumed, sidecars });
         this.running.delete(job.id);
         if (result.log) log.write({ dir: "cmd", text: result.log, at: Date.now() });
         await log.close();
@@ -927,7 +1060,7 @@ export class JobExecutor {
     profile: AgentProfile,
     attemptId: string,
     sessionGroup: string | null,
-    x: { wd: string; context: CommandRun["context"]; inputs: CommandRun["inputs"]; log: LogWriter; onStart: (pgid: number, user: string) => void; env: Record<string, string>; continuation: (QuestionSubject & AgentContinuation) | null },
+    x: { wd: string; context: CommandRun["context"]; inputs: CommandRun["inputs"]; log: LogWriter; onStart: (pgid: number, user: string) => void; env: Record<string, string>; continuation: (QuestionSubject & AgentContinuation) | null; sidecars: CommandRun["sidecars"] },
   ): Promise<Attempt> {
     const agents = this.ctx.agents!;
     const account = agents.account(profile.account);
@@ -947,7 +1080,8 @@ export class JobExecutor {
     const attachments: string[] = await this.copyAttachments(job.id, x.wd);
     const r = await runAgentNode({
       node,
-      nodeDir: join(this.ctx.dir, "nodes"),
+      nodeDir: this.ctx.defs.nodeDir,
+      sidecars: x.sidecars,
       params: paramsWithDefaults(node.params, recipeNode.params),
       user: this.ctx.user,
       workdir: x.wd,
@@ -1044,8 +1178,8 @@ export class JobExecutor {
         this.ctx.changed(jobId);
         return;
       }
-      this.ctx.db.append([{ jobId, type: "queue.resolved", payload: { itemId, state: "resolved", choice, note } }]);
       if (item.kind === "round-limit") {
+        this.ctx.db.append([{ jobId, type: "queue.resolved", payload: { itemId, state: "resolved", choice, note } }]);
         if (job.state === "waiting") this.setState(jobId, "running", null);
         if (choice === "end") {
           this.setState(jobId, "failed", "round_limit");
@@ -1053,13 +1187,35 @@ export class JobExecutor {
         }
         return;
       }
+      if (item.kind === "ci-head") {
+        const pending = this.ctx.db.db.prepare("SELECT 1 FROM human_queue WHERE id = ? AND state = 'open'").get(itemId);
+        if (!pending || (job.state !== "paused" && job.waiting_reason !== "ci_head")) throw new Error("the item changed or was resolved");
+        this.ctx.db.append([{ jobId, type: "queue.resolved", payload: { itemId, state: "resolved", choice, note } }]);
+        if (choice === "stop") {
+          this.setState(jobId, "stopped", null);
+          this.ended(jobId);
+        } else if (job.state === "waiting") this.setState(jobId, "running", null);
+        return;
+      }
       if (item.kind !== "human-node") return;
       const subject = JSON.parse(item.subject) as { nodeRunId: string; node: string; contentState: string | null };
       const recipe = this.recipe(job);
-      const node = this.nodeFor(recipe, subject.node);
-      if (node.kind !== "human") return;
+      const node = this.nodeFor(recipe, subject.node, jobNodes(jobDefinitions(this.ctx.db, jobId), this.ctx.defs.nodes));
+      if (!isHumanNode(node)) return;
+      const pending: boolean = this.runs(jobId).some((run) => run.id === subject.nodeRunId && run.state === "waiting" && run.queue_item_id === itemId);
+      if (!pending) throw new Error("the item changed or was resolved");
+      if (node.kind === "human-review" && choice === "approve") {
+        const current: string = await contentState(this.ctx.user, workdirOf(this.ctx.dir, jobId));
+        if (current !== subject.contentState) {
+          this.ctx.db.append([{ jobId, type: "queue.resolved", payload: { itemId, state: "cancelled", choice: null, note: "The reviewed content changed." } }]);
+          this.complete(jobId, subject.nodeRunId, "stale", subject.contentState, current, []);
+          if (job.state === "waiting") this.setState(jobId, "running", null);
+          return;
+        }
+      }
       const r = humanResult(node, choice, note);
       const artifacts = r.userNote ? [await this.saveArtifact(jobId, runDirName(subject.nodeRunId), "user-note", r.userNote, subject.contentState)] : [];
+      this.ctx.db.append([{ jobId, type: "queue.resolved", payload: { itemId, state: "resolved", choice, note } }]);
       this.complete(jobId, subject.nodeRunId, r.outcome, subject.contentState, subject.contentState, artifacts);
       if (job.state === "waiting") this.setState(jobId, "running", null);
     });
@@ -1086,8 +1242,10 @@ export class JobExecutor {
       if (job.state !== "paused") return;
       const open = this.runs(jobId).find((r) => r.state === "waiting" && (r.waiting_reason === "human" || r.waiting_reason === "round_limit"));
       const roundLimit = this.ctx.db.db.prepare("SELECT 1 FROM human_queue WHERE job_id = ? AND kind = 'round-limit' AND state = 'open'").get(jobId);
+      const ciHead = this.ctx.db.db.prepare("SELECT 1 FROM human_queue WHERE job_id = ? AND kind = 'ci-head' AND state = 'open'").get(jobId);
       if (open) this.setState(jobId, "waiting", open.waiting_reason);
       else if (roundLimit) this.setState(jobId, "waiting", "round_limit");
+      else if (ciHead) this.setState(jobId, "waiting", "ci_head");
       else this.setState(jobId, "running", null);
     });
     void this.tick(jobId);
@@ -1148,6 +1306,7 @@ export class JobExecutor {
         const before = r.content_before;
         await this.interrupt(job.id, r.id, git, before).catch(() => this.setRun(job.id, r.id, "interrupted", null));
       }
+      if (job.state === "waiting" && (job.waiting_reason === "ci" || job.waiting_reason === "ci_head")) continue;
       if (job.state === "running" || job.state === "waiting") this.setState(job.id, "paused", "quit");
     }
   }

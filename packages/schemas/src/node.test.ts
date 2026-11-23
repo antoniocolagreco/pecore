@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Node, placeholderEnvName, unknownPlaceholders } from "./node";
+import { Node, placeholderEnvName, StoredNode, unknownPlaceholders } from "./node";
 
 const githubPr = {
   $schema: "../../../schemas/node.json",
@@ -22,6 +22,19 @@ const githubPr = {
   probe: ["gh", "pr", "list", "--repo", "{project.repo.owner}/{project.repo.name}", "--head", "{job.branch}", "--base", "{job.target}", "--json", "url", "--jq", ".[0].url // empty"],
   timeoutSec: 120,
 };
+
+it("reads a legacy human decision without carrying its mode or unused fields forward", () => {
+  const legacy = {
+    name: "pick", description: "Choose a branch", kind: "human", mode: "decision",
+    outcomes: ["approve", "cancel"], show: ["diff"], changesFiles: false, timeoutSec: 2592000,
+  };
+  const loaded: Node = StoredNode.parse(legacy);
+  expect(loaded).toMatchObject({ kind: "human-decision", outcomes: ["approve", "cancel"], show: ["diff"] });
+  expect(loaded).not.toHaveProperty("mode");
+  expect(loaded).not.toHaveProperty("changesFiles");
+  expect(loaded).not.toHaveProperty("timeoutSec");
+  expect(Node.safeParse(legacy).success).toBe(false);
+});
 
 const builder = {
   name: "builder",

@@ -1,11 +1,13 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "github-pr",
+  "tags": ["github", "source control", "command"],
   "description": "Open a GitHub pull request for the job branch or move it to the job's target branch.",
   "kind": "command",
   "runsAs": "engine",
   "credentials": ["project.account"],
   "inputs": ["commit", "spec"],
+  "optionalInputs": ["pull-request"],
   "outputs": ["delivery"],
   "outcomes": ["opened", "failed"],
   "failOutcomes": ["failed"],
@@ -16,7 +18,7 @@
     { "exitCode": "other", "outcome": "failed" }
   ],
   "outputRules": { "delivery": { "stdoutLastLine": "url" } },
-  "probe": ["gh", "pr", "list", "--repo", "{project.repo.owner}/{project.repo.name}", "--head", "{job.branch}", "--base", "{job.target}", "--json", "url", "--jq", ".[0].url // empty"],
+  "probe": { "script": "github-pr-probe.sh" },
   "mergedCheck": ["gh", "pr", "view", "--repo", "{project.repo.owner}/{project.repo.name}", "{job.branch}", "--json", "state", "--jq", "select(.state==\"MERGED\") | .state"],
   "timeoutSec": 120
 }

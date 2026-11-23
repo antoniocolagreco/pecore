@@ -1,6 +1,7 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "jira",
+  "tags": ["issue tracker"],
   "description": "Read and comment on labeled Jira work items.",
   "kind": "source",
   "credentials": ["project.account"],

@@ -8,6 +8,7 @@ import { createZstdCompress } from "node:zlib";
 import { ExportProjectBody } from "@pecore/schemas";
 import type { ExportProjectResult } from "@pecore/schemas";
 import type { ProjectContext } from "../graph/executor";
+import { nodeSidecars } from "../definitions/load";
 import { activeJobCount, archivePath, definitionDirs, ShareConflict } from "./archive";
 import type { Manifest } from "./archive";
 import { scanSecrets } from "./secrets";
@@ -43,6 +44,26 @@ async function copyEntry(from: string, to: string, name: string, directory: bool
   });
 }
 
+async function copyTemplates(ctx: ProjectContext, dir: string): Promise<void> {
+  const nodes: Set<string> = new Set();
+  const paths: Set<string> = new Set();
+  for (const name of ctx.project.recipes ?? []) {
+    const recipe = ctx.defs.recipes.get(name);
+    if (!recipe) throw new ShareConflict(`recipe template ${name} not found`);
+    paths.add(`recipes/${name}.json`);
+    for (const { use } of Object.values(recipe.nodes)) nodes.add(use);
+  }
+  if (ctx.project.source) nodes.add(ctx.project.source.node);
+  if (ctx.project.createRepo) nodes.add(ctx.project.createRepo);
+  for (const name of nodes) {
+    const node = ctx.defs.nodes.get(name);
+    if (!node) throw new ShareConflict(`node template ${name} not found`);
+    paths.add(`nodes/${name}.json`);
+    for (const [, sidecar] of nodeSidecars(node)) paths.add(`nodes/${sidecar}`);
+  }
+  for (const path of paths) await copyEntry(ctx.templates, dir, path, false);
+}
+
 export async function exportProject(ctx: ProjectContext, input: ExportProjectBody): Promise<ExportProjectResult> {
   const { path, history, logs, acceptFindings }: ExportProjectBody = ExportProjectBody.parse(input);
   if (history) assertIdle(ctx);
@@ -54,6 +75,7 @@ export async function exportProject(ctx: ProjectContext, input: ExportProjectBod
     const before: number = history ? revision() : 0;
     await copyEntry(ctx.dir, dir, "project.json", false);
     for (const name of dirs) await copyEntry(ctx.dir, dir, name, true);
+    if (ctx.project.recipes !== undefined) await copyTemplates(ctx, dir);
     if (history) {
       assertIdle(ctx);
       const findings: Finding[] = await scanSecrets(join(dir, "artifacts"));

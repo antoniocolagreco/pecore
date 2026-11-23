@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Artifact } from "./artifacts";
 import { AuthKind, FailureReason, JobState, JobWaitingReason, NodeRunState, PauseReason, WaitingReason } from "./errors";
+import { JobDefinitions } from "./job-definitions";
 
 const Tokens = z.object({
   input: z.number().int().nonnegative(),
@@ -11,6 +12,7 @@ const Tokens = z.object({
 
 const QueueKind = z.enum([
   "human-node",
+  "ci-head",
   "agent-question",
   "engine-node",
   "source-node",
@@ -58,6 +60,7 @@ export const EventBody = z.discriminatedUnion("type", [
     z.object({
       title: z.string(),
       recipe: z.unknown(),
+      definitions: JobDefinitions.optional(),
       ticket: Artifact.nullable(),
       attachments: z.array(Artifact).optional(),
       recipeConfirmationId: z.ulid().optional(),
@@ -70,6 +73,17 @@ export const EventBody = z.discriminatedUnion("type", [
       orderKey: z.string().min(1).optional(),
     }),
   ),
+  ev("job.definitions_saved", JobDefinitions),
+  ev("job.ci_check", z.object({
+    runId: z.string(),
+    commit: z.string().regex(/^[a-f0-9]{40}$/i),
+    pullRequest: z.number().int().positive(),
+    deadline: z.number().int(),
+    nextCheck: z.number().int(),
+    corrections: z.number().int().nonnegative(),
+    result: z.enum(["pending", "ci_passed", "ci_failed", "ci_exhausted", "ci_timeout"]),
+    log: Artifact.optional(),
+  })),
   ev("job.state_changed", z.object({ state: JobState, reason: z.union([JobWaitingReason, PauseReason, z.string()]).nullable() })),
   ev(
     "job.base_changed",

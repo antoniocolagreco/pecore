@@ -7,6 +7,7 @@ import type { JobView, NodeRunView } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useData } from "../api/hooks";
 import { useConnected } from "../api/live";
+import { DefinitionIcon, useDefinitionIcons } from "./DefinitionIcon";
 import { nodeRunState, StateLabel, toneColor } from "./states";
 import type { Tone } from "./states";
 import { Empty } from "./ui";
@@ -99,6 +100,7 @@ export function JobGraph({ recipe, definitions, runs, selected, onSelect }: {
   onSelect(id: string): void;
 }) {
   const connected: boolean = useConnected();
+  const icons = useDefinitionIcons();
   const { back, positions } = useMemo(() => arrange(recipe), [recipe]);
   const latest: Map<string, NodeRunView> = latestRuns(runs);
   const backTargets = new Set<string>([...back].map((index) => recipe.edges[index]!.to));
@@ -114,7 +116,8 @@ export function JobGraph({ recipe, definitions, runs, selected, onSelect }: {
     return {
       id,
       position: recipe.layout?.[id] ?? positions.get(id)!,
-      data: { label: <><strong>{id}</strong><StateLabel info={info} />{run && backTargets.has(id) && <span>Round {run.round}</span>}</> },
+      data: { label: <><strong><DefinitionIcon icons={icons.data} type="node" name={definition.use} selected={node?.icon} size="sm" /> {id}</strong>
+        <StateLabel info={info} />{run && backTargets.has(id) && <span>Round {run.round}</span>}</> },
       className: s.node,
       style: { "--tone": toneColor(info.tone) } as CSSProperties,
       sourcePosition: Position.Bottom,

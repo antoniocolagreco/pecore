@@ -18,6 +18,7 @@ export type CommandRun<Output extends string = ArtifactType> = {
     outputRules: Partial<Record<Output, OutputRule>>;
   };
   nodeDir: string;
+  sidecars?: Readonly<Record<string, string>> | undefined;
   params: Record<string, unknown>;
   user: string;
   workdir: string;
@@ -62,11 +63,12 @@ async function readOutput(rule: OutputRule, stdout: string, read: (rel: string) 
   return read(rule.file);
 }
 
-async function argvOf(spec: string[] | { script: string } | undefined, inline: string | undefined, nodeDir: string, label: string, values: Record<string, string>): Promise<string[]> {
+async function argvOf(spec: string[] | { script: string } | undefined, inline: string | undefined, source: Pick<CommandRun, "nodeDir" | "sidecars">, label: string, values: Record<string, string>): Promise<string[]> {
   if (Array.isArray(spec)) return substituteArgv(spec, values);
   const file = spec?.script ?? inline;
   if (!file) throw new Error(`${label}: no command`);
-  const body = await readFile(join(nodeDir, file), "utf8");
+  const body: string | undefined = source.sidecars ? source.sidecars[file] : await readFile(join(source.nodeDir, file), "utf8");
+  if (body === undefined) throw new Error(`${label}: missing saved script ${file}`);
   return ["/bin/sh", "-c", body, label];
 }
 
@@ -78,13 +80,13 @@ export function commandHash(argv: string[]): string {
   return JSON.stringify(argv);
 }
 
-export async function runMergedCheck(c: Pick<CommandRun, "node" | "nodeDir" | "params" | "context" | "inputs" | "extraEnv">): Promise<ProbeResult> {
+export async function runMergedCheck(c: Pick<CommandRun, "node" | "nodeDir" | "sidecars" | "params" | "context" | "inputs" | "extraEnv">): Promise<ProbeResult> {
   const cwd = await mkdtemp(join(tmpdir(), "pecore-engine-"));
   try {
     const inputs = Object.fromEntries(c.inputs.map((i) => [i.type, i.path]));
     const values = placeholderValues({ ...c.context, params: c.params, workdir: cwd, inputs });
     const env = { ...(await baseEnv(appUser)), ...placeholderEnv(values), ...c.extraEnv };
-    const argv = await argvOf(c.node.mergedCheck, undefined, c.nodeDir, `${c.node.name}-merged`, values);
+    const argv = await argvOf(c.node.mergedCheck, undefined, c, `${c.node.name}-merged`, values);
     return (await runProbe({ argv, user: appUser, cwd, env, timeoutMs: c.node.timeoutSec * 1000 }, c.node.mergedCheckRules)).result;
   } finally {
     await rm(cwd, { recursive: true, force: true });
@@ -128,7 +130,7 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
     let log = "";
 
     if (c.node.probe) {
-      const argv = await argvOf(c.node.probe, undefined, c.nodeDir, `${c.node.name}-probe`, values);
+      const argv = await argvOf(c.node.probe, undefined, c, `${c.node.name}-probe`, values);
       const p = await runProbe({ argv, user, cwd, env, timeoutMs }, c.node.probeRules);
       env.PECORE_PROBE_STDOUT = p.stdout;
       log += `$ probe\n${p.stdout}${p.stderr}probe: ${p.result}\n`;
@@ -145,7 +147,7 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
       }
     }
 
-    const argv = await argvOf(c.node.command, c.node.script, c.nodeDir, c.node.name, values);
+    const argv = await argvOf(c.node.command, c.node.script, c, c.node.name, values);
     const hash = commandHash(argv);
     if (engine) c.effect?.requested(hash);
     let r: RunResult;

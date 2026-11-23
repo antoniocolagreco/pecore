@@ -45,7 +45,7 @@ describe("PECORE_HOME layout", () => {
     expect(await readFile(join(homePaths(home).templates, "nodes", "a.json"), "utf8")).toBe("edited a\n");
     expect(await readFile(join(homePaths(home).templates, "nodes", "b.sh"), "utf8")).toBe("echo b\n");
     expect(await readFile(join(homePaths(home).templates, "forges", "git.json"), "utf8")).toBe("{}\n");
-    expect((await git(home, ["log", "--format=%s"])).trim().split("\n")).toEqual(["templates: add 2 shipped files", "node a: edited", "home: created"]);
+    expect((await git(home, ["log", "--format=%s"])).trim().split("\n")).toEqual(["templates: sync 2 shipped files", "node a: edited", "home: created"]);
     expect(await git(home, ["status", "--porcelain"])).toBe("");
     await initHome(home, { templates: shipped });
     expect((await git(home, ["log", "--format=%s"])).trim().split("\n")).toHaveLength(3);

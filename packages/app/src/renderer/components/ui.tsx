@@ -2,6 +2,7 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Button as DsButton } from "../ds/button";
 import { EmptyState } from "../ds/feedback";
 import { Dialog } from "../ds/overlay";
+import { usePageScroll } from "./usePageScroll";
 import s from "./ui.module.css";
 
 export { s as ui };
@@ -15,16 +16,16 @@ export function Panel({ children, className }: { children: ReactNode; className?
 }
 
 export function Page({ title, actions, width, children }: { title: string; actions?: ReactNode; width?: number; children: ReactNode }) {
-  const content: ReactNode = <>
-    <header className={s.pageHeader}>
-      <h1 className={s.title}>{title}</h1>
-      <div className={s.row}>{actions}</div>
-    </header>
-    <div className={s.stack}>{children}</div>
-  </>;
+  const { page, content } = usePageScroll();
   return (
-    <div className={s.page}>
-      {width ? <div className={s.pageInner} style={{ maxWidth: width }}>{content}</div> : content}
+    <div ref={page} className={s.page}>
+      <div ref={content} className={s.pageInner} style={width ? { maxWidth: width } : undefined}>
+        <header className={s.pageHeader}>
+          <h1 className={s.title}>{title}</h1>
+          <div className={s.row}>{actions}</div>
+        </header>
+        <div className={s.stack}>{children}</div>
+      </div>
     </div>
   );
 }

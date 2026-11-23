@@ -1,0 +1,15 @@
+{
+  "$schema": "../../schemas/node.json",
+  "name": "human-decision",
+  "tags": ["human", "decision"],
+  "description": "Ask the user a question and follow the branch they choose.",
+  "kind": "human-decision",
+  "params": {
+    "type": "object",
+    "properties": {
+      "question": { "type": "string", "minLength": 1, "default": "Should the recipe continue?" }
+    },
+    "required": ["question"]
+  },
+  "outcomes": ["yes", "no"]
+}

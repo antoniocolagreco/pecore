@@ -4,6 +4,10 @@ case "$head" in
   x*) head="${head#x}" ;;
   *) exit 1 ;;
 esac
+if [ -n "${PECORE_CI_EXPECTED_HEAD:-}" ] && [ "$head" != "$PECORE_CI_EXPECTED_HEAD" ]; then
+  printf 'Remote head changed from %s to %s\n' "$PECORE_CI_EXPECTED_HEAD" "$head" >&2
+  exit 1
+fi
 
 set --
 if [ -n "${GH_TOKEN:-}${GH_ENTERPRISE_TOKEN:-}" ]; then

@@ -54,8 +54,11 @@ function runReason(ctx: ProjectContext, r: WaitingRun): WhyReason {
       return reason({ ...base, account, reason: "rate_limit", text: `Node ${n} waits for the rate limit of account ${account ?? "?"}` });
     case "budget":
       return reason({ ...base, reason: "budget", text: `Node ${n}: a former project budget was reached` });
-    case "human":
-      return reason({ ...base, reason: "human", text: `Node ${n} waits for your review in the Inbox` });
+    case "human": {
+      const item = ctx.db.db.prepare("SELECT kind, subject ->> '$.mode' AS mode FROM human_queue WHERE id = ?").get(r.queue_item_id) as { kind: string; mode: string | null } | undefined;
+      const response: string = item?.kind === "agent-question" ? "answer" : item?.mode === "decision" ? "decision" : "review";
+      return reason({ ...base, reason: "human", text: `Node ${n} waits for your ${response} in the Inbox` });
+    }
     case "services":
       return reason({ ...base, reason: "services", text: `Node ${n} waits for the job's services to be healthy` });
     case "round_limit":
@@ -77,6 +80,11 @@ export function whyJob(ctx: ProjectContext, job: JobRow, globalPause: boolean): 
   if (job.state === "paused")
     reasons.push(job.waiting_reason === "quit" ? reason({ reason: "quit", text: "Paused when the app quit: press Play to continue" }) : reason({ reason: "user", text: "Paused by you: press Play to continue" }));
   if (job.state === "waiting") {
+    if (job.waiting_reason === "ci") reasons.push(reason({ reason: "ci", text: "Waits for CI on the published commit" }));
+    if (job.waiting_reason === "ci_head") {
+      const item = ctx.db.db.prepare("SELECT id FROM human_queue WHERE job_id = ? AND kind = 'ci-head' AND state = 'open'").get(job.id) as { id: string } | undefined;
+      reasons.push(reason({ reason: "ci_head", queueItemId: item?.id ?? null, text: "The pull request head changed. Review the expected and actual commits in the Inbox" }));
+    }
     const runs = ctx.db.db
       .prepare("SELECT id, node, waiting_reason, reset_at, queue_item_id, auth_account, auth_os_user FROM node_runs WHERE job_id = ? AND state = 'waiting' ORDER BY rowid")
       .all(job.id) as WaitingRun[];

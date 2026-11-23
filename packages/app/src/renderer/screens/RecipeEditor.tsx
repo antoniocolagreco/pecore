@@ -7,6 +7,8 @@ import { Name, Outcome } from "@pecore/schemas";
 import type { DefinitionEntry } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
+import { DefinitionIcon, DefinitionIconField, useDefinitionIcons } from "../components/DefinitionIcon";
+import { restorePageScroll } from "../components/usePageScroll";
 import { Button, Empty, ErrorText, Field, Modal, Page, Panel, ui } from "../components/ui";
 import { Button as DsButton } from "../ds/button";
 import { TextField } from "../ds/field";
@@ -18,23 +20,37 @@ import s from "./Editors.module.css";
 
 type LinkDraft = { from: string; to: string; on: string };
 const grid: [number, number] = [20, 20];
-const emptyRecipe: string = JSON.stringify({ $schema: "../../../schemas/recipe.json", name: "", description: "", nodes: {}, edges: [] }, null, 2) + "\n";
 
 function position(layout: Record<string, unknown>, id: string, index: number): XYPosition {
   const point = object(layout[id]);
   return typeof point.x === "number" && typeof point.y === "number" ? { x: point.x, y: point.y } : { x: index % 4 * 200, y: Math.floor(index / 4) * 120 };
 }
 
-function RecipeFile({ path, project }: { path: string; project?: string }) {
+function RecipeFile({ path, project, newTemplate }: { path: string; project?: string; newTemplate: boolean }) {
   const navigate = useNavigate();
-  const creation = useMemo<NewDefinition | undefined>(() => project ? {
-    content: emptyRecipe,
+  const scope: string = newTemplate ? "templates" : project ? `projects/${project}` : path.slice(0, path.lastIndexOf("/recipes/"));
+  const creation = useMemo<NewDefinition | undefined>(() => newTemplate || project ? {
+    content: JSON.stringify({ $schema: newTemplate ? "../../schemas/recipe.json" : "../../../schemas/recipe.json", name: "", description: "", nodes: {}, edges: [] }, null, 2) + "\n",
     path(content) {
       const name = Name.safeParse(parseDraft(content)?.name);
-      return name.success ? `projects/${project}/recipes/${name.data}.json` : "";
+      return name.success ? `${scope}/recipes/${name.data}.json` : "";
     },
-  } : undefined, [project]);
+  } : undefined, [newTemplate, project, scope]);
   const file = useDefinitionDraft(path, false, creation);
+  const duplicate = useAction(async () => {
+    const source = parseDraft(file.content);
+    if (!source || file.dirty) return;
+    const recipes = await call("listDefinitions", { query: { dir: "templates/recipes" } });
+    const used: Set<string> = new Set(recipes.map((entry) => entry.path));
+    const base: string = string(source.name) + "-copy";
+    let name: string = base;
+    for (let index: number = 2; used.has(`templates/recipes/${name}.json`); index++) name = `${base}-${index}`;
+    const target: string = `templates/recipes/${name}.json`;
+    const content: string = JSON.stringify({ ...source, name }, null, 2) + "\n";
+    await call("saveDefinition", { params: { path: target }, body: { content, baseSha256: null } });
+    await navigate(definitionUrl("recipe", target));
+  });
+  const icons = useDefinitionIcons();
   const [destination, setDestination] = useState<string>();
   const warn = useUnsaved(file.dirty && !destination);
   useEffect(() => {
@@ -47,14 +63,13 @@ function RecipeFile({ path, project }: { path: string; project?: string }) {
   const [connection, setConnection] = useState<LinkDraft>();
   const [drag, setDrag] = useState<Record<string, XYPosition>>({});
   const [flow, setFlow] = useState<ReactFlowInstance>();
-  const scope: string = project ? `projects/${project}` : path.slice(0, path.lastIndexOf("/recipes/"));
   const projectId: string | undefined = project ?? /^projects\/([^/]+)$/.exec(scope)?.[1];
   const directory: string = scope + "/nodes";
   const definitions = useData(() => call("listDefinitions", { query: { dir: directory } }), [directory], (event) => event.type === "definition.changed" && event.path.startsWith(directory + "/"));
   const [recipeTemplate, setRecipeTemplate] = useState<string | null>(null);
   const [templateNode, setTemplateNode] = useState<string | null>(null);
-  const recipeTemplates = useTemplates("recipes", !!creation);
-  const nodeTemplates = useTemplates("nodes", !!creation);
+  const recipeTemplates = useTemplates("recipes", !!project);
+  const nodeTemplates = useTemplates("nodes", !!project);
   const importRecipe = useAction(async () => {
     if (!project || !recipeTemplate || (file.dirty && !window.confirm("Replace your unsaved draft with this template?"))) return;
     await call("instantiate", { body: { kind: "recipe", name: recipeTemplate, project } });
@@ -72,24 +87,31 @@ function RecipeFile({ path, project }: { path: string; project?: string }) {
   const draft = parseDraft(file.content);
   const nodes = object(draft?.nodes);
   const layout = object(draft?.layout);
+  const ci = object(draft?.ci);
   const entries = Object.entries(nodes);
   const edges: unknown[] = Array.isArray(draft?.edges) ? draft.edges : [];
   useEffect(() => { void flow?.fitView(); }, [entries.length]);
   const selectedNode = object(nodes[selected]);
   const palette = (definitions.data ?? []).filter((item) => item.path.endsWith(".json") && !item.errors.length && string(object(item.value).name) && object(item.value).kind !== "source");
+  const nodeIcons = new Map<string, string>(palette.map(({ value }) => [string(object(value).name), string(object(value).icon)]));
   const definition = palette.find((item) => object(item.value).name === selectedNode.use);
   const nodeValue = object(definition?.value);
+  const questionParameter = object(object(object(nodeValue.params).properties).question);
   const update = (changes: Record<string, unknown>): void => file.update(JSON.stringify({ ...draft, ...changes }, null, 2) + "\n");
   const updateNode = (key: string, value: unknown): void => update({ nodes: { ...nodes, [selected]: { ...selectedNode, [key]: value } } });
   const layoutNow = (): Record<string, unknown> => ({ ...layout, ...Object.fromEntries(entries.map(([id], index) => [id, position(layout, id, index)])) });
   const highlight = (key: string): boolean => !!file.errors?.some(({ path: at }) => at === key || at.startsWith(key + "."));
-  const graphNodes: Node[] = entries.map(([id, value], index) => ({
-    id,
-    position: drag[id] ?? position(layout, id, index),
-    data: { label: <>{id}<br /><small>{string(object(value).use)}</small>{highlight("nodes." + id) && <><br /><strong>Invalid</strong></>}</> },
-    selected: selected === id,
-    style: highlight("nodes." + id) ? { borderColor: "var(--status-failed)" } : undefined,
-  }));
+  const graphNodes: Node[] = entries.map(([id, value], index) => {
+    const name: string = string(object(value).use);
+    return {
+      id,
+      position: drag[id] ?? position(layout, id, index),
+      data: { label: <><DefinitionIcon icons={icons.data} type="node" name={name} selected={nodeIcons.get(name)} size="sm" /> {id}
+        <br /><small>{name}</small>{highlight("nodes." + id) && <><br /><strong>Invalid</strong></>}</> },
+      selected: selected === id,
+      style: highlight("nodes." + id) ? { borderColor: "var(--status-failed)" } : undefined,
+    };
+  });
   const graphEdges: Edge[] = edges.flatMap((value, index) => {
     const edge = object(value);
     const invalid: boolean = highlight("edges." + index);
@@ -126,14 +148,26 @@ function RecipeFile({ path, project }: { path: string; project?: string }) {
     <option value="">None</option>{entries.map(([id]) => <option key={id}>{id}</option>)}
   </select></Field>;
   const outcomeSource = connection && palette.find((item) => object(item.value).name === object(nodes[connection.from]).use);
-  const outcomes: unknown = object(outcomeSource?.value).outcomes;
+  const sourceOutcomes: unknown = object(outcomeSource?.value).outcomes;
+  const outcomes: string[] = Array.isArray(sourceOutcomes) ? [...sourceOutcomes] : [];
+  if (connection && connection.from === ci.after) {
+    const index: number = outcomes.indexOf(string(ci.on));
+    if (index >= 0) outcomes.splice(index, 1);
+    outcomes.push("ci_passed", "ci_failed", "ci_exhausted", "ci_timeout");
+  }
 
   const recipeOptions = templateOptions(recipeTemplates.data);
   const nodeOptions = templateOptions(nodeTemplates.data).filter(({ value }) => !palette.some((item) => object(item.value).name === value));
-  return <Page title={creation ? "New Recipe" : string(draft?.name) || "Recipe editor"} actions={file.saveButton(importing)}>
-    {projectId && <Link to={`/projects/${encodeURIComponent(projectId)}?tab=recipes`}>Back to recipes</Link>}
+  return <Page title={creation ? "New Recipe" : string(draft?.name) || "Recipe editor"} actions={<>
+    {!creation && scope === "templates" && <DsButton loading={duplicate.busy} disabled={!editable || !file.ready || !draft || file.dirty}
+      onClick={() => void duplicate.run()}>Duplicate</DsButton>}
+    {file.saveButton(importing)}
+  </>}>
+    {projectId && <Link to={`/projects/${encodeURIComponent(projectId)}?tab=recipes`} state={restorePageScroll}>Back to recipes</Link>}
+    {scope === "templates" && <Link to="/templates?tab=recipes" state={restorePageScroll}>Back to templates</Link>}
     {file.feedback}
-    {creation && <Panel><div className={s.importRow}>
+    <ErrorText error={duplicate.error} />
+    {project && <Panel><div className={s.importRow}>
       <Select label="Recipe template" value={recipeTemplate} onValueChange={setRecipeTemplate} options={recipeOptions} disabled={!editable || !recipeOptions.length} placeholder="Choose a template" />
       <DsButton loading={importRecipe.busy} disabled={!editable || !recipeTemplate} onClick={() => void importRecipe.run()}>Import template</DsButton>
     </div><ErrorText error={recipeTemplates.error ?? importRecipe.error} /></Panel>}
@@ -153,14 +187,14 @@ function RecipeFile({ path, project }: { path: string; project?: string }) {
               </select>
               <Button disabled={!editable || !template || !palette.some((item) => object(item.value).name === template)} onClick={add}>Add node</Button>
             </div>
-            {creation && <>
+            {project && <>
               <div className={s.importRow}>
                 <Select label="Node template" value={templateNode} onValueChange={setTemplateNode} options={nodeOptions} disabled={!editable || !nodeOptions.length} placeholder="Choose a node" />
                 <DsButton loading={importNode.busy} disabled={!editable || !templateNode} onClick={() => void importNode.run()}>Import node</DsButton>
               </div>
               <ErrorText error={nodeTemplates.error ?? importNode.error} />
             </>}
-            {!creation && !definitions.loading && !palette.length && <Empty>No valid node definitions in this scope.</Empty>}
+            {!project && !definitions.loading && !palette.length && <Empty>No valid node definitions in this scope.</Empty>}
             <div className={s.graph} inert={!editable}>
               <ReactFlow nodes={graphNodes} edges={graphEdges} snapToGrid snapGrid={grid} fitView onInit={setFlow} deleteKeyCode={null}
                 onNodesChange={move} onConnect={connect} nodesDraggable={editable} nodesConnectable={editable}
@@ -177,6 +211,9 @@ function RecipeFile({ path, project }: { path: string; project?: string }) {
                 {palette.map((item) => <option key={item.path}>{string(object(item.value).name)}</option>)}
               </select></Field>
               {definition && <><span>{string(nodeValue.kind)}{Array.isArray(nodeValue.outcomes) && " · " + nodeValue.outcomes.join(", ")}</span>{file.editable && <Link to={definitionUrl("node", definition.path)}>Edit node</Link>}</>}
+              {nodeValue.kind === "human-decision" && questionParameter.type === "string" && <TextField label="Question"
+                value={string(object(selectedNode.params).question)} placeholder={string(questionParameter.default)}
+                onValueChange={(question) => updateNode("params", { ...object(selectedNode.params), question: question.trim() ? question : undefined })} />}
               <Field label="Requires (comma separated)"><input value={Array.isArray(selectedNode.requires) ? selectedNode.requires.join(",") : ""} onChange={(event) => updateNode("requires", event.target.value ? event.target.value.split(",") : [])} /></Field>
               <label><input type="checkbox" checked={selectedNode.optional === true} onChange={(event) => updateNode("optional", event.target.checked)} /> Optional</label>
               <label><input type="checkbox" checked={selectedNode.skipWhenUnchanged === true} onChange={(event) => updateNode("skipWhenUnchanged", event.target.checked)} /> Skip when unchanged</label>
@@ -189,12 +226,26 @@ function RecipeFile({ path, project }: { path: string; project?: string }) {
               })}
             </> : <>
               <strong>Recipe settings</strong>
-              {creation && <>
-                <TextField label="Name" required value={string(draft.name)} onValueChange={(name) => update({ name })} description="Lowercase letters, digits and hyphens. Start with a letter." />
-                <TextField label="Description" required value={string(draft.description)} onValueChange={(description) => update({ description })} />
-              </>}
+              {creation && <TextField label="Name" required value={string(draft.name)} onValueChange={(name) => update({ name })} description="Lowercase letters, digits and hyphens. Start with a letter." />}
+              <TextField label="Description" required value={string(draft.description)} onValueChange={(description) => update({ description })} />
+              <DefinitionIconField icons={icons.data} type="recipe" name={string(draft.name)} value={string(draft.icon)} disabled={!editable}
+                onChange={(icon) => update({ icon })} />
               {nodeSelect("start", "Start")}
               {nodeSelect("onBaseChanged", "On base changed")}
+              <Field label="Wait for GitHub CI after"><select value={string(ci.after)} onChange={(event) => {
+                const after: string = event.target.value;
+                update({ ci: after ? { on: "opened", checks: [], intervalSec: 30, timeoutSec: 1800, maxCorrections: 2, ...ci, after } : undefined });
+              }}><option value="">None</option>{entries.map(([id]) => <option key={id}>{id}</option>)}</select></Field>
+              {typeof ci.after === "string" && <>
+                <TextField label="Trigger outcome" value={string(ci.on)} onValueChange={(on) => update({ ci: { ...ci, on } })} />
+                <TextField label="CI checks (comma separated)" value={Array.isArray(ci.checks) ? ci.checks.join(",") : ""}
+                  onValueChange={(value) => update({ ci: { ...ci, checks: value.split(",") } })} />
+                {(["intervalSec", "timeoutSec", "maxCorrections"] as const).map((key) => <Field key={key}
+                  label={{ intervalSec: "Poll every (seconds)", timeoutSec: "Timeout (seconds)", maxCorrections: "Maximum corrections" }[key]}>
+                  <input type="number" min={key === "maxCorrections" ? 0 : 1} value={typeof ci[key] === "number" ? ci[key] : ""}
+                    onChange={(event) => update({ ci: { ...ci, [key]: event.target.value ? Number(event.target.value) : undefined } })} />
+                </Field>)}
+              </>}
               <Field label="Max node runs"><input type="number" min={1} value={typeof draft.maxNodeRuns === "number" ? draft.maxNodeRuns : ""} placeholder="100" onChange={(event) => update({ maxNodeRuns: event.target.value ? Number(event.target.value) : undefined })} /></Field>
               <Field label="Success outcomes (comma separated)"><input value={Array.isArray(draft.successOutcomes) ? draft.successOutcomes.join(",") : ""} onChange={(event) => update({ successOutcomes: event.target.value ? event.target.value.split(",") : [] })} /></Field>
             </>}
@@ -232,7 +283,7 @@ function templateOptions(entries: DefinitionEntry[] | undefined): { value: strin
   });
 }
 
-export function RecipeEditor() {
+export function RecipeEditor({ newTemplate = false }: { newTemplate?: boolean }) {
   const { id, "*": path = "" } = useParams();
-  return <RecipeFile key={id ?? path} path={path} project={id} />;
+  return <RecipeFile key={newTemplate ? "new-template" : id ?? path} path={path} project={id} newTemplate={newTemplate} />;
 }

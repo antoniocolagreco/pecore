@@ -1,10 +1,11 @@
-import { cp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { monotonicFactory } from "ulid";
 import { describe, expect, it } from "vitest";
 import { createProjectWithRecipes } from "../../test/project";
 import { shippedTemplates, tempDir } from "../../test/tmp";
 import { Engine } from "../main";
+import { jobDefinitions } from "./snapshot";
 
 const marker = (root: string) => join(root, "ran");
 
@@ -80,11 +81,106 @@ describe("engine nodes", () => {
     try {
       const first: string = await engine.createJob("demo", { title: "First", ticket: { text: "x" } });
       await until(() => p.executor.job(first).state === "succeeded");
-      await writeFile(join(p.ctx.dir, "nodes", "notify.sh"), `echo second >> ${marker(root)}\n`);
+      await writeFile(join(p.ctx.defs.nodeDir, "notify.sh"), `echo second >> ${marker(root)}\n`);
       const second: string = await engine.createJob("demo", { title: "Second", ticket: { text: "x" } });
       await until(() => p.executor.job(second).state === "succeeded");
       expect((await readFile(marker(root), "utf8")).trim()).toBe("first\nsecond");
       expect(p.ctx.db.db.prepare("SELECT id FROM human_queue").all()).toEqual([]);
+    } finally {
+      await engine.shutdown();
+    }
+  });
+
+  it("runs a queued job with its original definitions after a restart", async () => {
+    const { root, home, lib, engine, p } = await setup();
+    let first: string;
+    try {
+      await engine.pauseAll();
+      first = await engine.createJob("demo", { title: "First", ticket: { text: "x" } });
+      expect(p.executor.job(first).state).toBe("queued");
+      await writeFile(join(p.ctx.defs.nodeDir, "notify.sh"), `echo second >> ${marker(root)}\n`);
+    } finally {
+      await engine.shutdown();
+    }
+    const reopened: Engine = await Engine.start({ home, templates: lib });
+    try {
+      const project = reopened.project("demo");
+      await until(() => project.executor.job(first).state === "succeeded");
+      const second: string = await reopened.createJob("demo", { title: "Second", ticket: { text: "x" } });
+      await until(() => project.executor.job(second).state === "succeeded");
+      expect((await readFile(marker(root), "utf8")).trim()).toBe("first\nsecond");
+      const firstSnapshot = jobDefinitions(project.ctx.db, first);
+      const secondSnapshot = jobDefinitions(project.ctx.db, second);
+      expect(firstSnapshot?.recipeHash).toBe(secondSnapshot?.recipeHash);
+      expect(firstSnapshot?.nodes.notify?.hash).toMatch(/^[0-9a-f]{64}$/);
+      expect(firstSnapshot?.nodes.notify?.hash).not.toBe(secondSnapshot?.nodes.notify?.hash);
+    } finally {
+      await reopened.shutdown();
+    }
+  });
+
+  it("moves a legacy project with a custom script into Templates without overwriting the shared node", async () => {
+    const { root, home, lib, engine, p } = await setup();
+    const dir: string = p.ctx.dir;
+    try {
+      const legacy = { ...p.ctx.project };
+      delete legacy.recipes;
+      await mkdir(join(dir, "nodes"));
+      await mkdir(join(dir, "recipes"));
+      await cp(join(p.ctx.defs.nodeDir, "notify.json"), join(dir, "nodes", "notify.json"));
+      await cp(join(p.ctx.templates, "recipes", "notify.json"), join(dir, "recipes", "notify.json"));
+      await writeFile(join(dir, "nodes", "notify.sh"), `echo migrated >> ${marker(root)}\n`);
+      await writeFile(join(dir, "project.json"), JSON.stringify(legacy));
+    } finally {
+      await engine.shutdown();
+    }
+    const reopened: Engine = await Engine.start({ home, templates: lib });
+    try {
+      const project = reopened.project("demo");
+      expect(project.ctx.project.recipes).toEqual(["notify-demo"]);
+      expect(project.ctx.defs.recipes.get("notify-demo")?.nodes.n?.use).toBe("notify-demo");
+      await expect(stat(join(dir, "nodes"))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(stat(join(dir, "recipes"))).rejects.toMatchObject({ code: "ENOENT" });
+      const job: string = await reopened.createJob("demo", { title: "Legacy", ticket: { text: "x" } });
+      await until(() => project.executor.job(job).state === "succeeded");
+      expect((await readFile(marker(root), "utf8")).trim()).toBe("migrated");
+      expect(await readFile(join(project.ctx.defs.nodeDir, "notify.sh"), "utf8")).toContain("echo first");
+    } finally {
+      await reopened.shutdown();
+    }
+  });
+
+  it("follows a Decision's selected branch without treating it as a Review", async () => {
+    const { root, engine, p } = await setup();
+    try {
+      await writeFile(join(p.ctx.defs.nodeDir, "pick.json"), JSON.stringify({
+        name: "pick", description: "Choose a branch", kind: "human-decision",
+        outcomes: ["approve", "b", "c"],
+      }));
+      await writeFile(join(p.ctx.templates, "recipes", "pick.json"), JSON.stringify({
+        name: "pick", description: "Route a decision", start: "pick",
+        nodes: { pick: { use: "pick", params: { question: "Which branch should run?" } }, gated: { use: "notify", requires: ["pick"] }, free: { use: "notify" } },
+        edges: [{ from: "pick", on: "approve", to: "gated" }, { from: "pick", on: "b", to: "free" }],
+        successOutcomes: ["pick:c", "gated:done", "free:done"],
+      }));
+      const project = { ...p.ctx.project, recipes: ["notify", "pick"] };
+      await writeFile(join(p.ctx.dir, "project.json"), JSON.stringify(project));
+      expect(await engine.reloadProject("demo")).toEqual([]);
+      const decide = async (choice: string): Promise<string> => {
+        const id: string = await engine.createJob("demo", { title: choice, recipe: "pick", ticket: { text: "x" } });
+        const item = await until(() => p.ctx.db.db.prepare("SELECT id, subject_hash, subject FROM human_queue WHERE job_id = ? AND state = 'open'").get(id) as { id: string; subject_hash: string; subject: string } | undefined);
+        expect(JSON.parse(item.subject)).toMatchObject({ mode: "decision", description: "Which branch should run?" });
+        await p.executor.answer(item.id, choice, null, item.subject_hash);
+        return id;
+      };
+      const gated: string = await decide("approve");
+      await until(() => p.executor.job(gated).state === "failed");
+      expect(p.executor.job(gated).failure_reason).toBe("gated:stale");
+      const free: string = await decide("b");
+      await until(() => p.executor.job(free).state === "succeeded");
+      const direct: string = await decide("c");
+      await until(() => p.executor.job(direct).state === "succeeded");
+      expect((await readFile(marker(root), "utf8")).trim()).toBe("first");
     } finally {
       await engine.shutdown();
     }

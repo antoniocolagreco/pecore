@@ -1,6 +1,28 @@
-import type { ArtifactType, Node, Recipe } from "@pecore/schemas";
+import { Ajv } from "ajv";
+import { ArtifactType, isHumanNode } from "@pecore/schemas";
+import type { Node, Recipe } from "@pecore/schemas";
+import { paramsWithDefaults } from "../runners/placeholders";
 
 export type RecipeIssue = { path: string; message: string };
+
+const paramsValidator: Ajv = new Ajv({ allErrors: true, strict: false });
+
+export function recipeParameterIssues(recipe: Recipe, nodes: Map<string, Node>): RecipeIssue[] {
+  return Object.entries(recipe.nodes).flatMap(([id, step]): RecipeIssue[] => {
+    const node: Node | undefined = nodes.get(step.use);
+    if (!node) return [];
+    const path: string = `nodes.${id}.params`;
+    try {
+      const validate = paramsValidator.compile(node.params);
+      return validate(paramsWithDefaults(node.params, step.params)) ? [] : (validate.errors ?? []).map((error) => ({
+        path,
+        message: `${error.instancePath ? error.instancePath + " " : ""}${error.message ?? "invalid parameter"}`,
+      }));
+    } catch (error) {
+      return [{ path, message: (error as Error).message }];
+    }
+  });
+}
 
 export function nodeOutcomes(recipe: Recipe, id: string, node: Node): string[] {
   if (node.kind === "source") return [];
@@ -8,21 +30,22 @@ export function nodeOutcomes(recipe: Recipe, id: string, node: Node): string[] {
   const out = [...node.outcomes];
   if (r && r.requires.length > 0) out.push("stale");
   if (r?.optional) out.push("skipped");
+  if (recipe.ci?.after === id) out.push("ci_passed", "ci_failed", "ci_exhausted", "ci_timeout");
   return out;
 }
 
 function produced(node: Node): ArtifactType[] {
   if (node.kind === "source") return [];
   const out = [...node.outputs];
-  if (node.changesFiles) out.push("diff");
-  if (node.kind === "human" && node.answer) out.push("user-note");
+  if (!isHumanNode(node) && node.changesFiles) out.push("diff");
+  if (isHumanNode(node) && node.answer) out.push("user-note");
   if (node.kind === "command") out.push("check-log");
   return out;
 }
 
 export function availableInputs(recipe: Recipe, byId: Map<string, Node>): Map<string, Set<ArtifactType>> {
   const ids = Object.keys(recipe.nodes);
-  const all = new Set<ArtifactType>(["ticket", "spec", "findings", "risk", "check-log", "diff", "user-note", "commit", "delivery"]);
+  const all = new Set<ArtifactType>(ArtifactType.options);
   const preds = new Map<string, string[]>(ids.map((id) => [id, []]));
   for (const e of recipe.edges) preds.get(e.to)?.push(e.from);
   const startNode = recipe.start !== undefined ? byId.get(recipe.start) : undefined;
@@ -99,6 +122,13 @@ export function checkRecipe(recipe: Recipe, nodes: Map<string, Node>, remote: bo
   }
   if (resolved.size !== Object.keys(recipe.nodes).length) return issues;
   const edgeKeys = new Set(recipe.edges.map((e) => `${e.from}:${e.on}`));
+  if (recipe.ci) {
+    const producer: Node | undefined = resolved.get(recipe.ci.after);
+    if (!remote || producer?.kind !== "command" || !producer.outputs.includes("delivery") || !producer.outcomes.includes(recipe.ci.on)) {
+      issues.push({ path: "ci", message: "CI needs a remote delivery command and one of its outcomes" });
+    }
+    if (edgeKeys.has(`${recipe.ci.after}:${recipe.ci.on}`)) issues.push({ path: "ci.on", message: "use edges for the CI outcomes" });
+  }
   for (const [i, e] of recipe.edges.entries()) {
     const outcomes = nodeOutcomes(recipe, e.from, resolved.get(e.from)!);
     if (!outcomes.includes(e.on)) issues.push({ path: `edges.${i}.on`, message: `${e.on} is not an outcome of ${e.from}` });
@@ -108,6 +138,9 @@ export function checkRecipe(recipe: Recipe, nodes: Map<string, Node>, remote: bo
     const node = resolved.get(id);
     if (!node || node.kind === "source") continue;
     if (!nodeOutcomes(recipe, id, node).includes(outcome)) issues.push({ path: `successOutcomes.${i}`, message: `${outcome} is not an outcome of ${id}` });
+    if (recipe.ci?.after === id && [recipe.ci.on, "ci_failed", "ci_timeout", "ci_exhausted"].includes(outcome)) {
+      issues.push({ path: `successOutcomes.${i}`, message: "use ci_passed for a successful CI result" });
+    }
     if (node.failOutcomes.includes(outcome)) issues.push({ path: `successOutcomes.${i}`, message: `${outcome} is a fail outcome of ${id}` });
   }
   for (const [id, r] of Object.entries(recipe.nodes)) {

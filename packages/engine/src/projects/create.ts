@@ -7,7 +7,6 @@ import { promisify } from "node:util";
 import { Project } from "@pecore/schemas";
 import type { Accounts, ForgeAccount, ProjectInput } from "@pecore/schemas";
 import { protectedUser } from "../accounts/agents";
-import { instantiateNode } from "../definitions/instantiate";
 import { commitDefinition, commitMessage } from "../home/git-commit";
 import { homePaths, projectPaths } from "../home/layout";
 import { checkHome } from "../osuser/home-check";
@@ -117,15 +116,10 @@ async function setupFolder(repo: string, project: Project): Promise<void> {
   }
 }
 
-function check<T>(step: number, r: { errors: { file: string; path: string; message: string }[] } & T): T {
-  if (r.errors.length) throw new ProjectCreateError(step, r.errors.map((e) => `${e.file} ${e.path}: ${e.message}`).join("; "));
-  return r;
-}
-
 export async function beginProject(home: string, input: ProjectInput, opts: CreateOptions): Promise<Project> {
   const parsed = Project.safeParse({ $schema: "../../schemas/project.json", ...input });
   if (!parsed.success) throw new ProjectCreateError(1, parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
-  const project: Project = { ...parsed.data, folder: await checkFolder(parsed.data.folder, parsed.data) };
+  const project: Project = { ...parsed.data, recipes: parsed.data.recipes ?? [], folder: await checkFolder(parsed.data.folder, parsed.data) };
   const account = forgeAccountOf(project, opts.accounts);
   const dir = join(homePaths(home).projects, project.id);
   try {
@@ -138,12 +132,11 @@ export async function beginProject(home: string, input: ProjectInput, opts: Crea
   const templates = homePaths(home).templates;
   const p = projectPaths(dir);
   try {
-    for (const d of [p.nodes, p.recipes, p.knowledge, p.work, p.artifacts, p.logs]) await mkdir(d, { recursive: true });
+    for (const d of [p.knowledge, p.work, p.artifacts, p.logs]) await mkdir(d, { recursive: true });
     const forge = account ? await loadForgeDefaults(templates, account.forge) : null;
     if (project.createRepo !== null && forge?.createRepo === null) {
       throw new ProjectCreateError(1, "This forge requires an existing repository.");
     }
-    if (project.createRepo !== null) check(3, await instantiateNode(templates, dir, project.createRepo));
     await writeFile(p.project, JSON.stringify(project, null, 2) + "\n");
     new ProjectDb(p.db).close();
     await writeCreation(dir, 3);

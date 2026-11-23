@@ -43,7 +43,7 @@ describe("ticket intake (section 7, Phase 6 decision 1)", () => {
     const engine = await Engine.start({ home, templates, orders });
     await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["local-only"]);
     const dir = engine.projectDir("demo");
-    await writeFile(join(dir, "nodes", "fake-source.json"), JSON.stringify(fakeSource));
+    await writeFile(join(engine.project("demo").ctx.defs.nodeDir, "fake-source.json"), JSON.stringify(fakeSource));
     const projectFile = join(dir, "project.json");
     const project = JSON.parse(await readFile(projectFile, "utf8")) as Record<string, unknown>;
     await writeFile(projectFile, JSON.stringify({ ...project, source: { node: "fake-source", params: { trusted: ["alice"] } } }));

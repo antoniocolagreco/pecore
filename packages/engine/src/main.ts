@@ -18,13 +18,14 @@ import { LoginRunner } from "./accounts/login";
 import { identityOk } from "./runners/forge-env";
 import { loadGlobal, loadProject } from "./definitions/load";
 import type { DefinitionError, Global } from "./definitions/load";
+import { migrateProjectDefinitions } from "./definitions/catalog";
 import { JobExecutor } from "./graph/executor";
 import type { JobRow, ProjectContext } from "./graph/executor";
 import { logEvents } from "./observability/log-events";
 import { whyJob } from "./observability/why";
 import type { Notification } from "./store/chats-db";
 import { createJob } from "./jobs/create";
-import { startMergeWatch } from "./jobs/merge-watch";
+import { startWatch } from "./jobs/merge-watch";
 import { resumeOrders } from "./jobs/plan";
 import type { CreateJob } from "./jobs/create";
 import type { TicketOrder } from "./jobs/plan";
@@ -78,6 +79,8 @@ export class Engine extends EventEmitter {
   private stoppingAgentChats: Promise<void> | null = null;
   private releaseLock!: () => Promise<void>;
   private stopMergeWatch: () => void = () => undefined;
+  private stopCiWatch: () => void = () => undefined;
+  private wakeCiWatch: () => void = () => undefined;
   private globalFilesPending: Promise<unknown> = Promise.resolve();
   private shuttingDown: boolean = false;
   private readonly openCodeReady = new Map<string, boolean>();
@@ -145,12 +148,20 @@ export class Engine extends EventEmitter {
       await new ServicesRuntimeController(this.settings.servicesRuntime).sweep((jobId) => !live(jobId)).catch((e: unknown) => console.error("services sweep:", e));
     }
     this.kick();
-    this.stopMergeWatch = startMergeWatch(
-      () => this.settings.mergeCheckSec,
+    this.stopMergeWatch = startWatch(
+      () => this.settings.mergeCheckSec * 1000,
       async () => {
         for (const { executor } of this.projects.values()) await executor.checkMerges();
       },
-    );
+    ).stop;
+    const ciWatch = startWatch(() => {
+      const next: number[] = [...this.projects.values()].flatMap(({ executor }) => executor.nextCiCheck() ?? []);
+      return next.length ? Math.min(...next) - Date.now() : null;
+    }, async () => {
+      for (const { executor } of this.projects.values()) await executor.checkCi();
+    });
+    this.stopCiWatch = ciWatch.stop;
+    this.wakeCiWatch = ciWatch.wake;
     if (this.agents && this.opts.checkLogins !== false) {
       this.startupReads = this.checkAllLogins().then(() => this.emit("logins")).catch((error: unknown) => console.error("login check:", error))
         .then(async () => {
@@ -254,7 +265,7 @@ export class Engine extends EventEmitter {
   async reloadProject(id: string): Promise<DefinitionError[]> {
     const p = this.projects.get(id);
     if (!p) return [];
-    const loaded = await loadProject(p.ctx.dir);
+    const loaded = await loadProject(p.ctx.dir, p.ctx.templates);
     if (loaded.project) {
       p.ctx.project = loaded.project;
       p.ctx.defs = loaded;
@@ -433,19 +444,29 @@ export class Engine extends EventEmitter {
 
   private async openProject(id: string): Promise<void> {
     const dir = this.projectDir(id);
-    const loaded = await loadProject(dir);
+    const templates: string = homePaths(this.opts.home).templates;
+    let loaded = await loadProject(dir, templates);
     if (!loaded.project) {
       this.projectErrors.set(id, loaded.errors);
       return;
     }
-    if (loaded.errors.length) this.projectErrors.set(id, loaded.errors);
     const db: ProjectDb = new ProjectDb(join(dir, "pecore.db"));
+    if (loaded.project.recipes === undefined && !loaded.errors.length) {
+      try {
+        await migrateProjectDefinitions(this.opts.home, dir, templates, loaded, db);
+      } catch (error) {
+        loaded.errors.push({ file: join(dir, "project.json"), path: "recipes", message: (error as Error).message });
+      }
+      if (!loaded.errors.length) loaded = await loadProject(dir, templates);
+    }
+    if (loaded.errors.length) this.projectErrors.set(id, loaded.errors);
     const ctx: ProjectContext = {
       id,
       dir,
-      templates: homePaths(this.opts.home).templates,
+      templates,
+      ciScheduled: () => this.wakeCiWatch(),
       db,
-      project: loaded.project,
+      project: loaded.project!,
       defs: loaded,
       user: this.settings.protectedMode ? protectedUser : appUser,
       settings: this.settings,
@@ -641,11 +662,11 @@ export class Engine extends EventEmitter {
     return previewImport(this.opts.home, path, this.importOptions(), (dir, manifest) => reviewProjectContents(this, dir, manifest));
   }
 
-  async completeProjectImport({ digest, ...input }: CompleteProjectImportBody): Promise<{ id: string }> {
+  async completeProjectImport({ digest, ...input }: CompleteProjectImportBody): Promise<{ id: string; differences?: string[] }> {
     const result: ImportProjectResult = await beginImport(this.opts.home, input, this.importOptions(), digest);
     if (result.state !== "imported") throw new InvalidArchive("Choose a local forge account for each account the project needs.");
     await this.continueCreation(result.id);
-    return { id: result.id };
+    return { id: result.id, ...(result.differences ? { differences: result.differences } : {}) };
   }
 
   private importOptions() {
@@ -791,6 +812,7 @@ export class Engine extends EventEmitter {
   async shutdown(): Promise<void> {
     this.shuttingDown = true;
     this.stopMergeWatch();
+    this.stopCiWatch();
     const chats: Promise<void> = this.stopAgentChats();
     await Promise.all([...this.projects.values()].map(({ sourcePolling }) => sourcePolling?.close()));
     await chats;

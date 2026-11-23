@@ -54,7 +54,16 @@ function remapHistory(db: ProjectDb["db"], dir: string): void {
   const tables = db.prepare<[], string>("SELECT name FROM sqlite_schema WHERE type = 'table'").pluck().all();
   for (const table of tables) {
     const columns = db.prepare<[string], string>("SELECT name FROM pragma_table_info(?) WHERE type = 'TEXT'").pluck().all(table);
-    if (columns.length > 0) db.exec(`UPDATE "${table}" SET ${columns.map((name) => `"${name}" = import_text("${name}")`).join(", ")}`);
+    if (columns.length > 0) db.exec(`UPDATE "${table}" SET ${columns.map((name) => {
+      if (table === "jobs" && name === "recipe") return 'recipe = recipe';
+      if (table === "events" && name === "payload") return `payload = CASE
+        WHEN type = 'job.definitions_saved' THEN payload
+        WHEN type = 'job.created' AND json_type(payload, '$.definitions') IS NOT NULL
+          THEN json_set(import_text(payload), '$.recipe', payload -> '$.recipe', '$.definitions', payload -> '$.definitions')
+        WHEN type = 'job.created' THEN json_set(import_text(payload), '$.recipe', payload -> '$.recipe')
+        ELSE import_text(payload) END`;
+      return `"${name}" = import_text("${name}")`;
+    }).join(", ")}`);
   }
   db.function("import_subject_hash", (json: string) => subjectHash(JSON.parse(json) as unknown));
   db.exec(`
@@ -89,6 +98,7 @@ export function resetHistory(project: ProjectDb, dir: string): void {
     EventBody.parse(event);
     if (event.type === "job.created") for (const artifact of [...(event.payload.attachments ?? []), ...(event.payload.ticket ? [event.payload.ticket] : [])]) checkPath(artifact.path, "artifacts");
     if (event.type === "node_run.completed") for (const artifact of event.payload.artifacts) checkPath(artifact.path, "artifacts");
+    if (event.type === "job.ci_check" && event.payload.log) checkPath(event.payload.log.path, "artifacts");
     if (event.type === "attempt.started") checkPath(event.payload.logPath, "logs");
     if (event.type === "job.base_change_requested" && !validBase(event.payload.base)) throw new InvalidArchive("pecore.db contains an invalid requested job base");
   }

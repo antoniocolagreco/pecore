@@ -23,7 +23,8 @@ describe("project creation with a remote (section Project creation, decision 13)
     expect((await gitApp(repo, ["config", "remote.origin.url"])).trim()).toBe("https://github.com/acme/shop.git");
     expect((await gitApp(repo, ["config", "core.sharedRepository"])).trim()).toBe("group");
     expect(await exists(join(p.ctx.dir, "creating.json"))).toBe(false);
-    expect(await exists(join(p.ctx.dir, "nodes", "github-pr.json"))).toBe(true);
+    expect(await exists(join(p.ctx.defs.nodeDir, "github-pr.json"))).toBe(true);
+    expect(await exists(join(p.ctx.dir, "nodes"))).toBe(false);
     await engine.shutdown();
   });
 

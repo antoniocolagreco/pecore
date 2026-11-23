@@ -7,6 +7,7 @@ export * from "./connector";
 export * from "./errors";
 export * from "./events";
 export * from "./host";
+export * from "./job-definitions";
 export * from "./json-schema";
 export * from "./node";
 export * from "./profiles";

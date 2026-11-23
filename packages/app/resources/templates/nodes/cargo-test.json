@@ -1,6 +1,7 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "cargo-test",
+  "tags": ["test", "command"],
   "description": "Run the Rust tests with cargo test in a clean checkout",
   "kind": "command",
   "command": ["cargo", "test"],

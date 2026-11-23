@@ -14,11 +14,13 @@ type ReviewedSource = { path: string; preview: ImportProjectPreview };
 export function ProjectImportDialog({ onClose, onImported }: { onClose(): void; onImported(id: string): void }) {
   const connected: boolean = useConnected();
   const [source, setSource] = useState<ReviewedSource | null>(null);
+  const [imported, setImported] = useState<{ id: string; differences: string[] } | null>(null);
   const fields = useImportSelection(source?.preview ?? null);
   const complete = useAction(async () => {
     if (!source || !fields.valid) return;
-    const { id } = await call("completeProjectImport", { body: { path: source.path, digest: source.preview.digest, ...fields.value } });
-    onImported(id);
+    const { id, differences } = await call("completeProjectImport", { body: { path: source.path, digest: source.preview.digest, ...fields.value } });
+    if (differences?.length) setImported({ id, differences });
+    else onImported(id);
   });
   const review = useAction(async (choice: "archive" | "folder" | "again") => {
     const path: string | null = choice === "again" ? source?.path ?? null : await window.pecore.pickProjectExport(choice);
@@ -31,6 +33,13 @@ export function ProjectImportDialog({ onClose, onImported }: { onClose(): void; 
   });
   const busy: boolean = review.busy || complete.busy;
   const disabled: boolean = !connected || busy;
+  if (imported) return (
+    <Dialog open onOpenChange={(open) => { if (!open) onImported(imported.id); }} title="Project imported" width={600}
+      footer={<Button variant="primary" onClick={() => onImported(imported.id)}>Open project</Button>}>
+      <p>These templates differ from the archive. The project uses the versions already in Templates.</p>
+      <ul>{imported.differences.map((path) => <li key={path}>{path}</li>)}</ul>
+    </Dialog>
+  );
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }} title="Import project" width={600}
       description="Choose a &lt;PE/CORE&gt; export file or the folder where you extracted it."

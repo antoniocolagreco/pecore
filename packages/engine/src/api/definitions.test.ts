@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { LiveMessage } from "@pecore/schemas";
+import type { DefinitionEntry, LiveMessage } from "@pecore/schemas";
 import { git } from "../home/git-commit";
 import { apiProject } from "../../test/api-project";
 import { definitionOperations } from "./routes/definitions";
@@ -13,9 +13,9 @@ describe("definition routes", () => {
     const live: LiveMessage[] = [];
     engine.on("live", (m: LiveMessage) => live.push(m));
     const nodes = await call("listDefinitions", { query: { dir: "templates/nodes" } });
-    expect(nodes.find((n) => n.path === "templates/nodes/human-review.json")).toMatchObject({ value: { kind: "human" }, errors: [] });
+    expect(nodes.find((n) => n.path === "templates/nodes/human-review.json")).toMatchObject({ value: { kind: "human-review" }, errors: [] });
     expect(nodes.some((n) => n.path === "templates/nodes/git-commit.sh")).toBe(true);
-    expect((await call("listDefinitions", { query: { dir: "projects/demo/recipes" } })).map((r) => r.path)).toEqual(["projects/demo/recipes/reviewed.json"]);
+    expect((await call("listDefinitions", { query: { dir: "projects/demo/recipes" } })).map((r) => r.path)).toEqual(["templates/recipes/reviewed.json"]);
 
     const file = await call("getDefinition", { params: { path: "projects/demo/project.json" } });
     const edited = JSON.stringify({ ...(JSON.parse(file.content) as object), name: "Demo renamed" }, null, 2);
@@ -30,7 +30,7 @@ describe("definition routes", () => {
 
   it("validates names and paths", async () => {
     const { call, close } = await apiProject();
-    const node = JSON.stringify({ name: "other", description: "x", kind: "human", outcomes: ["ok"], changesFiles: false, timeoutSec: 10 });
+    const node = JSON.stringify({ name: "other", description: "x", kind: "human-decision", outcomes: ["ok"] });
     expect((await call("validateDefinition", { body: { path: "templates/nodes/mine.json", content: node } })).errors).toContainEqual(expect.objectContaining({ path: "name" }));
     await expect(call("getDefinition", { params: { path: "templates/../settings.json" } })).rejects.toMatchObject({ status: 400 });
     await expect(call("getDefinition", { params: { path: "templates/other/x.json" } })).rejects.toMatchObject({ status: 400 });
@@ -39,14 +39,54 @@ describe("definition routes", () => {
     await close();
   });
 
-  it("instantiates an engine node and its script without creating a queue item", async () => {
+  it("stores tags on the node template and returns them in the catalogue", async () => {
+    const { home, call, close } = await apiProject();
+    try {
+      const path: string = "templates/nodes/tagged.json";
+      const content: string = JSON.stringify({
+        name: "tagged", description: "Tagged node", kind: "human-decision", outcomes: ["yes"],
+        tags: ["github", "pull request"],
+      });
+      await call("saveDefinition", { params: { path }, body: { content, baseSha256: null } });
+      expect(JSON.parse(await readFile(join(home, path), "utf8"))).toMatchObject({ tags: ["github", "pull request"] });
+      const nodes: DefinitionEntry[] = await call("listDefinitions", { query: { dir: "templates/nodes" } });
+      expect(nodes.find((entry) => entry.path === path)).toMatchObject({ value: { tags: ["github", "pull request"] } });
+    } finally {
+      await close();
+    }
+  });
+
+  it("lists bundled SVGs and saves reusable icons through the template definition store", async () => {
+    const { call, close } = await apiProject();
+    try {
+      const bundled: DefinitionEntry[] = await call("listDefinitions", { query: { dir: "templates/icons" } });
+      expect(bundled.map(({ path }) => path)).toContain("templates/icons/node-spec-writer.svg");
+      expect(bundled.flatMap(({ errors }) => errors)).toEqual([]);
+      const path: string = "templates/icons/compass.svg";
+      const content: string = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m4 4 16 8-16 8 4-8z"/></svg>';
+      await call("saveDefinition", { params: { path }, body: { content, baseSha256: null } });
+      expect((await call("getDefinition", { params: { path } })).content).toBe(content);
+      expect((await call("listDefinitions", { query: { dir: "templates/icons" } })).find((entry) => entry.path === path)?.value).toBe(content);
+      const invalid: string = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><script/></svg>';
+      await expect(call("saveDefinition", { params: { path: "templates/icons/invalid.svg" }, body: { content: invalid, baseSha256: null } }))
+        .rejects.toMatchObject({ status: 400 });
+      const node: string = JSON.stringify({ name: "mine", description: "Decide", icon: "compass", kind: "human-decision", outcomes: ["ok"] });
+      await call("saveDefinition", { params: { path: "templates/nodes/mine.json" }, body: { content: node, baseSha256: null } });
+      expect(JSON.parse((await call("getDefinition", { params: { path: "templates/nodes/mine.json" } })).content)).toMatchObject({ icon: "compass" });
+    } finally {
+      await close();
+    }
+  });
+
+  it("assigns a shared recipe without copying its files or creating a queue item", async () => {
     const { engine, call, close } = await apiProject();
-    const r = await call("instantiate", { body: { kind: "node", name: "github-pr", project: "demo" } });
-    expect(r.created).toEqual(expect.arrayContaining(["projects/demo/nodes/github-pr.json", "projects/demo/nodes/github-pr.sh"]));
+    const r = await call("instantiate", { body: { kind: "recipe", name: "local-only", project: "demo" } });
+    expect(r.created).toEqual(["templates/recipes/local-only.json"]);
     expect(await call("listQueue", { query: { state: "open" } })).toEqual([]);
-    expect(engine.project("demo").ctx.defs.nodes.has("github-pr")).toBe(true);
-    const again = await call("instantiate", { body: { kind: "node", name: "github-pr", project: "demo" } });
-    expect(again).toMatchObject({ created: [], kept: ["projects/demo/nodes/github-pr.json"] });
+    expect(engine.project("demo").ctx.project.recipes).toEqual(["reviewed", "local-only"]);
+    expect(existsSync(join(engine.projectDir("demo"), "nodes"))).toBe(false);
+    const again = await call("instantiate", { body: { kind: "recipe", name: "local-only", project: "demo" } });
+    expect(again).toMatchObject({ created: [], kept: ["templates/recipes/local-only.json"] });
     await close();
   });
 
@@ -59,13 +99,12 @@ describe("definition routes", () => {
     const result = await definitionOperations(engine).instantiate({ kind: "recipe", name: "feature", project: "demo" });
     expect(result.errors.map(({ message }) => message)).toContain(refusal);
     expect(await call("listQueue", { query: { state: "open" } })).toEqual([]);
-    await call("instantiate", { body: { kind: "node", name: "git-push", project: "demo" } });
     const content = JSON.stringify({ name: "push", description: "commit and push", start: "commit", successOutcomes: ["push:pushed"],
       nodes: { commit: { use: "git-commit" }, push: { use: "git-push" } }, edges: [{ from: "commit", on: "done", to: "push" }] });
-    expect((await call("validateDefinition", { body: { path: "projects/demo/recipes/push.json", content } })).errors.map(({ message }) => message)).toEqual([refusal]);
-    await expect(call("saveDefinition", { params: { path: "projects/demo/recipes/push.json" }, body: { content, baseSha256: null } })).rejects.toThrow(refusal);
+    await call("saveDefinition", { params: { path: "templates/recipes/push.json" }, body: { content, baseSha256: null } });
+    await expect(call("instantiate", { body: { kind: "recipe", name: "push", project: "demo" } })).rejects.toThrow(refusal);
     expect(existsSync(join(engine.projectDir("demo"), "recipes", "push.json"))).toBe(false);
-    expect((await call("instantiate", { body: { kind: "recipe", name: "local-only", project: "demo" } })).created).toContain("projects/demo/recipes/local-only.json");
+    expect((await call("instantiate", { body: { kind: "recipe", name: "local-only", project: "demo" } })).created).toContain("templates/recipes/local-only.json");
     await close();
   });
 });

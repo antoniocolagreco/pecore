@@ -14,9 +14,10 @@ export function toolAccounts(
   credentials: string[],
   projectAccount: string | undefined,
   forgeAccount: (id: string) => ForgeAccount | undefined,
+  aliases?: Readonly<Record<string, string>>,
 ): ForgeAccount[] {
   return credentials.map((name) => {
-    const id: string | undefined = name === "project.account" ? projectAccount : name;
+    const id: string | undefined = name === "project.account" ? projectAccount : aliases && Object.hasOwn(aliases, name) ? aliases[name] : name;
     const account: ForgeAccount | undefined = id === undefined ? undefined : forgeAccount(id);
     if (!account) throw new Error(`forge account ${id ?? name} not found`);
     return account;
