@@ -4,8 +4,8 @@ import { createPortal } from "react-dom";
 import type { XYPosition } from "@xyflow/react";
 import { SearchField } from "../ds/field";
 import { Card, Spinner } from "../ds/feedback";
-import { nodeKindLabels, RecipeNodeKindBadge } from "./RecipeNodeKind";
-import type { RecipeNodeKind } from "./RecipeNodeKind";
+import { NodeCard, nodeKindLabels } from "../components/NodeCard";
+import type { RecipeNodeKind } from "../components/NodeCard";
 import s from "./Editors.module.css";
 
 export type PaletteNode = { name: string; title: string; tags: string[]; icon: ReactNode; kind: RecipeNodeKind };
@@ -87,21 +87,9 @@ export function RecipePalette({ nodes, disabled, loading, onAdd, children }: {
       <ul ref={rail} className={s.paletteRail} aria-label="Node palette" onPointerDown={start} onPointerMove={move}
         onPointerUp={(event) => finish(event, true)} onPointerCancel={(event) => finish(event, false)}
         onLostPointerCapture={(event) => finish(event, false)} onDragStart={(event) => event.preventDefault()}>
-        {filtered.map(({ name, title, tags, icon, kind }) => {
-          const tagText: string = tags.join(", ");
-          return <li key={name} data-node-template={name}>
-            <Card className={s.paletteNode}>
-              {icon}
-              <div className={s.paletteNodeText}>
-                <span className={s.paletteTitle} title={title}>{title}</span>
-                <span className={s.paletteMeta}>
-                  <RecipeNodeKindBadge kind={kind} />
-                  {tagText && <small className={s.paletteTags} title={tagText}>{tagText}</small>}
-                </span>
-              </div>
-            </Card>
-          </li>;
-        })}
+        {filtered.map(({ name, title, icon, kind }) => <li key={name} data-node-template={name}>
+          <NodeCard icon={icon} title={title} kind={kind} />
+        </li>)}
         {!filtered.length && <li className={s.paletteEmpty} role="status">
           {loading ? <Spinner /> : nodes.length ? "No matching nodes" : "No nodes available"}
         </li>}
@@ -110,7 +98,7 @@ export function RecipePalette({ nodes, disabled, loading, onAdd, children }: {
     </div>
     {preview && dragged && createPortal(
       <div className={s.nodePreview} style={{ left: preview.point.x, top: preview.point.y }} aria-hidden="true">
-        {dragged.icon}<span>{dragged.title}</span>
+        <NodeCard icon={dragged.icon} title={dragged.title} kind={dragged.kind} />
       </div>, document.body,
     )}
   </Card>;

@@ -1,6 +1,7 @@
 import type { Node } from "@pecore/schemas";
-import { Badge } from "../ds/feedback";
-import s from "./Editors.module.css";
+import type { ReactNode } from "react";
+import { Badge, Card } from "../ds/feedback";
+import s from "./NodeCard.module.css";
 
 export type RecipeNodeKind = "agent" | "command" | "human";
 
@@ -14,4 +15,12 @@ export function recipeNodeKind(kind: unknown): RecipeNodeKind | undefined {
 
 export function RecipeNodeKindBadge({ kind }: { kind: RecipeNodeKind }) {
   return <span className={`${s.kindBadge} ${s[kind]}`}><Badge dot>{nodeKindLabels[kind]}</Badge></span>;
+}
+
+export function NodeCard({ icon, title, kind }: { icon: ReactNode; title: string; kind: RecipeNodeKind | "source" | undefined }) {
+  return <Card className={[s.card, kind && s[kind]].filter(Boolean).join(" ")}>
+    <span className={s.glyph}>{icon}</span>
+    <strong title={title}><span>{title}</span></strong>
+    {kind && <div className={s.kind}>{kind === "source" ? <Badge tone="success" dot>Source</Badge> : <RecipeNodeKindBadge kind={kind} />}</div>}
+  </Card>;
 }

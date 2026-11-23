@@ -21,7 +21,7 @@ import { DefinitionErrors, definitionUrl, object, parseDraft, string, useDefinit
 import type { NewDefinition } from "./NodeEditor";
 import { RecipeGraph } from "./RecipeGraph";
 import type { RecipeCanvas, RecipeGraphLink, RecipeGraphNode } from "./RecipeGraph";
-import { RecipeNodeKindBadge, recipeNodeKind } from "./RecipeNodeKind";
+import { NodeCard, RecipeNodeKindBadge, recipeNodeKind } from "../components/NodeCard";
 import { RecipePalette } from "./RecipePalette";
 import type { PaletteNode } from "./RecipePalette";
 import { arrangeRecipe, freeRecipeSlot, recipeEnd, recipeLayout, recipeStart, snapRecipePosition, withRecipeBoundaries } from "./recipeLayout";
@@ -117,7 +117,7 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
       name,
       title: templateTitle(name),
       tags: Array.isArray(node.tags) ? node.tags.map(string).filter(Boolean) : [],
-      icon: <DefinitionIcon icons={icons.data} type="node" name={name} selected={string(node.icon)} size="sm" />,
+      icon: <DefinitionIcon icons={icons.data} type="node" name={name} selected={string(node.icon)} size="lg" />,
       kind,
     }];
   });
@@ -153,14 +153,10 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
     return {
       id,
       label: <>
-        <strong title={title}><DefinitionIcon icons={icons.data} type="node" name={name} selected={string(definitionValue.icon)} size="sm" /> <span>{title}</span></strong>
-        {(kind || showStepTitle) && <div className={s.graphNodeMeta}>
-          {kind && <RecipeNodeKindBadge kind={kind} />}
-          {showStepTitle && <small title={stepTitle}>{stepTitle}</small>}
-        </div>}
+        <NodeCard icon={<DefinitionIcon icons={icons.data} type="node" name={name} selected={string(definitionValue.icon)} size="lg" />} title={title} kind={kind} />
+        {showStepTitle && <small className={s.stepCaption} title={stepTitle}>{stepTitle}</small>}
       </>,
       invalid: highlight("nodes." + id),
-      kind,
     };
   });
   const graphEdges: RecipeGraphLink[] = edges.flatMap((value, index) => {

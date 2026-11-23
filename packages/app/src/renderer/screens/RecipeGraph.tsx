@@ -6,13 +6,12 @@ import { Button, IconButton } from "../ds/button";
 import { MinusIcon, MonitorIcon, PlusIcon } from "../ds/icons";
 import { RecipeEdge, recipeAttachments, recipeLaneGap } from "./RecipeEdge";
 import type { RoutedRecipeEdge } from "./RecipeEdge";
-import type { RecipeNodeKind } from "./RecipeNodeKind";
 import { recipeEnd, recipeGrid, recipeStart, samePosition, slotTaken, snapRecipePosition } from "./recipeLayout";
 import type { RecipeLayout, RecipeLink } from "./recipeLayout";
 import "@xyflow/react/dist/style.css";
 import s from "./Editors.module.css";
 
-export type RecipeGraphNode = { id: string; label: ReactNode; invalid: boolean; kind?: RecipeNodeKind };
+export type RecipeGraphNode = { id: string; label: ReactNode; invalid: boolean };
 export type RecipeGraphLink = RecipeLink & { invalid: boolean; failed: boolean; caption?: string; neutral?: boolean };
 export type RecipeCanvas = { dropPosition(point: XYPosition): XYPosition | undefined };
 
@@ -61,15 +60,15 @@ export function RecipeGraph({ ref, steps, links, layout, automatic, start, edita
 }) {
   const [flow, setFlow] = useState<ReactFlowInstance<StepNode>>();
   const canvas = useRef<HTMLDivElement>(null);
-  const nodes: StepNode[] = steps.map(({ id, label, invalid, kind }) => ({
+  const nodes: StepNode[] = steps.map(({ id, label, invalid }) => ({
     id,
     type: "step",
     data: { label },
     position: layout[id]!,
     selected: selected === id,
-    className: [kind && s[kind], invalid && s.invalidNode, id === recipeStart && s.startNode, id === recipeEnd && s.endNode].filter(Boolean).join(" "),
-    width: 168,
-    height: 68,
+    className: [invalid && s.invalidNode, id === recipeStart ? s.startNode : id === recipeEnd ? s.endNode : s.stepNode].filter(Boolean).join(" "),
+    width: 120,
+    height: 120,
     zIndex: 1,
     selectable: id !== recipeStart && id !== recipeEnd,
   }));

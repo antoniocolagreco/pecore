@@ -63,35 +63,6 @@ a.entry:focus-visible {
   text-align: center;
 }
 
-.nodeCard {
-  --glyph-size: 38px;
-  position: relative;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 4px;
-  line-height: 1.3;
-}
-
-.nodeCard::before {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: var(--recipe-node-stripe, var(--recipe-node-kind));
-  content: "";
-}
-
-.source {
-  --recipe-node-kind: var(--status-success);
-}
-
-.kind {
-  display: flex;
-  align-items: center;
-}
-
-.kind > span > span {
-  font-size: 12px;
-}
-
 .card strong {
   display: grid;
   align-items: center;

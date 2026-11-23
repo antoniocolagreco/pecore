@@ -11,13 +11,12 @@ import { Button } from "../ds/button";
 import { Tabs } from "../ds/data";
 import { SearchField } from "../ds/field";
 import { SidebarItem, SidebarSection } from "../shell/sidebar";
-import { Badge, Card, EmptyState, Spinner } from "../ds/feedback";
+import { Card, EmptyState, Spinner } from "../ds/feedback";
 import { AlertIcon, PlusIcon } from "../ds/icons";
 import { definitionUrl, object, string } from "./NodeEditor";
-import { nodeKindLabels, RecipeNodeKindBadge, recipeNodeKind } from "./RecipeNodeKind";
-import type { RecipeNodeKind } from "./RecipeNodeKind";
+import { NodeCard, nodeKindLabels, recipeNodeKind } from "../components/NodeCard";
+import type { RecipeNodeKind } from "../components/NodeCard";
 import { templateTitle } from "../components/templateTitle";
-import editorStyles from "./Editors.module.css";
 import s from "./Templates.module.css";
 
 function TemplateList({ type, icons }: { type: DefinitionType; icons: ReadonlyMap<string, string> | undefined }) {
@@ -56,14 +55,14 @@ function TemplateList({ type, icons }: { type: DefinitionType; icons: ReadonlyMa
           const description: string = string(definition.description);
           const kind: RecipeNodeKind | undefined = type === "node" ? recipeNodeKind(definition.kind) : undefined;
           const source: boolean = type === "node" && definition.kind === "source";
-          const kindClass: string | undefined = kind ? editorStyles[kind] : source ? s.source : undefined;
+          const icon = <DefinitionIcon icons={icons} type={type} name={name} selected={string(definition.icon)} size={type === "node" ? "lg" : "md"} />;
           const contents = <>
-            <Card className={[s.card, kindClass && s.nodeCard, kindClass].filter(Boolean).join(" ")}>
-              <span className={s.glyph}><DefinitionIcon icons={icons} type={type} name={name} selected={string(definition.icon)} size={type === "node" ? "lg" : "md"} /></span>
-              <strong title={title}><span>{title}</span></strong>
-              {kind && <div className={s.kind}><RecipeNodeKindBadge kind={kind} /></div>}
-              {source && <div className={s.kind}><Badge tone="success" dot>Source</Badge></div>}
-            </Card>
+            {type === "node"
+              ? <NodeCard icon={icon} title={title} kind={kind ?? (source ? "source" : undefined)} />
+              : <Card className={s.card}>
+                <span className={s.glyph}>{icon}</span>
+                <strong title={title}><span>{title}</span></strong>
+              </Card>}
             <div className={s.description}>
               {description}
               {errors.length > 0 && <span className={s.invalid} title={errors.map(({ message }) => message).join("\n")} role="img" aria-label="Definition errors"><AlertIcon /></span>}

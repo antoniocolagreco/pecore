@@ -4,7 +4,7 @@ import type { Edge } from "@pecore/schemas";
 export type RecipeLayout = Record<string, XYPosition>;
 export type RecipeLink = Edge;
 
-export const recipeGrid: [number, number] = [272, 120];
+export const recipeGrid: [number, number] = [272, 176];
 export const recipeStart: string = "@start";
 export const recipeEnd: string = "@end";
 

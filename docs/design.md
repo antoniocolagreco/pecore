@@ -1335,6 +1335,7 @@ The screens below come from G16. Their layout is designed in [ui-design.md](ui-d
 | `src/renderer/screens/Templates.tsx` | shared node and recipe templates |
 | `src/renderer/screens/Settings.tsx` | accounts and logins, protected mode, Assistant and Project Manager, projects, global limits, runtime, updates and appearance |
 | `src/renderer/components/NewJobModal.tsx` | New job form |
+| `src/renderer/components/NodeCard.tsx` | the one node card used in Templates, the recipe palette and graph, and the job graph; node kind labels and badge |
 | `src/renderer/components/ConfirmItem.tsx` | one confirmation, from the item's `subject` snapshot, sending its hash; used by Notifications (UI18) |
 
 ### `packages/cli`

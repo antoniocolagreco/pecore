@@ -199,7 +199,7 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 
 *   Header: title, project, branch, state label, "why is it waiting" line (IC8), controls (IC3). Notice when the base changed (IC9).
 *   Tabs:
-    *   Graph: the recipe graph at the positions saved in the recipe's `layout`, with node run states. Back edges are curved arrows with the round count on the target node. The running node pulses. Nodes with no run yet are Pending.
+    *   Graph: the recipe graph at the positions saved in the recipe's `layout`, with node run states. Each node is the Templates node card; its state, step name and round sit under it. Back edges are curved arrows with the round count on the target node. The running node pulses. Nodes with no run yet are Pending.
     *   History: node runs in order (`node_runs`, `attempts`): recipe node id, attempt, outcome, duration, failure reason; for example "test · round 1 · failed · 0m 42s".
 *   Detail panel for the selected node run; selecting a graph node shows its latest run and a list of earlier ones. Duration, attempts, tokens, cost, artifacts (IC7), and the log.
 *   Log: the normalised events of the attempt (text, tool calls, results), streamed while it runs; a "Raw" toggle shows the JSONL lines. Only the open log is streamed (design.md "Local API"). A log removed by retention shows "Log removed".
@@ -302,7 +302,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 ### Recipe editor
 
 *   Edit a shared recipe in Templates. Duplicate opens a new copy with the same graph. In a project's Recipes tab, Add to project selects a template and Remove clears the selection.
-*   Drag nodes from the horizontal palette into the graph. Grab the palette and drag sideways to scroll. The field in its title bar filters names and tags. Agent, Command and Human use distinct labels and colours in the palette, graph and inspector.
+*   Drag nodes from the horizontal palette into the graph. Grab the palette and drag sideways to scroll. The field in its title bar filters names and tags. A node looks the same everywhere: the palette, the card dragged into the graph, the graph itself and the job graph use the Templates node card (large icon, two-line title, kind badge, kind-coloured left stripe). In the graph, the step name sits under the card when it differs from the template's. Start and End are circles of the same size. Agent, Command and Human use distinct labels and colours in the palette, graph and inspector.
 *   Hover over a node to reveal the free connection point on each side. Drop an arrow on the target card to let it choose the entry side, or on a specific point to fix that side. Each arrow has its own attachment at both ends and routes as its nodes move.
 *   The background shows small square grid lines. Drag freely and release to snap to a larger, invisible cell. A drop on an occupied cell returns the node to its previous position.
 *   Arrange places the flow from left to right, with the base-change step below it and retry arrows above it. Arrows stay behind the cards. Success paths are green, failures red and other returns amber. The editor uses this arrangement when no positions are saved. Save records the draft positions in `layout`.

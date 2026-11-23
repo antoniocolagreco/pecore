@@ -8,6 +8,8 @@ import { call } from "../api/client";
 import { useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { DefinitionIcon, useDefinitionIcons } from "./DefinitionIcon";
+import { NodeCard, recipeNodeKind } from "./NodeCard";
+import { templateTitle } from "./templateTitle";
 import { nodeRunState, StateLabel, toneColor } from "./states";
 import type { Tone } from "./states";
 import { Empty } from "./ui";
@@ -81,7 +83,7 @@ function arrange(recipe: Recipe) {
   for (const id of order.toReversed()) {
     const level: number = levels.get(id) ?? 0;
     const column: number = rows.get(level) ?? 0;
-    positions.set(id, { x: column * 240, y: level * 116 });
+    positions.set(id, { x: column * 240, y: level * 176 });
     rows.set(level, column + 1);
     for (const index of outgoing.get(id) ?? []) {
       if (back.has(index)) continue;
@@ -122,10 +124,16 @@ export function JobGraph({ recipe, definitions, runs, selected, onSelect }: {
     return {
       id,
       position: recipe.layout?.[id] ?? positions.get(id)!,
-      data: { label: <><strong><DefinitionIcon icons={icons.data} type="node" name={definition.use} selected={node?.icon} size="sm" /> {id}</strong>
-        <StateLabel info={info} />{run && backTargets.has(id) && <span>Round {run.round}</span>}</> },
+      data: { label: <>
+        <NodeCard icon={<DefinitionIcon icons={icons.data} type="node" name={definition.use} selected={node?.icon} size="lg" />}
+          title={templateTitle(definition.use)} kind={recipeNodeKind(node?.kind)} />
+        <div className={s.caption}>
+          <StateLabel info={info} />
+          {templateTitle(id) !== templateTitle(definition.use) && <small title={templateTitle(id)}>{templateTitle(id)}</small>}
+          {run && backTargets.has(id) && <small>Round {run.round}</small>}
+        </div>
+      </> },
       className: s.node,
-      style: { "--tone": toneColor(info.tone) } as CSSProperties,
       sourcePosition: Position.Bottom,
       targetPosition: Position.Top,
       selected: run !== undefined && run.id === selected,
@@ -150,10 +158,10 @@ export function JobGraph({ recipe, definitions, runs, selected, onSelect }: {
     const last: number = Math.max(first, ...nodes.map(({ position }) => position.y));
     const x: number = nodes.find(({ id }) => id === recipe.start)?.position.x ?? 0;
     nodes.push(
-      { id: "@start", position: recipe.layout?.["@start"] ?? { x, y: first - 116 }, data: { label: <strong>Start</strong> },
-        className: s.node, style: { "--tone": toneColor("success") } as CSSProperties, sourcePosition: Position.Bottom, selectable: false },
-      { id: "@end", position: recipe.layout?.["@end"] ?? { x, y: last + 116 }, data: { label: <strong>End</strong> },
-        className: s.node, style: { "--tone": toneColor("failed") } as CSSProperties, targetPosition: Position.Top, selectable: false },
+      { id: "@start", position: recipe.layout?.["@start"] ?? { x, y: first - 176 }, data: { label: <strong>Start</strong> },
+        className: s.boundary, style: { "--tone": toneColor("success") } as CSSProperties, sourcePosition: Position.Bottom, selectable: false },
+      { id: "@end", position: recipe.layout?.["@end"] ?? { x, y: last + 176 }, data: { label: <strong>End</strong> },
+        className: s.boundary, style: { "--tone": toneColor("failed") } as CSSProperties, targetPosition: Position.Top, selectable: false },
     );
     edges.push({
       id: "start", source: "@start", target: recipe.start ?? "@end", type: "smoothstep",

@@ -10,34 +10,54 @@
 }
 
 .graph .node {
+  width: 120px;
+  padding: 0;
+  border: 0 !important;
+  border-radius: var(--radius-lg);
+  background: none;
+  box-shadow: none !important;
+  color: var(--text);
+  font-size: var(--text-size);
+}
+
+.graph .node > section {
+  transition: box-shadow var(--medium) var(--ease-out);
+}
+
+.node:global(.selected) > section {
+  box-shadow: 0 0 0 3.5px var(--ring);
+}
+
+.caption {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: -40px;
+  left: -40px;
   display: grid;
   justify-items: center;
-  gap: 5px;
-  width: 200px;
-  padding: 10px 10px 9px;
-  border: 1px solid var(--separator) !important;
-  border-top: 3px solid var(--tone, var(--separator)) !important;
-  border-radius: 10px;
-  background: var(--control-bg);
+  gap: 2px;
+  pointer-events: none;
+}
+
+.caption > small {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph .boundary {
+  display: grid;
+  place-items: center;
+  width: 120px;
+  height: 120px;
+  padding: 0;
+  border: 1px solid var(--tone) !important;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--tone) 24%, var(--surface));
   color: var(--text);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 4px 12px -6px rgb(0 0 0 / 0.12);
-  font-size: var(--text-size);
-  transition:
-    box-shadow var(--medium) var(--ease-out),
-    translate var(--spring-time) var(--spring);
-}
-
-.graph .node:hover {
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 10px 24px -8px rgb(0 0 0 / 0.2);
-  translate: 0 -1px;
-}
-
-.graph .node > strong {
-  font-weight: 600;
-}
-
-.node:global(.selected) {
-  box-shadow: 0 0 0 3.5px var(--ring), 0 10px 24px -8px rgb(0 0 0 / 0.2);
 }
 
 .graph :global(.react-flow__handle) {

@@ -20,7 +20,7 @@ import { Button, ErrorText, Modal, Page, Panel, ui } from "../components/ui";
 import { TextArea, TextField } from "../ds/field";
 import { FieldHelp } from "../ds/overlay";
 import { Select } from "../ds/select";
-import { nodeKindLabels } from "./RecipeNodeKind";
+import { nodeKindLabels } from "../components/NodeCard";
 import s from "./Editors.module.css";
 
 export function object(value: unknown): Record<string, unknown> {

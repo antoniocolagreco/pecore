@@ -101,3 +101,10 @@
 - Human uses one kind with `decision` and `review` modes. Older definitions load with their original outcomes. The UI shows `command` as Run command. Tags describe the node's purpose and omit kind names.
 - The New Node form has clickable help next to field labels. The text explains what each setting controls in the selected kind or mode.
 - Human Review offers Report for the latest textual artifact and Code for the latest diff with matching risk annotations. The job selects the artifact automatically. Old `show` lists still open with their original content.
+
+## 2026-11-23: One node card everywhere
+
+- Decision: the recipe palette, the card dragged into the graph, the recipe graph and the job graph use the Templates node card. The step name, and in a job the state and round, sit under the card. Start and End are circles of the same size. Graph rows are 176 px apart so cards do not touch.
+- Why: different shapes for the same node confused the user.
+- Replaces: the wide palette tiles with tags, the 168×68 graph nodes, the 200 px job graph nodes and the text-only drag preview.
+- Kind, mode and review view keep their current rules: kind and mode are chosen only when creating a node.
