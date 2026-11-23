@@ -198,3 +198,4 @@
 - Replaces: the code editor with line numbers, a tab as tall as its content and upload by button only.
 - Later the same day: no red margin line, and the paper and rules take the theme's colours (control background and separator), because a fixed paper colour looked out of place in the app.
 - Then: the rules use the text colour at 16%, because the separator colour was invisible in the dark theme, and the cursor is 3 px wide so it is easy to find.
+- Finally: the sheet has no rules, because they distract from the text. The 3 px cursor stays.

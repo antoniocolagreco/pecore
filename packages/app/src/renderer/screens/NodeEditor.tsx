@@ -228,9 +228,6 @@ const paperTheme = EditorView.theme({
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": {
     fontFamily: "var(--font)", fontSize: "16px", lineHeight: "28px", overflow: "auto",
-    backgroundImage: "repeating-linear-gradient(to bottom, transparent 0 27px, var(--paper-rule) 27px 28px)",
-    backgroundAttachment: "local",
-    backgroundPosition: "0 20px",
   },
   ".cm-content": { padding: "20px 40px 48px", caretColor: "var(--paper-ink)" },
   ".cm-line": { padding: "0" },
