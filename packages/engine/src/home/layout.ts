@@ -1,23 +1,7 @@
 import { createHash } from "node:crypto";
 import { chmod, cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import { appName, jsonSchemas } from "@pecore/schemas";
-import { commitDefinition, git } from "./git-commit";
-
-export const homeGitignore = [
-  "*.db",
-  "*.db-wal",
-  "*.db-shm",
-  "projects/*/repo.git/",
-  "projects/*/work/",
-  "projects/*/artifacts/",
-  "projects/*/logs/",
-  "schemas/",
-  "adapters/",
-  "chat-attachments/",
-  "run/",
-  "",
-].join("\n");
+import { jsonSchemas } from "@pecore/schemas";
 
 export function homePaths(home: string) {
   return {
@@ -147,32 +131,22 @@ async function renameLibrary(home: string, templates: string): Promise<void> {
   const library: string = join(home, "library");
   if (!(await exists(library)) || (await exists(templates))) return;
   await rename(library, templates);
-  await commitDefinition(home, [library, templates], "templates: renamed from library");
 }
 
 export async function initHome(home: string, opts: { templates: string }): Promise<{ created: boolean }> {
   const p = homePaths(home);
-  const created = !(await exists(join(home, ".git")));
+  const created = !(await exists(p.templates)) && !(await exists(join(home, "library")));
   await mkdir(home, { recursive: true, mode: 0o700 });
   await mkdir(p.run, { recursive: true, mode: 0o700 });
   if (!created) await renameLibrary(home, p.templates);
   for (const dir of [p.templateNodes, p.templateRecipes, p.projects, p.themes]) await mkdir(dir, { recursive: true });
   await writeSchemas(home);
   if (!created) {
-    const added: string[] = await addShippedTemplateFiles(opts.templates, p.templates);
-    if (added.length) await commitDefinition(home, added, `templates: sync ${added.length} shipped ${added.length === 1 ? "file" : "files"}`);
-    const removed: string[] = await removeRetiredTemplateFiles(p.templates);
-    if (removed.length) await commitDefinition(home, removed, `templates: remove ${removed.length} retired shipped ${removed.length === 1 ? "file" : "files"}`);
+    await addShippedTemplateFiles(opts.templates, p.templates);
+    await removeRetiredTemplateFiles(p.templates);
     return { created };
   }
-  await git(home, ["init", "-q", "-b", "main"]).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") throw new Error(`Install Git to create PECORE_HOME, then reopen ${appName}.`);
-    throw error;
-  });
-  await writeFile(join(home, ".gitignore"), homeGitignore);
   await cp(`${opts.templates}/`, p.templates, { recursive: true, force: false, errorOnExist: false, dereference: true });
-  await git(home, ["add", "-A"]);
-  await git(home, ["commit", "-q", "-m", "home: created"]);
   return { created };
 }
 

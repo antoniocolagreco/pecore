@@ -101,7 +101,7 @@ describe("local API (phase 5 decisions 2-5)", () => {
   });
 
   it("reads an artifact of a job; deletes the project locally, stopping its waiting job", async () => {
-    const { home, engine, call, close } = await apiProject();
+    const { engine, call, close } = await apiProject();
     const { id } = await call("createJob", { body: { project: "demo", title: "Add hello", ticket: { text: "x" } } });
     await until(async () => (await call("getJob", { params: { id } })).job.state === "waiting");
     const diff = (await call("getJob", { params: { id } })).artifacts.find((a) => a.type === "diff")!;
@@ -114,7 +114,6 @@ describe("local API (phase 5 decisions 2-5)", () => {
     await expect(stat(dir)).rejects.toThrow();
     expect(await call("listProjects")).toEqual([]);
     expect(await call("listJobs", { query: {} })).toEqual([]);
-    expect((await import("../home/git-commit").then((m) => m.git(home, ["log", "-1", "--format=%s"]))).trim()).toBe("project demo: deleted");
     await close();
   });
 

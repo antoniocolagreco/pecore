@@ -3,13 +3,12 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { DefinitionEntry, LiveMessage } from "@pecore/schemas";
-import { git } from "../home/git-commit";
 import { apiProject } from "../../test/api-project";
 import { definitionOperations } from "./routes/definitions";
 
 describe("definition routes", () => {
   it("lists, reads and saves a project file with its hash; a stale hash is 409, an invalid file is 400", async () => {
-    const { home, engine, call, close } = await apiProject();
+    const { engine, call, close } = await apiProject();
     const live: LiveMessage[] = [];
     engine.on("live", (m: LiveMessage) => live.push(m));
     const nodes = await call("listDefinitions", { query: { dir: "templates/nodes" } });
@@ -23,7 +22,6 @@ describe("definition routes", () => {
     await expect(call("saveDefinition", { params: { path: "projects/demo/project.json" }, body: { content: "{", baseSha256: file.sha256 } })).rejects.toMatchObject({ status: 400 });
     const saved = await call("saveDefinition", { params: { path: "projects/demo/project.json" }, body: { content: edited, baseSha256: file.sha256 } });
     expect((await call("getProject", { params: { id: "demo" } })).project?.name).toBe("Demo renamed");
-    expect((await git(home, ["log", "-1", "--format=%s"])).trim()).toBe("project demo: edited");
     expect(live).toContainEqual({ type: "definition.changed", path: "projects/demo/project.json", sha256: saved.sha256 });
     await close();
   });
@@ -153,7 +151,7 @@ describe("global file routes", () => {
   });
 
   it("keeps knowledge flat, refuses broken links, and uploads, renames and deletes files with their links", async () => {
-    const { home, engine, call, close } = await apiProject();
+    const { engine, call, close } = await apiProject();
     try {
       const dir: string = join(engine.projectDir("demo"), "knowledge");
       const path = (name: string): string => `projects/demo/knowledge/${name}`;
@@ -169,7 +167,6 @@ describe("global file routes", () => {
         { name: "guide.md", content: "# Guide\n\nSee [n](naming.md).\n" },
         { name: "naming.md", content: "# Naming\n\nBack to [guide](guide.md).\n" },
       ] } })).toEqual({ saved: [path("guide.md"), path("naming.md")], removedLinks: [] });
-      expect((await git(home, ["log", "-1", "--format=%s"])).trim()).toBe("knowledge guide.md, naming.md: created");
       await expect(call("uploadKnowledge", { params: { id: "demo" }, body: { files: [{ name: "guide.md", content: "# Other\n" }] } })).rejects.toMatchObject({ status: 409 });
       expect(await call("uploadKnowledge", { params: { id: "demo" }, body: { files: [{ name: "extra.md", content: "See [x](nope.md) and [g](guide.md).\n" }] } }))
         .toEqual({ saved: [path("extra.md")], removedLinks: [{ file: "extra.md", link: "nope.md" }] });
@@ -181,14 +178,11 @@ describe("global file routes", () => {
       expect(await call("renameKnowledge", { params: { id: "demo" }, body: { from: "naming.md", to: "names.md" } })).toEqual({ updated: [path("guide.md")] });
       expect(await readFile(join(dir, "guide.md"), "utf8")).toBe("# Guide\n\nSee [n](names.md).\n");
       expect(existsSync(join(dir, "naming.md"))).toBe(false);
-      expect((await git(home, ["log", "-1", "--format=%s"])).trim()).toBe("knowledge naming.md: renamed to names.md");
       await expect(call("renameKnowledge", { params: { id: "demo" }, body: { from: "names.md", to: "guide.md" } })).rejects.toMatchObject({ status: 409 });
       await expect(call("renameKnowledge", { params: { id: "demo" }, body: { from: "gone.md", to: "other.md" } })).rejects.toMatchObject({ status: 404 });
 
       await call("deleteKnowledge", { params: { id: "demo", name: "names.md" } });
       expect(existsSync(join(dir, "names.md"))).toBe(false);
-      expect((await git(home, ["status", "--porcelain", "--", "projects/demo/knowledge"])).trim()).toBe("");
-      expect((await git(home, ["log", "-1", "--format=%s"])).trim()).toBe("knowledge names.md: deleted");
       await expect(call("deleteKnowledge", { params: { id: "demo", name: "names.md" } })).rejects.toMatchObject({ status: 404 });
     } finally {
       await close();

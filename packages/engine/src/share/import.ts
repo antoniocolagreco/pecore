@@ -263,7 +263,7 @@ export async function beginImport(home: string, input: ImportProjectBody, option
     }
     await writeCreation(original, 3);
     checkId(dest, id, options.knownProject);
-    const differences: string[] = await importCatalog(home, homePaths(home).templates, loaded);
+    const differences: string[] = await importCatalog(homePaths(home).templates, loaded);
     for (const name of ["nodes", "recipes"]) await rm(join(original, name), { recursive: true, force: true });
     renameSync(original, dest);
     return { state: "imported", id, ...(differences.length ? { differences } : {}) };

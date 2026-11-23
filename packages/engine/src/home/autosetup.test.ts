@@ -10,7 +10,6 @@ import { shippedTemplates, tempDir } from "../../test/tmp";
 import { handlers } from "../api/handlers";
 import { startApi } from "../api/server";
 import { Engine } from "../main";
-import { git } from "./git-commit";
 
 type Notice = { kind: string; title: string; body: string };
 
@@ -77,8 +76,7 @@ async function setup() {
   };
   const json = async (file: string): Promise<unknown> => JSON.parse(await readFile(join(home, file), "utf8"));
   const text = (file: string): Promise<string | null> => readFile(join(home, file), "utf8").catch(() => null);
-  const head = async (): Promise<string> => (await git(home, ["log", "-1", "--format=%H %s"])).trim();
-  return { home, harnesses, notices, start, json, text, head };
+  return { home, harnesses, notices, start, json, text };
 }
 
 describe("auto-setup", () => {
@@ -126,7 +124,6 @@ describe("auto-setup", () => {
     expect(app.engine.global().settings.assistant.profile).toBe("claude-code-frontier");
     expect(app.engine.global().settings.pm.profile).toBeNull();
     expect(app.engine.global().profiles.profiles).toHaveLength(12);
-    expect(await s.head()).toMatch(/ auto-setup: Set up Claude Code, Codex, and OpenCode: 12 profiles added$/);
     expect(s.notices).toEqual([{ kind: "auto-setup", title: "<PE/CORE> setup", body: "Set up Claude Code, Codex, and OpenCode: 12 profiles added" }]);
     expect(await app.call("listNotifications")).toContainEqual(expect.objectContaining({ kind: "auto-setup", body: "Set up Claude Code, Codex, and OpenCode: 12 profiles added" }));
     expect(await app.call("getSetup")).toEqual({
@@ -148,11 +145,9 @@ describe("auto-setup", () => {
     await (await s.start()).close();
     const files = ["accounts.json", "profiles.json", "tiers.json", "settings.json", "auto-setup.json"];
     const before = await Promise.all(files.map(s.text));
-    const commit = await s.head();
 
     await (await s.start()).close();
     expect(await Promise.all(files.map(s.text))).toEqual(before);
-    expect(await s.head()).toBe(commit);
     expect(s.notices).toHaveLength(1);
   });
 
@@ -190,7 +185,7 @@ describe("auto-setup", () => {
       ],
     });
     expect(((await s.json("tiers.json")) as { tiers: Record<string, string[]> }).tiers.cheap).toEqual([]);
-    expect(await s.head()).toMatch(/ auto-setup: Set up Claude Code: 1 profile updated$/);
+    expect(s.notices.at(-1)?.body).toBe("Set up Claude Code: 1 profile updated");
     expect(app.engine.global().profiles.profiles.find((p) => p.id === "claude-code-frontier")?.model).toBe("claude-opus-10");
     expect(s.notices.at(-1)?.body).toBe("Set up Claude Code: 1 profile updated");
     await app.close();
@@ -255,7 +250,7 @@ describe("auto-setup", () => {
       ],
     });
     expect(await s.json("settings.json")).toEqual({ assistant: { profile: "mine" } });
-    expect(await s.head()).toMatch(/ auto-setup: Set up Codex: 4 profiles added$/);
+    expect(s.notices.at(-1)?.body).toBe("Set up Codex: 4 profiles added");
     await app.close();
   });
 

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { KnowledgeFileName, Name, Node, normalizeLegacyHumanNode, Project, projectManagerClash, Recipe, StoredNode } from "@pecore/schemas";
 import type { DefinitionEntry, InstantiateBody, RouteOutput } from "@pecore/schemas";
 import { validIcon } from "../../definitions/icon";
@@ -11,7 +11,6 @@ import { loadTemplates, loadProject, zodErrors } from "../../definitions/load";
 import type { DefinitionError } from "../../definitions/load";
 import { checkRecipe, remoteIssues } from "../../definitions/recipe-check";
 import { isFinal } from "../../graph/job-machine";
-import { commitDefinition, commitMessage, git } from "../../home/git-commit";
 import { homePaths } from "../../home/layout";
 import { NotFoundError } from "../../main";
 import type { Engine } from "../../main";
@@ -100,17 +99,6 @@ async function definitionFiles(dir: string, directory: string): Promise<string[]
     if (entry.isFile() && fileKind(directory, entry.name)) files.push(entry.name);
   }
   return files;
-}
-
-async function commitFiles(home: string, projectDir: string | undefined, files: string[], message: string): Promise<void> {
-  if (files.length === 0) return;
-  const fromHome: string = relative(home, files[0]!);
-  if (projectDir && (fromHome === ".." || fromHome.startsWith(`..${sep}`) || isAbsolute(fromHome))) {
-    if (!(await lstatOrNull(join(projectDir, ".git")))) await git(projectDir, ["init", "-q"]);
-    await commitDefinition(projectDir, files, message);
-  } else {
-    await commitDefinition(home, files, message);
-  }
 }
 
 export function definitionHandlers(engine: Engine) {
@@ -278,7 +266,6 @@ export function definitionOperations(engine: Engine) {
       await rejectSymlinks(projectDir, dir);
       await mkdir(dir, { recursive: true });
       for (const { name, content } of cleaned) await writeFile(join(dir, name), content, { flag: "wx" });
-      await commitFiles(home.home, projectDir, [dir], commitMessage("knowledge", batch.join(", "), "created"));
       const saved: string[] = batch.map((name) => `projects/${id}/knowledge/${name}`);
       for (const [index, { content }] of cleaned.entries()) engine.definitionChanged(saved[index]!, sha256(Buffer.from(content, "utf8")));
       return { saved, removedLinks: cleaned.flatMap(({ name, removed }) => removed.map((link) => ({ file: name, link }))) };
@@ -300,7 +287,6 @@ export function definitionOperations(engine: Engine) {
         await writeFile(join(dir, name), next);
         if (name !== to) updated.push(name);
       }
-      await commitFiles(home.home, projectDir, [dir], `knowledge ${from}: renamed to ${to}`);
       engine.definitionChanged(`projects/${id}/knowledge/${from}`, null);
       for (const name of [to, ...updated]) engine.definitionChanged(`projects/${id}/knowledge/${name}`, sha256(await readFile(join(dir, name))));
       return { updated: updated.map((name) => `projects/${id}/knowledge/${name}`) };
@@ -311,7 +297,6 @@ export function definitionOperations(engine: Engine) {
       await rejectSymlinks(projectDir, dir);
       if (!(await knowledgeNames(dir)).includes(name)) throw new NotFoundError(`knowledge file ${name} not found`);
       await rm(join(dir, name));
-      await commitFiles(home.home, projectDir, [dir], commitMessage("knowledge", name, "deleted"));
       engine.definitionChanged(`projects/${id}/knowledge/${name}`, null);
       return { ok: true as const };
     }),
@@ -324,7 +309,7 @@ export function definitionOperations(engine: Engine) {
   } satisfies Partial<Handlers>;
 
   async function save(path: string, content: string, baseSha256: string | null): Promise<RouteOutput<"saveDefinition">> {
-    const { root, absPath, kind, id, projectDir, file } = location(path, false);
+    const { root, absPath, kind, id, file } = location(path, false);
     await rejectSymlinks(root, absPath);
     const before: Buffer | null = await optionalBytes(absPath);
     const bytes: Buffer = Buffer.from(content, "utf8");
@@ -333,7 +318,6 @@ export function definitionOperations(engine: Engine) {
     }
     const { errors, value } = await inspectWritable(path, kind, id, content);
     if (errors.length) throw new HttpError("bad_request", errors.map((error) => error.message).join("\n"));
-    const name: string = kind === "project" ? id! : basename(file, extname(file));
     const persist = async (data: Buffer): Promise<void> => {
       await mkdir(dirname(absPath), { recursive: true });
       const stage: string = await mkdtemp(join(dirname(absPath), ".definition-"));
@@ -344,7 +328,6 @@ export function definitionOperations(engine: Engine) {
       } finally {
         await rm(stage, { recursive: true, force: true });
       }
-      await commitFiles(home.home, projectDir, [absPath], commitMessage(kind!, name, before === null ? "created" : "edited"));
     };
     let saved: Buffer = bytes;
     if (kind === "node" && JSON.stringify(value) !== JSON.stringify(JSON.parse(content))) {
@@ -454,7 +437,6 @@ export function definitionOperations(engine: Engine) {
         const recipe: Recipe = Recipe.parse(JSON.parse(content));
         return checkRecipe(recipe, nodes, project.repo !== null).map((issue) => ({ file, ...issue }));
       });
-    await commitFiles(home.home, projectDir, result.written, commitMessage(kind, name, "created"));
     await engine.reloadProject(id);
     const layoutPath = (file: string): string => `projects/${id}/${relative(projectDir, file).split(sep).join("/")}`;
     for (const file of result.written) engine.definitionChanged(layoutPath(file), sha256(await readFile(file)));

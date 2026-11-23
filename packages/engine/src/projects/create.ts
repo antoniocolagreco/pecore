@@ -7,7 +7,6 @@ import { promisify } from "node:util";
 import { Project } from "@pecore/schemas";
 import type { Accounts, ForgeAccount, ProjectInput } from "@pecore/schemas";
 import { protectedUser } from "../accounts/agents";
-import { commitDefinition, commitMessage } from "../home/git-commit";
 import { homePaths, projectPaths } from "../home/layout";
 import { checkHome } from "../osuser/home-check";
 import type { HomeFinding } from "../osuser/home-check";
@@ -187,13 +186,12 @@ async function hasGroup(group: string): Promise<boolean> {
   return stdout.trim().split(/\s+/).includes(group);
 }
 
-export async function finishProject(home: string, dir: string, project: Project, opts: CreateOptions): Promise<HomeFinding[]> {
+export async function finishProject(dir: string, opts: CreateOptions): Promise<HomeFinding[]> {
   const creation = (await readCreation(dir))!;
   let findings: HomeFinding[] = [];
   if (creation.step < 5) {
     try {
       findings = await checkHome();
-      await commitDefinition(home, [dir], commitMessage("project", project.id, "created"));
     } catch (e) {
       throw new ProjectCreateError(5, (e as Error).message);
     }
@@ -212,8 +210,6 @@ export async function finishProject(home: string, dir: string, project: Project,
   return findings;
 }
 
-export async function cancelCreation(home: string, dir: string, id: string): Promise<void> {
-  const creation = await readCreation(dir);
+export async function cancelCreation(dir: string): Promise<void> {
   await rm(dir, { recursive: true, force: true });
-  if (creation && creation.step >= 5) await commitDefinition(home, [dir], commitMessage("project", id, "deleted"));
 }

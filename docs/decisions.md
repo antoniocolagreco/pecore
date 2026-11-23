@@ -237,3 +237,9 @@
 - Decision: five rules for every page, in ui-design.md "Page layout rules". Saving: explicit Save at the top right of the title for anything that makes a commit; app preferences save by themselves. The main action sits at the top right, primary with an icon. Pages use the whole column; forms and wizards are narrow; only the recipe editor and Knowledge fill the height. Each setting is changed in one place. Only design-system controls.
 - Why: pages had drifted apart: Save in the title, in a card or automatic; main buttons in different styles; native checkboxes next to design-system ones; the Assistant and Project Managers configured in three places.
 - Replaces: per-page choices.
+
+## 2026-11-23: No git for the app's data
+
+- Decision: `PECORE_HOME` is no longer a git repository. Saving a definition, a setting or a knowledge file writes the file and makes no commit. Projects outside `PECORE_HOME` no longer get a git repository for their definitions. An existing `~/.pecore/.git` is left untouched and unused. Git stays for the projects' code.
+- Why: nothing in the app read that history; it only filled it with one commit per changed field.
+- Replaces: one commit per save in `PECORE_HOME`.

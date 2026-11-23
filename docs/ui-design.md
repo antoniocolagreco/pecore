@@ -327,7 +327,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   Creating and editing show the same fields, each with an info icon that explains it. A command is one line written as in a terminal (`npx --no-install eslint .`, quotes around an argument with spaces); a command node shows Command or Script file, whichever it uses, and a source node shows the command or script of each action. Runs as is a checkbox, "Use source control credentials", off by default: on only for commands that act on GitHub or GitLab with the user's account, such as push, pull request or issue comment (`runsAs: engine`).
 *   An agent node has a Knowledge field: a multi-select of the knowledge file names found in the projects. Each project gives the agent its own file with that name and the files it links to.
 *   Validation errors next to the field. Save is disabled while the draft is invalid. The draft lives in memory until saved or discarded; leaving the page with an unsaved draft asks first.
-*   No autosave: every save is one commit in `PECORE_HOME`, or in the project's own repository for a project outside it.
+*   No autosave: Save writes the file.
 *   Saved changes affect new jobs. Existing jobs keep their saved definitions.
 
 ### Templates
@@ -366,7 +366,7 @@ Goal: minimum friction. The user opens <PE/CORE> and it works, with no setting t
 *   No first run screen and no `firstRunDone`. The app opens on Factory, with the Assistant chat on the right and the cursor in its message box.
 *   [Auto-setup](design.md#auto-setup) discovers harnesses and existing logins on startup. It fills internal accounts, profiles and tiers as needed and chooses an Assistant model when none is set. The Project Manager follows that choice by default.
 *   When no harness is installed and logged in, a banner on every page says so, with the install link of each supported harness and a Log in button for the installed ones. Nothing is disabled that can work without it.
-*   git stays required, because `PECORE_HOME` is a git repository: without it the app shows an error with the install instruction. Other missing prerequisites (Compose, gh, glab) are warnings on the feature that needs them, as in "Missing configuration and warnings" below, never a blocking step.
+*   git stays required, because jobs work on the projects' git repositories: without it the app shows an error with the install instruction. Other missing prerequisites (Compose, gh, glab) are warnings on the feature that needs them, as in "Missing configuration and warnings" below, never a blocking step.
 
 ## Cross-cutting behaviour
 
@@ -374,7 +374,7 @@ Goal: minimum friction. The user opens <PE/CORE> and it works, with no setting t
 
 Every page follows these rules; an exception is written in that page's section.
 
-1.  Saving: what makes a commit (nodes, recipes, knowledge files, project settings, variables and a project's Project Manager) has an explicit Save at the top right of the page title, disabled until something changes; leaving with unsaved changes asks first. App preferences (Settings), which have no history, save by themselves.
+1.  Saving: work definitions (nodes, recipes, knowledge files, project settings, variables and a project's Project Manager) have an explicit Save at the top right of the page title, disabled until something changes; leaving with unsaved changes asks first. App preferences (Settings) save by themselves.
 2.  Actions: the page's main action sits at the top right of the title, primary style with an icon ("New job", "New Node"). Every other action is secondary. A project tab puts its actions in the same place.
 3.  Width and height: pages use the whole content column. Forms and wizards (New project) are narrow and centred, with their buttons at the bottom. Only editors with a work area fill the window height: the recipe editor and Knowledge.
 4.  One place: each setting is changed on one page; other pages show it read-only with a link to that page.

@@ -12,7 +12,6 @@ import { loadGlobal } from "../definitions/load";
 import type { Global } from "../definitions/load";
 import { appUser, baseEnv, run } from "../runners/process";
 import type { RunResult } from "../runners/process";
-import { commitDefinition } from "./git-commit";
 import { homePaths } from "./layout";
 
 type Harness = SetupView["harnesses"][number];
@@ -152,7 +151,6 @@ async function writeChanges(home: string, files: FileChange[], message: string):
     }
     const loaded: Awaited<ReturnType<typeof loadGlobal>> = await loadGlobal(home);
     if (!loaded.value) throw new Error(loaded.errors.map((error) => error.message).join("\n"));
-    await commitDefinition(home, files.map(([kind]) => paths[kind]), `auto-setup: ${message}`);
     return { message, files: contents };
   } catch (error) {
     for (const [kind, { before }] of written.reverse()) {

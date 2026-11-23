@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Global } from "../../definitions/load";
-import { commitDefinition, commitMessage } from "../../home/git-commit";
 import { homePaths } from "../../home/layout";
 import type { Engine } from "../../main";
 import { HttpError } from "../server";
@@ -49,7 +48,6 @@ export function globalFileHandlers(engine: Engine) {
         throw new HttpError("bad_request", errors.map((error) => error.message).join("\n"));
       }
       const name: string = `${kind}.json`;
-      await commitDefinition(paths.home, [file], commitMessage(kind, name, "edited"));
       const hash: string = sha256(content);
       engine.definitionChanged(name, hash);
       return { sha256: hash };

@@ -1,12 +1,11 @@
-import { chmod, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { shippedTemplates, tempDir } from "../../test/tmp";
-import { commitDefinition, commitMessage, git } from "./git-commit";
 import { homePaths, initHome, syncAdapters } from "./layout";
 
 describe("PECORE_HOME layout", () => {
-  it("initialises a new home: git repo, run/ 0700, schemas, templates, one commit", async () => {
+  it("initialises a new home without git: run/ 0700, schemas, templates", async () => {
     const home = join(await tempDir(), "home");
     expect(await initHome(home, { templates: shippedTemplates })).toEqual({ created: true });
     const p = homePaths(home);
@@ -14,21 +13,19 @@ describe("PECORE_HOME layout", () => {
     expect((await stat(p.run)).mode & 0o777).toBe(0o700);
     expect((await readdir(p.schemas)).sort()).toContain("node.json");
     expect(await readdir(p.templateNodes)).toContain("git-commit.json");
-    expect((await git(home, ["log", "--format=%s"])).trim()).toBe("home: created");
-    expect(await git(home, ["status", "--porcelain"])).toBe("");
-    expect(await readFile(join(home, ".gitignore"), "utf8")).toContain("projects/*/work/");
+    expect(await readdir(home)).not.toContain(".git");
+    expect(await readdir(home)).not.toContain(".gitignore");
   });
 
-  it("does not commit again on a second start and rewrites the schemas", async () => {
+  it("rewrites the schemas on a second start", async () => {
     const home = join(await tempDir(), "home");
     await initHome(home, { templates: shippedTemplates });
     await writeFile(join(homePaths(home).schemas, "node.json"), "{}");
     expect(await initHome(home, { templates: shippedTemplates })).toEqual({ created: false });
-    expect((await git(home, ["log", "--format=%s"])).trim().split("\n")).toHaveLength(1);
     expect(await readFile(join(homePaths(home).schemas, "node.json"), "utf8")).not.toBe("{}");
   });
 
-  it("adds templates files a newer app ships to an existing home in one commit, without touching files the user changed", async () => {
+  it("adds templates files a newer app ships to an existing home, without touching files the user changed", async () => {
     const root = await tempDir();
     const home = join(root, "home");
     const shipped = join(root, "shipped");
@@ -37,7 +34,6 @@ describe("PECORE_HOME layout", () => {
     await writeFile(join(shipped, "nodes", "a.json"), "shipped a\n");
     await initHome(home, { templates: shipped });
     await writeFile(join(homePaths(home).templates, "nodes", "a.json"), "edited a\n");
-    await git(home, ["commit", "-q", "-am", "node a: edited"]);
     await writeFile(join(shipped, "nodes", "a.json"), "shipped a v2\n");
     await writeFile(join(shipped, "nodes", "b.sh"), "echo b\n");
     await writeFile(join(shipped, "forges", "git.json"), "{}\n");
@@ -45,61 +41,28 @@ describe("PECORE_HOME layout", () => {
     expect(await readFile(join(homePaths(home).templates, "nodes", "a.json"), "utf8")).toBe("edited a\n");
     expect(await readFile(join(homePaths(home).templates, "nodes", "b.sh"), "utf8")).toBe("echo b\n");
     expect(await readFile(join(homePaths(home).templates, "forges", "git.json"), "utf8")).toBe("{}\n");
-    expect((await git(home, ["log", "--format=%s"])).trim().split("\n")).toEqual(["templates: sync 2 shipped files", "node a: edited", "home: created"]);
-    expect(await git(home, ["status", "--porcelain"])).toBe("");
-    await initHome(home, { templates: shipped });
-    expect((await git(home, ["log", "--format=%s"])).trim().split("\n")).toHaveLength(3);
   });
 
-  it("removes template files the app no longer ships when the user did not change them, in one commit", async () => {
+  it("removes template files the app no longer ships when the user did not change them", async () => {
     const home = join(await tempDir(), "home");
     await initHome(home, { templates: shippedTemplates });
     const templates: string = homePaths(home).templates;
     const empty = '{\n  "$schema": "../../schemas/recipe.json",\n  "name": "empty",\n  "description": "A recipe with no nodes: the job ends at once as succeeded. Start here to build a recipe in the graph editor"\n}\n';
     await writeFile(join(templates, "recipes", "empty.json"), empty);
     await writeFile(join(templates, "icons", "recipe-empty.svg"), "<svg>mine</svg>\n");
-    await git(home, ["add", "-A"]);
-    await git(home, ["commit", "-q", "-m", "older app"]);
     await initHome(home, { templates: shippedTemplates });
     expect(await readdir(join(templates, "recipes"))).not.toContain("empty.json");
     expect(await readFile(join(templates, "icons", "recipe-empty.svg"), "utf8")).toBe("<svg>mine</svg>\n");
-    expect((await git(home, ["log", "-1", "--format=%s"])).trim()).toBe("templates: remove 1 retired shipped file");
-    expect(await git(home, ["status", "--porcelain"])).toBe("");
   });
 
-  it("renames the library folder of an older home to templates in one commit, keeping the user's changes", async () => {
+  it("renames the library folder of an older home to templates, keeping the user's changes", async () => {
     const home = join(await tempDir(), "home");
     await initHome(home, { templates: shippedTemplates });
-    await git(home, ["mv", "templates", "library"]);
-    await git(home, ["commit", "-q", "-m", "old layout"]);
+    await rename(join(home, "templates"), join(home, "library"));
     await writeFile(join(home, "library", "nodes", "typecheck.json"), "edited\n");
-    await git(home, ["commit", "-q", "-am", "node typecheck: edited"]);
     expect(await initHome(home, { templates: shippedTemplates })).toEqual({ created: false });
     expect(await readdir(home)).not.toContain("library");
     expect(await readFile(join(homePaths(home).templateNodes, "typecheck.json"), "utf8")).toBe("edited\n");
-    expect((await git(home, ["log", "-1", "--format=%s"])).trim()).toBe("templates: renamed from library");
-    expect(await git(home, ["status", "--porcelain"])).toBe("");
-  });
-
-  it("ignores databases and work directories in git", async () => {
-    const home = join(await tempDir(), "home");
-    await initHome(home, { templates: shippedTemplates });
-    const project = join(home, "projects", "demo");
-    await mkdir(join(project, "work", "job"), { recursive: true });
-    await writeFile(join(project, "pecore.db"), "");
-    await writeFile(join(project, "work", "job", "a.txt"), "");
-    await writeFile(join(project, "project.json"), "{}");
-    expect((await git(home, ["status", "--porcelain", "--untracked-files=all"])).trim()).toBe("?? projects/demo/project.json");
-  });
-
-  it("commits one definition change with the design message", async () => {
-    const home = join(await tempDir(), "home");
-    await initHome(home, { templates: shippedTemplates });
-    const file = join(homePaths(home).templateNodes, "typecheck.json");
-    await writeFile(file, (await readFile(file, "utf8")).replace("600", "900"));
-    expect(await commitDefinition(home, [file], commitMessage("node", "typecheck", "edited"))).toBe(true);
-    expect((await git(home, ["log", "-1", "--format=%s"])).trim()).toBe("node typecheck: edited");
-    expect(await commitDefinition(home, [file], commitMessage("node", "typecheck", "edited"))).toBe(false);
   });
 
   it("copies adapters when the app version changes and removes unpinned ones", async () => {

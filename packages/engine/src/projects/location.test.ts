@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, chmod, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Project } from "@pecore/schemas";
@@ -6,7 +6,6 @@ import type { Accounts } from "@pecore/schemas";
 import { forgeAccount } from "../../test/fake-forge";
 import { forgeHome } from "../../test/forge-project";
 import { definitionOperations } from "../api/routes/definitions";
-import { git } from "../home/git-commit";
 import { Engine } from "../main";
 import { gitApp, gitAppIn, gitAppResult } from "../workdir/git-as";
 import { branchHead, jobBranch } from "../workdir/repo";
@@ -70,7 +69,6 @@ describe("project repository and checkout settings", () => {
     const folder: string = join(dirname(home), "checkout");
     const destination: string = join(dirname(home), "destination");
     const engine: Engine = await Engine.start({ home, templates });
-    const lock: string = join(home, ".git", "index.lock");
     try {
       await engine.createProject({ id: "demo", name: "Demo", repo: null, folder });
       const repo: string = join(engine.projectDir("demo"), "repo.git");
@@ -83,17 +81,17 @@ describe("project repository and checkout settings", () => {
       const file: string = join(engine.projectDir("demo"), "project.json");
       const before: string = await readFile(file, "utf8");
       const head: string | null = await branchHead(repo, "main");
-      await writeFile(lock, "");
-      await expect(save(engine, { folder: destination, repo: { url: "https://github.com/acme/first.git", account: "gh-test" } })).rejects.toThrow("index.lock");
+      await chmod(engine.projectDir("demo"), 0o500);
+      await expect(save(engine, { folder: destination, repo: { url: "https://github.com/acme/first.git", account: "gh-test" } })).rejects.toThrow("EACCES");
+      await chmod(engine.projectDir("demo"), 0o700);
       expect(await readFile(file, "utf8")).toBe(before);
       expect(await branchHead(repo, "main")).toBe(head);
       expect((await gitAppResult(repo, ["config", "remote.origin.url"])).stdout.trim()).toBe(folder);
       expect((await gitAppIn(folder, ["remote"])).trim()).toBe("");
       expect(await readFile(join(folder, "keep.txt"), "utf8")).toBe("keep this file");
       expect(await readdir(destination)).toEqual([]);
-      expect((await git(home, ["log", "-1", "--format=%s"])).trim()).toBe("project demo: created");
     } finally {
-      await rm(lock, { force: true });
+      await chmod(engine.projectDir("demo"), 0o700);
       await engine.shutdown();
     }
   });

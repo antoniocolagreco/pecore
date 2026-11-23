@@ -36,7 +36,6 @@ import { beginProject, cancelCreation, finishProject, prepareRepo, readCreation,
 import type { CreateOptions } from "./projects/create";
 import { appUser, baseEnv } from "./runners/process";
 import { protectedModeScript, protectedUserExists } from "./osuser/protected-mode";
-import { commitDefinition, commitMessage } from "./home/git-commit";
 import { ServicesRuntimeController } from "./services/runtime";
 import { isFinal } from "./graph/job-machine";
 import { Pools } from "./scheduler/pools";
@@ -453,7 +452,7 @@ export class Engine extends EventEmitter {
     const db: ProjectDb = new ProjectDb(join(dir, "pecore.db"));
     if (loaded.project.recipes === undefined && !loaded.errors.length) {
       try {
-        await migrateProjectDefinitions(this.opts.home, dir, templates, loaded, db);
+        await migrateProjectDefinitions(dir, templates, loaded, db);
       } catch (error) {
         loaded.errors.push({ file: join(dir, "project.json"), path: "recipes", message: (error as Error).message });
       }
@@ -698,7 +697,7 @@ export class Engine extends EventEmitter {
         this.setCreating(id, { step: creation.step, error: null });
         return;
       }
-      const findings = await finishProject(this.opts.home, dir, ctx.project, this.createOptions());
+      const findings = await finishProject(dir, this.createOptions());
       const sink: OrderSink | null = this.orderSink();
       if (sink && !loaded.sourcePolling) loaded.sourcePolling = startSourcePolling(ctx, sink, []);
       this.setCreating(id, null);
@@ -722,7 +721,7 @@ export class Engine extends EventEmitter {
       p.ctx.db.close();
       this.projects.delete(id);
     }
-    await cancelCreation(this.opts.home, dir, id);
+    await cancelCreation(dir);
     this.setCreating(id, null);
   }
 
@@ -744,7 +743,6 @@ export class Engine extends EventEmitter {
       this.creating.delete(id);
       if (p.ctx.user !== appUser) await removeAs(p.ctx.user, p.ctx.dir, "work").catch(() => undefined);
       await rm(p.ctx.dir, { recursive: true, force: true });
-      if (!relative(this.opts.home, p.ctx.dir).startsWith("..")) await commitDefinition(this.opts.home, [p.ctx.dir], commitMessage("project", id, "deleted"));
       this.live({ type: "project.updated", projectId: id });
     } finally {
       delete p.deleting;
@@ -770,7 +768,6 @@ export class Engine extends EventEmitter {
       const file = homePaths(this.opts.home).settings;
       const current = JSON.parse(await readFile(file, "utf8").catch(() => "{}")) as Record<string, unknown>;
       await writeFile(file, JSON.stringify({ ...current, protectedMode: on }, null, 2) + "\n");
-      await commitDefinition(this.opts.home, [file], commitMessage("settings", "protectedMode", "edited"));
       this.settings = { ...this.settings, protectedMode: on };
       for (const { ctx } of this.projects.values()) {
         ctx.settings = this.settings;

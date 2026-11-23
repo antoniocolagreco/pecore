@@ -303,7 +303,6 @@ describe("project import (share/, CUJ 7)", () => {
     await p.call("deleteProject", { params: { id: "copy" } });
     await expect(p.call("getProject", { params: { id: "copy" } })).rejects.toMatchObject({ status: 404 });
     expect(lstatSync(dir, { throwIfNoEntry: false })).toBeUndefined();
-    expect(execFileSync("git", ["-C", p.home, "log", "-1", "--format=%s"], { encoding: "utf8" })).toContain("copy");
     expect(await p.call("importProject", { body: { path: out, id: "copy" } })).toMatchObject({ state: "imported", id: "copy" });
     await p.close();
   }, 60000);

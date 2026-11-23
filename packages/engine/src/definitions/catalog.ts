@@ -1,9 +1,8 @@
 import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { Recipe } from "@pecore/schemas";
 import type { JobDefinitions, Node, Project } from "@pecore/schemas";
 import type { NewEvent, ProjectDb } from "../store/project-db";
-import { commitDefinition } from "../home/git-commit";
 import { loadNodeFile, loadRecipeFile, nodeSidecars } from "./load";
 import type { LoadedProject } from "./load";
 import { definitionHash, jobDefinitions, snapshotDefinitions, snapshotNode } from "./snapshot";
@@ -107,7 +106,7 @@ async function saveRecipe(dir: string, source: Recipe, project: string, written:
   }
 }
 
-export async function importCatalog(home: string, templates: string, loaded: LoadedProject): Promise<string[]> {
+export async function importCatalog(templates: string, loaded: LoadedProject): Promise<string[]> {
   const written: string[] = [];
   const differences: string[] = [];
   for (const node of loaded.nodes.values()) {
@@ -115,7 +114,6 @@ export async function importCatalog(home: string, templates: string, loaded: Loa
     await saveNode(join(templates, "nodes"), snapshot, "", written, differences);
   }
   for (const recipe of loaded.recipes.values()) await saveRecipe(join(templates, "recipes"), recipe, "", written, differences);
-  if (written.length > 0) await commitDefinition(home, written, "templates: import project definitions");
   return differences;
 }
 
@@ -131,7 +129,7 @@ export async function saveLegacyJobDefinitions(loaded: LoadedProject, db: Projec
   if (legacy.length) db.append(legacy);
 }
 
-export async function migrateProjectDefinitions(home: string, dir: string, templates: string, loaded: LoadedProject, db: ProjectDb): Promise<void> {
+export async function migrateProjectDefinitions(dir: string, templates: string, loaded: LoadedProject, db: ProjectDb): Promise<void> {
   const project: Project | null = loaded.project;
   if (!project || project.recipes !== undefined) return;
   if (loaded.errors.length > 0) throw new Error("Fix the project definitions before moving them to Templates.");
@@ -157,8 +155,6 @@ export async function migrateProjectDefinitions(home: string, dir: string, templ
   const file: string = join(dir, "project.json");
   const staged: string = join(dir, ".project-templates.json");
   await writeFile(staged, JSON.stringify(next, null, 2) + "\n");
-  if (written.length > 0) await commitDefinition(home, written, `templates: migrate ${project.id}`);
   await rename(staged, file);
   for (const name of ["nodes", "recipes"]) await rm(join(dir, name), { recursive: true, force: true });
-  await commitDefinition(home, [dir], `project ${basename(dir)}: use shared templates`);
 }
