@@ -12,9 +12,10 @@ import { ChevronDownIcon, ChevronUpIcon } from "./icons";
 import s from "./values.module.css";
 
 export function NumberField({
-  label, labelAction, description, error, disabled, className, value, defaultValue, onValueChange, min, max, step = 1, unit, fullWidth,
+  label, labelAction, description, error, disabled, className, value, defaultValue, onValueChange, min, max, step = 1, unit, fullWidth, placeholder,
 }: FieldProps & {
   fullWidth?: boolean;
+  placeholder?: string;
   value?: number | null;
   defaultValue?: number;
   onValueChange?: (value: number | null) => void;
@@ -49,7 +50,7 @@ export function NumberField({
           </div>
         )}
         <BaseNumberField.Group className={`${f.shell} ${s.numberGroup} ${fullWidth ? s.fullWidth : ""}`}>
-          <BaseNumberField.Input className={`${f.input} ${s.numberInput}`} />
+          <BaseNumberField.Input className={`${f.input} ${s.numberInput}`} placeholder={placeholder} />
           {unit && <span className={s.unit}>{unit}</span>}
           <span className={s.stepper}>
             <BaseNumberField.Increment className={s.step} aria-label="Increase"><ChevronUpIcon size="xs" bold /></BaseNumberField.Increment>

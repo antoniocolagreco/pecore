@@ -117,6 +117,18 @@
   cursor: grabbing;
 }
 
+.checkHelp {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.checkHelp > label {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
 .inspectorActions {
   display: flex;
   align-items: center;

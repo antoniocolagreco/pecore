@@ -157,3 +157,9 @@
 - Decision: the node inspector shows only Remove node. Clicking the empty canvas, Start or End shows the recipe settings.
 - Why: the gear button repeated what a click on the canvas already does.
 - Replaces: the gear button labelled Recipe settings.
+
+## 2026-11-23: Node inspector fields explain themselves
+
+- Decision: Requires, Optional, Skip when unchanged and Max rounds have an info icon with a short explanation. An empty Max rounds shows "No limit", and its explanation says that deleting the number removes the limit.
+- Why: the user could not tell what these fields do, and did not see how to remove a Max rounds value because the arrows stop at 1.
+- Replaces: unexplained fields and an empty Max rounds with no placeholder.

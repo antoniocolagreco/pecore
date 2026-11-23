@@ -326,10 +326,17 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
                   value={string(object(selectedNode.params).question)} placeholder={string(questionParameter.default)} disabled={!editable}
                   onValueChange={(question) => updateNode("params", { ...object(selectedNode.params), question: question.trim() ? question : undefined })} />}
                 <MultiCombobox label="Requires" placeholder="Choose nodes" value={required} disabled={!editable}
+                  labelAction={<FieldHelp title="Requires">Steps that must have passed on the current code before this step runs. If the code changed after they passed, this step does not run and ends with stale, which you can connect, for example back to the checks. Commit uses it to commit only checked code.</FieldHelp>}
                   options={stepOptions.filter(({ value }) => value !== selected || required.includes(value))}
                   onValueChange={(next) => updateNode("requires", next)} />
-                <Checkbox label="Optional" checked={selectedNode.optional === true} disabled={!editable} onCheckedChange={(checked) => updateNode("optional", checked)} />
-                <Checkbox label="Skip when unchanged" checked={selectedNode.skipWhenUnchanged === true} disabled={!editable} onCheckedChange={(checked) => updateNode("skipWhenUnchanged", checked)} />
+                <div className={s.checkHelp}>
+                  <Checkbox label="Optional" checked={selectedNode.optional === true} disabled={!editable} onCheckedChange={(checked) => updateNode("optional", checked)} />
+                  <FieldHelp title="Optional">The step runs only when the job's specification asks for it. Otherwise it ends at once with skipped.</FieldHelp>
+                </div>
+                <div className={s.checkHelp}>
+                  <Checkbox label="Skip when unchanged" checked={selectedNode.skipWhenUnchanged === true} disabled={!editable} onCheckedChange={(checked) => updateNode("skipWhenUnchanged", checked)} />
+                  <FieldHelp title="Skip when unchanged">After the base branch moves, if the rebase was clean and the job's own changes are the same as before, the step does not run again and keeps its previous result. Use it for reviews and approvals; checks should always run.</FieldHelp>
+                </div>
                 {edges.map((value, index) => {
                   const edge = object(value);
                   return edge.from === selected && <div key={index} className={s.inspectorEdge}>
@@ -338,7 +345,8 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
                       <IconButton label="Remove edge" icon={<TrashIcon />} disabled={!editable}
                         onClick={() => updateGraph({ edges: edges.filter((_, i) => i !== index) })} />
                     </div>
-                    <NumberField label="Max rounds" min={1} fullWidth disabled={!editable} value={typeof edge.maxRounds === "number" ? edge.maxRounds : null}
+                    <NumberField label="Max rounds" min={1} fullWidth placeholder="No limit" disabled={!editable} value={typeof edge.maxRounds === "number" ? edge.maxRounds : null}
+                      labelAction={<FieldHelp title="Max rounds">How many times this arrow can send the job here. When it is reached, the job pauses and asks you whether to allow more rounds or end it. Delete the number for no limit; Max node runs still applies.</FieldHelp>}
                       onValueChange={(next) => update({ edges: edges.map((item, i) => i === index ? { ...edge, maxRounds: next ?? undefined } : item) })} />
                   </div>;
                 })}

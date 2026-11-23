@@ -183,7 +183,7 @@ export function Combobox({
 }
 
 export function MultiCombobox({
-  label, description, error, disabled, className, options, value, defaultValue, onValueChange, placeholder, empty = "No results",
+  label, labelAction, description, error, disabled, className, options, value, defaultValue, onValueChange, placeholder, empty = "No results",
 }: FieldProps & {
   options: Option[];
   value?: string[];
@@ -194,7 +194,7 @@ export function MultiCombobox({
 }) {
   const find = (v: string[] | undefined): Option[] | undefined => v?.flatMap((x) => options.filter((o) => o.value === x));
   return (
-    <FieldFrame label={label} description={description} error={error} disabled={disabled} className={className}>
+    <FieldFrame label={label} labelAction={labelAction} description={description} error={error} disabled={disabled} className={className}>
       <BaseCombobox.Root
         items={options}
         {...comboItems}
