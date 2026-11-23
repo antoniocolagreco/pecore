@@ -152,7 +152,7 @@ export function Jobs() {
   const project: string | null = query.get("project");
   const [archived, setArchived] = useState<ArchiveFilter>("false");
   const [search, setSearch] = useState<string>("");
-  const jobs = useJobs(archived, project);
+  const jobs = useJobs("all", null);
   const projects = useData(() => call("listProjects"), [], (m) => m.type === "project.updated");
   const setFilter = (name: string, value: string | null): void => {
     const next = new URLSearchParams(query);
