@@ -4,6 +4,7 @@ import { extname, join } from "node:path";
 import type { ArtifactType, CommandNode, FailureReason, OutcomeRule, OutputRule } from "@pecore/schemas";
 import { createCleanCheckout, removeCleanCheckout } from "../workdir/content-state";
 import { FsAsError, readFileAs, writeFileAs } from "../workdir/fs-as";
+import { gitIdentityEnv } from "../workdir/git-as";
 import { placeholderEnv, placeholderValues, substituteArgv } from "./placeholders";
 import type { PlaceholderContext } from "./placeholders";
 import { appUser, baseEnv, run, SpawnError } from "./process";
@@ -125,7 +126,7 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
       inputs[i.type] = join(cwd, rel);
     }
     const values = placeholderValues({ ...c.context, params: c.params, workdir: cwd, inputs, commentPath });
-    const env = { ...(await baseEnv(user)), ...placeholderEnv(values), ...c.extraEnv };
+    const env = { ...(await baseEnv(user)), ...(await gitIdentityEnv()), ...placeholderEnv(values), ...c.extraEnv };
     const timeoutMs = c.node.timeoutSec * 1000;
     let log = "";
 

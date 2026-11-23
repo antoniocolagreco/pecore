@@ -21,6 +21,21 @@ async function git(user: string, cwd: string, prefix: string[], args: string[], 
   return { stdout: r.stdout, code: r.code, stderr: r.stderr };
 }
 
+let identity: Promise<Record<string, string>> | undefined;
+
+export function gitIdentityEnv(): Promise<Record<string, string>> {
+  identity ??= (async () => {
+    const value = async (key: string, fallback: string): Promise<string> => {
+      const r = await run({ user: appUser, cwd: "/", env: await baseEnv(appUser), argv: ["git", "config", "--global", "--get", key] });
+      return r.code === 0 && r.stdout.trim() ? r.stdout.trim() : fallback;
+    };
+    const name: string = await value("user.name", "PeCore");
+    const email: string = await value("user.email", "pecore@localhost");
+    return { GIT_AUTHOR_NAME: name, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: name, GIT_COMMITTER_EMAIL: email };
+  })();
+  return identity;
+}
+
 export async function gitApp(repoGit: string, args: string[], opts: Opts = {}): Promise<string> {
   return (await git(appUser, repoGit, [`--git-dir=${repoGit}`], args, opts)).stdout;
 }

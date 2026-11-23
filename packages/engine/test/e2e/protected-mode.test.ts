@@ -122,6 +122,7 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
     } finally {
       await engine.setProtectedMode(false, true).catch((error: unknown) => console.error(error));
       await engine.shutdown();
+      await execFileP("sudo", ["-n", "rm", "-rf", "--", root]);
     }
   }, 300000);
 });
