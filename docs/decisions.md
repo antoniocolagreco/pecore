@@ -60,3 +60,9 @@
 - Decision: a sent message shows each attached image as a thumbnail, like before sending. Other files stay as name and size.
 - Why: the user wants to see in the chat which image was sent.
 - Replaces: images listed only by name and size after sending.
+
+## 2026-11-23: Recipe names say what the job does and where it ends
+
+- Decision: the shipped recipes are `feature-to-pr` (Feature to PR), `feature-to-local-commit` (Feature to Local Commit) and `bugfix-to-pr` (Bug Fix to PR). They stay three distinct flows. Existing homes get the new files; the old ones are removed at start when unchanged.
+- Why: Feature, Local Only and Bug Fix did not say where the job ends, and Local Only did not say what it does.
+- Replaces: the recipe names `feature`, `local-only` and `bugfix`.

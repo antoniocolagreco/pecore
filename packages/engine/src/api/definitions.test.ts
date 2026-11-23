@@ -80,23 +80,23 @@ describe("definition routes", () => {
 
   it("assigns a shared recipe without copying its files or creating a queue item", async () => {
     const { engine, call, close } = await apiProject();
-    const r = await call("instantiate", { body: { kind: "recipe", name: "local-only", project: "demo" } });
-    expect(r.created).toEqual(["templates/recipes/local-only.json"]);
+    const r = await call("instantiate", { body: { kind: "recipe", name: "feature-to-local-commit", project: "demo" } });
+    expect(r.created).toEqual(["templates/recipes/feature-to-local-commit.json"]);
     expect(await call("listQueue", { query: { state: "open" } })).toEqual([]);
-    expect(engine.project("demo").ctx.project.recipes).toEqual(["reviewed", "local-only"]);
+    expect(engine.project("demo").ctx.project.recipes).toEqual(["reviewed", "feature-to-local-commit"]);
     expect(existsSync(join(engine.projectDir("demo"), "nodes"))).toBe(false);
-    const again = await call("instantiate", { body: { kind: "recipe", name: "local-only", project: "demo" } });
-    expect(again).toMatchObject({ created: [], kept: ["templates/recipes/local-only.json"] });
+    const again = await call("instantiate", { body: { kind: "recipe", name: "feature-to-local-commit", project: "demo" } });
+    expect(again).toMatchObject({ created: [], kept: ["templates/recipes/feature-to-local-commit.json"] });
     await close();
   });
 
   it("refuses to add or save a recipe that needs a remote repository in a local project (decision 72)", async () => {
     const { engine, call, close } = await apiProject();
     const refusal = "git-push needs a remote repository, and this project has none";
-    await expect(call("instantiate", { body: { kind: "recipe", name: "feature", project: "demo" } })).rejects.toThrow(refusal);
+    await expect(call("instantiate", { body: { kind: "recipe", name: "feature-to-pr", project: "demo" } })).rejects.toThrow(refusal);
     expect(existsSync(join(engine.projectDir("demo"), "recipes", "feature.json"))).toBe(false);
     expect(existsSync(join(engine.projectDir("demo"), "nodes", "git-push.json"))).toBe(false);
-    const result = await definitionOperations(engine).instantiate({ kind: "recipe", name: "feature", project: "demo" });
+    const result = await definitionOperations(engine).instantiate({ kind: "recipe", name: "feature-to-pr", project: "demo" });
     expect(result.errors.map(({ message }) => message)).toContain(refusal);
     expect(await call("listQueue", { query: { state: "open" } })).toEqual([]);
     const content = JSON.stringify({ name: "push", description: "commit and push", start: "commit", successOutcomes: ["push:pushed"],
@@ -104,7 +104,7 @@ describe("definition routes", () => {
     await call("saveDefinition", { params: { path: "templates/recipes/push.json" }, body: { content, baseSha256: null } });
     await expect(call("instantiate", { body: { kind: "recipe", name: "push", project: "demo" } })).rejects.toThrow(refusal);
     expect(existsSync(join(engine.projectDir("demo"), "recipes", "push.json"))).toBe(false);
-    expect((await call("instantiate", { body: { kind: "recipe", name: "local-only", project: "demo" } })).created).toContain("templates/recipes/local-only.json");
+    expect((await call("instantiate", { body: { kind: "recipe", name: "feature-to-local-commit", project: "demo" } })).created).toContain("templates/recipes/feature-to-local-commit.json");
     await close();
   });
 });

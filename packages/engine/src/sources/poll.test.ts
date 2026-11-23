@@ -41,7 +41,7 @@ describe("ticket intake (section 7, Phase 6 decision 1)", () => {
       },
     };
     const engine = await Engine.start({ home, templates, orders });
-    await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["local-only"]);
+    await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["feature-to-local-commit"]);
     const dir = engine.projectDir("demo");
     await writeFile(join(engine.project("demo").ctx.defs.nodeDir, "fake-source.json"), JSON.stringify(fakeSource));
     const projectFile = join(dir, "project.json");

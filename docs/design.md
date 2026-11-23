@@ -162,7 +162,7 @@ Project Settings shows the fixed project ID and lets the user edit the name, bas
 
 ### CUJ 1: Bug fix from a GitHub issue
 
-*   **Given**: project `progetto-1` points to `github.com/pappa/pippo` with account `account-1`. Its `bugfix` recipe uses instances of check templates for the project's toolchain and the nodes `git-commit`, `git-push`, `github-pr` and `github-issue-comment`. Its `source` is an instance of `github-issues`. An issue labelled `factory` exists.
+*   **Given**: project `progetto-1` points to `github.com/pappa/pippo` with account `account-1`. Its `bugfix-to-pr` recipe uses instances of check templates for the project's toolchain and the nodes `git-commit`, `git-push`, `github-pr` and `github-issue-comment`. Its `source` is an instance of `github-issues`. An issue labelled `factory` exists.
 *   **When**: the user tells the Assistant “fix issue 42 of progetto-1”.
 *   **Then**:
     1.  The Assistant passes the order to progetto-1's Project Manager, which reads the issue, picks the recipe and starts a job.
@@ -386,7 +386,7 @@ A GitHub recipe can use `write-pr` to write a title and description and `github-
 ```json
 {
   "$schema": "../../../schemas/recipe.json",
-  "name": "feature",
+  "name": "feature-to-pr",
   "description": "New feature on existing code: spec, tests, code, checks, review, commit, PR",
   "start": "spec",
   "onBaseChanged": "rebase",
@@ -1134,7 +1134,7 @@ Run typecheck, lint and engine tests for every code change. Defer GUI tests unti
 | `jobs/stacked.test.ts` | three-job chain: parent recommit, parent merge, parent failure (G9) | CI with the fake forge |
 | `e2e/languages.test.ts` | same recipe shape on a TypeScript and a Rust fixture project (G2) | CI |
 | `e2e/forges.test.ts` | delivery to GitHub, GitLab, local only (G3) | manual, sandbox accounts |
-| `e2e/providers.test.ts` | `feature` with three connectors: Claude Code, Codex, opencode (G6) | manual, real logins |
+| `e2e/providers.test.ts` | `feature-to-local-commit` with three connectors: Claude Code, Codex, opencode (G6) | manual, real logins |
 | `e2e/why.test.ts` | `why` output for every waiting reason (G13) | CI |
 
 The fake forge (`test/fake-forge/`) is a local bare repo plus scripts that imitate the `gh` commands used by the GitHub templates. The fake agent (`test/fake-agent/agent.mjs`, outside the build) is an ACP agent that follows a script named by the variable `FAKE_AGENT_SCRIPT`: a JSONL file of steps `{ "expect": <method> }`, `{ "send": <JSON-RPC message> }`, `{ "write": { "path", "content" } }`, `{ "sleep": <ms> }`, `{ "exit": <code> }`. Tests use it through a connector file of kind `native` with `harness.program` `node` and reader `claude-code`.
@@ -1359,9 +1359,9 @@ Stored in the repository under `packages/app/resources/` and bundled with the ap
 | `templates/nodes/cargo-check.json`, `cargo-clippy.json`, `cargo-test.json` | Rust checks, for G2; `cargo-test` has `cleanCheckout: true` |
 | `templates/nodes/github-issues.json`, `gitlab-issues.json`, `markdown-folder.json` | ticket source nodes of section 7, with `label` and `trusted` params. `markdown-folder`: tickets are `*.md` files; `comment` appends to `<ticket>.comments.md`; `replies` reads lines added there after a time |
 | `templates/nodes/jira.json` | ticket source through `acli` (Atlassian CLI), which keeps its own login |
-| `templates/recipes/feature.json` | the recipe of 3.2 |
-| `templates/recipes/bugfix.json` | the `feature` recipe of 3.2 plus a `github-issue-comment` node after `pr` (outcome `opened`), with `successOutcomes` on the comment node's `done`; its spec writer prompt asks for a failing test that reproduces the bug (CUJ 1) |
-| `templates/recipes/local-only.json` | the nodes of `feature` up to `git-commit`, with `successOutcomes` `commit:done` (CUJ 4); its reviewer has no `providerNot`, so it runs with a single provider |
+| `templates/recipes/feature-to-pr.json` | the recipe of 3.2 (shown as "Feature to PR") |
+| `templates/recipes/bugfix-to-pr.json` | shown as "Bug Fix to PR": the `feature-to-pr` recipe of 3.2 plus a `github-issue-comment` node after `pr` (outcome `opened`), with `successOutcomes` on the comment node's `done`; its spec writer prompt asks for a failing test that reproduces the bug (CUJ 1) |
+| `templates/recipes/feature-to-local-commit.json` | shown as "Feature to Local Commit": the nodes of `feature-to-pr` up to `git-commit`, with `successOutcomes` `commit:done` (CUJ 4); its reviewer has no `providerNot`, so it runs with a single provider |
 | `connectors/claude-code.json` | Claude Code connector (Connector file above), the reference example; built in phase 3 |
 | `connectors/codex.json`, `opencode.json` | Codex and opencode connectors; built in phase 6, for G6 |
 
@@ -1415,7 +1415,7 @@ Each line closes one entry gate of phase 4 and overrides the earlier text it con
 8.  **Forge choices as data.** `templates/forges/<forge>.json` names, per forge, the clone credential helper, the delivery, comment, repo creation and source node templates. `projects/defaults.ts` reads it; the engine has no `if github`. A forge may have no credential helper, repo creation or source (`null`): `git`, a private Git server, uses the user's own Git credentials, delivers the pushed branch (`git-delivery`), skips the ticket comment (`git-no-comment`), and needs an existing repository.
 9.  **Slots while waiting.** A node run holds pool units only while its process runs. Waits for `network`, `auth`, `quota`, `rate_limit` and `human` hold none.
 10. **Stacked jobs.** A child's target while the parent is not merged is the parent's branch; after the merge, the parent's own target. A queued child gets its base when the parent ends `succeeded`: the SHA of the parent's latest `commit` artifact. Merge detection runs, while the app runs, for every job that has a `delivery` artifact not yet merged, whatever the state of the job and of its children, using the URL in that artifact; the API also runs it on demand for one job.
-11. **Bugfix proof.** `bugfix` runs `tests-fail-check` after the tests node: a `vitest` variant whose outcome is `failed_as_expected` when the tests fail and `unexpected_pass` when they pass; `unexpected_pass` goes back to the tests node.
+11. **Bugfix proof.** `bugfix-to-pr` runs `tests-fail-check` after the tests node: a `vitest` variant whose outcome is `failed_as_expected` when the tests fail and `unexpected_pass` when they pass; `unexpected_pass` goes back to the tests node.
 12. **Prerequisites by feature.** First run checks git, and on Linux sudo and setfacl only when protected mode is turned on. `gh`, `glab` and `aws` are checked when an account uses them, Compose when a project has `services` or a services runtime is set.
 13. **Project creation across a restart.** `projects/<id>/creating.json` records the last finished step. At start, an unfinished creation is shown in Notifications with Retry (continue from the next step) and Cancel (undo the finished steps). The `createRepo` node run waits like any node run (`network`, `auth`).
 14. **Group before relogin.** The admin prompt that turns protected mode on also runs the group and ACL steps for every existing project as root. A project created later, while the app user's session does not have the group yet (`id -Gn`), gets its group step through an admin prompt too; the GUI suggests logging out and in to avoid it.

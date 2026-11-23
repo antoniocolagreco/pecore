@@ -40,17 +40,17 @@ describe("project defaults (decision 8)", () => {
     expect(d.rename).not.toHaveProperty("github-create-repo");
     expect(d.rename).not.toHaveProperty("github-issues");
     const project = await tempDir();
-    expect((await instantiateRecipe(shippedTemplates, project, "feature", d.rename)).errors).toEqual([]);
-    const feature = JSON.parse(await readFile(join(project, "recipes", "feature.json"), "utf8"));
+    expect((await instantiateRecipe(shippedTemplates, project, "feature-to-pr", d.rename)).errors).toEqual([]);
+    const feature = JSON.parse(await readFile(join(project, "recipes", "feature-to-pr.json"), "utf8"));
     expect(feature.nodes.pr.use).toBe("git-delivery");
   });
 
   it("instantiating a recipe with the rename map writes the GitLab node and recipe", async () => {
     const project = await tempDir();
     const d = await projectDefaults(shippedTemplates, repo, "gitlab");
-    const r = await instantiateRecipe(shippedTemplates, project, "bugfix", d.rename);
+    const r = await instantiateRecipe(shippedTemplates, project, "bugfix-to-pr", d.rename);
     expect(r.errors).toEqual([]);
-    const recipe = JSON.parse(await readFile(join(project, "recipes", "bugfix.json"), "utf8"));
+    const recipe = JSON.parse(await readFile(join(project, "recipes", "bugfix-to-pr.json"), "utf8"));
     expect(recipe.nodes.pr.use).toBe("gitlab-mr");
     expect(recipe.nodes.comment.use).toBe("gitlab-issue-comment");
     expect(r.written).toContain(join(project, "nodes", "gitlab-mr.json"));

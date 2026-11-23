@@ -5,6 +5,7 @@ const nameWords: ReadonlyMap<string, string> = new Map<string, string>([
   ["gitlab", "GitLab"],
   ["mr", "MR"],
   ["pr", "PR"],
+  ["to", "to"],
   ["typecheck", "Type Check"],
 ]);
 

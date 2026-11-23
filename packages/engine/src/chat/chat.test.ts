@@ -703,7 +703,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       for (const invalid of [
         { name: "Mock One" },
         { ...settings, baseBranch: "bad..branch" },
-        { ...settings, recipes: ["local-only"] },
+        { ...settings, recipes: ["feature-to-local-commit"] },
         { ...settings, repository: { mode: "new", url: "https://github.com/acme/mock-one.git", account: "missing" } },
       ]) {
         expect((await m.tool("create_project", invalid)).result?.isError).toBe(true);

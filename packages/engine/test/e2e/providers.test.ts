@@ -89,7 +89,7 @@ describe.skipIf(!real)("phase 6 gate: Codex and opencode connectors with the use
       await writeFile(join(home, "tiers.json"), JSON.stringify({ tiers: { frontier: ["p"], strong: ["p"], standard: ["p"], cheap: ["p"] } }));
       const adapters = (await import(join(agentsRoot, "adapters.json"), { with: { type: "json" } })).default as { adapters: Record<string, { version: string; entry: string }> };
       const engine = await Engine.start({ home, templates: shippedTemplates, agents: { connectorsDir, adaptersDir: join(agentsRoot, "out", "adapters"), adapters: adapters.adapters }, checkLogins: false });
-      await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["local-only"]);
+      await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["feature-to-local-commit"]);
       const p = engine.project("demo");
       const id = await engine.createJob("demo", {
         title: "Add a sum function",

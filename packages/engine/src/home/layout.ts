@@ -103,6 +103,12 @@ const previousShippedHashes: ReadonlyMap<string, readonly string[]> = new Map([
 const retiredShippedHashes: ReadonlyMap<string, readonly string[]> = new Map([
   ["recipes/empty.json", ["d5aeb3f6f5d017214284b2e2dccb1cbb0637fa9a7006c7039f7d68e95a63bee7"]],
   ["icons/recipe-empty.svg", ["b628ede0d499969ae3f7eccfbdd12dffed1ece97ba4065beae14f50d622775b2"]],
+  ["recipes/feature.json", ["797ff459004ba0da6e728ec0da8a547300fc218c2492d28f590d1ab45af20f51"]],
+  ["recipes/local-only.json", ["6b2a4ba6ee7d717d07147eecb9a4771dbdd04d17fcc5d88de72b87d7981549d3"]],
+  ["recipes/bugfix.json", ["69025d843cb0f0d2205ba92790d076e2cb6dbdc50da8444610febad34ec49f0c"]],
+  ["icons/recipe-feature.svg", ["471b9b48197661b9d25309c38530f2a26c9090e776f050628d6911c186447b17"]],
+  ["icons/recipe-local-only.svg", ["07fff36b9a15e64991f771806ea74ad695ed7e9e7305602932a0df026523a3bf"]],
+  ["icons/recipe-bugfix.svg", ["0e72f244d42e18607d31654ff16488ae993c042d27a8cf6f98b9612f139f99f9"]],
 ]);
 
 async function removeRetiredTemplateFiles(templates: string): Promise<string[]> {

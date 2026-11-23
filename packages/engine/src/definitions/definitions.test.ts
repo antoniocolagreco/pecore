@@ -125,7 +125,7 @@ describe("phase 1 gate: shipped templates", () => {
     const lib = await loadTemplates(shippedTemplates);
     expect(lib.errors).toEqual([]);
     expect(lib.nodes.size).toBeGreaterThan(0);
-    expect(lib.recipes.has("feature")).toBe(true);
+    expect(lib.recipes.has("feature-to-pr")).toBe(true);
   });
 });
 
@@ -150,9 +150,9 @@ describe("instantiate", () => {
   it("instantiates a recipe and gives a valid project", async () => {
     const project = join(await tempDir(), "demo");
     await mkdir(project);
-    expect((await instantiateRecipe(shippedTemplates, project, "local-only")).errors).toEqual([]);
+    expect((await instantiateRecipe(shippedTemplates, project, "feature-to-local-commit")).errors).toEqual([]);
     await writeFile(join(project, "project.json"), JSON.stringify({
-      id: "demo", name: "Demo", repo: null, defaultRecipe: "local-only", limits: { jobs: 2, budget: { jobUsd: 5 } },
+      id: "demo", name: "Demo", repo: null, defaultRecipe: "feature-to-local-commit", limits: { jobs: 2, budget: { jobUsd: 5 } },
     }));
     const loaded = await loadProject(project);
     expect(loaded.errors).toEqual([]);
@@ -164,7 +164,7 @@ describe("instantiate", () => {
   it("refuses a recipe that pushes in a project without a remote repository (decision 72)", async () => {
     const project = join(await tempDir(), "demo");
     await mkdir(project);
-    expect((await instantiateRecipe(shippedTemplates, project, "feature")).errors).toEqual([]);
+    expect((await instantiateRecipe(shippedTemplates, project, "feature-to-pr")).errors).toEqual([]);
     await writeFile(join(project, "project.json"), JSON.stringify({ id: "demo", name: "Demo", repo: null }));
     const loaded = await loadProject(project);
     expect(loaded.errors.map(({ path, message }) => ({ path, message }))).toEqual([
