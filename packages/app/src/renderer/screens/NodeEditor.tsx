@@ -228,11 +228,11 @@ const paperTheme = EditorView.theme({
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": {
     fontFamily: "var(--font)", fontSize: "16px", lineHeight: "28px", overflow: "auto",
-    backgroundImage: "linear-gradient(to right, transparent 55px, var(--paper-margin) 55px, var(--paper-margin) 57px, transparent 57px), repeating-linear-gradient(to bottom, transparent 0 27px, var(--paper-rule) 27px 28px)",
+    backgroundImage: "repeating-linear-gradient(to bottom, transparent 0 27px, var(--paper-rule) 27px 28px)",
     backgroundAttachment: "local",
-    backgroundPosition: "0 0, 0 20px",
+    backgroundPosition: "0 20px",
   },
-  ".cm-content": { padding: "20px 32px 48px 72px", caretColor: "var(--paper-ink)" },
+  ".cm-content": { padding: "20px 40px 48px", caretColor: "var(--paper-ink)" },
   ".cm-line": { padding: "0" },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": { backgroundColor: "color-mix(in srgb, var(--accent) 25%, transparent)" },
 });

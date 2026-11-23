@@ -196,3 +196,4 @@
 - Decision: the knowledge editor is a ruled paper sheet with a red margin line, the normal app font, wrapped lines and no line numbers; the paper is dimmed in the dark theme. The Knowledge tab fills the window, Save sits next to Rename and Delete, and Markdown files dropped on the tab are uploaded.
 - Why: knowledge is prose, not code; the user wants it to feel like writing on paper, with more room and drag and drop.
 - Replaces: the code editor with line numbers, a tab as tall as its content and upload by button only.
+- Later the same day: no red margin line, and the paper and rules take the theme's colours (control background and separator), because a fixed paper colour looked out of place in the app.

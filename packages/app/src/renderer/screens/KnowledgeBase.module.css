@@ -1,8 +1,7 @@
 .layout {
-  --paper: light-dark(#fffdf6, #2b2925);
-  --paper-ink: light-dark(#26241f, #e9e4d8);
-  --paper-rule: light-dark(#d9e3ef, #3a3d44);
-  --paper-margin: light-dark(#efb3ae, #7a4642);
+  --paper: linear-gradient(var(--control-bg), var(--control-bg)) var(--surface);
+  --paper-ink: var(--text);
+  --paper-rule: var(--separator);
 
   position: relative;
   display: grid;
