@@ -267,3 +267,7 @@
 - Found by the protected-mode test: `pecore-agent` has no git name or email, so every job commit failed in protected mode. Job commands now get the app user's git name and email (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`), or "PeCore <pecore@localhost>" when the app user has none.
 - Found by the protected-mode test: `pecore-agent` could read any file of `PECORE_HOME` whose path it knew (settings, accounts, project databases), because the app wrote files readable by everyone and `pecore-agent` may pass through `PECORE_HOME` to reach its folders. The engine now creates every file private (umask 077) and at start removes other users' access from existing files and from folder listings, except the folders opened to `pecore-agent`: `adapters/`, `chats/`, `harness/<user>/`, and each project's `work/` and `repo.git/`.
 - Tests: `osuser/permissions.test.ts` checks folder modes, ACLs and token modes on every run; `test/e2e/protected-mode.test.ts` creates the real `pecore-agent` in CI and checks that it runs jobs and chats but cannot read settings, accounts, profiles, the app user's logins, templates, chat history or project data.
+
+## Agents list
+
+- Agents opens a table of agent configurations with title, provider, model and effort. New agent and Edit open a dedicated editor. Saving returns to the list. Delete asks for confirmation from the list.

@@ -1,50 +1,100 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { ChatAgent, NodeAgentCatalog, Compaction, compactionSizes } from "@pecore/schemas";
 import type { Account, AgentDefinition, AssistantTraitId, NodeAgent, Role } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useAutoSave, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { PageActions } from "../components/PageActions";
-import { ErrorText, Page, ui } from "../components/ui";
-import { ModelPicker, Traits } from "../components/AgentFields";
-import { Button } from "../ds/button";
-import { Card, Spinner } from "../ds/feedback";
+import { ErrorText, Page } from "../components/ui";
+import { harnessName, ModelPicker, Traits } from "../components/AgentFields";
+import { Button, IconButton } from "../ds/button";
+import { Table } from "../ds/data";
+import { Card, EmptyState, Skeleton, Spinner } from "../ds/feedback";
 import { TextArea, TextField } from "../ds/field";
+import { PlusIcon, TrashIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
-import { SidebarItem, SidebarSection } from "../shell/sidebar";
-import { Sidecar } from "./NodeEditor";
+import { Sidecar, useUnsaved } from "./NodeEditor";
 import s from "./Agents.module.css";
 
 function sizeOptions(sizes: readonly number[]): { value: string; label: string }[] {
   return sizes.map((size) => ({ value: String(size), label: `${size / 1024}K tokens` }));
 }
 
-export function Agents() {
+function useAgentCatalog() {
   const catalog = useData(() => call("getAgents"), [], (event) => event.type === "definition.changed" && event.path === "agents.json");
   const accounts = useData(() => call("getAccounts"), [], (event) => event.type === "definition.changed" && event.path === "accounts.json");
-  const [selected, setSelected] = useState<string | null>(null);
-  const [draft, setDraft] = useState<NodeAgent | null>(null);
+  const modelAccounts: Account[] = accounts.data?.value.accounts.filter(({ kind }) => kind === "model") ?? [];
+  return { catalog, modelAccounts, accountsError: accounts.error };
+}
+
+export function Agents() {
+  const navigate = useNavigate();
+  const { catalog, modelAccounts, accountsError } = useAgentCatalog();
   const connected: boolean = useConnected();
+  const [removing, setRemoving] = useState<NodeAgent | null>(null);
   const agents: NodeAgent[] = catalog.data?.value.agents ?? [];
-  const agent: NodeAgent | undefined = draft ?? agents.find(({ id }) => id === selected) ?? agents[0];
-  const choose = (id: string | null): void => {
-    setDraft(null);
-    setSelected(id);
-  };
-  return <Page title="Agents" width={900} actions={<Button disabled={!connected || !catalog.data}
-    onClick={() => setDraft({ id: `agent-${crypto.randomUUID()}`, kind: "agent", name: "", model: null, compaction: Compaction.parse({}) })}>New agent</Button>}>
-    <SidebarSection title="Agents" label="Agents">
-      {agents.map((entry) => <SidebarItem key={entry.id} active={agent?.id === entry.id} onClick={() => choose(entry.id)}>{entry.name}</SidebarItem>)}
-    </SidebarSection>
-    <ErrorText error={catalog.error ?? accounts.error} />
-    {catalog.data && !agent && <Card><p className={ui.muted}>No agent configurations yet.</p></Card>}
-    {agent && catalog.data && <AgentEditor key={agent.id} initial={agent} title={draft ? "New agent" : agent.name} baseSha256={catalog.data.sha256}
-      catalog={catalog.data.value} accounts={accounts.data?.value.accounts.filter(({ kind }) => kind === "model") ?? []}
-      creating={draft !== null} disabled={!connected} onSaved={(id) => { choose(id); catalog.reload(); }}
-      onDeleted={() => { choose(null); catalog.reload(); }} />}
+  const destroy = useAction(async () => {
+    if (!removing || !catalog.data) return;
+    const { value, sha256 } = catalog.data;
+    await call("putAgents", { body: { value: { ...value, agents: agents.filter(({ id }) => id !== removing.id) }, baseSha256: sha256 } });
+    catalog.reload();
+    setRemoving(null);
+  });
+  const newAgent = <Button variant="primary" icon={<PlusIcon />} disabled={!connected || !catalog.data}
+    onClick={() => void navigate("/agents/edit")}>New agent</Button>;
+
+  return <Page title="Agents" actions={catalog.data && agents.length === 0 ? undefined : newAgent}>
+    <ErrorText error={catalog.error ?? accountsError} />
+    {catalog.loading && !catalog.data && <Card padded className={s.fields}><Skeleton /><Skeleton /><Skeleton /></Card>}
+    {catalog.data && <Table label="Agents" rows={agents} rowKey={({ id }) => id} empty={<Card padded><EmptyState title="No agents yet" action={newAgent} /></Card>}
+      columns={[
+        { key: "title", header: "Title", cell: ({ name }) => name },
+        { key: "provider", header: "Provider", cell: ({ model }) => {
+          const account: Account | undefined = modelAccounts.find(({ id }) => id === model?.account);
+          return account ? harnessName(account, modelAccounts) : model?.account ?? "Not set";
+        } },
+        { key: "model", header: "Model", cell: ({ model }) => model?.model ?? "Not set" },
+        { key: "effort", header: "Effort", cell: ({ model }) => model?.effort ?? "Default" },
+        { key: "actions", header: "Actions", align: "end", cell: (agent) => <div className={s.rowActions}>
+          <Button size="sm" disabled={!connected || destroy.busy} aria-label={`Edit ${agent.name}`}
+            onClick={() => void navigate(`/agents/edit/${encodeURIComponent(agent.id)}`)}>Edit</Button>
+          <IconButton size="sm" icon={<TrashIcon />} label={`Delete ${agent.name}`} disabled={!connected || destroy.busy}
+            onClick={() => { destroy.clear(); setRemoving(agent); }} />
+        </div> },
+      ]} />}
+    {removing && <Dialog open onOpenChange={(open) => { if (!open && !destroy.busy) setRemoving(null); }} title={`Delete ${removing.name}?`} footer={<>
+      <Button disabled={destroy.busy} onClick={() => setRemoving(null)}>Cancel</Button>
+      <Button variant="danger" loading={destroy.busy} disabled={!connected} onClick={() => void destroy.run()}>Delete</Button>
+    </>}>
+      <ErrorText error={destroy.error} />
+    </Dialog>}
   </Page>;
+}
+
+export function AgentCatalogEditor() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { catalog, modelAccounts, accountsError } = useAgentCatalog();
+  const connected: boolean = useConnected();
+  const [draft] = useState<NodeAgent>(() => ({ id: `agent-${crypto.randomUUID()}`, kind: "agent", name: "", model: null, compaction: Compaction.parse({}) }));
+  const agent: NodeAgent | undefined = id ? catalog.data?.value.agents.find((entry) => entry.id === id) : draft;
+  if (!catalog.data || !agent) return <Page title="Agents" actions={<Button onClick={() => void navigate("/agents")}>Back to agents</Button>}>
+    <ErrorText error={catalog.error ?? (catalog.data && !agent ? "Agent not found." : null)} />
+    {catalog.loading && <Spinner />}
+  </Page>;
+  return <AgentEditor key={agent.id} initial={agent} title={id ? agent.name : "New agent"} baseSha256={catalog.data.sha256}
+    catalog={catalog.data.value} accounts={modelAccounts} accountsError={accountsError} creating={!id} disabled={!connected} />;
+}
+
+function CatalogNavigation({ dirty, completed }: { dirty: boolean; completed: boolean }) {
+  const navigate = useNavigate();
+  const warning = useUnsaved(dirty && !completed);
+  useEffect(() => {
+    if (completed) void navigate("/agents", { replace: true });
+  }, [completed, navigate]);
+  return warning;
 }
 
 export function ChatAgentSettings({ role, project }: { role: Role; project?: string }) {
@@ -69,20 +119,22 @@ export function ChatAgentSettings({ role, project }: { role: Role; project?: str
   </>;
 }
 
-function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, effectiveModel, creating, disabled, onSaved, onDeleted, onAutoChange }: {
+function AgentEditor({ initial, baseSha256, catalog, title, accounts, accountsError, scope, effectiveModel, creating, disabled, onSaved, onAutoChange }: {
   initial: AgentDefinition;
   baseSha256: string;
   catalog?: NodeAgentCatalog;
-  title?: string;
+  title: string;
   accounts: Account[];
+  accountsError?: Error | null;
   scope?: { role: Role; project?: string };
   effectiveModel?: AgentDefinition["model"];
   creating: boolean;
   disabled: boolean;
-  onSaved(id: string): void;
-  onDeleted?(): void;
+  onSaved?(): void;
   onAutoChange?(update: (agent: AgentDefinition) => AgentDefinition): void;
 }) {
+  const navigate = useNavigate();
+  const [completed, setCompleted] = useState<boolean>(false);
   const [edit, setEdit] = useState<{ value: AgentDefinition; base: AgentDefinition | null; sha256: string } | null>(null);
   useEffect(() => {
     if (!creating && edit && edit.base === edit.value && edit.sha256 === baseSha256) setEdit(null);
@@ -97,7 +149,6 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, eff
     setEdit((prior) => ({ value: update(prior?.value ?? initial), base: prior ? prior.base : saved, sha256: prior?.sha256 ?? baseSha256 }));
   };
   const [draft, setDraft] = useState<{ content: string; sha256: string | undefined } | null>(null);
-  const [remove, setRemove] = useState<boolean>(false);
   const formId: string = useId();
   const upload = useRef<HTMLInputElement>(null);
   const showContext: boolean = !scope || !!scope.project;
@@ -126,28 +177,20 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, eff
       setDraft(null);
       context.reload();
     }
-    onSaved(agent.id);
-  });
-  const destroy = useAction(async () => {
-    if (!catalog) return;
-    await call("putAgents", { body: { value: { ...catalog, agents: catalog.agents.filter(({ id }) => id !== agent.id) }, baseSha256 } });
-    onDeleted?.();
+    if (scope) onSaved?.();
+    else setCompleted(true);
   });
   const changeContent = (content: string): void => setDraft((prior) => ({ content, sha256: prior?.sha256 ?? context.data?.sha256 }));
   const readContext = useAction(async (file: File) => changeContent(await file.text()));
-  const editable: boolean = !disabled && !save.busy && !destroy.busy;
+  const editable: boolean = !disabled && !save.busy && !completed;
   const contextEditable: boolean = editable && (creating || context.data !== undefined);
   const contextError: string | undefined = context.error?.message ?? (content.length > 1_000_000 ? "Keep the context below 1,000,000 characters." : undefined);
   const tooLong: boolean = agent.name.trim().length > (agent.kind === "pm" ? 24 : 80);
   const valid: boolean = !!agent.name.trim() && !duplicate && !tooLong && (agent.model === null ? !!scope : !!agent.model.model) && content.length <= 1_000_000;
   const inheritance: string | undefined = scope?.project ? "Project Manager Default" : scope?.role === "pm" ? "Default model" : scope ? "Auto-configured model" : undefined;
-  return <form id={formId} className={s.form} onSubmit={(event) => { event.preventDefault(); if (!onAutoChange && editable && valid && (dirty || contextDirty)) void save.run(); }}>
-    <Card title={title} actions={<>
-      {!creating && catalog && <Button disabled={!editable} onClick={() => setRemove(true)}>Delete</Button>}
-      {!onAutoChange && <PageActions>
-        <Button type="submit" form={formId} variant="primary" disabled={!editable || !valid || (!dirty && !contextDirty)}>{saved ? "Save" : "Create"}</Button>
-      </PageActions>}
-    </>}>
+  const submit = <Button type="submit" form={formId} variant="primary" disabled={!editable || !valid || (!dirty && !contextDirty)}>{saved ? "Save" : "Create"}</Button>;
+  const form = <form id={formId} className={s.form} onSubmit={(event) => { event.preventDefault(); if (!onAutoChange && editable && valid && (dirty || contextDirty)) void save.run(); }}>
+    <Card title={scope ? title : "Configuration"} actions={scope && !onAutoChange && <PageActions>{submit}</PageActions>}>
       <div className={s.fields}>
         {(agent.kind !== "pm" || scope?.project) && <div className={s.pair}>
           <TextField label={agent.kind === "agent" ? "Title" : "Name"} value={agent.name} disabled={!editable}
@@ -191,11 +234,14 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, eff
       <Sidecar isMarkdown paper content={content} disabled={!contextEditable} change={changeContent} className={s.markdown} />
       <ErrorText error={contextError ?? readContext.error} />
     </Card>}
-    {catalog && <Dialog open={remove} onOpenChange={setRemove} title={`Delete ${agent.name}?`} footer={<>
-      <Button onClick={() => setRemove(false)}>Cancel</Button>
-      <Button disabled={destroy.busy} onClick={() => void destroy.run()}>Delete</Button>
-    </>}>
-      <ErrorText error={destroy.error} />
-    </Dialog>}
   </form>;
+  if (scope) return form;
+  return <Page title={title} width={900} actions={<>
+    <Button disabled={save.busy} onClick={() => void navigate("/agents")}>Cancel</Button>
+    {submit}
+  </>}>
+    <CatalogNavigation dirty={contextDirty || (dirty && (!creating || edit !== null))} completed={completed} />
+    <ErrorText error={accountsError} />
+    {form}
+  </Page>;
 }
