@@ -44,6 +44,51 @@
   gap: 8px;
 }
 
+.keyValues {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.keyValues > h2,
+.keyValues > p {
+  margin: 0;
+}
+
+.variableTable {
+  min-width: 0;
+}
+
+.variableTable > div > table {
+  table-layout: fixed;
+  min-width: 20rem;
+}
+
+.variableTable > div > table > thead > tr > th {
+  padding: 0 0 8px 12px;
+}
+
+.variableTable > div > table > tbody > tr > td {
+  padding: 10px 0 10px 12px;
+  vertical-align: top;
+}
+
+.variableTable > div > table > thead > tr > th:first-child,
+.variableTable > div > table > tbody > tr > td:first-child {
+  padding-left: 0;
+}
+
+.variableTable > div > table > tbody > tr:last-child > td {
+  padding-bottom: 0;
+}
+
+.nestedValues summary {
+  min-height: var(--control-h);
+  line-height: var(--control-h);
+  cursor: pointer;
+  color: var(--text-2);
+}
+
 .files {
   display: flex;
   flex-direction: column;

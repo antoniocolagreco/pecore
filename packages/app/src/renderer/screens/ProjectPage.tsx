@@ -9,12 +9,12 @@ import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { DefinitionIcon, useDefinitionIcons } from "../components/DefinitionIcon";
 import { Button, Empty, ErrorText, Field, Page, ui } from "../components/ui";
-import { Button as DsButton } from "../ds/button";
+import { Button as DsButton, IconButton } from "../ds/button";
 import { RadioGroup } from "../ds/choice";
-import { Tabs } from "../ds/data";
+import { Table, Tabs } from "../ds/data";
 import { Alert, Card, Spinner } from "../ds/feedback";
 import { TextArea, TextField } from "../ds/field";
-import { PlusIcon } from "../ds/icons";
+import { PlusIcon, TrashIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
 import { JobTable, useJobs } from "./Jobs";
@@ -201,19 +201,11 @@ function Knowledge({ id }: { id: string }) {
   );
 }
 
-type SettingsForm = { name: string; baseBranch: string; services: string; folder: string; remote: boolean; account: string; url: string; pm: ProjectManagerIdentity; variables: string; credentials: string };
+type SettingsForm = { name: string; baseBranch: string; services: string; folder: string; remote: boolean; account: string; url: string; pm: ProjectManagerIdentity };
 
-function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: string; onSaved(): void; projectActions: ReactNode; deleteNotice: ReactNode }) {
-  const connected: boolean = useConnected();
+function useProjectDefinition(id: string) {
   const path: string = `projects/${id}/project.json`;
   const file = useData(() => call("getDefinition", { params: { path } }), [path], (m) => m.type === "definition.changed" && m.path === path);
-  const accounts = useData(() => call("getAccounts"), [], (m) => m.type === "definition.changed" && m.path === "accounts.json");
-  const forgeAccounts: ForgeAccount[] = (accounts.data?.value.accounts ?? []).filter((account) => account.kind === "forge");
-  const projects = useData(() => call("listProjects"), [], (m) => m.type === "project.updated");
-  const usedManagers: ProjectManagerIdentity[] = (projects.data ?? []).flatMap(({ id: other, project }) => other !== id && project?.pm ? [project.pm] : []);
-  const [draft, setDraft] = useState<{ values: SettingsForm; sha256: string } | null>(null);
-  const [savedAt, setSavedAt] = useState<number | null>(null);
-  const [pickError, setPickError] = useState<string | null>(null);
   const raw: Record<string, unknown> | null = (() => {
     try {
       return file.data ? JSON.parse(file.data.content) as Record<string, unknown> : null;
@@ -221,6 +213,19 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
       return null;
     }
   })();
+  return { path, file, raw };
+}
+
+function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: string; onSaved(): void; projectActions: ReactNode; deleteNotice: ReactNode }) {
+  const connected: boolean = useConnected();
+  const { path, file, raw } = useProjectDefinition(id);
+  const accounts = useData(() => call("getAccounts"), [], (m) => m.type === "definition.changed" && m.path === "accounts.json");
+  const forgeAccounts: ForgeAccount[] = (accounts.data?.value.accounts ?? []).filter((account) => account.kind === "forge");
+  const projects = useData(() => call("listProjects"), [], (m) => m.type === "project.updated");
+  const usedManagers: ProjectManagerIdentity[] = (projects.data ?? []).flatMap(({ id: other, project }) => other !== id && project?.pm ? [project.pm] : []);
+  const [draft, setDraft] = useState<{ values: SettingsForm; sha256: string } | null>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [pickError, setPickError] = useState<string | null>(null);
   const repo: Project["repo"] = raw?.repo as Project["repo"] | undefined ?? null;
   const current: SettingsForm | null = raw && {
     name: String(raw.name ?? ""),
@@ -230,8 +235,6 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
     remote: repo !== null,
     account: repo?.account ?? "",
     url: repo?.url ?? "",
-    variables: JSON.stringify(raw.variables ?? {}, null, 2),
-    credentials: JSON.stringify(raw.credentials ?? {}, null, 2),
     pm: ProjectManagerIdentity.safeParse(raw.pm).data ?? { name: "", color: "#808080" },
   };
   const value: SettingsForm | null = draft?.values ?? current;
@@ -241,12 +244,6 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
   };
   const save = useAction(async () => {
     if (!raw || !value || !draft) return;
-    const variables: unknown = JSON.parse(value.variables);
-    if (variables === null || typeof variables !== "object" || Array.isArray(variables)) throw new Error("Project variables must be a JSON object.");
-    const credentials: unknown = JSON.parse(value.credentials);
-    if (credentials === null || typeof credentials !== "object" || Array.isArray(credentials) || Object.values(credentials).some((id) => typeof id !== "string")) {
-      throw new Error("Account bindings must map names to account IDs.");
-    }
     const next = {
       ...raw,
       name: value.name.trim(),
@@ -256,8 +253,6 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
       repo: value.remote ? { url: value.url.trim(), account: value.account } : null,
       createRepo: value.remote && value.url.trim() === repo?.url ? raw.createRepo ?? null : null,
       pm: { name: value.pm.name.trim(), color: value.pm.color },
-      variables,
-      credentials,
     };
     Reflect.deleteProperty(next, "limits");
     Reflect.deleteProperty(next, "defaultRecipe");
@@ -310,10 +305,6 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
       <TextField label="Services compose file" mono value={value.services} onValueChange={(services) => { setPickError(null); set({ services }); }} disabled={disabled}
         placeholder="Automatic" error={pickError ?? undefined} description="Empty: a compose file at the repository root, if there is one."
         action={<DsButton disabled={disabled} onClick={() => void pickCompose()}>Choose…</DsButton>} />
-      <TextArea label="Project variables" mono value={value.variables} onValueChange={(variables) => set({ variables })} disabled={disabled}
-        description="Use a JSON object. A recipe can refer to a value with {project.vars.name}." />
-      <TextArea label="Account bindings" mono value={value.credentials} onValueChange={(credentials) => set({ credentials })} disabled={disabled}
-        description="Map the credential names a node expects to account IDs from Settings." />
       <ErrorText error={save.error} />
       {deleteNotice}
       <div className={s.formActions}>
@@ -321,6 +312,137 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
         {savedAt && !dirty && <span className={ui.muted} role="status">Saved</span>}
         <DsButton disabled={!dirty || disabled} onClick={() => setDraft(null)}>Discard</DsButton>
         <DsButton type="submit" variant="primary" disabled={!dirty || !valid || disabled} loading={save.busy}>Save settings</DsButton>
+      </div>
+    </form>
+  );
+}
+
+type VariableRow = { id: string; name: string; value: VariableValue };
+type ScalarKind = "text" | "number" | "boolean" | "null";
+type VariableValue = { kind: ScalarKind; text: string } | { kind: "object" | "list"; rows: VariableRow[] };
+
+const variableKinds: { value: VariableValue["kind"]; label: string }[] = [
+  { value: "text", label: "Text" }, { value: "number", label: "Number" },
+  { value: "boolean", label: "Yes / No" }, { value: "null", label: "Null" },
+  { value: "list", label: "List" }, { value: "object", label: "Object" },
+];
+
+function variableValue(value: unknown): VariableValue {
+  if (value === null) return { kind: "null", text: "" };
+  if (typeof value === "object") return {
+    kind: Array.isArray(value) ? "list" : "object",
+    rows: Object.entries(value).map(([name, item], index) => ({ id: String(index), name, value: variableValue(item) })),
+  };
+  if (typeof value === "boolean" || typeof value === "number") return { kind: typeof value === "boolean" ? "boolean" : "number", text: String(value) };
+  return { kind: "text", text: String(value) };
+}
+
+function newVariable(): VariableRow {
+  return { id: crypto.randomUUID(), name: "", value: { kind: "text", text: "" } };
+}
+
+function VariableTypeSelect({ value, disabled, onChange }: { value: VariableValue; disabled: boolean; onChange(value: VariableValue): void }) {
+  return <Select ariaLabel="Value type" value={value.kind} options={variableKinds} disabled={disabled} onValueChange={(next) => {
+      const kind: VariableValue["kind"] | undefined = variableKinds.find((option) => option.value === next)?.value;
+      if (!kind || kind === value.kind) return;
+      if (kind === "list" || kind === "object") {
+        const rows: VariableRow[] = "rows" in value ? value.rows : [];
+        onChange({ kind, rows: kind === "object" && value.kind === "list" ? rows.map((row, index) => ({ ...row, name: String(index) })) : rows });
+      } else onChange({ kind, text: kind === "boolean" ? "true" : kind === "null" || !("text" in value) ? "" : value.text });
+  }} />;
+}
+
+function VariableCell({ value, disabled, onChange }: { value: VariableValue; disabled: boolean; onChange(value: VariableValue): void }) {
+  if ("rows" in value) return <details className={s.nestedValues}>
+      <summary>{value.rows.length} {value.kind === "list" ? "items" : "keys"}</summary>
+      <VariableTable label={value.kind === "list" ? "List items" : "Object keys"} keyLabel={value.kind === "object" ? "Key" : undefined}
+        rows={value.rows} disabled={disabled} onChange={(rows) => onChange({ ...value, rows })} />
+      <DsButton size="sm" icon={<PlusIcon />} disabled={disabled} onClick={() => onChange({ ...value, rows: [...value.rows, newVariable()] })}>{value.kind === "list" ? "Add item" : "Add key"}</DsButton>
+    </details>;
+  if (value.kind === "null") return null;
+  if (value.kind === "boolean") return <Select ariaLabel="Value" value={value.text} options={[{ value: "true", label: "Yes" }, { value: "false", label: "No" }]}
+    disabled={disabled} onValueChange={(text) => { if (text) onChange({ ...value, text }); }} />;
+  return value.text.includes("\n")
+    ? <TextArea ariaLabel="Value" mono value={value.text} disabled={disabled} onValueChange={(text) => onChange({ ...value, text })} />
+    : <TextField ariaLabel="Value" mono value={value.text} disabled={disabled} onValueChange={(text) => onChange({ ...value, text })} />;
+}
+
+function VariableTable({ label, keyLabel, rows, disabled, onChange }: {
+  label: string; keyLabel?: string; rows: VariableRow[]; disabled: boolean;
+  onChange(rows: VariableRow[]): void;
+}) {
+  const update = (id: string, changes: Partial<Pick<VariableRow, "name" | "value">>): void => onChange(rows.map((row) => row.id === id ? { ...row, ...changes } : row));
+  return <div className={s.variableTable}><Table label={label} rows={rows} rowKey={(row) => row.id} columns={[
+    ...(keyLabel ? [{ key: "name", header: keyLabel, width: "30%", cell: (row: VariableRow) => <TextField ariaLabel={keyLabel} autoFocus={!row.name} mono disabled={disabled} value={row.name} onValueChange={(name) => update(row.id, { name })} /> }] : []),
+    { key: "type", header: "Type", width: "9.5rem", cell: (row) => <VariableTypeSelect value={row.value} disabled={disabled} onChange={(value) => update(row.id, { value })} /> },
+    { key: "value", header: "Value", cell: (row) => <VariableCell value={row.value} disabled={disabled} onChange={(value) => update(row.id, { value })} /> },
+    { key: "remove", header: "", width: "3rem", cell: (row) => <IconButton label={row.name ? `Remove ${row.name}` : "Remove row"} icon={<TrashIcon />}
+      disabled={disabled} onClick={() => onChange(rows.filter(({ id }) => id !== row.id))} /> },
+  ]} /></div>;
+}
+
+function rowsToRecord(rows: VariableRow[], parent?: string): Record<string, unknown> {
+  const label: string = parent === undefined ? "variable" : "key";
+  const names: Set<string> = new Set();
+  return Object.fromEntries(rows.map(({ name, value }) => {
+    if (!name.trim()) throw new Error(`Enter a name for each ${label}.`);
+    if (names.has(name)) throw new Error(`Duplicate ${label} name: ${name}.`);
+    names.add(name);
+    return [name, parseVariable(value, parent === undefined ? name : `${parent}.${name}`)];
+  }));
+}
+
+function parseVariable(value: VariableValue, name: string): unknown {
+  if ("rows" in value) return value.kind === "list"
+    ? value.rows.map((row, index) => parseVariable(row.value, `${name}[${index}]`))
+    : rowsToRecord(value.rows, name);
+  if (value.kind === "null") return null;
+  if (value.kind === "boolean") return value.text === "true";
+  if (value.kind === "text") return value.text;
+  const number: number = Number(value.text);
+  if (!value.text.trim() || !Number.isFinite(number)) throw new Error(`Enter a number for ${name}.`);
+  return number;
+}
+
+function ProjectVariables({ id, onSaved }: { id: string; onSaved(): void }) {
+  const connected: boolean = useConnected();
+  const { path, file, raw } = useProjectDefinition(id);
+  const [draft, setDraft] = useState<{ rows: VariableRow[]; sha256: string } | null>(null);
+  const [saved, setSaved] = useState(false);
+  const current: VariableRow[] | null = raw && Object.entries(object(raw.variables))
+    .map(([name, value], index) => ({ id: String(index), name, value: variableValue(value) }));
+  const rows: VariableRow[] | null = draft?.rows ?? current;
+  const dirty: boolean = !!draft && JSON.stringify(draft.rows) !== JSON.stringify(current);
+  const set = (rows: VariableRow[]): void => {
+    if (file.data) setDraft({ rows, sha256: draft?.sha256 ?? file.data.sha256 });
+    setSaved(false);
+  };
+  const save = useAction(async () => {
+    if (!raw || !draft) return;
+    const content: string = JSON.stringify({ ...raw, variables: rowsToRecord(draft.rows) }, null, 2) + "\n";
+    await call("saveDefinition", { params: { path }, body: { content, baseSha256: draft.sha256 } });
+    setDraft(null);
+    setSaved(true);
+    file.reload();
+    onSaved();
+  });
+  if (!rows) return file.loading ? <Spinner /> : <ErrorText error={file.error ?? "Unable to read the project definition."} />;
+  const disabled: boolean = !connected || save.busy;
+  return (
+    <form className={s.form} onSubmit={(event) => { event.preventDefault(); if (dirty && !disabled) void save.run(); }}>
+      <section className={s.keyValues}>
+        <h2>Project variables</h2>
+        <p className={ui.muted}>A recipe can use a variable such as <code>build-dir</code> with <code>{"{project.vars.build-dir}"}</code>.</p>
+        <VariableTable label="Project variables" keyLabel="Name" rows={rows} disabled={disabled} onChange={set} />
+      </section>
+      <ErrorText error={save.error ?? file.error} />
+      <div className={s.formActions}>
+        <div className={`${s.grow} ${ui.row}`}>
+          <DsButton icon={<PlusIcon />} disabled={disabled} onClick={() => set([...rows, newVariable()])}>Add variable</DsButton>
+        </div>
+        {saved && <span className={ui.muted} role="status">Saved</span>}
+        <DsButton disabled={!dirty || disabled} onClick={() => { setDraft(null); save.clear(); }}>Discard</DsButton>
+        <DsButton type="submit" variant="primary" disabled={!dirty || disabled} loading={save.busy}>Save changes</DsButton>
       </div>
     </form>
   );
@@ -363,6 +485,7 @@ function ProjectDetails({ id }: { id: string }) {
   const connected: boolean = useConnected();
   const navigate = useNavigate();
   const [query] = useSearchParams();
+  const tab: string | null = query.get("tab");
   const [deleting, setDeleting] = useState<boolean>(false);
   const [exporting, setExporting] = useState<boolean>(false);
   const [creatingJob, setCreatingJob] = useState<boolean>(false);
@@ -388,7 +511,7 @@ function ProjectDetails({ id }: { id: string }) {
       {view?.creating ? <Alert tone="warning" actions={connected && <Link to={`/projects/new?resume=${id}`}>Resume creation</Link>}>This project was not fully created.</Alert> : project && (
         <>
           <Tabs
-            defaultValue={query.get("tab") === "recipes" ? "recipes" : "jobs"}
+            defaultValue={tab === "recipes" || tab === "variables" ? tab : "jobs"}
             tabs={[
               {
                 value: "jobs",
@@ -415,6 +538,7 @@ function ProjectDetails({ id }: { id: string }) {
                   </Card>
                 ),
               },
+              { value: "variables", label: "Variables", content: <Card padded className={s.narrow}><ProjectVariables id={id} onSaved={data.reload} /></Card> },
               { value: "recipes", label: "Recipes", content: <Card padded className={s.narrow}><Recipes id={id} /></Card> },
               { value: "knowledge", label: "Knowledge", content: <Card padded className={s.narrow}><Knowledge id={id} /></Card> },
             ]}

@@ -67,6 +67,7 @@ export function TextField({ label, description, error, disabled, className, lead
         {prefix && <span className={s.affix}>{prefix}</span>}
         {leading && <span className={s.leading}>{leading}</span>}
         <Field.Control
+          aria-label={input.ariaLabel}
           className={cx(s.input, mono && s.mono)}
           type={input.type ?? "text"}
           value={value}
@@ -98,6 +99,7 @@ export function TextArea({ label, description, error, disabled, className, maxLe
       <div className={s.shell}>
         <Field.Control
           render={<textarea />}
+          aria-label={input.ariaLabel}
           className={cx(s.input, s.textarea, mono && s.mono)}
           value={value}
           onValueChange={(next) => setValue(String(next))}
