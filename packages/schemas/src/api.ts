@@ -217,6 +217,7 @@ export const ChatAttachmentView = z.object({
   size: z.number().int().nonnegative(),
 });
 export type ChatAttachmentView = z.infer<typeof ChatAttachmentView>;
+export const ChatAttachmentContent = z.object({ mime: z.string(), data: z.base64() });
 export const ChatConfirmationRow = z.object({ label: z.string(), value: z.string() });
 export type ChatConfirmationRow = z.infer<typeof ChatConfirmationRow>;
 export const ChatFormOption = z.strictObject({
@@ -578,6 +579,7 @@ export const routes = {
     bodyLimit: chatAttachmentMaxBase64 + 1024,
     response: ChatAttachmentView,
   },
+  getChatAttachment: { method: "GET", path: "/chat/attachments/:id", params: IdParams, response: ChatAttachmentContent },
   retryChatMessage: { method: "POST", path: "/chat/messages/:id/retry", params: IdParams, response: ChatMessageView },
   markChatRead: { method: "POST", path: "/chat/read", response: Ok },
   getProjectChat: { method: "GET", path: "/projects/:id/chat", params: IdParams, response: ChatDetail },
@@ -591,6 +593,7 @@ export const routes = {
     bodyLimit: chatAttachmentMaxBase64 + 1024,
     response: ChatAttachmentView,
   },
+  getProjectChatAttachment: { method: "GET", path: "/projects/:id/chat/attachments/:attachmentId", params: z.object({ id: ProjectId, attachmentId: z.string().min(1) }), response: ChatAttachmentContent },
   retryProjectChatMessage: { method: "POST", path: "/projects/:id/chat/messages/:messageId/retry", params: ProjectMessageParams, response: ChatMessageView },
   markProjectChatRead: { method: "POST", path: "/projects/:id/chat/read", params: IdParams, response: Ok },
   answerProjectChatForm: { method: "POST", path: "/projects/:id/chat/actions/:actionId/form", params: z.object({ id: ProjectId, actionId: z.string().min(1) }), body: ChatFormAnswers, response: ChatMessageView },

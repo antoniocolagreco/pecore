@@ -1068,6 +1068,7 @@ Recorded ACP traffic for tests lives in `packages/agents/fixtures/<connector>/<c
 | `POST /accounts/:id/options/refresh` | refresh the account's available choices |
 | `GET /chat`, `DELETE /chat` | read or clear the Assistant's only chat (section 6) |
 | `POST /chat/messages`, `POST /chat/attachments`, `POST /chat/messages/:id/retry` | send a message with optional context references and attachments, upload an attachment or retry a turn |
+| `GET /chat/attachments/:id`, `GET /projects/:id/chat/attachments/:attachmentId` | an attachment of that chat as `mime` and base64 `data`, for the image thumbnails of sent messages |
 | `GET/DELETE /projects/:id/chat`, `POST /projects/:id/chat/messages`, `POST /projects/:id/chat/attachments`, `POST /projects/:id/chat/messages/:messageId/retry`, `POST /projects/:id/chat/read` | the same operations on the project's Project Manager chat (section 6) |
 | `POST /chat/actions/:id/project-creation`, `POST /chat/actions/:id/project-update`, `POST /chat/actions/:id/project-deletion` | confirm or reject an Assistant proposal |
 | `GET /artifacts/:job/:run/:name`, `GET /logs/:attempt?view=events\|raw` | files; `events` returns the normalised events of the attempt (the shape of `log.line`), `raw` the JSONL lines; 410 when retention removed the log |

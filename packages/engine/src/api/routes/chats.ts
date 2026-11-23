@@ -33,6 +33,7 @@ export function chatHandlers(engine: Engine) {
       return { ok: true as const };
     },
     uploadChatAttachment: async ({ body }) => chats.upload(body),
+    getChatAttachment: async ({ params }) => chats.attachment(params.id),
     retryChatMessage: async ({ params }) => chats.retry(params.id),
     markChatRead: async () => {
       chats.markRead();
@@ -45,6 +46,7 @@ export function chatHandlers(engine: Engine) {
     },
     sendProjectChatMessage: async ({ params, body }) => chats.send(body, params.id),
     uploadProjectChatAttachment: async ({ params, body }) => chats.upload(body, params.id),
+    getProjectChatAttachment: async ({ params }) => chats.attachment(params.attachmentId, params.id),
     retryProjectChatMessage: async ({ params }) => chats.retry(params.messageId, params.id),
     markProjectChatRead: async ({ params }) => {
       chats.markRead(params.id);

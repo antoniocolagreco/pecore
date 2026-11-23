@@ -30,6 +30,7 @@ type ChatApi = {
   clear(): Promise<unknown>;
   send(body: { text: string; attachmentIds: string[] }): Promise<unknown>;
   upload(body: { name: string; mime: string; data: string }): Promise<ChatAttachmentView>;
+  attachment(id: string): Promise<{ mime: string; data: string }>;
   retry(id: string): Promise<unknown>;
   read(): Promise<unknown>;
   answerForm(id: string, body: ChatFormAnswers): Promise<unknown>;
@@ -45,6 +46,7 @@ function chatApi(project: string | null): ChatApi {
       clear: () => call("clearChat"),
       send: (body) => call("sendChatMessage", { body }),
       upload: (body) => call("uploadChatAttachment", { body }),
+      attachment: (id) => call("getChatAttachment", { params: { id } }),
       retry: (id) => call("retryChatMessage", { params: { id } }),
       read: () => call("markChatRead"),
       answerForm: (id, body) => call("answerChatForm", { params: { id }, body }),
@@ -56,6 +58,7 @@ function chatApi(project: string | null): ChatApi {
     clear: () => call("clearProjectChat", { params }),
     send: (body) => call("sendProjectChatMessage", { params, body }),
     upload: (body) => call("uploadProjectChatAttachment", { params, body }),
+    attachment: (attachmentId) => call("getProjectChatAttachment", { params: { id: project, attachmentId } }),
     retry: (messageId) => call("retryProjectChatMessage", { params: { id: project, messageId } }),
     read: () => call("markProjectChatRead", { params }),
     answerForm: (actionId, body) => call("answerProjectChatForm", { params: { id: project, actionId }, body }),
@@ -106,6 +109,12 @@ function Thumbnail({ file }: { file: File }) {
     return () => { live = false; };
   }, [file]);
   return src ? <img className={s.thumbImage} src={src} alt={file.name} /> : <Spinner size="xs" />;
+}
+
+function SentImage({ id, name }: { id: string; name: string }) {
+  const { api } = useContext(ChatContext);
+  const image = useData(() => api.attachment(id), [api, id]);
+  return image.data ? <img className={s.thumbImage} src={`data:${image.data.mime};base64,${image.data.data}`} alt={name} /> : <Spinner size="xs" />;
 }
 
 function strings(value: unknown): string[] {
@@ -457,7 +466,9 @@ function Message({ message, attachments, actions, connected, reload, working = f
         {ticket === undefined && sender !== "job" && bubble}
         {ticket === undefined && sender !== "job" && long && <Button size="sm" variant="ghost" className={s.more} aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Show less" : "Show more"}</Button>}
         {attachments.length > 0 && <ul className={s.chips} aria-label="Message attachments">
-          {attachments.map(({ id, name, size }) => <li className={s.chip} key={id} title={`${size} bytes`}>{name} · {fileSize(size)}</li>)}
+          {attachments.map(({ id, name, mime, size }) => ChatImageMime.safeParse(mime).success
+            ? <li className={s.thumb} key={id} title={`${name} · ${fileSize(size)}`}><SentImage id={id} name={name} /></li>
+            : <li className={s.chip} key={id} title={`${size} bytes`}>{name} · {fileSize(size)}</li>)}
         </ul>}
         <ErrorText error={message?.error} />
         {message?.state === "interrupted" && <div><Button size="sm" disabled={!connected || retry.busy} loading={retry.busy} onClick={() => void retry.run()}>Retry</Button></div>}

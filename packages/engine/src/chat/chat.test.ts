@@ -1223,6 +1223,8 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     await until(() => existsSync(join(t.root, "prompt.json")));
     const prompt = (JSON.parse(await readFile(join(t.root, "prompt.json"), "utf8")) as { params: { prompt: { type: string; mimeType?: string; data?: string }[] } }).params.prompt;
     expect(prompt).toContainEqual(expect.objectContaining({ type: "image", mimeType: "image/png", data: png }));
+    expect(await t.call("getChatAttachment", { params: { id: attachment.id } })).toEqual({ mime: "image/png", data: png });
+    await expect(t.call("getProjectChatAttachment", { params: { id: "demo", attachmentId: attachment.id } })).rejects.toMatchObject({ status: 404 });
     await t.close();
   }, 60000);
 

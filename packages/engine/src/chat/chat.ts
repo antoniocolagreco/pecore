@@ -345,6 +345,12 @@ export class AgentChats {
     return attachmentView(attachment);
   }
 
+  async attachment(id: string, project?: string): Promise<{ mime: string; data: string }> {
+    const attachment: ChatAttachment | undefined = this.db.attachments(this.chatFor(project)).find((entry) => entry.id === id);
+    if (!attachment) throw new HttpError("not_found", "attachment not found");
+    return { mime: attachment.mime, data: (await readFile(attachment.path)).toString("base64") };
+  }
+
   private async newAttachment(mime: string, size: number, name: string): Promise<ChatAttachment> {
     const id: string = ulid();
     const directory: string = join(this.engine.opts.home, "chat-attachments");

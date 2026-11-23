@@ -54,3 +54,9 @@
 - Why: Empty duplicated New Recipe and looked like a recipe a job could use.
 - Replaces: `templates/recipes/empty.json` and its icon.
 - At start, the app removes a template file it no longer ships from an existing home, unless the user changed it.
+
+## 2026-11-23: Sent images keep their preview
+
+- Decision: a sent message shows each attached image as a thumbnail, like before sending. Other files stay as name and size.
+- Why: the user wants to see in the chat which image was sent.
+- Replaces: images listed only by name and size after sending.
