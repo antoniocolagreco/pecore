@@ -5,7 +5,7 @@ import { KnowledgeFileName, Name, Node, normalizeLegacyHumanNode, Project, proje
 import type { DefinitionEntry, InstantiateBody, RouteOutput } from "@pecore/schemas";
 import { validIcon } from "../../definitions/icon";
 import { instantiateNode, instantiateRecipe } from "../../definitions/instantiate";
-import { checkKnowledge, knowledgeLinks, knowledgeNames, renameKnowledgeLinks } from "../../definitions/knowledge";
+import { checkKnowledge, knowledgeLinks, knowledgeNames, removeBrokenKnowledgeLinks, renameKnowledgeLinks } from "../../definitions/knowledge";
 import type { KnowledgeIssue } from "../../definitions/knowledge";
 import { loadTemplates, loadProject, zodErrors } from "../../definitions/load";
 import type { DefinitionError } from "../../definitions/load";
@@ -274,16 +274,14 @@ export function definitionOperations(engine: Engine) {
       const taken: string[] = batch.filter((name) => existing.includes(name));
       if (taken.length) throw new HttpError("conflict", `${taken.join(", ")} already ${taken.length === 1 ? "exists" : "exist"}: rename or delete ${taken.length === 1 ? "it" : "them"} first`);
       const names = new Set<string>([...existing, ...batch]);
-      const problems: string[] = files.flatMap(({ name, content }) =>
-        knowledgeInspection(`projects/${id}/knowledge/${name}`, content, names).errors.map(({ message }) => `${name}, ${message}`));
-      if (problems.length) throw new HttpError("bad_request", problems.join("\n"));
+      const cleaned = files.map(({ name, content }) => ({ name, ...removeBrokenKnowledgeLinks(content, names) }));
       await rejectSymlinks(projectDir, dir);
       await mkdir(dir, { recursive: true });
-      for (const { name, content } of files) await writeFile(join(dir, name), content, { flag: "wx" });
+      for (const { name, content } of cleaned) await writeFile(join(dir, name), content, { flag: "wx" });
       await commitFiles(home.home, projectDir, [dir], commitMessage("knowledge", batch.join(", "), "created"));
       const saved: string[] = batch.map((name) => `projects/${id}/knowledge/${name}`);
-      for (const [index, { content }] of files.entries()) engine.definitionChanged(saved[index]!, sha256(Buffer.from(content, "utf8")));
-      return { saved };
+      for (const [index, { content }] of cleaned.entries()) engine.definitionChanged(saved[index]!, sha256(Buffer.from(content, "utf8")));
+      return { saved, removedLinks: cleaned.flatMap(({ name, removed }) => removed.map((link) => ({ file: name, link }))) };
     }),
     renameKnowledge: ({ params: { id }, body: { from, to } }) => mutate(async () => {
       if (from === to) return { updated: [] };

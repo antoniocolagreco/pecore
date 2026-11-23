@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { checkKnowledge, knowledgeClosure, knowledgeLinks, knowledgeNames, renameKnowledgeLinks } from "./knowledge";
+import { checkKnowledge, knowledgeClosure, knowledgeLinks, knowledgeNames, removeBrokenKnowledgeLinks, renameKnowledgeLinks } from "./knowledge";
 
 describe("knowledge files", () => {
   it("accepts links to existing files by name and ignores web addresses and anchors", () => {
@@ -32,6 +32,15 @@ describe("knowledge files", () => {
     const content: string = "See [a](old.md), [b](old.md#part) and [c](other.md).\n\n[r]: old.md\n";
     expect(renameKnowledgeLinks(content, "old.md", "new.md")).toBe("See [a](new.md), [b](new.md#part) and [c](other.md).\n\n[r]: new.md\n");
     expect(knowledgeLinks("[x](a.md) [y](a.md) [z](http://x.y/b.md)")).toEqual(["a.md"]);
+  });
+
+  it("removes links to missing files or with a path, keeping their text, and drops broken definitions", () => {
+    const content: string = "See [a](missing.md), [b](docs/x.md#y), [ok](ok.md), ![pic](img.png) and [web](https://e.com).\n\n[ref]: gone.md\n[good]: ok.md\nEnd.\n";
+    expect(removeBrokenKnowledgeLinks(content, new Set(["ok.md"]))).toEqual({
+      content: "See a, b, [ok](ok.md), pic and [web](https://e.com).\n\n[good]: ok.md\nEnd.\n",
+      removed: ["missing.md", "docs/x.md#y", "img.png", "gone.md"],
+    });
+    expect(removeBrokenKnowledgeLinks("Nothing to do.\n", new Set())).toEqual({ content: "Nothing to do.\n", removed: [] });
   });
 
   it("gives a node its files and every file they link to, skipping missing links and nested files", async () => {

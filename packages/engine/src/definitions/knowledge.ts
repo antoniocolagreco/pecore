@@ -76,6 +76,53 @@ export function checkKnowledge(content: string, files: ReadonlySet<string>): { e
   return { errors, warnings, links: [...links] };
 }
 
+function broken(destination: string, files: ReadonlySet<string>): boolean {
+  const file: string | null = target(destination);
+  return file !== null && (file.includes("/") || file.includes("\\") || !files.has(file));
+}
+
+export function removeBrokenKnowledgeLinks(content: string, files: ReadonlySet<string>): { content: string; removed: string[] } {
+  type Edit = { start: number; end: number; text: string; link: string };
+  const edits: Edit[] = [];
+  const offsets: number[] = [0];
+  for (let index = 0; index < content.length; index++) if (content[index] === "\n") offsets.push(index + 1);
+  const at = (line: number, column: number): number => offsets[line - 1]! + column - 1;
+  const find = (token: MicromarkToken, type: string): MicromarkToken | undefined => {
+    for (const child of token.children) {
+      if (child.type === type) return child;
+      const nested: MicromarkToken | undefined = find(child, type);
+      if (nested) return nested;
+    }
+    return undefined;
+  };
+  const collect: Rule = {
+    names: ["knowledge-links"],
+    description: "Knowledge links",
+    tags: ["links"],
+    parser: "micromark",
+    function: (params) => {
+      const walk = (tokens: readonly MicromarkToken[]): void => {
+        for (const token of tokens) {
+          const resource: string | undefined = token.type === "link" || token.type === "image" ? find(token, "resourceDestinationString")?.text
+            : token.type === "definition" ? find(token, "definitionDestinationString")?.text : undefined;
+          if (resource !== undefined && broken(resource, files)) {
+            const end: number = at(token.endLine, token.endColumn);
+            const text: string = token.type === "definition" ? "" : find(token, "labelText")?.text ?? "";
+            edits.push({ start: at(token.startLine, token.startColumn), end: token.type === "definition" && content[end] === "\n" ? end + 1 : end, text, link: resource });
+            continue;
+          }
+          walk(token.children);
+        }
+      };
+      walk(params.parsers.micromark.tokens);
+    },
+  };
+  lint({ strings: { file: content }, config: { default: false, "knowledge-links": true }, customRules: [collect] });
+  let next: string = content;
+  for (const edit of edits.sort((a, b) => b.start - a.start)) next = next.slice(0, edit.start) + edit.text + next.slice(edit.end);
+  return { content: next, removed: edits.sort((a, b) => a.start - b.start).map(({ link }) => link) };
+}
+
 export function renameKnowledgeLinks(content: string, from: string, to: string): string {
   const lines: string[] = content.split("\n");
   const matches: Destination[] = scan(content, { default: false }).found

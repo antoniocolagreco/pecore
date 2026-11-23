@@ -165,14 +165,16 @@ describe("global file routes", () => {
       expect(checked.errors).toEqual([]);
       expect(checked.warnings).toContainEqual(expect.objectContaining({ line: 2, message: expect.stringContaining("line 2:") }));
 
-      await call("uploadKnowledge", { params: { id: "demo" }, body: { files: [
+      expect(await call("uploadKnowledge", { params: { id: "demo" }, body: { files: [
         { name: "guide.md", content: "# Guide\n\nSee [n](naming.md).\n" },
         { name: "naming.md", content: "# Naming\n\nBack to [guide](guide.md).\n" },
-      ] } });
+      ] } })).toEqual({ saved: [path("guide.md"), path("naming.md")], removedLinks: [] });
       expect((await git(home, ["log", "-1", "--format=%s"])).trim()).toBe("knowledge guide.md, naming.md: created");
       await expect(call("uploadKnowledge", { params: { id: "demo" }, body: { files: [{ name: "guide.md", content: "# Other\n" }] } })).rejects.toMatchObject({ status: 409 });
-      await expect(call("uploadKnowledge", { params: { id: "demo" }, body: { files: [{ name: "extra.md", content: "[x](nope.md)\n" }] } }))
-        .rejects.toMatchObject({ status: 400, message: expect.stringContaining("extra.md, line 1: nope.md is not a knowledge file of this project") });
+      expect(await call("uploadKnowledge", { params: { id: "demo" }, body: { files: [{ name: "extra.md", content: "See [x](nope.md) and [g](guide.md).\n" }] } }))
+        .toEqual({ saved: [path("extra.md")], removedLinks: [{ file: "extra.md", link: "nope.md" }] });
+      expect(await readFile(join(dir, "extra.md"), "utf8")).toBe("See x and [g](guide.md).\n");
+      await call("deleteKnowledge", { params: { id: "demo", name: "extra.md" } });
       const listed: DefinitionEntry[] = await call("listDefinitions", { query: { dir: "projects/demo/knowledge" } });
       expect(listed.map((entry) => [entry.path, entry.value])).toEqual([[path("guide.md"), { links: ["naming.md"] }], [path("naming.md"), { links: ["guide.md"] }]]);
 

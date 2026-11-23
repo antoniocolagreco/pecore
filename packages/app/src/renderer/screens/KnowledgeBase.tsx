@@ -90,10 +90,13 @@ export function KnowledgeBase({ id }: { id: string }) {
     setDialog(null);
     entries.reload();
   });
+  const [removedLinks, setRemovedLinks] = useState<{ file: string; link: string }[]>([]);
   const upload = useAction(async (chosen: File[]) => {
+    setRemovedLinks([]);
     const invalid: string[] = chosen.filter(({ name }) => !KnowledgeFileName.safeParse(name).success).map(({ name }) => name);
     if (invalid.length) throw new Error(`Rename before uploading: ${invalid.join(", ")}. Names use letters, digits, dots, hyphens and underscores and end in .md.`);
-    await call("uploadKnowledge", { params: { id }, body: { files: await Promise.all(chosen.map(async (file) => ({ name: file.name, content: await file.text() }))) } });
+    const result = await call("uploadKnowledge", { params: { id }, body: { files: await Promise.all(chosen.map(async (file) => ({ name: file.name, content: await file.text() }))) } });
+    setRemovedLinks(result.removedLinks);
     entries.reload();
   });
   const open = (kind: "new" | "rename" | "delete"): void => {
@@ -133,6 +136,9 @@ export function KnowledgeBase({ id }: { id: string }) {
         }} />
       </div>
       <ErrorText error={entries.error ?? upload.error} />
+      {removedLinks.length > 0 && <p className={s.notice} role="status">
+        Links to files that are not in this project were removed, keeping their text: {removedLinks.map(({ file, link }) => `${file} → ${link}`).join(", ")}.
+      </p>}
       {entries.loading && !entries.data && <Spinner />}
       {entries.data && !files.length && !selected?.creating && <p className={ui.muted}>No knowledge files yet.</p>}
       <ul className={s.files} aria-label="Knowledge files">

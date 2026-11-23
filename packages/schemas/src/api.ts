@@ -614,7 +614,7 @@ export const routes = {
   getDefinition: { method: "GET", path: "/definitions/*path", params: PathParams, response: DefinitionFile },
   saveDefinition: { method: "PUT", path: "/definitions/*path", params: PathParams, body: SaveDefinitionBody, response: SaveDefinitionResult },
   validateDefinition: { method: "POST", path: "/definitions/validate", body: ValidateDefinitionBody, response: z.object({ errors: z.array(DefinitionErrorView), warnings: z.array(DefinitionErrorView) }) },
-  uploadKnowledge: { method: "POST", path: "/projects/:id/knowledge", params: IdParams, body: UploadKnowledgeBody, response: z.object({ saved: z.array(z.string()) }) },
+  uploadKnowledge: { method: "POST", path: "/projects/:id/knowledge", params: IdParams, body: UploadKnowledgeBody, response: z.object({ saved: z.array(z.string()), removedLinks: z.array(z.object({ file: z.string(), link: z.string() })) }) },
   renameKnowledge: { method: "POST", path: "/projects/:id/knowledge/rename", params: IdParams, body: RenameKnowledgeBody, response: z.object({ updated: z.array(z.string()) }) },
   deleteKnowledge: { method: "DELETE", path: "/projects/:id/knowledge/:name", params: KnowledgeParams, response: Ok },
   instantiate: { method: "POST", path: "/definitions/instantiate", body: InstantiateBody, response: InstantiateResult },

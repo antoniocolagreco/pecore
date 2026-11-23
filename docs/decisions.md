@@ -199,3 +199,9 @@
 - Later the same day: no red margin line, and the paper and rules take the theme's colours (control background and separator), because a fixed paper colour looked out of place in the app.
 - Then: the rules use the text colour at 16%, because the separator colour was invisible in the dark theme, and the cursor is 3 px wide so it is easy to find.
 - Finally: the sheet has no rules, because they distract from the text. The 3 px cursor stays.
+
+## 2026-11-23: Uploads drop broken links instead of failing
+
+- Decision: an upload removes links to files that are neither in the project nor in the same upload, and links with a path. The link text stays (`[notes](old.md)` becomes `notes`); a broken reference definition line is deleted. The app lists the removed links. Saving a file from the editor still refuses broken links.
+- Why: imported documents often link to files that do not come along; refusing the whole upload made importing them painful.
+- Replaces: refusing an upload with any broken link.

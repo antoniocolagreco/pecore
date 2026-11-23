@@ -25,6 +25,13 @@
   gap: 6px;
 }
 
+.notice {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--text-size-sm);
+  overflow-wrap: anywhere;
+}
+
 .files {
   display: grid;
   gap: 2px;
