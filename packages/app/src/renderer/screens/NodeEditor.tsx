@@ -1,7 +1,7 @@
 import { cloneElement, useEffect, useId, useRef, useState } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { Link, useBlocker, useNavigate, useParams } from "react-router";
-import { ApiError, ArtifactType, HumanMode, isNodeKindTag, Name, normalizeLegacyHumanNode, ReviewView } from "@pecore/schemas";
+import { ApiError, HumanMode, isNodeKindTag, Name, normalizeLegacyHumanNode, ReviewView } from "@pecore/schemas";
 import type { DefinitionFile, Node, RouteResult } from "@pecore/schemas";
 import { basicSetup, EditorView } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
@@ -278,17 +278,12 @@ const humanModes: { value: HumanMode; label: string }[] = [
   { value: "review", label: "Review" },
 ];
 const humanFields: Record<HumanMode, Record<string, unknown>> = {
-  decision: { mode: "decision", reviewView: undefined, inputs: [], answer: false, outcomes: ["yes", "no"] },
-  review: { mode: "review", reviewView: "diff", inputs: ["diff"], answer: true, outcomes: ["approve", "changes", "reject"] },
+  decision: { mode: "decision", reviewView: undefined, answer: false, outcomes: ["yes", "no"] },
+  review: { mode: "review", reviewView: "code", answer: true, outcomes: ["approve", "changes", "reject"] },
 };
 const reviewViews: { value: ReviewView; label: string }[] = [
-  { value: "text", label: "Text" }, { value: "code", label: "Code" }, { value: "diff", label: "Diff" },
+  { value: "report", label: "Report" }, { value: "code", label: "Code" },
 ];
-const reviewInputLabels: Record<ArtifactType, string> = {
-  ticket: "Ticket", spec: "Specification", findings: "Findings", risk: "Risk assessment", "check-log": "Check log",
-  diff: "Code changes", "user-note": "User note", commit: "Commit", delivery: "Delivery", "pull-request": "Pull request draft",
-};
-const reviewInputs: { value: ArtifactType; label: string }[] = ArtifactType.options.map((value) => ({ value, label: reviewInputLabels[value] }));
 const initialNodeFields: Record<Node["kind"], Record<string, unknown>> = {
   agent: {
     outcomes: ["done"], changesFiles: false, timeoutSec: 120, agent: { tier: "standard" },
@@ -333,7 +328,6 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   const human: boolean = kind === "human";
   const mode: string = string(draft?.mode);
   const reviewView: ReviewView | undefined = ReviewView.safeParse(draft?.reviewView).data;
-  const reviewInput: ArtifactType | undefined = ArtifactType.safeParse(Array.isArray(draft?.inputs) ? draft.inputs[0] : undefined).data;
   const tags: string[] = Array.isArray(draft?.tags) ? draft.tags.map(string) : [];
   const descriptiveTags: string[] = tags.filter((tag) => !isNodeKindTag(tag));
   const definitionPath: string = creation ? creation.path(file.content) : path;
@@ -348,7 +342,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
     ...(kind === "source" ? ["credentials"] : ["outcomes", "changesFiles"]),
     ...(kind === "agent" ? ["prompt", "resume"] : []),
     ...(kind === "command" ? ["script", "runsAs", "cleanCheckout"] : []),
-    ...(human ? ["mode", "show", "reviewView", "inputs", "answer"] : []),
+    ...(human ? ["mode", "show", "reviewView", "answer"] : []),
   ];
   const fieldErrors = (key: string): ReactNode => <DefinitionErrors errors={file.errors?.filter(({ path }) => path.split(".")[0] === key)} />;
   const help = (label: string, text: ReactNode): ReactNode => creation && <FieldHelp title={label}>{text}</FieldHelp>;
@@ -411,27 +405,17 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
             onChange={(value) => update("icon", value)} />
           {kind && !human && field("timeoutSec", "Timeout (seconds)", <input type="number" min={1} value={typeof draft.timeoutSec === "number" ? draft.timeoutSec : ""} onChange={(event) => update("timeoutSec", event.target.value ? Number(event.target.value) : undefined)} />,
             "Set how long one attempt can run before PeCore stops it.")}
-          {human && mode === "review" && <>
-            <div>
+          {human && mode === "review" && <div>
               <Select label="Review view" options={reviewViews} value={reviewView ?? null}
                 placeholder={Array.isArray(draft.show) && draft.show.length ? "Saved artifact list" : "Choose a view"}
-                labelAction={<FieldHelp title="Review view">Text shows a document. Code shows line numbers and highlights supported syntax. Diff shows additions, removals and available risk marks.</FieldHelp>}
+                labelAction={<FieldHelp title="Review view">Report shows the latest text from the job, such as a ticket, specification or check log. Code shows the latest code changes and their risk annotations.</FieldHelp>}
                 onValueChange={(value) => {
                   const next: ReviewView | undefined = ReviewView.safeParse(value).data;
                   if (!next) return;
-                  const legacy: unknown[] = Array.isArray(draft.show) ? draft.show : [];
-                  const input: ArtifactType | undefined = reviewInput ?? ArtifactType.safeParse(legacy.includes("diff") ? "diff" : legacy[0]).data;
-                  file.update(JSON.stringify({ ...draft, tags: descriptiveTags, reviewView: next, show: undefined, inputs: input ? [input] : [] }, null, 2) + "\n");
+                  file.update(JSON.stringify({ ...draft, tags: descriptiveTags, reviewView: next, show: undefined, inputs: undefined }, null, 2) + "\n");
                 }} />
               {fieldErrors("reviewView")}{fieldErrors("show")}
-            </div>
-            {reviewView && <div>
-              <Select label="Review input" options={reviewInputs} value={reviewInput ?? null}
-                labelAction={<FieldHelp title="Review input">Choose the artifact the reviewer should see. For example, select Ticket with Text to show the original request.</FieldHelp>}
-                onValueChange={(value) => { if (value) update("inputs", [value]); }} />
-              {fieldErrors("inputs")}
-            </div>}
-          </>}
+          </div>}
           {kind && kind !== "source" && <>
             {field("outcomes", human && mode === "decision" ? "Choices (comma separated)" : "Outcomes (comma separated)", <input value={Array.isArray(draft.outcomes) ? draft.outcomes.join(",") : ""} onChange={(event) => update("outcomes", event.target.value ? event.target.value.split(",") : [])} />,
               human && mode === "decision" ? "Each choice is a button in Notifications and an outcome you can connect in the recipe. For example, yes can continue to the next node and no can go to End."

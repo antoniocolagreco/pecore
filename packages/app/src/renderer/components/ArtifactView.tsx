@@ -82,12 +82,12 @@ export function Delivery({ content }: { content: string }) {
 function ArtifactContent({ artifact, content, risk, reviewView }: {
   artifact: Artifact; content: string; risk: RiskArtifact | undefined; reviewView?: ReviewView;
 }) {
-  if (reviewView === "code") {
+  if (reviewView === "code" && artifact.type !== "diff") {
     const language: "json" | "shell" | undefined = json(content) !== undefined ? "json"
       : /^#![^\n]*(?:\/|\s)(?:ba|da|z|k)?sh(?:\s|$)/.test(content) ? "shell" : undefined;
     return <CodeSnapshot content={content} language={language} label="Review code" numbered />;
   }
-  if (reviewView === "text" && artifact.type === "diff") return <Plain content={content} />;
+  if (reviewView === "report" && artifact.type === "diff") return <Plain content={content} />;
   switch (artifact.type) {
     case "diff":
       return <DiffView content={content} risk={risk} />;
@@ -120,7 +120,7 @@ function ArtifactContent({ artifact, content, risk, reviewView }: {
     case "ticket": {
       const value: unknown = json(content);
       if (typeof value !== "object" || value === null || !("text" in value) || typeof value.text !== "string") return <Plain content={content} />;
-      if (reviewView !== "text") return <Plain content={value.text} />;
+      if (reviewView !== "report") return <Plain content={value.text} />;
       const reference: string = ["source" in value ? value.source : null, "id" in value ? value.id : null]
         .filter((item): item is string => typeof item === "string" && item.length > 0).join(" · ");
       return <>

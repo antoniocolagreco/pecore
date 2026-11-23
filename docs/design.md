@@ -332,7 +332,7 @@ Fields by kind:
     *   `resume`: `true` to resume the harness session when the node runs again in the same job.
 *   **`human`**
     *   `mode`: `decision` for a question or `review` for artifact review.
-    *   Review uses one artifact from `inputs`. `reviewView` displays it as `text`, `code` or `diff`. Diff review also uses the approver's `risk` artifact to show risky hunks first. Stored definitions with `show` keep their original artifact list.
+    *   A `report` review shows the latest textual artifact. A `code` review shows the latest diff and marks risk when the risk assessment matches its content state. Stored definitions with `show` keep their original artifact list.
     *   The outcomes are the buttons the user sees (for example `approve`, `changes`, `reject`).
     *   `answer`: whether the user can attach text, which becomes an artifact for the next node.
 

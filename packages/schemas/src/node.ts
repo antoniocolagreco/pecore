@@ -119,8 +119,22 @@ export const AgentNode = z
   })
   .strict();
 
-export const ReviewView = z.enum(["text", "code", "diff"]);
+export const ReviewView = z.enum(["report", "code"]);
 export type ReviewView = z.infer<typeof ReviewView>;
+
+export function normalizeReviewView(value: unknown): ReviewView | undefined {
+  if (value === "text") return "report";
+  if (value === "diff") return "code";
+  return ReviewView.safeParse(value).data;
+}
+
+function normalizeReviewDefinition(value: Record<string, unknown>): Record<string, unknown> {
+  const reviewView: ReviewView | undefined = normalizeReviewView(value.reviewView);
+  if (!reviewView || (reviewView === value.reviewView && !Object.hasOwn(value, "inputs"))) return value;
+  const definition: Record<string, unknown> = { ...value, reviewView };
+  delete definition.inputs;
+  return definition;
+}
 
 const HumanFields = {
   ...Base,
@@ -145,12 +159,13 @@ export type HumanNode = z.infer<typeof HumanNode>;
 
 export function normalizeLegacyHumanNode(value: Record<string, unknown>): Record<string, unknown> {
   if (value.kind === "human-decision" || value.kind === "human-review") {
-    return { ...value, kind: "human", mode: value.kind === "human-review" ? "review" : "decision" };
+    return { ...normalizeReviewDefinition(value), kind: "human", mode: value.kind === "human-review" ? "review" : "decision" };
   }
-  if (value.kind !== "human" || (!Object.hasOwn(value, "timeoutSec") && !Object.hasOwn(value, "changesFiles"))) return value;
+  if (value.kind !== "human") return value;
+  if (!Object.hasOwn(value, "timeoutSec") && !Object.hasOwn(value, "changesFiles")) return normalizeReviewDefinition(value);
   const review: boolean = value.mode === "review" || (value.mode === undefined && Array.isArray(value.show) && value.show.length > 0
     && Array.isArray(value.outcomes) && value.outcomes.includes("approve"));
-  const definition: Record<string, unknown> = { ...value, mode: value.mode ?? (review ? "review" : "decision") };
+  const definition: Record<string, unknown> = { ...normalizeReviewDefinition(value), mode: value.mode ?? (review ? "review" : "decision") };
   delete definition.timeoutSec;
   delete definition.changesFiles;
   return definition;
@@ -221,12 +236,8 @@ function checkNode(node: z.infer<typeof CommandNode> | z.infer<typeof AgentNode>
     if (!props || typeof props !== "object" || !("outcome" in props)) issues.push({ path: ["outputSchema"], message: "outputSchema needs a property outcome" });
   }
   if (node.kind === "human" && node.mode === "review" && (strictReview || node.reviewView)) {
-    if (node.reviewView) {
-      if (node.inputs.length !== 1) issues.push({ path: ["inputs"], message: "choose one artifact to review" });
-      if (node.reviewView === "diff" && node.inputs.length === 1 && node.inputs[0] !== "diff") {
-        issues.push({ path: ["inputs"], message: "Diff view needs a diff artifact" });
-      }
-    } else if (node.show.length === 0) issues.push({ path: ["reviewView"], message: "choose a review view" });
+    if (!node.reviewView && node.show.length === 0) issues.push({ path: ["reviewView"], message: "choose a review view" });
+    if (node.reviewView && node.inputs.length) issues.push({ path: ["inputs"], message: "the review view selects its input automatically" });
     if (node.outcomes.length !== 3 || !["approve", "changes", "reject"].every((outcome) => node.outcomes.includes(outcome))) {
       issues.push({ path: ["outcomes"], message: "a review needs approve, changes and reject" });
     }
@@ -244,7 +255,11 @@ export type CommandNode = z.infer<typeof CommandNode>;
 export type AgentNode = z.infer<typeof AgentNode>;
 export type SourceNode = z.infer<typeof SourceNode>;
 
-export const StoredNode = z.union([
+export const StoredNode = z.preprocess((value) => {
+  if (!value || typeof value !== "object" || !("kind" in value)) return value;
+  if (value.kind !== "human" && value.kind !== "human-review" && value.kind !== "human-decision") return value;
+  return normalizeReviewDefinition(value as Record<string, unknown>);
+}, z.union([
   NodeShape.superRefine((node, ctx) => {
     for (const issue of checkNode(node, false)) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
   }),
@@ -253,7 +268,7 @@ export const StoredNode = z.union([
     for (const issue of checkNode(node, legacy.kind === "human" && legacy.mode === "review")) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
     return node;
   }),
-]);
+]));
 
 export function isHumanNode(node: Node): node is HumanNode {
   return node.kind === "human";

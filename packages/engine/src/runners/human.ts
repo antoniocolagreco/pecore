@@ -16,6 +16,24 @@ export function subjectHash(subject: unknown): string {
   return createHash("sha256").update(JSON.stringify(subject)).digest("hex");
 }
 
+function reviewArtifacts(node: HumanNode, artifacts: Artifact[], reviewView: ReviewView | undefined): Artifact[] {
+  if (reviewView === "report") {
+    const report: Artifact | undefined = artifacts.findLast(({ type }) => type !== "diff" && type !== "attachment");
+    return report ? [report] : [];
+  }
+  if (reviewView === "code") {
+    const diff: Artifact | undefined = artifacts.findLast(({ type }) => type === "diff");
+    if (!diff) return [];
+    const risk: Artifact | undefined = artifacts.findLast(({ type, contentState }) => type === "risk" && contentState !== null && contentState === diff.contentState);
+    return risk ? [diff, risk] : [diff];
+  }
+  const shown = new Map<Artifact["type"], Artifact>();
+  for (const artifact of artifacts) {
+    if (artifact.type !== "attachment" && node.show.includes(artifact.type)) shown.set(artifact.type, artifact);
+  }
+  return [...shown.values()];
+}
+
 export function humanItem(nodeRunId: string, recipeNodeId: string, node: HumanNode, artifacts: Artifact[], contentState: string | null, question?: unknown) {
   const mode: HumanSubject["mode"] = node.mode;
   const reviewView: ReviewView | undefined = mode === "review" ? node.reviewView : undefined;
@@ -25,9 +43,7 @@ export function humanItem(nodeRunId: string, recipeNodeId: string, node: HumanNo
     description: mode === "decision" && typeof question === "string" && question.trim() ? question.trim() : node.description,
     mode,
     contentState,
-    show: artifacts.filter(({ type }) => type !== "attachment" && (reviewView
-      ? type === node.inputs[0] || (reviewView === "diff" && type === "risk")
-      : node.show.includes(type))),
+    show: reviewArtifacts(node, artifacts, reviewView),
     ...(reviewView ? { reviewView } : {}),
     answer: node.answer,
   };

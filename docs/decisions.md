@@ -73,11 +73,6 @@
 - Why: a two-line title moved the icon up on that card only.
 - Replaces: a title as tall as its text.
 - A one-line title is centred in the two-line space. Node and recipe names are limited to 24 characters, so every title fits on its card.
-- Node template cards use a coloured left stripe and a kind badge. Search matches the name, kind and tags.
-- Node icons use the same rounded square and glyph proportions in templates, editors and job views.
-- Human uses one kind with `decision` and `review` modes. Older definitions load with their original outcomes. The UI shows `command` as Run command. Tags describe the node's purpose and omit kind names.
-- The New Node form has clickable help next to field labels. The text explains what each setting controls in the selected kind or mode.
-- Human Review selects one input artifact and displays it as Text, Code or Diff. Old `show` lists still open with their original content.
 
 ## 2026-11-23: Recipe editor uses a drag-and-drop palette
 
@@ -98,3 +93,11 @@
 - Each outcome can continue at another step or reach End. The connection to End sets the result. A Human Review can send acceptance to Success, a request for changes to the Builder and rejection to Failure.
 - Recipes with explicit End connections must route every outcome of each reachable step. An empty recipe connects Start directly to End. The engine can still stop a job on cancellation or an execution error.
 - Previously saved recipes keep their results. Editing their connections records those results explicitly. Existing Not delivered results stay available in saved flows.
+
+## 2026-11-23: Node templates show their kind; Human has two modes
+
+- Node template cards use a coloured left stripe and a kind badge. Search matches the name, kind and tags.
+- Node icons use the same rounded square and glyph proportions in templates, editors and job views.
+- Human uses one kind with `decision` and `review` modes. Older definitions load with their original outcomes. The UI shows `command` as Run command. Tags describe the node's purpose and omit kind names.
+- The New Node form has clickable help next to field labels. The text explains what each setting controls in the selected kind or mode.
+- Human Review offers Report for the latest textual artifact and Code for the latest diff with matching risk annotations. The job selects the artifact automatically. Old `show` lists still open with their original content.

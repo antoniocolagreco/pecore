@@ -3,11 +3,11 @@ import { Node } from "@pecore/schemas";
 import type { Artifact, HumanNode } from "@pecore/schemas";
 import { humanItem } from "./human";
 
-const artifacts: Artifact[] = [
-  { type: "ticket", path: "artifacts/job/create/ticket.json", sha256: "a".repeat(64), contentState: null },
-  { type: "diff", path: "artifacts/job/build/diff.txt", sha256: "b".repeat(64), contentState: "tree" },
-  { type: "risk", path: "artifacts/job/assess/risk.json", sha256: "c".repeat(64), contentState: "tree" },
-];
+const ticket: Artifact = { type: "ticket", path: "artifacts/job/create/ticket.json", sha256: "a".repeat(64), contentState: null };
+const log: Artifact = { type: "check-log", path: "artifacts/job/check/check-log.txt", sha256: "b".repeat(64), contentState: "tree" };
+const diff: Artifact = { type: "diff", path: "artifacts/job/build/diff.patch", sha256: "c".repeat(64), contentState: "tree" };
+const risk: Artifact = { type: "risk", path: "artifacts/job/assess/risk.json", sha256: "d".repeat(64), contentState: "tree" };
+const outdatedRisk: Artifact = { type: "risk", path: "artifacts/job/old-assess/risk.json", sha256: "e".repeat(64), contentState: "old-tree" };
 
 function review(fields: Record<string, unknown>): HumanNode {
   const node = Node.parse({ name: "review", description: "Review the job", kind: "human", mode: "review",
@@ -17,22 +17,20 @@ function review(fields: Record<string, unknown>): HumanNode {
 }
 
 describe("Human review views", () => {
-  it("uses the same input for Text and Code", () => {
-    for (const reviewView of ["text", "code"]) {
-      const item = humanItem("run", "review", review({ reviewView, inputs: ["ticket"] }), artifacts, "tree");
-      expect(item.subject).toMatchObject({ reviewView, show: [artifacts[0]] });
-      expect(item.choices).toEqual(["approve", "changes", "reject"]);
-    }
+  it("shows the latest textual artifact for Report", () => {
+    const item = humanItem("run", "review", review({ reviewView: "report" }), [ticket, log, diff], "tree");
+    expect(item.subject).toMatchObject({ reviewView: "report", show: [log] });
+    expect(item.choices).toEqual(["approve", "changes", "reject"]);
   });
 
-  it("passes risk annotations only alongside a Diff view", () => {
-    const item = humanItem("run", "review", review({ reviewView: "diff", inputs: ["diff"] }), artifacts, "tree");
-    expect(item.subject).toMatchObject({ reviewView: "diff", show: [artifacts[1], artifacts[2]] });
+  it("shows code changes and matching risk annotations for Code", () => {
+    const item = humanItem("run", "review", review({ reviewView: "code" }), [ticket, diff, log, risk, outdatedRisk], "tree");
+    expect(item.subject).toMatchObject({ reviewView: "code", show: [diff, risk] });
   });
 
   it("keeps the artifact list for older reviews", () => {
-    const item = humanItem("run", "review", review({ show: ["ticket", "diff"] }), artifacts, "tree");
+    const item = humanItem("run", "review", review({ show: ["ticket", "diff"] }), [ticket, log, diff, risk], "tree");
     expect(item.subject).not.toHaveProperty("reviewView");
-    expect(item.subject.show).toEqual([artifacts[0], artifacts[1]]);
+    expect(item.subject.show).toEqual([ticket, diff]);
   });
 });

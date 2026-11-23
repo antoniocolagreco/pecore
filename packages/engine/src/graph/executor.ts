@@ -739,7 +739,7 @@ export class JobExecutor {
 
     if (isHumanNode(node)) {
       const { question } = paramsWithDefaults(node.params, recipeNode.params);
-      const item = humanItem(run.id, run.node, node, [...this.latest(job.id).values()], before, question);
+      const item = humanItem(run.id, run.node, node, this.artifacts(job.id), before, question);
       this.waitForHuman(job, run, item, `${run.node} waits for your ${item.subject.mode}`);
       return false;
     }

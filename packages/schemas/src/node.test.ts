@@ -68,14 +68,15 @@ const issues = (value: unknown) => {
 };
 
 describe("node schema", () => {
-  it("requires one review input and accepts Diff only for code changes", () => {
+  it("accepts only Report and Code as new review views", () => {
     const review: Record<string, unknown> = { name: "review", description: "Review the job", kind: "human", mode: "review",
       outcomes: ["approve", "changes", "reject"] };
-    expect(issues({ ...review, reviewView: "text", inputs: ["ticket"] })).toEqual([]);
-    expect(issues({ ...review, reviewView: "code", inputs: ["check-log"] })).toEqual([]);
-    expect(issues({ ...review, reviewView: "diff", inputs: ["diff"] })).toEqual([]);
-    expect(issues({ ...review, reviewView: "text", inputs: ["ticket", "spec"] })).toEqual(["inputs: choose one artifact to review"]);
-    expect(issues({ ...review, reviewView: "diff", inputs: ["ticket"] })).toEqual(["inputs: Diff view needs a diff artifact"]);
+    expect(issues({ ...review, reviewView: "report" })).toEqual([]);
+    expect(issues({ ...review, reviewView: "code" })).toEqual([]);
+    expect(issues({ ...review, reviewView: "diff" })).not.toEqual([]);
+    expect(issues({ ...review, reviewView: "report", inputs: ["ticket"] })).toEqual(["inputs: the review view selects its input automatically"]);
+    expect(StoredNode.parse({ ...review, reviewView: "text", inputs: ["ticket"] })).toMatchObject({ reviewView: "report", inputs: [] });
+    expect(StoredNode.parse({ ...review, reviewView: "diff", inputs: ["diff"] })).toMatchObject({ reviewView: "code", inputs: [] });
   });
 
   it("accepts the delivery node of design 3.1", () => {
