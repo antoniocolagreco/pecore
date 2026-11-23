@@ -66,3 +66,9 @@
 - Decision: the shipped recipes are `feature-to-pr` (Feature to PR), `feature-to-local-commit` (Feature to Local Commit) and `bugfix-to-pr` (Bug Fix to PR). They stay three distinct flows. Existing homes get the new files; the old ones are removed at start when unchanged.
 - Why: Feature, Local Only and Bug Fix did not say where the job ends, and Local Only did not say what it does.
 - Replaces: the recipe names `feature`, `local-only` and `bugfix`.
+
+## 2026-11-23: Template card titles keep two lines
+
+- Decision: a template card reserves two lines for its title, so the icon stays at the same height whether the title takes one line or two.
+- Why: a two-line title moved the icon up on that card only.
+- Replaces: a title as tall as its text.

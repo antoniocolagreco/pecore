@@ -61,6 +61,7 @@ a.entry:focus-visible {
 
 .card strong {
   display: -webkit-box;
+  height: 2lh;
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
