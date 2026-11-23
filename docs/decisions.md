@@ -77,6 +77,7 @@
 - Node icons use the same rounded square and glyph proportions in templates, editors and job views.
 - Human uses one kind with `decision` and `review` modes. Older definitions load with their original outcomes. The UI shows `command` as Run command. Tags describe the node's purpose and omit kind names.
 - The New Node form has clickable help next to field labels. The text explains what each setting controls in the selected kind or mode.
+- Human Review selects one input artifact and displays it as Text, Code or Diff. Old `show` lists still open with their original content.
 
 ## 2026-11-23: Recipe editor uses a drag-and-drop palette
 

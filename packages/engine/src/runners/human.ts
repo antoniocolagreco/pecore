@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Artifact, HumanNode } from "@pecore/schemas";
+import type { Artifact, HumanNode, ReviewView } from "@pecore/schemas";
 
 export type HumanSubject = {
   nodeRunId: string;
@@ -8,6 +8,7 @@ export type HumanSubject = {
   mode: "decision" | "review";
   contentState: string | null;
   show: Artifact[];
+  reviewView?: ReviewView;
   answer: boolean;
 };
 
@@ -17,13 +18,17 @@ export function subjectHash(subject: unknown): string {
 
 export function humanItem(nodeRunId: string, recipeNodeId: string, node: HumanNode, artifacts: Artifact[], contentState: string | null, question?: unknown) {
   const mode: HumanSubject["mode"] = node.mode;
+  const reviewView: ReviewView | undefined = mode === "review" ? node.reviewView : undefined;
   const subject: HumanSubject = {
     nodeRunId,
     node: recipeNodeId,
     description: mode === "decision" && typeof question === "string" && question.trim() ? question.trim() : node.description,
     mode,
     contentState,
-    show: artifacts.filter((a) => a.type !== "attachment" && node.show.includes(a.type)),
+    show: artifacts.filter(({ type }) => type !== "attachment" && (reviewView
+      ? type === node.inputs[0] || (reviewView === "diff" && type === "risk")
+      : node.show.includes(type))),
+    ...(reviewView ? { reviewView } : {}),
     answer: node.answer,
   };
   return { kind: "human-node" as const, subject, subjectHash: subjectHash(subject), choices: [...node.outcomes] };

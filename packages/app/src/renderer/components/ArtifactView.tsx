@@ -1,11 +1,12 @@
 import { DeliveryArtifact, FindingsArtifact, RiskArtifact, SpecArtifact } from "@pecore/schemas";
-import type { Artifact } from "@pecore/schemas";
+import type { Artifact, ReviewView } from "@pecore/schemas";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import { call } from "../api/client";
 import { useData } from "../api/hooks";
 import { useConnected } from "../api/live";
+import { CodeSnapshot } from "./CodeSnapshot";
 import { DiffView } from "./DiffView";
 import { Button, Empty, ErrorText, ui } from "./ui";
 import s from "./ArtifactView.module.css";
@@ -78,7 +79,15 @@ export function Delivery({ content }: { content: string }) {
   return <a href={url} target="_blank" rel="noreferrer">{url}</a>;
 }
 
-function ArtifactContent({ artifact, content, risk }: { artifact: Artifact; content: string; risk: RiskArtifact | undefined }) {
+function ArtifactContent({ artifact, content, risk, reviewView }: {
+  artifact: Artifact; content: string; risk: RiskArtifact | undefined; reviewView?: ReviewView;
+}) {
+  if (reviewView === "code") {
+    const language: "json" | "shell" | undefined = json(content) !== undefined ? "json"
+      : /^#![^\n]*(?:\/|\s)(?:ba|da|z|k)?sh(?:\s|$)/.test(content) ? "shell" : undefined;
+    return <CodeSnapshot content={content} language={language} label="Review code" numbered />;
+  }
+  if (reviewView === "text" && artifact.type === "diff") return <Plain content={content} />;
   switch (artifact.type) {
     case "diff":
       return <DiffView content={content} risk={risk} />;
@@ -110,15 +119,22 @@ function ArtifactContent({ artifact, content, risk }: { artifact: Artifact; cont
       return <Delivery content={content} />;
     case "ticket": {
       const value: unknown = json(content);
-      const ticket = typeof value === "object" && value !== null && "text" in value && typeof value.text === "string" ? value.text : content;
-      return <Plain content={ticket} />;
+      if (typeof value !== "object" || value === null || !("text" in value) || typeof value.text !== "string") return <Plain content={content} />;
+      if (reviewView !== "text") return <Plain content={value.text} />;
+      const reference: string = ["source" in value ? value.source : null, "id" in value ? value.id : null]
+        .filter((item): item is string => typeof item === "string" && item.length > 0).join(" · ");
+      return <>
+        {"title" in value && typeof value.title === "string" && <h3>{value.title}</h3>}
+        {reference && <p className={ui.muted}>{reference}</p>}
+        <Plain content={value.text} />
+      </>;
     }
     default:
       return <Plain content={content} />;
   }
 }
 
-export function ArtifactView({ artifact, risk }: { artifact: Artifact; risk?: Artifact | undefined }) {
+export function ArtifactView({ artifact, risk, reviewView }: { artifact: Artifact; risk?: Artifact | undefined; reviewView?: ReviewView }) {
   const file = useData(async () => {
     const r = await readArtifact(artifact);
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(r.content)));
@@ -135,7 +151,7 @@ export function ArtifactView({ artifact, risk }: { artifact: Artifact; risk?: Ar
       <ErrorText error={file.error ?? riskFile.error} />
       {changed ? <div className={ui.banner}>This artifact differs from the version recorded for this item.</div> : null}
       {file.data?.artifact.path === artifact.path
-        ? <ArtifactContent key={artifact.sha256} artifact={artifact} content={file.data.content} risk={riskFile.data} />
+        ? <ArtifactContent key={artifact.sha256} artifact={artifact} content={file.data.content} risk={riskFile.data} reviewView={reviewView} />
         : file.loading && <Empty>Loading artifact…</Empty>}
     </div>
   );

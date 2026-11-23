@@ -68,6 +68,16 @@ const issues = (value: unknown) => {
 };
 
 describe("node schema", () => {
+  it("requires one review input and accepts Diff only for code changes", () => {
+    const review: Record<string, unknown> = { name: "review", description: "Review the job", kind: "human", mode: "review",
+      outcomes: ["approve", "changes", "reject"] };
+    expect(issues({ ...review, reviewView: "text", inputs: ["ticket"] })).toEqual([]);
+    expect(issues({ ...review, reviewView: "code", inputs: ["check-log"] })).toEqual([]);
+    expect(issues({ ...review, reviewView: "diff", inputs: ["diff"] })).toEqual([]);
+    expect(issues({ ...review, reviewView: "text", inputs: ["ticket", "spec"] })).toEqual(["inputs: choose one artifact to review"]);
+    expect(issues({ ...review, reviewView: "diff", inputs: ["ticket"] })).toEqual(["inputs: Diff view needs a diff artifact"]);
+  });
+
   it("accepts the delivery node of design 3.1", () => {
     expect(issues(githubPr)).toEqual([]);
     const n = Node.parse(githubPr);

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { json } from "@codemirror/lang-json";
+import { lineNumbers } from "@codemirror/view";
 import { HighlightStyle, StreamLanguage, syntaxHighlighting } from "@codemirror/language";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { EditorState } from "@codemirror/state";
@@ -29,7 +30,9 @@ const theme = EditorView.theme({
   ".cm-line": { padding: "0 12px" },
 });
 
-export function CodeSnapshot({ content, language, label }: { content: string; language: keyof typeof languages; label: string }) {
+export function CodeSnapshot({ content, language, label, numbered = false }: {
+  content: string; language?: keyof typeof languages; label: string; numbered?: boolean;
+}) {
   const parent = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!parent.current) return;
@@ -37,14 +40,14 @@ export function CodeSnapshot({ content, language, label }: { content: string; la
       parent: parent.current,
       doc: content,
       extensions: [
-        languages[language], highlight, theme,
+        language ? languages[language] : [], numbered ? lineNumbers() : [], highlight, theme,
         EditorState.readOnly.of(true),
         EditorView.editable.of(false),
         EditorView.contentAttributes.of({ tabindex: "0", "aria-readonly": "true", "aria-label": label }),
       ],
     });
     return () => editor.destroy();
-  }, [content, language, label]);
+  }, [content, language, label, numbered]);
 
   return <div ref={parent} className={s.snapshot} />;
 }

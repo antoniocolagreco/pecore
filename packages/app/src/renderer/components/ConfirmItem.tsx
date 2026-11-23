@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { Artifact } from "@pecore/schemas";
+import { Artifact, ReviewView } from "@pecore/schemas";
 import type { QueueItemView } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
@@ -42,21 +42,22 @@ function Snapshot({ value }: { value: unknown }) {
 
 const reviewOrder: Artifact["type"][] = ["diff", "findings", "spec", "check-log"];
 
-function ReviewArtifacts({ artifacts }: { artifacts: Artifact[] }) {
-  const risk = artifacts.find((a) => a.type === "risk");
-  const shown = artifacts.filter((a) => a.type !== "risk").sort((a, b) => (reviewOrder.indexOf(a.type) + 99) % 99 - (reviewOrder.indexOf(b.type) + 99) % 99);
+function ReviewArtifacts({ artifacts, view }: { artifacts: Artifact[]; view?: ReviewView }) {
+  const risk = !view || view === "diff" ? artifacts.find((a) => a.type === "risk") : undefined;
+  const shown = artifacts.filter((a) => a !== risk).sort((a, b) => (reviewOrder.indexOf(a.type) + 99) % 99 - (reviewOrder.indexOf(b.type) + 99) % 99);
+  if (view && !shown.length) return <Empty>The review input is unavailable.</Empty>;
   return (
     <div className={ui.stack}>
       {shown.map((a) =>
-        a.type === "check-log" ? (
+        a.type === "check-log" && !view ? (
           <details key={a.path}>
             <summary>Check log · {a.path.split("/").at(-2)}</summary>
             <ArtifactView artifact={a} />
           </details>
         ) : (
           <div key={a.path}>
-            <strong>{a.type === "diff" ? "Changes" : a.type === "findings" ? "Findings" : a.type === "spec" ? "Spec" : a.type}</strong>
-            <ArtifactView artifact={a} risk={a.type === "diff" ? risk : undefined} />
+            <strong>{a.type === "diff" ? "Changes" : a.type === "findings" ? "Findings" : a.type === "spec" ? "Spec" : a.type === "ticket" ? "Ticket" : a.type}</strong>
+            <ArtifactView artifact={a} risk={a.type === "diff" ? risk : undefined} reviewView={view} />
           </div>
         ),
       )}
@@ -75,7 +76,7 @@ function Subject({ item, connected }: { item: QueueItemView; connected: boolean 
           {typeof subject.description === "string" && <div>{subject.description}</div>}
           {subject.mode !== "decision" && typeof subject.contentState === "string" && <div>Content state: <code>{subject.contentState}</code></div>}
           {connected && item.jobId ? <Link to={`/jobs/${item.jobId}`}>Open the job</Link> : null}
-          {artifacts.success && <ReviewArtifacts artifacts={artifacts.data} />}
+          {artifacts.success && <ReviewArtifacts artifacts={artifacts.data} view={ReviewView.safeParse(subject.reviewView).data} />}
           {!artifacts.success && <Snapshot value={item.subject} />}
         </>
       );

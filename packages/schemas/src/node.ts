@@ -119,10 +119,14 @@ export const AgentNode = z
   })
   .strict();
 
+export const ReviewView = z.enum(["text", "code", "diff"]);
+export type ReviewView = z.infer<typeof ReviewView>;
+
 const HumanFields = {
   ...Base,
   ...Runnable,
   show: z.array(ArtifactType).default([]),
+  reviewView: ReviewView.optional(),
   answer: z.boolean().default(false),
 };
 
@@ -216,8 +220,13 @@ function checkNode(node: z.infer<typeof CommandNode> | z.infer<typeof AgentNode>
     const props = node.outputSchema.properties as Record<string, unknown> | undefined;
     if (!props || typeof props !== "object" || !("outcome" in props)) issues.push({ path: ["outputSchema"], message: "outputSchema needs a property outcome" });
   }
-  if (node.kind === "human" && node.mode === "review" && strictReview) {
-    if (node.show.length === 0) issues.push({ path: ["show"], message: "select at least one artifact for review" });
+  if (node.kind === "human" && node.mode === "review" && (strictReview || node.reviewView)) {
+    if (node.reviewView) {
+      if (node.inputs.length !== 1) issues.push({ path: ["inputs"], message: "choose one artifact to review" });
+      if (node.reviewView === "diff" && node.inputs.length === 1 && node.inputs[0] !== "diff") {
+        issues.push({ path: ["inputs"], message: "Diff view needs a diff artifact" });
+      }
+    } else if (node.show.length === 0) issues.push({ path: ["reviewView"], message: "choose a review view" });
     if (node.outcomes.length !== 3 || !["approve", "changes", "reject"].every((outcome) => node.outcomes.includes(outcome))) {
       issues.push({ path: ["outcomes"], message: "a review needs approve, changes and reject" });
     }

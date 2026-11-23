@@ -5,7 +5,8 @@
   "description": "The user reviews the diff, with risky hunks first, and approves, asks for changes or rejects",
   "kind": "human",
   "mode": "review",
-  "show": ["diff", "risk", "findings", "check-log", "spec"],
+  "reviewView": "diff",
+  "inputs": ["diff"],
   "answer": true,
   "outputs": ["user-note"],
   "outcomes": ["approve", "changes", "reject"]
