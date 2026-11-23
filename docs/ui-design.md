@@ -312,7 +312,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   Inspector for a node: read-only kind, `requires`, `optional`, `skipWhenUnchanged` and `maxRounds` of its outgoing edges. Edit definition opens the shared node. Remove node removes the selected step, its arrows and references from the draft.
 *   Clicking the empty canvas, Start or End shows the recipe settings in the inspector; the node inspector has no separate settings button.
 *   The recipe editor page does not scroll: the canvas and the inspector fill the height left under the palette, and the inspector scrolls inside its card under a fixed title.
-*   Requires, Optional, Skip when unchanged and Max rounds have an info icon that explains them. An empty Max rounds shows "No limit"; deleting the number removes the limit.
+*   Requires, Optional, Keep result after a clean rebase (`skipWhenUnchanged`) and Max rounds have an info icon that explains them. Optional says that the step runs only if the Spec Writer lists it in the job's specification. Max rounds starts at 0, which means no limit and shows "No limit" in the field; the arrows go down to 0.
 *   Every field in the recipe inspector is as wide as the inspector, Max rounds included. The inspector takes 29% of the editor's width, at most 420 px.
 *   The recipe inspector includes `maxNodeRuns` as Max node runs, a field as wide as the inspector. An info icon next to the label explains it: the most steps one job can run, after which the job pauses and asks whether to continue. Git Rebase appears in the graph as a Command node.
 *   Add Wait for CI after the GitHub PR or GitLab merge request node. Connect `success` and `failure` in the graph.

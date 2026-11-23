@@ -163,3 +163,10 @@
 - Decision: Requires, Optional, Skip when unchanged and Max rounds have an info icon with a short explanation. An empty Max rounds shows "No limit", and its explanation says that deleting the number removes the limit.
 - Why: the user could not tell what these fields do, and did not see how to remove a Max rounds value because the arrows stop at 1.
 - Replaces: unexplained fields and an empty Max rounds with no placeholder.
+
+## 2026-11-23: Max rounds starts at 0; clearer Optional and rebase labels
+
+- Decision: Max rounds shows 0 when an arrow has no limit, and 0 saves no limit. The arrows go down to 0. "Skip when unchanged" is labelled "Keep result after a clean rebase". Optional's explanation says the step runs only if the Spec Writer lists it in the job's specification.
+- Why: the user could remove a limit only with the keyboard, could not read what "Skip when unchanged" does, and thought a step in the recipe always runs.
+- Replaces: an empty Max rounds with "No limit" as placeholder, the "Skip when unchanged" label and the "when the job's specification asks for it" wording.
+- Known gap: the engine does not tell the Spec Writer which Optional steps the recipe has, so it cannot list them yet.
