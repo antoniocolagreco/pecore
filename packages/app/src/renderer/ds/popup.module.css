@@ -158,6 +158,40 @@
   color: var(--text-3);
 }
 
+.iconValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.iconGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 40px);
+  gap: 4px;
+  width: min(360px, var(--available-width));
+}
+
+.iconItem {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 7px;
+  color: var(--text);
+  cursor: default;
+  outline: 0;
+}
+
+.iconItem[data-selected] {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+
+.iconItem[data-highlighted] {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+
 .itemIndicator {
   grid-column: 1;
   display: flex;

@@ -3,8 +3,8 @@ import { call } from "../api/client";
 import { useData } from "../api/hooks";
 import { BoxIcon, BookIcon } from "../ds/icons";
 import type { IconSize } from "../ds/icons";
-import { Select } from "../ds/select";
-import type { Option } from "../ds/select";
+import { IconSelect } from "../ds/select";
+import type { IconOption } from "../ds/select";
 import s from "./DefinitionIcon.module.css";
 
 export type DefinitionType = "node" | "recipe";
@@ -45,11 +45,14 @@ export function DefinitionIconField({ icons, type, name, value, disabled, onChan
   disabled: boolean;
   onChange(value: string | undefined): void;
 }) {
-  const options: Option[] = [{ value: automaticIcon, label: "Automatic" }, ...[...(icons?.keys() ?? [])].map((icon) => ({ value: icon, label: icon }))];
-  if (value && !icons?.has(value)) options.push({ value, label: value });
+  const options: IconOption[] = [
+    { value: automaticIcon, label: "Automatic", icon: <DefinitionIcon icons={icons} type={type} name={name} /> },
+    ...[...(icons?.keys() ?? [])].map((icon) => ({ value: icon, label: icon, icon: <DefinitionIcon icons={icons} type={type} name={name} selected={icon} /> })),
+  ];
+  if (value && !icons?.has(value)) options.push({ value, label: value, icon: <DefinitionIcon icons={icons} type={type} name={name} selected={value} /> });
   return <div className={s.field}>
     <span className={s.preview}><DefinitionIcon icons={icons} type={type} name={name} selected={value} /></span>
-    <Select label="Icon" value={value || automaticIcon} options={options} disabled={disabled}
-      onValueChange={(next) => onChange(next === automaticIcon ? undefined : next ?? undefined)} />
+    <IconSelect label="Icon" value={value || automaticIcon} options={options} disabled={disabled}
+      onValueChange={(next) => onChange(next === automaticIcon ? undefined : next)} />
   </div>;
 }

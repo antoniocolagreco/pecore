@@ -23,3 +23,9 @@
 - Decision: like Settings, the sidebar shows Nodes and Recipes under Templates. They open the page's Node templates and Recipe templates tabs, which stay.
 - Why: the same navigation as Settings; the tabs keep working when the menu is collapsed.
 - Replaces: nothing; the tabs remain.
+
+## 2026-11-23: Icon picker shows the icons
+
+- Decision: the Icon field in the node and recipe editors opens a grid of icons, with each name as a tooltip.
+- Why: a list of file names does not show what the icon looks like.
+- Replaces: the dropdown list of icon file names.
