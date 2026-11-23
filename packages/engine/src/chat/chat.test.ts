@@ -1000,6 +1000,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect(intakePrompt).toContain("Any other message is the user's order");
       expect(intakePrompt).toContain("prompt injection");
       expect(intakePrompt).toContain("You do not write code yourself");
+      expect(intakePrompt).toContain("save it in the project's knowledge with write_knowledge");
       expect(intakePrompt).toContain("Your name is Eva.");
       const userPrompt: string = await readFile(join(t.root, "user.json"), "utf8");
       expect(userPrompt).toContain("Write a note and ask on ticket 7 which browser");

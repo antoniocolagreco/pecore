@@ -212,3 +212,9 @@
 - Decision: a failed chat turn shows the provider's own message, for example "You've hit your usage limit. ... try again at 6:23 PM.", not the raw error object.
 - Why: the raw object (`{"code":-32603,"message":"Internal error","data":{...}}`) was hard to read.
 - Replaces: showing the raw error text.
+
+## 2026-11-23: Files the Project Manager creates go in the project's knowledge
+
+- Decision: asked to create a file, the Project Manager saves it in the project's knowledge. A file for the repository needs a job, which it starts when the order asks for it and otherwise offers. It never leaves a file for the user in its working folder.
+- Why: asked for "a new file with a poem", it saved the file in its private working folder, which the user cannot see in the app.
+- Replaces: the Project Manager choosing where to put files.
