@@ -23,15 +23,32 @@ export const RecipeNode = z
   .strict();
 export type RecipeNode = z.infer<typeof RecipeNode>;
 
+export const EdgePort = z.enum(["left", "right", "top", "bottom"]);
+export type EdgePort = z.infer<typeof EdgePort>;
+
 export const Edge = z
   .object({
     from: NodeId,
     on: Outcome,
     to: NodeId,
     maxRounds: z.number().int().positive().optional(),
+    sourcePort: EdgePort.optional(),
+    targetPort: EdgePort.optional(),
   })
   .strict();
 export type Edge = z.infer<typeof Edge>;
+
+export const RecipeEndResult = z.enum(["succeeded", "failed", "not_delivered"]);
+export type RecipeEndResult = z.infer<typeof RecipeEndResult>;
+
+export const RecipeEnd = z.object({
+  from: NodeId,
+  on: Outcome,
+  result: RecipeEndResult,
+  sourcePort: EdgePort.optional(),
+  targetPort: EdgePort.optional(),
+}).strict();
+export type RecipeEnd = z.infer<typeof RecipeEnd>;
 
 export const Recipe = z
   .object({
@@ -40,6 +57,7 @@ export const Recipe = z
     description: z.string().min(1),
     icon: Name.optional(),
     start: NodeId.optional(),
+    startPorts: z.object({ sourcePort: EdgePort.optional(), targetPort: EdgePort.optional() }).strict().optional(),
     onBaseChanged: NodeId.optional(),
     ci: z.object({
       after: NodeId,
@@ -51,7 +69,8 @@ export const Recipe = z
     }).strict().optional(),
     maxNodeRuns: z.number().int().positive().default(100),
     successOutcomes: z.array(z.string().regex(/^[a-z][a-z0-9-]*:[a-z][a-z0-9_]*$/)).default([]),
-    layout: z.record(NodeId, z.object({ x: z.number(), y: z.number() }).strict()).optional(),
+    ends: z.array(RecipeEnd).optional(),
+    layout: z.record(z.union([NodeId, z.literal("@start"), z.literal("@end")]), z.object({ x: z.number(), y: z.number() }).strict()).optional(),
     nodes: z.record(NodeId, RecipeNode).default({}),
     edges: z.array(Edge).default([]),
   })
@@ -62,13 +81,16 @@ export const Recipe = z
     if (ids.size === 0) {
       if (r.start !== undefined) issue(["start"], "a recipe with no nodes has no start");
       if (r.edges.length > 0) issue(["edges"], "a recipe with no nodes has no edges");
+      if (r.ends?.length) issue(["ends"], "a recipe with no steps goes directly from Start to End");
       return;
     }
     if (r.start === undefined) issue(["start"], "required when the recipe has nodes");
     else if (!ids.has(r.start)) issue(["start"], `${r.start} is not a recipe node`);
     if (r.onBaseChanged !== undefined && !ids.has(r.onBaseChanged)) issue(["onBaseChanged"], `${r.onBaseChanged} is not a recipe node`);
     if (r.ci && !ids.has(r.ci.after)) issue(["ci", "after"], `${r.ci.after} is not a recipe node`);
-    if (r.successOutcomes.length === 0) issue(["successOutcomes"], "at least one success outcome");
+    if (r.ends === undefined && r.successOutcomes.length === 0) issue(["successOutcomes"], "at least one success outcome");
+    if (r.ends?.length === 0) issue(["ends"], "connect at least one outcome to End");
+    if (r.ends !== undefined && r.successOutcomes.length) issue(["successOutcomes"], "set results on the connections to End");
     const seen = new Set<string>();
     for (const [i, e] of r.edges.entries()) {
       if (!ids.has(e.from)) issue(["edges", i, "from"], `${e.from} is not a recipe node`);
@@ -81,6 +103,12 @@ export const Recipe = z
       const [node] = s.split(":");
       if (!ids.has(node as string)) issue(["successOutcomes", i], `${node} is not a recipe node`);
       if (seen.has(s)) issue(["successOutcomes", i], `${s} has an edge`);
+    }
+    for (const [i, end] of (r.ends ?? []).entries()) {
+      if (!ids.has(end.from)) issue(["ends", i, "from"], `${end.from} is not a recipe node`);
+      const key: string = `${end.from}:${end.on}`;
+      if (seen.has(key)) issue(["ends", i], `${key} already has a connection`);
+      seen.add(key);
     }
     for (const [id, n] of Object.entries(r.nodes)) {
       for (const [i, req] of n.requires.entries()) if (!ids.has(req)) issue(["nodes", id, "requires", i], `${req} is not a recipe node`);

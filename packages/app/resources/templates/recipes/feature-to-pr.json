@@ -5,7 +5,14 @@
   "start": "spec",
   "onBaseChanged": "rebase",
   "maxNodeRuns": 60,
-  "successOutcomes": ["pr:opened"],
+  "ends": [
+    { "from": "spec", "on": "rejected", "result": "not_delivered" },
+    { "from": "human", "on": "reject", "result": "not_delivered" },
+    { "from": "commit", "on": "failed", "result": "failed" },
+    { "from": "push", "on": "failed", "result": "failed" },
+    { "from": "pr", "on": "opened", "result": "succeeded" },
+    { "from": "pr", "on": "failed", "result": "failed" }
+  ],
   "nodes": {
     "spec": { "use": "spec-writer" },
     "tests": { "use": "tests-writer" },

@@ -122,12 +122,15 @@ export function checkRecipe(recipe: Recipe, nodes: Map<string, Node>, remote: bo
   }
   if (resolved.size !== Object.keys(recipe.nodes).length) return issues;
   const edgeKeys = new Set(recipe.edges.map((e) => `${e.from}:${e.on}`));
+  const endKeys = new Set((recipe.ends ?? []).map((e) => `${e.from}:${e.on}`));
   if (recipe.ci) {
     const producer: Node | undefined = resolved.get(recipe.ci.after);
     if (!remote || producer?.kind !== "command" || !producer.outputs.includes("delivery") || !producer.outcomes.includes(recipe.ci.on)) {
       issues.push({ path: "ci", message: "CI needs a remote delivery command and one of its outcomes" });
     }
-    if (edgeKeys.has(`${recipe.ci.after}:${recipe.ci.on}`)) issues.push({ path: "ci.on", message: "use edges for the CI outcomes" });
+    if (edgeKeys.has(`${recipe.ci.after}:${recipe.ci.on}`) || endKeys.has(`${recipe.ci.after}:${recipe.ci.on}`)) {
+      issues.push({ path: "ci.on", message: "use edges for the CI outcomes" });
+    }
   }
   for (const [i, e] of recipe.edges.entries()) {
     const outcomes = nodeOutcomes(recipe, e.from, resolved.get(e.from)!);
@@ -144,10 +147,38 @@ export function checkRecipe(recipe: Recipe, nodes: Map<string, Node>, remote: bo
     if (node.failOutcomes.includes(outcome)) issues.push({ path: `successOutcomes.${i}`, message: `${outcome} is a fail outcome of ${id}` });
   }
   for (const [id, r] of Object.entries(recipe.nodes)) {
-    if (r.optional && !edgeKeys.has(`${id}:skipped`)) issues.push({ path: `nodes.${id}.optional`, message: `optional node ${id} needs an edge on skipped` });
+    if (r.optional && !edgeKeys.has(`${id}:skipped`) && !endKeys.has(`${id}:skipped`)) {
+      issues.push({ path: `nodes.${id}.optional`, message: `optional node ${id} needs an edge on skipped` });
+    }
   }
   const live = reachable(recipe);
   for (const id of Object.keys(recipe.nodes)) if (!live.has(id)) issues.push({ path: `nodes.${id}`, message: `${id} cannot be reached from start or onBaseChanged` });
+  if (recipe.ends !== undefined) {
+    const canEnd = new Set<string>();
+    for (const [index, end] of recipe.ends.entries()) {
+      if (nodeOutcomes(recipe, end.from, resolved.get(end.from)!).includes(end.on)) canEnd.add(end.from);
+      else issues.push({ path: `ends.${index}.on`, message: `${end.on} is not an outcome of ${end.from}` });
+    }
+    for (let changed: boolean = true; changed;) {
+      changed = false;
+      for (const edge of recipe.edges) {
+        if (canEnd.has(edge.to) && !canEnd.has(edge.from)) {
+          canEnd.add(edge.from);
+          changed = true;
+        }
+      }
+    }
+    for (const id of live) {
+      const outcomes: string[] = nodeOutcomes(recipe, id, resolved.get(id)!);
+      const missing: string[] = outcomes.filter((outcome) => {
+        if (id === recipe.ci?.after && outcome === recipe.ci.on) return false;
+        const key: string = `${id}:${outcome}`;
+        return !edgeKeys.has(key) && !endKeys.has(key);
+      });
+      if (missing.length) issues.push({ path: `nodes.${id}`, message: `connect these outcomes: ${missing.join(", ")}` });
+      if (!canEnd.has(id)) issues.push({ path: `nodes.${id}`, message: `${id} has no path to End` });
+    }
+  }
   const avail = availableInputs(recipe, resolved);
   for (const [id, node] of resolved) {
     if (!live.has(id) || node.kind === "source") continue;

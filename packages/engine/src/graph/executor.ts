@@ -319,6 +319,10 @@ export class JobExecutor {
         await this.finish(job, d.state, d.reason);
         return;
       }
+      if (d.kind === "invalid_route") {
+        await this.finish(job, "failed", d.reason);
+        return;
+      }
       if (d.kind === "round_limit") {
         const subject = { edge: d.edge, cap: d.cap, jobId };
         this.ctx.db.append([{ jobId, type: "queue.added", payload: { itemId: ulid(), kind: "round-limit", subject, subjectHash: sha256(JSON.stringify(subject)), choices: ["allow", "end"] } }]);

@@ -183,6 +183,15 @@ export function definitionOperations(engine: Engine) {
     return { value: kind === "node" && reading ? normalizeLegacyHumanNode(value as Record<string, unknown>) : value, errors };
   }
 
+  async function inspectWritable(path: string, kind: DefinitionKind | undefined, id: string | undefined, content: string): Promise<Pick<DefinitionEntry, "value" | "errors">> {
+    const inspected = inspect(path, kind, id, content);
+    if (kind !== "recipe" || id || inspected.errors.length) return inspected;
+    const recipe: Recipe = Recipe.parse(inspected.value);
+    if (recipe.ends === undefined) return inspected;
+    const { nodes } = await loadTemplates(home.templates);
+    return { value: inspected.value, errors: checkRecipe(recipe, nodes, true).map((issue) => ({ file: path, ...issue })) };
+  }
+
   const handlers = {
     listDefinitions: async ({ query: { dir } }) => {
       const projectRecipes: RegExpExecArray | null = /^projects\/([^/]+)\/recipes$/.exec(dir);
@@ -222,7 +231,7 @@ export function definitionOperations(engine: Engine) {
     },
     validateDefinition: async ({ body: { path, content } }) => {
       const { kind, id } = location(path, false);
-      return { errors: inspect(path, kind, id, content).errors };
+      return { errors: (await inspectWritable(path, kind, id, content)).errors };
     },
     saveDefinition: ({ params: { path }, body: { content, baseSha256 } }) => mutate(async () => save(path, content, baseSha256)),
     instantiate: ({ body }) => mutate(async () => {
@@ -240,7 +249,7 @@ export function definitionOperations(engine: Engine) {
     if ((before === null ? null : sha256(before)) !== baseSha256) {
       throw new HttpError("conflict", "the file changed since it was loaded");
     }
-    const { errors, value } = inspect(path, kind, id, content);
+    const { errors, value } = await inspectWritable(path, kind, id, content);
     if (errors.length) throw new HttpError("bad_request", errors.map((error) => error.message).join("\n"));
     const name: string = kind === "project" ? id! : basename(file, extname(file));
     const persist = async (data: Buffer): Promise<void> => {
@@ -376,7 +385,7 @@ export function definitionOperations(engine: Engine) {
     write: (path: string, content: string) => mutate(async () => {
       const { root, absPath, kind, id } = location(path, false);
       await rejectSymlinks(root, absPath);
-      const { errors } = inspect(path, kind, id, content);
+      const { errors } = await inspectWritable(path, kind, id, content);
       if (errors.length) return { errors };
       const before: Buffer | null = await optionalBytes(absPath);
       const baseSha256: string | null = before === null ? null : sha256(before);
