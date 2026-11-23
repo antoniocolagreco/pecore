@@ -206,3 +206,9 @@
 - Why: imported documents often link to files that do not come along; refusing the whole upload made importing them painful.
 - Replaces: refusing an upload with any broken link.
 - The removed links appear in a dialog with only OK, grouped by file, so the user cannot miss them. With no file open, the instructions sit centred on a blank sheet.
+
+## 2026-11-23: Chat errors show the provider's message
+
+- Decision: a failed chat turn shows the provider's own message, for example "You've hit your usage limit. ... try again at 6:23 PM.", not the raw error object.
+- Why: the raw object (`{"code":-32603,"message":"Internal error","data":{...}}`) was hard to read.
+- Replaces: showing the raw error text.

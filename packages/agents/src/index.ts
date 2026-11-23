@@ -5,6 +5,6 @@ export { checkPrerequisites, harnessVersion, satisfies } from "./prerequisites";
 export { probeImageSupport, startSession } from "./session";
 export type { StartParams } from "./session";
 export { mergeConnectors, parseConnector } from "./connectors";
-export { classify } from "./errors";
+export { classify, errorMessage } from "./errors";
 export { readerFor } from "./readers";
 export * from "./types";

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parseConnector } from "./connectors";
 import { fixturesDir, login, readFixture, replaySpawn, resolved } from "../test/helpers";
-import { classify } from "./errors";
+import { classify, errorMessage } from "./errors";
 import { claudeCodeReader } from "./readers/claude-code";
 import { startSession } from "./session";
 import type { AgentEvent, TurnResult } from "./types";
@@ -110,6 +110,9 @@ describe("codex and opencode connectors: recorded traffic through their readers"
     const { connector } = parseConnector(JSON.parse(readFileSync(file, "utf8")));
     const error = { code: -32603, message: "Internal error: Free usage limit reached. Connect a provider or subscribe to OpenCode Go to keep going, or switch models.", data: { service: "session", errorName: "provider.free-limit" } };
     expect(classify({ error, text: "", rules: connector!.errors, at: 1000 })).toEqual({ kind: "quota", raw: JSON.stringify(error) });
+    expect(errorMessage(JSON.stringify(error))).toBe(error.message);
+    expect(errorMessage(JSON.stringify({ code: -32603, message: "Internal error", data: { message: "You've hit your usage limit." } }))).toBe("You've hit your usage limit.");
+    expect(errorMessage("stopReason max_tokens")).toBe("stopReason max_tokens");
   });
 
   it("opencode auth-missing: -32000 Authentication required is auth", async () => {

@@ -19,6 +19,22 @@ function resetFrom(value: string, format: ErrorRule["resetFormat"], at: number):
   return undefined;
 }
 
+export function errorMessage(raw: string): string {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+  let message: string | undefined;
+  while (value !== null && typeof value === "object") {
+    const fields = value as Record<string, unknown>;
+    if (typeof fields.message === "string" && fields.message.trim()) message = fields.message.trim();
+    value = fields.data;
+  }
+  return message ?? raw;
+}
+
 export function classify(input: { error?: JsonRpcError; stopReason?: string; quota?: Quota; text: string; rules: ErrorRule[]; at: number }): TurnResult["error"] {
   const raw = input.error ? JSON.stringify(input.error) : input.text.slice(-2000);
   const e = input.error;

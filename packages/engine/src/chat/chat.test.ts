@@ -334,7 +334,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     const t = await setup(() => [
       init(),
       [...init(), ...newSession, { expect: "session/prompt" }, usage(200_000), ...replyWith("Long.")],
-      [...init(), ...resumed, { expect: "session/prompt" }, { send: { jsonrpc: "2.0", id: "$id", error: { code: -32603, message: "boom" } } }],
+      [...init(), ...resumed, { expect: "session/prompt" }, { send: { jsonrpc: "2.0", id: "$id", error: { code: -32603, message: "Internal error", data: { message: "You've hit your usage limit. Try again at 6:23 PM.", codexErrorInfo: "usageLimitExceeded" } } } }],
     ]);
     try {
       t.engine.agentChats.idleCompactionMs = 800;
@@ -343,6 +343,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       await until(async () => (await t.call("getChat")).messages.length === 2);
       await t.call("sendChatMessage", { body: { text: "Again" } });
       await until(async () => (await t.call("getChat")).messages.at(-1)?.state === "failed");
+      expect((await t.call("getChat")).messages.at(-1)?.error).toBe("You've hit your usage limit. Try again at 6:23 PM.");
       await new Promise((r) => setTimeout(r, 1500));
       expect((await t.call("getChat")).messages.map(({ text }) => text)).toEqual(["Hi", "Long.", "Again"]);
     } finally {

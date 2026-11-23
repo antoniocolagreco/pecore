@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { constants, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { monotonicFactory } from "ulid";
-import { probeImageSupport, startSession } from "@pecore/agents";
+import { errorMessage, probeImageSupport, startSession } from "@pecore/agents";
 import type { McpServer, PromptContent, Session, Spawn, SpawnedProcess } from "@pecore/agents";
 import { appName, ChatConfirmationRow, ChatForm, ChatImageMime, ExportFinding, assistantTraits, chatFormProblem, ImportProjectPreview, ProjectExportOptions, ProjectId, chatAttachmentMaxBytes, chatCompactCommand, roleProfile } from "@pecore/schemas";
 import type { ChatAttachmentView, ChatDetail, ChatFormAnswer, ChatFormAnswers, ChatMessageView, ExportProjectResult, ImportProjectSelection, LiveMessage, Role, SendChatMessageBody } from "@pecore/schemas";
@@ -687,7 +687,7 @@ export class AgentChats {
         if (session.resumed) {
           const result = await session.prompt(chatCompactCommand);
           if (this.closed) return;
-          if (result.error) throw new Error(result.error.raw);
+          if (result.error) throw new Error(errorMessage(result.error.raw));
           tokens = result.context?.used ?? null;
         }
         this.db.setContextTokens(chatId, tokens);
@@ -726,7 +726,7 @@ export class AgentChats {
       active.accepting = false;
       await active.pending;
       if (this.closed) return;
-      if (result.error) throw new Error(result.error.raw);
+      if (result.error) throw new Error(errorMessage(result.error.raw));
       if (result.stopReason === "cancelled") throw new Error("the connector cancelled the turn");
       this.db.db.transaction(() => {
         this.db.setMessageState(id, "completed");
