@@ -3,7 +3,7 @@ import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { extname, join, normalize, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { apiClient, ProjectId } from "@pecore/schemas";
+import { apiClient, appName, ProjectId } from "@pecore/schemas";
 import {
 	app,
 	BrowserWindow,
@@ -136,7 +136,7 @@ function createWindow(): void {
 		height,
 		minWidth: 960,
 		minHeight: 600,
-		title: "<PE/CORE>",
+		title: appName,
 		icon: iconPath(),
 		backgroundColor: "#1e2326",
 		webPreferences: {
@@ -163,7 +163,7 @@ function createWindow(): void {
 		if (!hiddenOnce) {
 			hiddenOnce = true;
 			new Notification({
-				title: "<PE/CORE> keeps running",
+				title: `${appName} keeps running`,
 				body: "Jobs continue in the background. Quit from the tray icon or the app menu.",
 			}).show();
 		}
@@ -197,7 +197,7 @@ async function updateTray(): Promise<void> {
 	if (!status || !jobs) return;
 	const running = jobs.filter((j) => j.state === "running").length;
 	tray.setToolTip(
-		`<PE/CORE>: ${running} running, ${status.notifications} notifications`,
+		`${appName}: ${running} running, ${status.notifications} notifications`,
 	);
 }
 
@@ -233,9 +233,9 @@ async function main(): Promise<void> {
 	Menu.setApplicationMenu(
 		Menu.buildFromTemplate([
 			{
-				label: "<PE/CORE>",
+				label: appName,
 				submenu: [
-					{ label: "Open <PE/CORE>", click: () => showWindow() },
+					{ label: `Open ${appName}`, click: () => showWindow() },
 					{
 						label: "Quit",
 						accelerator: "CmdOrCtrl+Q",
@@ -262,18 +262,18 @@ async function main(): Promise<void> {
 				},
 				exited: (code) => {
 					if (quitting) return;
-					console.error(`<PE/CORE> engine exited with code ${code}`);
+					console.error(`${appName} engine exited with code ${code}`);
 					dialog.showErrorBox(
-						"<PE/CORE> engine stopped",
-						`The engine exited with code ${code}. <PE/CORE> will quit.`,
+						`${appName} engine stopped`,
+						`The engine exited with code ${code}. ${appName} will quit.`,
 					);
 					app.exit(1);
 				},
 			},
 		);
 	} catch (e) {
-		console.error("<PE/CORE> could not start:", e);
-		dialog.showErrorBox("<PE/CORE> could not start", (e as Error).message);
+		console.error(`${appName} could not start:`, e);
+		dialog.showErrorBox(`${appName} could not start`, (e as Error).message);
 		app.exit(1);
 		return;
 	}
@@ -317,9 +317,9 @@ async function main(): Promise<void> {
 							properties: ["openDirectory"],
 						}
 					: {
-							title: "Choose a <PE/CORE> export",
+							title: `Choose a ${appName} export`,
 							properties: ["openFile"],
-							filters: [{ name: "<PE/CORE> export", extensions: ["zst"] }],
+							filters: [{ name: `${appName} export`, extensions: ["zst"] }],
 						};
 			const owner: BrowserWindow | null = BrowserWindow.fromWebContents(
 				event.sender,
@@ -337,7 +337,7 @@ async function main(): Promise<void> {
 		const options: Electron.SaveDialogOptions = {
 			title: "Export project",
 			defaultPath: join(downloads, `${project}.tar.zst`),
-			filters: [{ name: "<PE/CORE> export", extensions: ["zst"] }],
+			filters: [{ name: `${appName} export`, extensions: ["zst"] }],
 		};
 		const owner: BrowserWindow | null = BrowserWindow.fromWebContents(
 			event.sender,
@@ -356,7 +356,7 @@ async function main(): Promise<void> {
 	);
 	tray.setContextMenu(
 		Menu.buildFromTemplate([
-			{ label: "Open <PE/CORE>", click: () => showWindow() },
+			{ label: `Open ${appName}`, click: () => showWindow() },
 			{ label: "Quit", click: () => void quit() },
 		]),
 	);

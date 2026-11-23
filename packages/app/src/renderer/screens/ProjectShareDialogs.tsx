@@ -1,3 +1,4 @@
+import { appName } from "@pecore/schemas";
 import type { ExportFinding, ExportProjectResult, ImportProjectPreview } from "@pecore/schemas";
 import { useState } from "react";
 import { call } from "../api/client";
@@ -42,7 +43,7 @@ export function ProjectImportDialog({ onClose, onImported }: { onClose(): void; 
   );
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }} title="Import project" width={600}
-      description="Choose a &lt;PE/CORE&gt; export file or the folder where you extracted it."
+      description={`Choose a ${appName} export file or the folder where you extracted it.`}
       footer={<>
         <Button disabled={busy} onClick={onClose}>Cancel</Button>
         <Button variant="primary" disabled={disabled || !fields.valid} loading={complete.busy} onClick={() => void complete.run()}>Import</Button>

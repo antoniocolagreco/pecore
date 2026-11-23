@@ -1,11 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
-import { ApiError } from "@pecore/schemas";
+import { ApiError, appName } from "@pecore/schemas";
 import type { ApiClient, ExportProjectResult, ImportProjectResult, WhyView } from "@pecore/schemas";
 import { connect, NotRunningError, pecoreHome } from "./connect";
 
-export const usage = `<PE/CORE>
+export const usage = `${appName}
 
 Usage:
   pecore project list

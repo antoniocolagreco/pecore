@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { ProjectManagerIdentity } from "@pecore/schemas";
+import { appName, ProjectManagerIdentity } from "@pecore/schemas";
 import type { DefinitionEntry, DefinitionFile, ForgeAccount, Project, ProjectView } from "@pecore/schemas";
 import { ProjectManagerField, projectManagerError } from "../components/ProjectManager";
 import { call } from "../api/client";
@@ -423,7 +423,7 @@ function ProjectDetails({ id }: { id: string }) {
             open={deleting}
             onOpenChange={(open) => { if (!open && !remove.busy) setDeleting(false); }}
             title={`Delete ${project.name}?`}
-            description="&lt;PE/CORE&gt;'s copy of the repository, work folders, artifacts, logs, database, definitions and service containers are removed. Your project folder and the repositories and pull requests on the forge stay."
+            description={`${appName}'s copy of the repository, work folders, artifacts, logs, database, definitions and service containers are removed. Your project folder and the repositories and pull requests on the forge stay.`}
             width={460}
             footer={<>
               <Button disabled={!connected || remove.busy} onClick={() => setDeleting(false)}>Cancel</Button>

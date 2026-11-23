@@ -1,4 +1,4 @@
-import { ChatConfirmationRow, ChatForm, ChatImageMime, ExportFinding, ImportProjectPreview, chatAttachmentMaxBytes, chatCompactCommand, chatFormProblem, roleProfile } from "@pecore/schemas";
+import { appName, ChatConfirmationRow, ChatForm, ChatImageMime, ExportFinding, ImportProjectPreview, chatAttachmentMaxBytes, chatCompactCommand, chatFormProblem, roleProfile } from "@pecore/schemas";
 import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatFormAnswer, ChatFormAnswers, ChatFormQuestion, ChatMessageView, ChatSender, ProjectManagerIdentity, Role } from "@pecore/schemas";
 import { ProjectManagerAvatar } from "../components/ProjectManager";
 import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -753,7 +753,7 @@ function Chat({ project }: { project: string | null }) {
       {ready === false && connected && (
         <div className={s.footnote}>
           <Alert tone="warning" title={`No ${agent} yet`} actions={<Link to={settingUrl(role)}>Choose one in Settings</Link>}>
-            Log in to Claude Code, Codex or OpenCode and &lt;PE/CORE&gt; picks one for you.
+            Log in to Claude Code, Codex or OpenCode and {appName} picks one for you.
           </Alert>
         </div>
       )}

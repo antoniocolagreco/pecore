@@ -7,7 +7,7 @@ import { join, relative } from "node:path";
 import { removeAs } from "./workdir/fs-as";
 import { definitionOperations } from "./api/routes/definitions";
 import { globalFileHandlers } from "./api/routes/settings";
-import { BuiltInHarness, defaultJobLimit, freeProjectManager, projectManagerClash, roleProfile, withForgeHosts } from "@pecore/schemas";
+import { appName, BuiltInHarness, defaultJobLimit, freeProjectManager, projectManagerClash, roleProfile, withForgeHosts } from "@pecore/schemas";
 import { listOptions, satisfies } from "@pecore/agents";
 import type { LoginState } from "@pecore/agents";
 import type { Account, AccountOptions, Accounts, ForgeAccount, JobState, LiveMessage, LoginView, NotificationTarget, Profiles, ProjectInput, ProjectManagerIdentity, Settings, SetupView, Tiers, WhyView } from "@pecore/schemas";
@@ -201,7 +201,7 @@ export class Engine extends EventEmitter {
       this.setupHarnesses = harnesses;
       if (!changes) return;
       await this.reloadGlobal();
-      this.notify({ kind: "auto-setup", title: "<PE/CORE> setup", body: changes.message });
+      this.notify({ kind: "auto-setup", title: `${appName} setup`, body: changes.message });
       for (const [kind, content] of Object.entries(changes.files)) {
         this.definitionChanged(`${kind}.json`, createHash("sha256").update(content).digest("hex"));
       }
@@ -215,7 +215,7 @@ export class Engine extends EventEmitter {
     const file = await files.getSettings();
     if (file.value.servicesRuntime !== null) return;
     await files.putSettings({ params: undefined, query: undefined, body: { value: { ...file.value, servicesRuntime: runtime }, baseSha256: file.sha256 } });
-    this.notify({ kind: "auto-setup", title: "<PE/CORE> setup", body: `Found ${runtime} for project services.` });
+    this.notify({ kind: "auto-setup", title: `${appName} setup`, body: `Found ${runtime} for project services.` });
   }
 
   async setupView(): Promise<SetupView> {
@@ -390,7 +390,7 @@ export class Engine extends EventEmitter {
 
   async startAccountLogin(id: string): Promise<string> {
     const a = this.account(id);
-    if (a.kind !== "forge") throw new Error(`account ${id} has no tool login in <PE/CORE>; log in with ${a.kind === "service" ? a.tool : "the harness"} and recheck`);
+    if (a.kind !== "forge") throw new Error(`account ${id} has no tool login in ${appName}; log in with ${a.kind === "service" ? a.tool : "the harness"} and recheck`);
     const loginId = `tool:${id}`;
     await this.loginRunner.tool(loginId, a, () => this.recheckAccount(id));
     return loginId;

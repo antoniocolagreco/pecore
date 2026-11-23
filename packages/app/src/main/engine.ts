@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { utilityProcess } from "electron";
 import type { UtilityProcess } from "electron";
-import { EngineMessage } from "@pecore/schemas";
+import { appName, EngineMessage } from "@pecore/schemas";
 import type { MainMessage } from "@pecore/schemas";
 import { runAdmin } from "./admin";
 
@@ -16,7 +16,7 @@ export type EngineCallbacks = { notify(n: { title: string; body: string; kind: s
 
 export function startEngine(opts: { home: string; resources: string; version: string; devOrigin: string | null; downloads: string }, cb: EngineCallbacks): Promise<EngineHandle> {
   const child: UtilityProcess = utilityProcess.fork(join(import.meta.dirname, "engine.js"), [], {
-    serviceName: "<PE/CORE> engine",
+    serviceName: `${appName} engine`,
     stdio: "inherit",
     env: {
       ...process.env,

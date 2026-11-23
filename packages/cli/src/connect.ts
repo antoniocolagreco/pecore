@@ -1,12 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { apiClient } from "@pecore/schemas";
+import { apiClient, appName } from "@pecore/schemas";
 import type { ApiClient } from "@pecore/schemas";
 
 export class NotRunningError extends Error {
   constructor() {
-    super("<PE/CORE> is not running: open the app");
+    super(`${appName} is not running: open the app`);
   }
 }
 

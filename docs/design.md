@@ -11,6 +11,8 @@
 
 Naming rule: "<PE/CORE>" in prose. Use `pecore` for the command, packages and file names, and `PECORE_HOME` for the environment variable.
 
+The name the user reads lives in one place: `appName` in `packages/schemas/src/app.ts`, used by the app, the engine, the Assistant's instructions and the CLI. Packaging repeats it in `packages/app/package.json` (`productName`) and `packages/app/electron-builder.yml`. Renaming the app changes those three files and the prose in `docs/`. `pecore` in commands, packages, folders, OS users and `PECORE_*` variables is an internal name the user does not read, and stays.
+
 The name stands for Product Engineering Core. The core is designed to support plugins. The mascot is a sheep. The Apache License 2.0 grants patent rights and covers contributions. The distribution includes `NOTICE`. The licence does not grant rights to the product name or logo.
 
 Terms used throughout:

@@ -1,4 +1,5 @@
 export * from "./accounts";
+export * from "./app";
 export * from "./api";
 export * from "./artifacts";
 export * from "./client";

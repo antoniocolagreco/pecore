@@ -35,3 +35,9 @@
 - Decision: OpenCode starts with `OPENCODE_DISABLE_CLAUDE_CODE=1`. The Assistant says it is <PE/CORE>'s Assistant whatever other instructions say, and names the model chosen in Settings > Assistant when asked.
 - Why: OpenCode read the user's `~/.claude/CLAUDE.md` and answered with the name and identity written there.
 - Replaces: OpenCode loading Claude Code's instructions and skills.
+
+## 2026-11-23: The app's name is one constant
+
+- Decision: every text the user reads takes the app's name from `appName` in `packages/schemas`. Packaging keeps its own copy in `package.json` and `electron-builder.yml`. Internal names (`pecore`, `PECORE_*`, `pecore-agent`, `.pecore`) stay.
+- Why: the app may be renamed (for example to Harmonica). With one constant the rename touches three files; internal names would need moving every user's data and OS users for no visible gain.
+- Replaces: "<PE/CORE>" written by hand in about 30 source files.

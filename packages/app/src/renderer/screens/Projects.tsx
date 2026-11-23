@@ -1,3 +1,4 @@
+import { appName } from "@pecore/schemas";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { call } from "../api/client";
@@ -43,7 +44,7 @@ export function Projects() {
       {projects.data?.length === 0 && (
         <Card padded>
           <EmptyState icon={<FolderIcon size="md" />} title="No projects yet" action={actions}>
-            A project is a repository &lt;PE/CORE&gt; works on. It can live only on this computer or on GitHub and GitLab.
+            A project is a repository {appName} works on. It can live only on this computer or on GitHub and GitLab.
           </EmptyState>
         </Card>
       )}

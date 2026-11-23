@@ -1,3 +1,4 @@
+import { appName } from "@pecore/schemas";
 import type { JobView } from "@pecore/schemas";
 import { useNavigate } from "react-router";
 import { call } from "../api/client";
@@ -43,7 +44,7 @@ export function Factory() {
       <ErrorText error={status.error} />
       <ErrorText error={jobs.error} />
       {(status.data?.interrupted ?? 0) > 0 && (
-        <Alert tone="warning" title="Jobs were interrupted when &lt;PE/CORE&gt; closed" actions={<Button disabled={!connected || play.busy} onClick={() => void play.run()}>Play interrupted jobs</Button>}>
+        <Alert tone="warning" title={`Jobs were interrupted when ${appName} closed`} actions={<Button disabled={!connected || play.busy} onClick={() => void play.run()}>Play interrupted jobs</Button>}>
           {status.data?.interrupted} {status.data?.interrupted === 1 ? "job is" : "jobs are"} waiting to continue.
           <ErrorText error={play.error} />
         </Alert>

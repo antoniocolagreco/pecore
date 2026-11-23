@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
-import { freeProjectManager, projectIdCandidate } from "@pecore/schemas";
+import { appName, freeProjectManager, projectIdCandidate } from "@pecore/schemas";
 import type { CreationView, CreateProjectBody, ForgeAccount, ProjectManagerIdentity } from "@pecore/schemas";
 import { ProjectManagerField, projectManagerError } from "../components/ProjectManager";
 import { call } from "../api/client";
@@ -196,9 +196,9 @@ export function NewProjectWizard() {
             disabled={!connected}
             onValueChange={(mode) => update({ mode: mode as RepoMode, url: null })}
             options={[
-              { value: "local", label: "Local only", detail: "<PE/CORE> keeps the repository on this computer." },
+              { value: "local", label: "Local only", detail: `${appName} keeps the repository on this computer.` },
               { value: "existing", label: "Existing repository", detail: privateGit ? "Jobs push branches to your Git server." : "Jobs push branches and open pull requests there." },
-              { value: "new", label: "New repository", disabled: newRepoUnavailable, detail: "<PE/CORE> creates a private repository on GitHub or GitLab." },
+              { value: "new", label: "New repository", disabled: newRepoUnavailable, detail: `${appName} creates a private repository on GitHub or GitLab.` },
             ]}
           />
           {inputs.mode !== "local" && (

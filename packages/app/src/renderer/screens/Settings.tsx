@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { ApiError, assistantTraits, compactionSizes, forgeHost, incompatibleTraits, Settings as SettingsSchema } from "@pecore/schemas";
+import { ApiError, appName, assistantTraits, compactionSizes, forgeHost, incompatibleTraits, Settings as SettingsSchema } from "@pecore/schemas";
 import type { Account, AssistantTraitId, BuiltInHarness, ForgeAccount, LiveMessage, Role, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { call } from "../api/client";
 import { errorText, useAction, useData } from "../api/hooks";
@@ -78,7 +78,7 @@ function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (b
           sha.current = undefined;
           setLocal(undefined);
           remote.reload();
-          setError("Changed elsewhere, so <PE/CORE> loaded the new version. Make your last change again.");
+          setError(`Changed elsewhere, so ${appName} loaded the new version. Make your last change again.`);
         } else setError(errorText(failure));
         return false;
       } finally {
@@ -330,7 +330,7 @@ function AddForgeAccount({ open, onClose, onAdd, taken }: { open: boolean; onClo
       open={open}
       onOpenChange={(o) => !o && onClose()}
       title="Add a Git hosting account"
-      description={forge === "git" ? "<PE/CORE> uses your configured Git credentials to push branches." : "<PE/CORE> uses it to push branches and open pull requests. You log in right after adding it."}
+      description={forge === "git" ? `${appName} uses your configured Git credentials to push branches.` : `${appName} uses it to push branches and open pull requests. You log in right after adding it.`}
       width={480}
       footer={<>
         <Button onClick={onClose}>Cancel</Button>
@@ -507,7 +507,7 @@ export function Settings() {
         {value && <Section id="you" title="You" description="How the Assistant and the Project Managers call you.">
           <TextField label="Your name" value={value.user.name ?? ""} disabled={!connected}            onValueChange={(name) => update({ ...value, user: { name: name.trim() ? name : null } })} />
         </Section>}
-        <Section id="accounts" title="Accounts" description="The AI tools and the code hosting accounts &lt;PE/CORE&gt; works with." plain>
+        <Section id="accounts" title="Accounts" description={`The AI tools and the code hosting accounts ${appName} works with.`} plain>
           {accounts.feedback}
           <ErrorText error={accounts.error} />
           <div className={s.groups}>
@@ -538,14 +538,14 @@ export function Settings() {
               action={<Button disabled={!connected} onClick={() => void window.pecore.pickFolder().then((picked) => picked && update({ ...value, projectsFolder: picked }))}>Choose…</Button>} />
           </Section>
 
-          <Section id="limits" title="Limits" description="How much &lt;PE/CORE&gt; runs at the same time.">
+          <Section id="limits" title="Limits" description={`How much ${appName} runs at the same time.`}>
             <div className={s.grid}>
               <NumberField label="Concurrent jobs" value={value.limits.jobs} min={1} onValueChange={(jobs) => update({ ...value, limits: { ...value.limits, jobs } })} description="Blank for automatic." />
               <NumberField label="Concurrent agents" value={value.limits.agents} min={1} onValueChange={(agents) => update({ ...value, limits: { ...value.limits, agents: agents ?? 0 } })} />
               <NumberField label="Minimum free disk" unit="GB" value={value.minFreeDiskGb} min={0} step={0.5} onValueChange={(gb) => update({ ...value, minFreeDiskGb: gb ?? 0 })} />
             </div>
             <div className={s.grid} id="mergeCheckSec">
-              <NumberField label="Seconds" value={value.mergeCheckSec} min={1} onValueChange={(seconds) => update({ ...value, mergeCheckSec: seconds ?? 0 })} description="How often &lt;PE/CORE&gt; checks whether a pull request was merged." />
+              <NumberField label="Seconds" value={value.mergeCheckSec} min={1} onValueChange={(seconds) => update({ ...value, mergeCheckSec: seconds ?? 0 })} description={`How often ${appName} checks whether a pull request was merged.`} />
               <div id="servicesRuntime">
                 <Select label="Services runtime" value={value.servicesRuntime ?? "none"}
                   onValueChange={(runtime) => update({ ...value, servicesRuntime: (runtime && runtime !== "none" ? runtime : null) as SettingsValue["servicesRuntime"] })}
@@ -568,7 +568,7 @@ export function Settings() {
             <ErrorText error={protect.error} />
           </Dialog>
 
-          <Section id="appearance" title="Appearance" description="The look of &lt;PE/CORE&gt; in light and dark mode.">
+          <Section id="appearance" title="Appearance" description={`The look of ${appName} in light and dark mode.`}>
             <div className={ui.stack}>
               <span className={s.label}>Mode</span>
               <Segmented accent label="Mode" value={prefs.mode}
@@ -583,7 +583,7 @@ export function Settings() {
           </Section>
         </>}
 
-        <Section id="prerequisites" title="Diagnostics" description="Checks that the tools &lt;PE/CORE&gt; needs are installed and that your &lt;PE/CORE&gt; data folder is private to you.">
+        <Section id="prerequisites" title="Diagnostics" description={`Checks that the tools ${appName} needs are installed and that your ${appName} data folder is private to you.`}>
           <div className={ui.stack}>
             <div className={s.sectionActions} style={{ justifyContent: "flex-start" }}>
               <Button loading={check.busy} disabled={!connected} onClick={() => void check.run()}>Recheck prerequisites</Button>
@@ -596,7 +596,7 @@ export function Settings() {
               {item.setting && connected && <Link to={settingUrl(item.setting)}>Open setting</Link>}
             </li>)}</ul>}
             <div id="home">
-              {status.data?.homeFindings.length === 0 && <span className={s.dataFolder}><CheckCircleIcon className={s.ok} />Only you can read your &lt;PE/CORE&gt; data folder.</span>}
+              {status.data?.homeFindings.length === 0 && <span className={s.dataFolder}><CheckCircleIcon className={s.ok} />Only you can read your {appName} data folder.</span>}
               {status.data?.homeFindings.map((finding) => <Alert key={finding.path} tone="warning" title={finding.path + " can be read by other users."}><pre className={s.log}>{finding.fix.join(" ")}</pre></Alert>)}
             </div>
           </div>

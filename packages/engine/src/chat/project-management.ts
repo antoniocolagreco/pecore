@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { z } from "zod";
-import { JsonSchemaObject, Name, Project, ProjectId, ProjectManagerIdentity } from "@pecore/schemas";
+import { appName, JsonSchemaObject, Name, Project, ProjectId, ProjectManagerIdentity } from "@pecore/schemas";
 import type { ChatConfirmationRow } from "@pecore/schemas";
 import { definitionOperations } from "../api/routes/definitions";
 import type { Engine } from "../main";
@@ -72,7 +72,7 @@ export function projectDeletion(engine: Engine, project: string): { identity: st
   const rows: ChatConfirmationRow[] = [
     { label: "Project", value: name },
     { label: "Project ID", value: project },
-    { label: "Data to delete", value: "<PE/CORE>’s repository copy, work folders, artifacts, logs, database, definitions and service containers." },
+    { label: "Data to delete", value: `${appName}’s repository copy, work folders, artifacts, logs, database, definitions and service containers.` },
     ...(folder ? [{ label: "Project folder kept", value: folder }] : []),
     ...(repo ? [{ label: "Remote repository and pull requests kept", value: repo.url }] : []),
   ];

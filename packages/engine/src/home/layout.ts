@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { chmod, cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import { jsonSchemas } from "@pecore/schemas";
+import { appName, jsonSchemas } from "@pecore/schemas";
 import { commitDefinition, git } from "./git-commit";
 
 export const homeGitignore = [
@@ -139,7 +139,7 @@ export async function initHome(home: string, opts: { templates: string }): Promi
     return { created };
   }
   await git(home, ["init", "-q", "-b", "main"]).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") throw new Error("Install Git to create PECORE_HOME, then reopen <PE/CORE>.");
+    if (error.code === "ENOENT") throw new Error(`Install Git to create PECORE_HOME, then reopen ${appName}.`);
     throw error;
   });
   await writeFile(join(home, ".gitignore"), homeGitignore);

@@ -6,7 +6,7 @@ import { isAbsolute, join, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { createZstdDecompress } from "node:zlib";
 import { Unpack } from "tar";
-import { ImportProjectBody, projectIdCandidate } from "@pecore/schemas";
+import { appName, ImportProjectBody, projectIdCandidate } from "@pecore/schemas";
 import type { Accounts, ImportProjectPreview, ImportProjectResult, Project } from "@pecore/schemas";
 import { loadProject } from "../definitions/load";
 import { importCatalog, saveLegacyJobDefinitions } from "../definitions/catalog";
@@ -109,11 +109,11 @@ async function copyFolder(path: string, dir: string): Promise<Set<string>> {
 
 async function unpackSource(path: string, dir: string): Promise<Set<string>> {
   const expanded: string = path.startsWith("~/") ? join(homedir(), path.slice(2)) : path;
-  if (!isAbsolute(expanded)) throw new InvalidArchive("Choose a local <PE/CORE> export");
+  if (!isAbsolute(expanded)) throw new InvalidArchive(`Choose a local ${appName} export`);
   const source: string = resolve(expanded);
   const info = await lstat(source).catch(() => null);
   if (info?.isDirectory()) return copyFolder(source, dir);
-  if (!info?.isFile() || !source.endsWith(".tar.zst")) throw new InvalidArchive("Choose a <PE/CORE> export file or its extracted folder");
+  if (!info?.isFile() || !source.endsWith(".tar.zst")) throw new InvalidArchive(`Choose a ${appName} export file or its extracted folder`);
   return unpack(source, dir);
 }
 
