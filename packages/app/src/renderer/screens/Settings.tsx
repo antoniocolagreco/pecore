@@ -571,7 +571,7 @@ export function Settings() {
           <Section id="appearance" title="Appearance" description={`The look of ${appName} in light and dark mode.`}>
             <div className={ui.stack}>
               <span className={s.label}>Mode</span>
-              <Segmented accent label="Mode" value={prefs.mode}
+              <Segmented label="Mode" value={prefs.mode}
                 onValueChange={(mode) => update({ ...value, ui: { ...value.ui, mode, theme: prefs.theme } })}
                 options={[{ value: "system", label: "System" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} />
               <Select label="Theme" value={prefs.theme}

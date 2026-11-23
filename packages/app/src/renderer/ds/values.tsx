@@ -114,14 +114,13 @@ export function Slider({
 }
 
 export function Segmented({
-  options, value, defaultValue, onValueChange, label, accent,
+  options, value, defaultValue, onValueChange, label,
 }: {
   options: { value: string; label: ReactNode }[];
   value?: string;
   defaultValue?: string;
   onValueChange?: (value: string) => void;
   label?: string;
-  accent?: boolean;
 }) {
   const [own, setOwn] = useState(defaultValue ?? options[0]?.value ?? "");
   const current = value ?? own;
@@ -146,7 +145,6 @@ export function Segmented({
     <ToggleGroup
       ref={root}
       className={s.segmented}
-      data-accent={accent ? "" : undefined}
       value={[current]}
       aria-label={label}
       onValueChange={(next) => {
