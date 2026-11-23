@@ -29,6 +29,10 @@ export function useDefinitionIcons() {
   }, [], (event) => event.type === "definition.changed" && event.path.startsWith("templates/icons/"));
 }
 
+export function NodeIconTile({ size, children }: { size: IconSize | "lg"; children: ReactNode }) {
+  return <span aria-hidden="true" className={s.nodeTile} data-node-icon={size}>{children}</span>;
+}
+
 export function DefinitionIcon({ icons, type, name, selected, size = "md" }: {
   icons: IconLibrary | undefined;
   type: DefinitionType;
@@ -42,7 +46,7 @@ export function DefinitionIcon({ icons, type, name, selected, size = "md" }: {
   const glyphSize: IconSize = size === "lg" ? "md" : size;
   const glyph = image ? <span aria-hidden="true" className={s.icon} data-icon={glyphSize} style={{ "--icon-image": image } as CSSProperties} />
     : <Fallback size={glyphSize} />;
-  return type === "node" ? <span aria-hidden="true" className={s.nodeTile} data-node-icon={size}>{glyph}</span> : glyph;
+  return type === "node" ? <NodeIconTile size={size}>{glyph}</NodeIconTile> : glyph;
 }
 
 export function DefinitionIconField({ icons, type, name, value, disabled, labelAction, onChange }: {

@@ -3,18 +3,26 @@
   gap: 16px;
 }
 
-.tableCard {
-  overflow: hidden;
+.cardLink {
+  display: block;
+  border-radius: var(--radius-lg);
+  text-decoration: none;
 }
 
-.agentTitle {
-  font-weight: 600;
-  overflow-wrap: anywhere;
+.cardLink:hover,
+.cardLink:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  text-decoration: none;
+}
+
+.details {
+  display: grid;
+  gap: 8px;
 }
 
 .rowActions {
   display: flex;
-  justify-content: flex-end;
   align-items: center;
   gap: 8px;
 }

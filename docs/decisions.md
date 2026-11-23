@@ -270,4 +270,4 @@
 
 ## Agents list
 
-- Agents opens a table of agent configurations with title, provider, model and effort. New agent and Edit open a dedicated editor. Saving returns to the list. Delete asks for confirmation from the list.
+- Agents uses the same square cards and grid as node templates. The provider, model, effort and action icons sit beside the card. New agent, the card and Edit open the editor. Saving returns to the list. Delete asks for confirmation.

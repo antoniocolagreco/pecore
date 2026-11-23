@@ -9,8 +9,9 @@ import { PageActions } from "../components/PageActions";
 import { ErrorText, Page } from "../components/ui";
 import { restorePageScroll } from "../components/usePageScroll";
 import { harnessName, ModelPicker, Traits } from "../components/AgentFields";
+import { NodeIconTile } from "../components/DefinitionIcon";
+import { NodeCard } from "../components/NodeCard";
 import { Button, IconButton } from "../ds/button";
-import { Table } from "../ds/data";
 import { Card, EmptyState, Skeleton, Spinner } from "../ds/feedback";
 import { TextArea, TextField } from "../ds/field";
 import { EditIcon, PlusIcon, SparkIcon, TrashIcon } from "../ds/icons";
@@ -18,6 +19,7 @@ import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
 import { Sidecar, useUnsaved } from "./NodeEditor";
 import s from "./Agents.module.css";
+import templates from "./Templates.module.css";
 
 function sizeOptions(sizes: readonly number[]): { value: string; label: string }[] {
   return sizes.map((size) => ({ value: String(size), label: `${size / 1024}K tokens` }));
@@ -48,28 +50,37 @@ export function Agents() {
 
   return <Page title="Agents" actions={catalog.data && agents.length === 0 ? undefined : newAgent}>
     <ErrorText error={catalog.error ?? accountsError} />
-    {catalog.loading && !catalog.data && <Card padded className={s.fields}><Skeleton /><Skeleton /><Skeleton /></Card>}
+    {catalog.loading && !catalog.data && <ul className={templates.list} aria-hidden="true">
+      {[0, 1, 2].map((index) => <li key={index} className={templates.entry}>
+        <Skeleton height={120} />
+        <div className={s.details}><Skeleton width="65%" /><Skeleton width="90%" /></div>
+      </li>)}
+    </ul>}
     {catalog.data && (
       agents.length === 0
         ? <Card padded><EmptyState icon={<SparkIcon size="md" />} title="No agents yet" action={newAgent} /></Card>
-        : <Card padded={false} className={s.tableCard}>
-          <Table label="Agents" rows={agents} rowKey={({ id }) => id}
-            columns={[
-              { key: "title", header: "Title", cell: ({ name }) => <strong className={s.agentTitle}>{name}</strong> },
-              { key: "provider", header: "Provider", muted: true, cell: ({ model }) => {
-                const account: Account | undefined = modelAccounts.find(({ id }) => id === model?.account);
-                return account ? harnessName(account, modelAccounts) : model?.account ?? "Not set";
-              } },
-              { key: "model", header: "Model", muted: true, cell: ({ model }) => model?.model ?? "Not set" },
-              { key: "effort", header: "Effort", muted: true, cell: ({ model }) => model?.effort ?? "Default" },
-              { key: "actions", header: "Actions", align: "end", width: "6rem", cell: (agent) => <div className={s.rowActions}>
-                <IconButton icon={<EditIcon />} label={`Edit ${agent.name}`} disabled={!connected || destroy.busy}
-                  onClick={() => void navigate(`/agents/edit/${encodeURIComponent(agent.id)}`)} />
-                <IconButton icon={<TrashIcon />} label={`Delete ${agent.name}`} disabled={!connected || destroy.busy}
-                  onClick={() => { destroy.clear(); setRemoving(agent); }} />
-              </div> },
-            ]} />
-        </Card>
+        : <ul className={templates.list} aria-label="Agents">
+          {agents.map((agent) => {
+            const to: string = `/agents/edit/${encodeURIComponent(agent.id)}`;
+            const account: Account | undefined = modelAccounts.find(({ id }) => id === agent.model?.account);
+            const provider: string | undefined = account ? harnessName(account, modelAccounts) : agent.model?.account;
+            const card = <NodeCard icon={<NodeIconTile size="lg"><SparkIcon size="md" /></NodeIconTile>} title={agent.name} kind="agent" />;
+            return <li key={agent.id} className={templates.entry}>
+              {connected && !destroy.busy ? <Link to={to} className={s.cardLink} aria-label={agent.name}>{card}</Link> : card}
+              <div className={`${templates.description} ${s.details}`}>
+                {agent.model ? <div>
+                  <div>{provider}</div>
+                  <div>{agent.model.model} · {agent.model.effort ?? "Default effort"}</div>
+                </div> : <span>No model configured</span>}
+                <div className={s.rowActions}>
+                  <IconButton icon={<EditIcon />} label={`Edit ${agent.name}`} disabled={!connected || destroy.busy} onClick={() => void navigate(to)} />
+                  <IconButton icon={<TrashIcon />} label={`Delete ${agent.name}`} disabled={!connected || destroy.busy}
+                    onClick={() => { destroy.clear(); setRemoving(agent); }} />
+                </div>
+              </div>
+            </li>;
+          })}
+        </ul>
     )}
     {removing && <Dialog open onOpenChange={(open) => { if (!open && !destroy.busy) setRemoving(null); }} title={`Delete ${removing.name}?`} footer={<>
       <Button disabled={destroy.busy} onClick={() => setRemoving(null)}>Cancel</Button>
