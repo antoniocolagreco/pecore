@@ -20,6 +20,6 @@
 
 ## 2026-11-23: Templates sub-navigation in the sidebar
 
-- Decision: like Settings, the sidebar shows Nodes and Recipes under Templates. Each opens its own list.
-- Why: the same navigation as Settings, one click from anywhere in the page.
-- Replaces: the Node templates and Recipe templates tabs on the Templates page.
+- Decision: like Settings, the sidebar shows Nodes and Recipes under Templates. They open the page's Node templates and Recipe templates tabs, which stay.
+- Why: the same navigation as Settings; the tabs keep working when the menu is collapsed.
+- Replaces: nothing; the tabs remain.
