@@ -234,6 +234,7 @@ const paperTheme = EditorView.theme({
   },
   ".cm-content": { padding: "20px 40px 48px", caretColor: "var(--paper-ink)" },
   ".cm-line": { padding: "0" },
+  ".cm-cursor, .cm-dropCursor": { borderLeftWidth: "3px", borderLeftColor: "var(--paper-ink)", marginLeft: "-1px" },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": { backgroundColor: "color-mix(in srgb, var(--accent) 25%, transparent)" },
 });
 

@@ -1,7 +1,7 @@
 .layout {
   --paper: linear-gradient(var(--control-bg), var(--control-bg)) var(--surface);
   --paper-ink: var(--text);
-  --paper-rule: var(--separator);
+  --paper-rule: color-mix(in srgb, var(--text) 16%, transparent);
 
   position: relative;
   display: grid;
