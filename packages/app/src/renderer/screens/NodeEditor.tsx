@@ -382,7 +382,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
     "description", "tags", "timeoutSec",
     ...(kind === "source" ? ["credentials"] : ["outcomes", "changesFiles"]),
     ...(kind === "agent" ? ["prompt", "resume", "knowledge"] : []),
-    ...(kind === "command" ? ["script", "runsAs", "cleanCheckout"] : []),
+    ...(kind === "command" ? ["command", "script", "runsAs", "cleanCheckout"] : []),
     ...(human ? ["mode", "show", "reviewView", "answer"] : []),
   ];
   const fieldErrors = (key: string): ReactNode => <DefinitionErrors errors={file.errors?.filter(({ path }) => path.split(".")[0] === key)} />;
@@ -474,8 +474,8 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
             </div>
             {flag("resume", "Resume session", "Continue the previous conversation if this step runs again in the same job.")}</>}
           {kind === "command" && <>
-            {creation && !draft.script && commandField("Command", draft.command, (command) => update("command", command))}
-            {(!creation || !draft.command) && textField("script", "Script file", "Enter the name of the .sh file to run. Choose either a command or a script file.")}
+            {!draft.script && <>{commandField("Command", draft.command, (command) => update("command", command))}{fieldErrors("command")}</>}
+            {!draft.command && textField("script", "Script file", "Enter the name of the .sh file to run. Choose either a command or a script file.")}
             {field("runsAs", "Runs as", <select value={string(draft.runsAs) || "project-user"} onChange={(event) => update("runsAs", event.target.value)}><option>project-user</option><option>engine</option></select>,
               "Use project-user for commands in the job's working copy. Engine is for integrations that may need PeCore's credentials. Engine commands need a probe and must leave job files unchanged.")}
             {flag("cleanCheckout", "Clean checkout", "Run a project-user command on a temporary clean copy of the job's files.")}
