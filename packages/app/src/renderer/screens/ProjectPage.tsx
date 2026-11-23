@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { appName, ProjectManagerIdentity } from "@pecore/schemas";
+import { appName } from "@pecore/schemas";
 import type { DefinitionEntry, ForgeAccount, Project, ProjectView } from "@pecore/schemas";
-import { ProjectManagerField, projectManagerError } from "../components/ProjectManager";
+import { ChatAgentSettings } from "./Agents";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { DefinitionIcon, useDefinitionIcons } from "../components/DefinitionIcon";
+import { PageActions, PageActionsSlot } from "../components/PageActions";
 import { Button, Empty, ErrorText, Page, ui } from "../components/ui";
 import { Button as DsButton, IconButton } from "../ds/button";
 import { RadioGroup } from "../ds/choice";
@@ -90,7 +91,7 @@ function Recipes({ id }: { id: string }) {
 }
 
 
-type SettingsForm = { name: string; baseBranch: string; services: string; folder: string; remote: boolean; account: string; url: string; pm: ProjectManagerIdentity };
+type SettingsForm = { name: string; baseBranch: string; services: string; folder: string; remote: boolean; account: string; url: string };
 
 function useProjectDefinition(id: string) {
   const path: string = `projects/${id}/project.json`;
@@ -110,8 +111,6 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
   const { path, file, raw } = useProjectDefinition(id);
   const accounts = useData(() => call("getAccounts"), [], (m) => m.type === "definition.changed" && m.path === "accounts.json");
   const forgeAccounts: ForgeAccount[] = (accounts.data?.value.accounts ?? []).filter((account) => account.kind === "forge");
-  const projects = useData(() => call("listProjects"), [], (m) => m.type === "project.updated");
-  const usedManagers: ProjectManagerIdentity[] = (projects.data ?? []).flatMap(({ id: other, project }) => other !== id && project?.pm ? [project.pm] : []);
   const [draft, setDraft] = useState<{ values: SettingsForm; sha256: string } | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
@@ -124,7 +123,6 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
     remote: repo !== null,
     account: repo?.account ?? "",
     url: repo?.url ?? "",
-    pm: ProjectManagerIdentity.safeParse(raw.pm).data ?? { name: "", color: "#808080" },
   };
   const value: SettingsForm | null = draft?.values ?? current;
   const dirty: boolean = draft !== null && JSON.stringify(draft.values) !== JSON.stringify(current);
@@ -141,7 +139,6 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
       folder: value.folder.trim() || null,
       repo: value.remote ? { url: value.url.trim(), account: value.account } : null,
       createRepo: value.remote && value.url.trim() === repo?.url ? raw.createRepo ?? null : null,
-      pm: { name: value.pm.name.trim(), color: value.pm.color },
     };
     Reflect.deleteProperty(next, "limits");
     Reflect.deleteProperty(next, "defaultRecipe");
@@ -156,7 +153,7 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
   const folder: string | null = current.folder.replace(/\/+$/, "") || null;
   const account: ForgeAccount | undefined = forgeAccounts.find(({ id }) => id === value.account);
   const existingRemote: boolean = current.remote && value.account === current.account && value.url === current.url;
-  const valid: boolean = !!value.name.trim() && !!value.baseBranch.trim() && !!projects.data && projectManagerError(value.pm, usedManagers) === null && (!value.remote || existingRemote || (!!account && !!value.url.trim()));
+  const valid: boolean = !!value.name.trim() && !!value.baseBranch.trim() && (!value.remote || existingRemote || (!!account && !!value.url.trim()));
   const pickCompose = async (): Promise<void> => {
     setPickError(null);
     const picked: string | null = await window.pecore.pickFile(folder);
@@ -165,7 +162,7 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
     else set({ services: picked.slice(folder.length + 1) });
   };
   return (
-    <form className={s.form} onSubmit={(e) => { e.preventDefault(); if (dirty && valid && !disabled) void save.run(); }}>
+    <form id="project-settings" className={s.form} onSubmit={(e) => { e.preventDefault(); if (dirty && valid && !disabled) void save.run(); }}>
       <dl className={`${ui.kv} ${s.details}`}>
         <dt>Project ID</dt><dd>{id}</dd>
       </dl>
@@ -173,8 +170,6 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
         <TextField label="Name" value={value.name} onValueChange={(name) => set({ name })} disabled={disabled} error={value.name.trim() ? undefined : "Give the project a name."} />
         <TextField label="Base branch" mono value={value.baseBranch} onValueChange={(baseBranch) => set({ baseBranch })} disabled={disabled} description="New jobs start from here." />
       </div>
-      <ProjectManagerField value={value.pm} used={usedManagers} disabled={disabled} onChange={(pm) => set({ pm })} />
-      <ErrorText error={projects.error} />
       <RadioGroup label="Repository" value={value.remote ? "remote" : "local"} disabled={disabled}
         options={[{ value: "local", label: "Local only" }, { value: "remote", label: "Existing remote repository" }]}
         onValueChange={(mode) => set({ remote: mode === "remote", account: value.account || (forgeAccounts.length === 1 ? forgeAccounts[0]!.id : "") })} />
@@ -196,12 +191,12 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
         action={<DsButton disabled={disabled} onClick={() => void pickCompose()}>Choose…</DsButton>} />
       <ErrorText error={save.error} />
       {deleteNotice}
-      <div className={s.formActions}>
-        <div className={`${s.grow} ${ui.row}`}>{projectActions}</div>
+      <PageActions>
+        {projectActions}
         {savedAt && !dirty && <span className={ui.muted} role="status">Saved</span>}
         <DsButton disabled={!dirty || disabled} onClick={() => setDraft(null)}>Discard</DsButton>
-        <DsButton type="submit" variant="primary" disabled={!dirty || !valid || disabled} loading={save.busy}>Save settings</DsButton>
-      </div>
+        <DsButton type="submit" form="project-settings" variant="primary" disabled={!dirty || !valid || disabled} loading={save.busy}>Save</DsButton>
+      </PageActions>
     </form>
   );
 }
@@ -318,21 +313,21 @@ function ProjectVariables({ id, onSaved }: { id: string; onSaved(): void }) {
   if (!rows) return file.loading ? <Spinner /> : <ErrorText error={file.error ?? "Unable to read the project definition."} />;
   const disabled: boolean = !connected || save.busy;
   return (
-    <form className={s.form} onSubmit={(event) => { event.preventDefault(); if (dirty && !disabled) void save.run(); }}>
+    <form id="project-variables" className={s.form} onSubmit={(event) => { event.preventDefault(); if (dirty && !disabled) void save.run(); }}>
       <section className={s.keyValues}>
         <h2>Project variables</h2>
         <p className={ui.muted}>A recipe can use a variable such as <code>build-dir</code> with <code>{"{project.vars.build-dir}"}</code>.</p>
         <VariableTable label="Project variables" keyLabel="Name" rows={rows} disabled={disabled} onChange={set} />
       </section>
       <ErrorText error={save.error ?? file.error} />
-      <div className={s.formActions}>
-        <div className={`${s.grow} ${ui.row}`}>
-          <DsButton icon={<PlusIcon />} disabled={disabled} onClick={() => set([...rows, newVariable()])}>Add variable</DsButton>
-        </div>
+      <div className={ui.row}>
+        <DsButton icon={<PlusIcon />} disabled={disabled} onClick={() => set([...rows, newVariable()])}>Add variable</DsButton>
+      </div>
+      <PageActions>
         {saved && <span className={ui.muted} role="status">Saved</span>}
         <DsButton disabled={!dirty || disabled} onClick={() => { setDraft(null); save.clear(); }}>Discard</DsButton>
-        <DsButton type="submit" variant="primary" disabled={!dirty || disabled} loading={save.busy}>Save changes</DsButton>
-      </div>
+        <DsButton type="submit" form="project-variables" variant="primary" disabled={!dirty || disabled} loading={save.busy}>Save</DsButton>
+      </PageActions>
     </form>
   );
 }
@@ -375,12 +370,16 @@ function ProjectDetails({ id }: { id: string }) {
   const navigate = useNavigate();
   const [query] = useSearchParams();
   const tab: string | null = query.get("tab");
-  const [activeTab, setActiveTab] = useState<string>(tab === "recipes" || tab === "variables" || tab === "knowledge" ? tab : "jobs");
+  const [activeTab, setActiveTab] = useState<string>(tab === "recipes" || tab === "variables" || tab === "knowledge" || tab === "project-manager" ? tab : "jobs");
+  useEffect(() => {
+    if (tab === "project-manager") setActiveTab(tab);
+  }, [tab]);
   const [deleting, setDeleting] = useState<boolean>(false);
   const [exporting, setExporting] = useState<boolean>(false);
   const [creatingJob, setCreatingJob] = useState<boolean>(false);
+  const [actionSlot, setActionSlot] = useState<HTMLSpanElement | null>(null);
   const data = useData(() => call("getProject", { params: { id } }), [id], (m) =>
-    (m.type === "project.updated" && m.projectId === id) || (m.type === "definition.changed" && m.path.startsWith(`projects/${id}/`)),
+    (m.type === "project.updated" && m.projectId === id) || (m.type === "definition.changed" && (m.path.startsWith(`projects/${id}/`) || m.path === "agents.json")),
   );
   const jobs = useJobs("false", id);
   const running: boolean = jobs.data?.some((job) => job.state === "running") ?? false;
@@ -391,15 +390,17 @@ function ProjectDetails({ id }: { id: string }) {
   const view: ProjectView | undefined = data.data;
   const project: ProjectView["project"] | undefined = view?.project;
   return (
-    <Page title={project?.name ?? id} fillHeight={activeTab === "knowledge"} actions={project && !view?.creating &&
-      <DsButton variant="primary" icon={<PlusIcon />} disabled={!connected} onClick={() => setCreatingJob(true)}>New job</DsButton>}>
+    <Page title={project?.name ?? id} fillHeight={activeTab === "knowledge"} actions={project && !view?.creating && <>
+      <span ref={setActionSlot} className={ui.row} />
+      <DsButton variant={activeTab === "jobs" ? "primary" : "secondary"} icon={<PlusIcon />} disabled={!connected} onClick={() => setCreatingJob(true)}>New job</DsButton>
+    </>}>
       {creatingJob && <NewJobDialog id={id} onClose={() => setCreatingJob(false)} />}
       {exporting && <ProjectExportDialog id={id} onClose={() => setExporting(false)} />}
       <ErrorText error={data.error} />
       {data.loading && !view && <Spinner />}
       {view?.errors.map(({ file, path, message }, index) => <ErrorText key={index} error={`${file}${path ? ` · ${path}` : ""}: ${message}`} />)}
       {view?.creating ? <Alert tone="warning" actions={connected && <Link to={`/projects/new?resume=${id}`}>Resume creation</Link>}>This project was not fully created.</Alert> : project && (
-        <>
+        <PageActionsSlot.Provider value={actionSlot}>
           <Tabs
             value={activeTab}
             onValueChange={setActiveTab}
@@ -433,6 +434,7 @@ function ProjectDetails({ id }: { id: string }) {
               { value: "variables", label: "Variables", content: <Card padded className={s.narrow}><ProjectVariables id={id} onSaved={data.reload} /></Card> },
               { value: "recipes", label: "Recipes", content: <Card padded className={s.narrow}><Recipes id={id} /></Card> },
               { value: "knowledge", label: "Knowledge", content: <KnowledgeBase id={id} /> },
+              { value: "project-manager", label: "Project Manager", content: <div className={s.narrow}><ChatAgentSettings role="pm" project={id} /></div> },
             ]}
           />
           <Dialog
@@ -449,7 +451,7 @@ function ProjectDetails({ id }: { id: string }) {
             {running && <span>Stop the running jobs first.</span>}
             <ErrorText error={remove.error} />
           </Dialog>
-        </>
+        </PageActionsSlot.Provider>
       )}
     </Page>
   );

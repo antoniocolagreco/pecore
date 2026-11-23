@@ -18,7 +18,7 @@ function creationView(engine: Engine, id: string): CreationView | null {
 
 function projectView(engine: Engine, id: string): ProjectView {
   const p = engine.projects.get(id);
-  return { id, project: p?.ctx.project ?? null, creating: creationView(engine, id), errors: engine.projectErrors.get(id) ?? [] };
+  return { id, project: p ? { ...p.ctx.project, pm: engine.projectManagerIdentity(id) } : null, creating: creationView(engine, id), errors: engine.projectErrors.get(id) ?? [] };
 }
 
 function known(engine: Engine, id: string): void {

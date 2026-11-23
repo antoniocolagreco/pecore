@@ -5,6 +5,7 @@ import { z } from "zod";
 import { appName, JsonSchemaObject, Name, Project, ProjectId, ProjectManagerIdentity } from "@pecore/schemas";
 import type { ChatConfirmationRow } from "@pecore/schemas";
 import { definitionOperations } from "../api/routes/definitions";
+import { globalFileHandlers } from "../api/routes/settings";
 import type { Engine } from "../main";
 import { validateBaseBranch } from "./project-creation";
 
@@ -30,7 +31,7 @@ export async function projectUpdateRows(engine: Engine, { project, changes }: z.
   if (changes.baseBranch !== undefined) await validateBaseBranch(engine.opts.home, changes.baseBranch);
   const current: Project = loaded.ctx.project;
   Project.parse({ ...current, ...changes });
-  if (changes.pm) engine.projectManagerFor(changes.pm, project);
+  const nextManager = changes.pm && engine.projectManagerFor(changes.pm, project);
   const compose = (path: string | null): string => path ?? "Detected automatically";
   const manager = (pm: ProjectManagerIdentity | null): string => pm ? `${pm.name} (${pm.color})` : "None";
   return [
@@ -39,7 +40,7 @@ export async function projectUpdateRows(engine: Engine, { project, changes }: z.
     ...(changes.name !== undefined ? [{ label: "Name", value: `${current.name} → ${changes.name}` }] : []),
     ...(changes.baseBranch !== undefined ? [{ label: "Base branch", value: `${current.baseBranch} → ${changes.baseBranch}` }] : []),
     ...(changes.services !== undefined ? [{ label: "Compose file", value: `${compose(current.services)} → ${compose(changes.services)}` }] : []),
-    ...(changes.pm !== undefined ? [{ label: "Project Manager", value: `${manager(current.pm)} → ${manager(changes.pm)}` }] : []),
+    ...(nextManager ? [{ label: "Project Manager", value: `${manager(engine.projectManagerIdentity(project))} → ${manager(nextManager)}` }] : []),
     ...(changes.recipes !== undefined ? [{ label: "Recipes", value: changes.recipes.join(", ") || "None" }] : []),
     ...(changes.variables !== undefined ? [{ label: "Variables", value: JSON.stringify(changes.variables) }] : []),
     ...(changes.credentials !== undefined ? [{ label: "Account bindings", value: JSON.stringify(changes.credentials) }] : []),
@@ -55,10 +56,18 @@ export async function updateProject(engine: Engine, { project, changes }: z.infe
   const file = await definitions.getDefinition({ params: { path }, body: undefined, query: undefined });
   if (changes.baseBranch !== undefined) await validateBaseBranch(engine.opts.home, changes.baseBranch);
   const current: Project = Project.parse(JSON.parse(file.content));
-  const next: Project = Project.parse({ ...current, ...changes });
+  const next: Project = Project.parse({ ...current, ...changes, pm: current.pm });
   if (engine.project(project) !== loaded || loaded.deleting) throw new Error("The project changed. Try again with its current settings.");
-  if (JSON.stringify(current) === JSON.stringify(next)) return;
-  await definitions.saveDefinition({ params: { path }, query: undefined, body: { content: JSON.stringify(next, null, 2) + "\n", baseSha256: file.sha256 } });
+  if (changes.pm) {
+    const { getChatAgentSettings, putChatAgentSettings } = globalFileHandlers(engine);
+    const query = { role: "pm" as const, project };
+    const file = await getChatAgentSettings({ query, params: undefined, body: undefined });
+    const pm: ProjectManagerIdentity = engine.projectManagerFor(changes.pm, project);
+    await putChatAgentSettings({ query, params: undefined, body: { value: { ...file.value, ...pm }, baseSha256: file.sha256 } });
+  }
+  if (JSON.stringify(current) !== JSON.stringify(next)) {
+    await definitions.saveDefinition({ params: { path }, query: undefined, body: { content: JSON.stringify(next, null, 2) + "\n", baseSha256: file.sha256 } });
+  }
 }
 
 export const ProjectDeletion = ProjectSelection.extend({ identity: z.string().min(1) });

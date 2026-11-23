@@ -1,34 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { ApiError, appName, assistantTraits, compactionSizes, forgeHost, incompatibleTraits, Settings as SettingsSchema } from "@pecore/schemas";
-import type { Account, AssistantTraitId, BuiltInHarness, ForgeAccount, LiveMessage, Role, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
+import { appName, forgeHost, Settings as SettingsSchema } from "@pecore/schemas";
+import type { Account, ForgeAccount, LiveMessage, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { call } from "../api/client";
-import { errorText, useAction, useData } from "../api/hooks";
+import { useAction, useAutoSave, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
 import { ErrorText, Field, Page, ui } from "../components/ui";
-import { Button, IconButton } from "../ds/button";
+import { harnessName } from "../components/AgentFields";
+import { Button } from "../ds/button";
 import { Switch } from "../ds/choice";
 import { Alert, Badge, Card, Spinner } from "../ds/feedback";
 import { TextField } from "../ds/field";
 import { CheckCircleIcon, AlertIcon, PlusIcon, RefreshIcon } from "../ds/icons";
-import { Dialog, Tooltip } from "../ds/overlay";
-import { Combobox, Select } from "../ds/select";
+import { Dialog } from "../ds/overlay";
+import { Select } from "../ds/select";
 import { NumberField, Segmented } from "../ds/values";
-import { install } from "../shell/SetupBanner";
 import { SidebarItem, SidebarSection } from "../shell/sidebar";
 import { builtInThemes, themePrefs } from "../theme/themes";
 import type { ThemePrefs } from "../theme/themes";
 import { DefinitionErrors, settingUrl } from "./NodeEditor";
+import { ChatAgentSettings } from "./Agents";
 import s from "./Settings.module.css";
 
 type Snapshot<T> = { value: T; sha256: string };
 type LoginProgress = Extract<LiveMessage, { type: "login.progress" }>;
 type Progress = { lines: string[]; url: string | null; done: boolean };
-
-const roleProfiles: Record<Role, string> = { assistant: "assistant", pm: "background" };
-const roleTitles: Record<Role, string> = { assistant: "Assistant", pm: "Project Manager" };
-const sameValue = "same";
 
 const sections: { id: string; title: string }[] = [
   { id: "you", title: "You" },
@@ -42,74 +39,10 @@ const sections: { id: string; title: string }[] = [
   { id: "prerequisites", title: "Diagnostics" },
 ];
 
-const saveDelayMs = 600;
-
-function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (body: { value: T; baseSha256: string }) => Promise<{ sha256: string }>, valid: (value: T) => boolean = () => true) {
+function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (body: { value: T; baseSha256: string }) => Promise<{ sha256: string }>, valid?: (value: T) => boolean) {
   const remote = useData(get, [], (message) => message.type === "definition.changed" && message.path === name + ".json");
-  const [local, setLocal] = useState<T>();
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const shown: T | undefined = local ?? remote.data?.value;
-  const latest = useRef<T | undefined>(shown);
-  latest.current = shown;
-  const sha = useRef<string | undefined>(undefined);
-  const writes = useRef<Promise<unknown>>(Promise.resolve());
-  const inFlight = useRef(0);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const waiting = useRef<T | undefined>(undefined);
-  useEffect(() => {
-    if (!remote.data || inFlight.current || remote.data.sha256 === sha.current) return;
-    const first: boolean = sha.current === undefined;
-    sha.current = remote.data.sha256;
-    if (first) return;
-    setLocal(undefined);
-  }, [remote.data]);
-  const commit = (value: T): Promise<boolean> => {
-    inFlight.current += 1;
-    setSaving(true);
-    const write: Promise<boolean> = writes.current.then(async () => {
-      try {
-        const result = await put({ value, baseSha256: sha.current ?? "" });
-        sha.current = result.sha256;
-        setError(null);
-        return true;
-      } catch (failure) {
-        if (failure instanceof ApiError && failure.status === 409) {
-          sha.current = undefined;
-          setLocal(undefined);
-          remote.reload();
-          setError(`Changed elsewhere, so ${appName} loaded the new version. Make your last change again.`);
-        } else setError(errorText(failure));
-        return false;
-      } finally {
-        inFlight.current -= 1;
-        if (!inFlight.current) setSaving(false);
-      }
-    });
-    writes.current = write;
-    return write;
-  };
-  const flush = (): void => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = undefined;
-    const value: T | undefined = waiting.current;
-    waiting.current = undefined;
-    if (value !== undefined && valid(value)) void commit(value);
-  };
-  const flushOnLeave = useRef(flush);
-  flushOnLeave.current = flush;
-  useEffect(() => () => flushOnLeave.current(), []);
   return {
-    value: shown, current: remote.data?.value, reload: remote.reload, saving, commit, error,
-    update(change: T | ((value: T) => T)): void {
-      if (latest.current === undefined) return;
-      const value: T = typeof change === "function" ? (change as (value: T) => T)(latest.current) : change;
-      latest.current = value;
-      setLocal(value);
-      waiting.current = value;
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(flush, saveDelayMs);
-    },
+    ...useAutoSave(remote, put, valid),
     feedback: <>
       {remote.loading && !remote.data && <Spinner />}
       <ErrorText error={remote.error} />
@@ -177,12 +110,6 @@ function AccountRow({ name, detail, state, checking, actions, children }: { name
     </div>
     {children && <div className={s.rowExtra}>{children}</div>}
   </li>;
-}
-
-export function harnessName(account: Account, all: Account[]): string {
-  if (account.kind !== "model") return account.id;
-  const name: string = install[account.connector as BuiltInHarness]?.name ?? account.connector;
-  return all.filter((other) => other.kind === "model" && other.connector === account.connector).length > 1 ? `${name} · ${account.id}` : name;
 }
 
 function LoginControls({ accounts, protectedOnly = false, kind = "model" }: { accounts: Account[]; protectedOnly?: boolean; kind?: "model" | "tool" }) {
@@ -353,79 +280,11 @@ function AddForgeAccount({ open, onClose, onAdd, taken }: { open: boolean; onClo
   );
 }
 
-type ModelChoice = { account: string; model: string; effort: string | null };
-
-function ModelPicker({ accounts, choice, onChoice, disabled, same = false }: { accounts: Account[]; choice: ModelChoice | null; onChoice(choice: ModelChoice | null): void; disabled: boolean; same?: boolean }) {
-  const account: string = choice?.account ?? "";
-  const model: string = choice?.model ?? "";
-  const options = useData(() => account ? call("accountOptions", { params: { id: account }, query: {} }) : Promise.resolve(null), [account]);
-  const offered = useData(() => account && model ? call("accountOptions", { params: { id: account }, query: { model } }) : Promise.resolve(null), [account, model]);
-  const refresh = useAction(async () => {
-    await call("refreshAccountOptions", { params: { id: account } });
-    options.reload();
-    offered.reload();
-  });
-  const models: string[] = [...new Set([...(options.data?.models ?? []), ...(model ? [model] : [])])];
-  const efforts: string[] = [...new Set([...(offered.data?.efforts ?? []).filter((effort) => effort !== "default"), ...(choice?.effort ? [choice.effort] : [])])];
-  const loading: boolean = !!account && (options.loading || refresh.busy);
-  const readingEfforts: boolean = !!model && (offered.loading || refresh.busy);
-  const current: Account | undefined = accounts.find(({ id }) => id === account);
-  return <div className={s.grid}>
-    <Select label="Provider" value={account || (same ? sameValue : null)} disabled={disabled} placeholder="Choose a provider"
-      onValueChange={(next) => {
-        if (next === sameValue) onChoice(null);
-        else if (next && next !== account) onChoice({ account: next, model: "", effort: null });
-      }}
-      options={[...same ? [{ value: sameValue, label: "Same as the Assistant" }] : [], ...accounts.map((item) => ({ value: item.id, label: harnessName(item, accounts) }))]} />
-    <div className={s.withButton}>
-      {loading
-        ? <TextField label="Model" leading={<Spinner />} value="" placeholder={`Reading models from ${current ? harnessName(current, accounts) : account}…`} readOnly />
-        : <Combobox label="Model" value={choice?.model || null} disabled={disabled || !account} placeholder="Choose a model"
-          onValueChange={(next) => { if (choice && next && next !== model) onChoice({ ...choice, model: next, effort: null }); }}
-          options={models.map((model) => ({ value: model, label: model }))} />}
-      <IconButton label="Read the models again" icon={<RefreshIcon />} disabled={disabled || !account || loading} onClick={() => void refresh.run()} />
-    </div>
-    {loading || readingEfforts
-      ? <TextField label="Effort" leading={<Spinner />} value="" placeholder="Reading…" readOnly />
-      : <Select label="Effort" value={choice?.effort ?? "default"} disabled={disabled || !choice?.model}
-        onValueChange={(effort) => { if (choice) onChoice({ ...choice, effort: !effort || effort === "default" ? null : effort }); }}
-        options={[{ value: "default", label: "Default" }, ...efforts.map((effort) => ({ value: effort, label: effort }))]} />}
-  </div>;
-}
-
-function compactionOption(size: number): { value: string; label: string } {
-  return { value: String(size), label: `${size / 1024}K tokens` };
-}
-
-function Traits({ value, disabled, onChange }: { value: AssistantTraitId[]; disabled: boolean; onChange(traits: AssistantTraitId[]): void }) {
-  return (
-    <div className={s.nested}>
-      <span className={s.label}>Personality</span>
-      <p className={s.groupText}>Traits that shape how the Assistant talks. Traits that do not go together cannot be picked at the same time.</p>
-      <div className={s.traits} role="group" aria-label="Personality">
-        {assistantTraits.map(({ id, label, description }) => {
-          const on: boolean = value.includes(id);
-          const blocked: string[] = on ? [] : incompatibleTraits[id].filter((other) => value.includes(other)).map((other) => assistantTraits.find((trait) => trait.id === other)!.label);
-          return (
-            <Tooltip key={id} delay={0} side="top" content={blocked.length ? `${description} Does not go with ${blocked.join(" or ")}.` : description}>
-              <button type="button" className={s.trait} aria-pressed={on} aria-disabled={disabled || blocked.length > 0}
-                onClick={() => { if (!disabled && !blocked.length) onChange(on ? value.filter((trait) => trait !== id) : [...value, id]); }}>
-                {label}
-              </button>
-            </Tooltip>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 export function Settings() {
   const connected: boolean = useConnected();
   const { search } = useLocation();
   const settings = useGlobalFile("settings", () => call("getSettings"), (body) => call("putSettings", { body }), (value) => SettingsSchema.safeParse(value).success);
   const accounts = useGlobalFile("accounts", () => call("getAccounts"), (body) => call("putAccounts", { body }));
-  const profiles = useData(() => call("getProfiles"), [], (message) => message.type === "definition.changed" && message.path === "profiles.json");
   const status = useData(() => call("getStatus"), []);
   const themes = useData(() => call("listThemes"), [], (message) => message.type === "definition.changed" && message.path.startsWith("themes/"));
   const [checks, setChecks] = useState<RouteResult<"checkPrerequisites">>();
@@ -443,49 +302,6 @@ export function Settings() {
   const value: SettingsValue | undefined = settings.value;
   const problems = value ? SettingsSchema.safeParse(value).error?.issues : undefined;
   const update = settings.update;
-  const [choices, setChoices] = useState<Partial<Record<Role, ModelChoice | null>>>({});
-  const profileChoice = (id: string | null | undefined): ModelChoice | null => {
-    const profile = profiles.data?.value.profiles.find((entry) => entry.id === id);
-    return profile ? { account: profile.account, model: profile.model, effort: profile.effort } : null;
-  };
-  const shown = (role: Role): ModelChoice | null => role in choices ? choices[role] ?? null : profileChoice(settings.current?.[role].profile);
-  const profileWrites = useRef<Promise<unknown>>(Promise.resolve());
-  const saveChoice = useAction(async (role: Role, choice: ModelChoice) => {
-    const id: string = roleProfiles[role];
-    const write: Promise<unknown> = profileWrites.current.then(async () => {
-      const file = await call("getProfiles");
-      await call("putProfiles", { body: { value: { ...file.value, profiles: [...file.value.profiles.filter((profile) => profile.id !== id), { id, ...choice }] }, baseSha256: file.sha256 } });
-    });
-    profileWrites.current = write.catch(() => undefined);
-    await write;
-    update((old) => old[role].profile === id ? old : { ...old, [role]: { ...old[role], profile: id } });
-  });
-  const choose = (role: Role, choice: ModelChoice | null): void => {
-    setChoices((old) => ({ ...old, [role]: choice }));
-    if (!choice) update((old) => ({ ...old, [role]: { ...old[role], profile: null } }));
-    else if (choice.model) void saveChoice.run(role, choice);
-  };
-  const roleSection = (role: Role, description: string): ReactNode => value &&
-    <Section id={role} title={roleTitles[role]} description={description}>
-      <ModelPicker accounts={(accounts.current?.accounts ?? []).filter(({ kind }) => kind === "model")} disabled={!connected || !profiles.data}
-        same={role === "pm"} choice={shown(role)} onChoice={(choice) => choose(role, choice)} />
-      <div className={s.grid}>
-        <Select label="Compact when idle above" value={String(value[role].compaction.auto)} description="After 5 minutes without messages."
-          options={compactionSizes.slice(0, -1).map(compactionOption)}
-          onValueChange={(chosen) => {
-            const auto: number = Number(chosen);
-            if (auto) update({ ...value, [role]: { ...value[role], compaction: { auto, max: Math.max(value[role].compaction.max, auto * 2) } } });
-          }} />
-        <Select label="Compact at once above" value={String(value[role].compaction.max)} description="At least twice the idle threshold."
-          options={compactionSizes.filter((size) => size >= value[role].compaction.auto * 2).map(compactionOption)}
-          onValueChange={(chosen) => {
-            const max: number = Number(chosen);
-            if (max) update({ ...value, [role]: { ...value[role], compaction: { ...value[role].compaction, max } } });
-          }} />
-      </div>
-      {role === "assistant" && <Traits value={value.assistant.traits} disabled={!connected}
-        onChange={(traits) => update({ ...value, assistant: { ...value.assistant, traits } })} />}
-    </Section>;
   const prefs: ThemePrefs = themePrefs(value?.ui);
 
   useEffect(() => {
@@ -527,9 +343,13 @@ export function Settings() {
           onAdd={(account) => { if (accounts.value) void accounts.commit({ ...accounts.value, accounts: [...accounts.value.accounts, account] }); }} />
 
         {settings.feedback}
+        <Section id="assistant" title="Assistant" plain>
+          <ChatAgentSettings role="assistant" />
+        </Section>
+        <Section id="pm" title="Project Manager Default" description="Used by projects until their Project Manager is customized." plain>
+          <ChatAgentSettings role="pm" />
+        </Section>
         {value && <>
-          {roleSection("assistant", "The model you talk with in the chat.")}
-          {roleSection("pm", "The model of every project's Project Manager, which runs the project's jobs, tickets and chat.")}
 
           <Section id="projects" title="Projects" description="Where the code of new projects goes.">
             <TextField label="Projects folder" mono value={value.projectsFolder} disabled={!connected}
@@ -603,9 +423,9 @@ export function Settings() {
         </Section>
       </div>
     </div>
-    {(problems || settings.error || saveChoice.error) && <div className={s.problems} role="alert">
+    {(problems || settings.error) && <div className={s.problems} role="alert">
       <Issues issues={problems} />
-      <ErrorText error={settings.error ?? saveChoice.error} />
+      <ErrorText error={settings.error} />
     </div>}
   </Page>;
 }

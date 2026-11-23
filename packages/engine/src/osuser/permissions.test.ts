@@ -133,7 +133,8 @@ describe.skipIf(!linux)("moving the old folders into PECORE_HOME", () => {
     await writeFile(join(user, ".pecore-harness", "codex", "auth.json"), "token\n", { mode: 0o600 });
     await mkdir(join(user, ".pecore-chats", "assistant", "files"), { recursive: true });
     await writeFile(join(user, ".pecore-chats", "assistant", "mcp-token"), "old\n", { mode: 0o600 });
-    const home: string = await newHome();
+    const home: string = join(user, ".pecore");
+    await initHome(home, { templates: shippedTemplates });
 
     await moveLegacyFolders(home, false);
 
@@ -142,7 +143,7 @@ describe.skipIf(!linux)("moving the old folders into PECORE_HOME", () => {
     expect(await mode(moved)).toBe(0o600);
     expect(await mode(join(home, "harness", appUser, "codex"))).toBe(0o700);
     expect(await mode(join(home, "harness"))).toBe(0o700);
-    expect(await readdir(user)).toEqual([]);
+    expect(await readdir(user)).toEqual([".pecore"]);
 
     await moveLegacyFolders(home, false);
     expect(await readFile(moved, "utf8")).toBe("token\n");
@@ -153,7 +154,8 @@ describe.skipIf(!linux)("moving the old folders into PECORE_HOME", () => {
     process.env.HOME = user;
     await mkdir(join(user, ".pecore-harness", "codex"), { recursive: true });
     await writeFile(join(user, ".pecore-harness", "codex", "auth.json"), "old\n");
-    const home: string = await newHome();
+    const home: string = join(user, ".pecore");
+    await initHome(home, { templates: shippedTemplates });
     await mkdir(join(home, "harness", appUser, "codex"), { recursive: true });
     await writeFile(join(home, "harness", appUser, "codex", "auth.json"), "current\n");
 
@@ -161,5 +163,18 @@ describe.skipIf(!linux)("moving the old folders into PECORE_HOME", () => {
 
     expect(await readFile(join(home, "harness", appUser, "codex", "auth.json"), "utf8")).toBe("current\n");
     expect(await readFile(join(user, ".pecore-harness", "codex", "auth.json"), "utf8")).toBe("old\n");
+  });
+
+  it("never touches the user's home when PECORE_HOME is somewhere else, as in tests", async () => {
+    const user: string = join(await tempDir(), "user");
+    process.env.HOME = user;
+    await mkdir(join(user, ".pecore-harness", "codex"), { recursive: true });
+    await mkdir(join(user, ".pecore-chats", "assistant"), { recursive: true });
+    const home: string = await newHome();
+
+    await moveLegacyFolders(home, false);
+
+    expect((await readdir(user)).sort()).toEqual([".pecore-chats", ".pecore-harness"]);
+    expect(await readdir(join(user, ".pecore-harness"))).toEqual(["codex"]);
   });
 });

@@ -32,11 +32,15 @@
   font-weight: 500;
 }
 
-.grid {
+.grid,
+.modelGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
   gap: 16px;
   align-items: start;
+}
+
+.grid {
   margin-top: 14px;
 }
 
@@ -239,6 +243,10 @@
   display: flex;
   align-items: flex-end;
   gap: 6px;
+}
+
+.withButton > button {
+  margin-bottom: calc((var(--control-h) - var(--icon-button-size)) / 2);
 }
 
 .withButton > :first-child {

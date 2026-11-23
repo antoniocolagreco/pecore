@@ -19,12 +19,6 @@
   overflow: auto;
 }
 
-.listActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
 .removed {
   margin: 0;
   padding-left: 18px;

@@ -1,5 +1,5 @@
 import { chmod, lstat, mkdir, readdir, rename, rm } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { protectedUser } from "../accounts/agents";
 import { privateDirectory } from "../osuser/acl";
 import { appUser, baseEnv, run } from "../runners/process";
@@ -34,6 +34,7 @@ export async function closeHome(home: string): Promise<void> {
 export async function moveLegacyFolders(home: string, protectedUserExists: boolean): Promise<void> {
   const harness: string = homePaths(home).harness;
   const appHome: string = (await baseEnv(appUser)).HOME!;
+  if (resolve(home) !== join(resolve(appHome), ".pecore")) return;
   const appTarget: string = join(harness, appUser);
   if (await exists(join(appHome, legacyHarness)) && !(await exists(appTarget))) {
     await mkdir(harness, { recursive: true, mode: 0o700 });

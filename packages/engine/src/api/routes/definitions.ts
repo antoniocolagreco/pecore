@@ -300,7 +300,8 @@ export function definitionOperations(engine: Engine) {
       engine.definitionChanged(`projects/${id}/knowledge/${name}`, null);
       return { ok: true as const };
     }),
-    saveDefinition: ({ params: { path }, body: { content, baseSha256 } }) => mutate(async () => save(path, content, baseSha256)),
+    saveDefinition: ({ params: { path }, body: { content, baseSha256 } }) => mutate(async () =>
+      /^projects\/[^/]+\/project\.json$/.test(path) ? engine.withGlobalFiles(() => save(path, content, baseSha256)) : save(path, content, baseSha256)),
     instantiate: ({ body }) => mutate(async () => {
       const { errors, ...result } = await instantiate(body);
       if (errors.length) throw new HttpError("bad_request", errors.map((error) => error.message).join("\n"));
@@ -348,8 +349,12 @@ export function definitionOperations(engine: Engine) {
           if (issues.length) throw new HttpError("bad_request", issues.map(({ message }) => message).join("\n"));
         }
       }
-      const clash = next.pm && projectManagerClash(next.pm, engine.projectManagers(id));
+      if (!next.pm && current.pm) throw new HttpError("bad_request", "Choose a Project Manager.");
+      const clash = next.pm && JSON.stringify(next.pm) !== JSON.stringify(current.pm) && projectManagerClash(next.pm, engine.projectManagers(id));
       if (clash) throw new HttpError("bad_request", `Another project's Project Manager already uses this ${clash === "name" ? "name" : "colour"}.`);
+      if (next.pm?.agentId && next.pm.agentId !== current.pm?.agentId && engine.projectManagers(id).some(({ agentId }) => agentId === next.pm?.agentId)) {
+        throw new HttpError("bad_request", "This Project Manager already belongs to another project.");
+      }
       if (current.folder !== next.folder || !sameRepository(current.repo, next.repo)) {
         if (engine.creating.has(id) || loaded.deleting || loaded.executor.jobs().some(({ state }) => !isFinal(state))) {
           throw new HttpError("conflict", "Finish or stop this project's jobs before changing its repository or folder.");

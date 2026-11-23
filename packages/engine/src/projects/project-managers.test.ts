@@ -3,33 +3,58 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { forgeHome } from "../../test/forge-project";
 import { Engine } from "../main";
-import { definitionOperations } from "../api/routes/definitions";
-
-const projectFile = (engine: Engine, id: string) => join(engine.projectDir(id), "project.json");
+import { globalFileHandlers } from "../api/routes/settings";
 
 describe("Project Manager names and colours per project", () => {
-  it("gives each new project the first free Project Manager, keeps a chosen one and refuses one already in use", async () => {
+  it("saves Assistant and Project Manager Default independently and rejects a stale edit to the same role", async () => {
     const { home, templates } = await forgeHome();
     const engine = await Engine.start({ home, templates });
     try {
-      await engine.createProject({ id: "one", name: "One", repo: null });
-      await engine.createProject({ id: "two", name: "Two", repo: null, pm: { name: "Kim", color: "#123456" } });
-      await engine.createProject({ id: "three", name: "Three", repo: null });
-      expect(engine.project("one").ctx.project.pm).toEqual({ name: "Eva", color: "#FFDE38" });
-      expect(engine.project("two").ctx.project.pm).toEqual({ name: "Kim", color: "#123456" });
-      expect(engine.project("three").ctx.project.pm).toEqual({ name: "Viola", color: "#9D57FF" });
-      expect(JSON.parse(await readFile(projectFile(engine, "one"), "utf8"))).toMatchObject({ pm: { name: "Eva", color: "#FFDE38" } });
-      await expect(engine.createProject({ id: "four", name: "Four", repo: null, pm: { name: "kim", color: "#654321" } })).rejects.toThrow("already uses this name");
-      await expect(engine.createProject({ id: "four", name: "Four", repo: null, pm: { name: "Lee", color: "#FFDE38" } })).rejects.toThrow("already uses this colour");
-      expect(engine.projects.has("four")).toBe(false);
+      const handlers = globalFileHandlers(engine);
+      const assistant = { query: { role: "assistant" as const }, params: undefined };
+      const pm = { query: { role: "pm" as const }, params: undefined };
+      const first = await handlers.getChatAgentSettings({ ...assistant, body: undefined });
+      const second = await handlers.getChatAgentSettings({ ...pm, body: undefined });
+      const editAssistant = { ...assistant, body: { value: { ...first.value, name: "Nova" }, baseSha256: first.sha256 } };
+      const editPm = { ...pm, body: { value: { ...second.value, traits: ["pragmatic" as const], compaction: { auto: 65536, max: 131072 } }, baseSha256: second.sha256 } };
+      const [updatedAssistant] = await Promise.all([handlers.putChatAgentSettings(editAssistant), handlers.putChatAgentSettings(editPm)]);
+      const saved = await handlers.getChatAgentSettings({ ...assistant, body: undefined });
+      expect(saved).toMatchObject({ value: { name: "Nova" }, sha256: updatedAssistant.sha256 });
+      expect(engine.chatAgent(undefined, "pm")?.compaction).toEqual({ auto: 65536, max: 131072 });
+      expect(engine.chatAgent(undefined, "pm")?.traits).toEqual([]);
+      await expect(handlers.putChatAgentSettings(editAssistant)).rejects.toThrow("changed since it was loaded");
+    } finally {
+      await engine.shutdown();
+    }
+  });
 
-      const path = "projects/three/project.json";
-      const definitions = definitionOperations(engine).handlers;
-      const file = await definitions.getDefinition({ params: { path }, query: undefined, body: undefined });
-      const content = (pm: object) => JSON.stringify({ ...JSON.parse(file.content) as object, pm }, null, 2) + "\n";
-      await expect(definitions.saveDefinition({ params: { path }, query: undefined, body: { content: content({ name: "Eva", color: "#000000" }), baseSha256: file.sha256 } })).rejects.toThrow("already uses this name");
-      await definitions.saveDefinition({ params: { path }, query: undefined, body: { content: content({ name: "Viola", color: "#000000" }), baseSha256: file.sha256 } });
-      expect(engine.project("three").ctx.project.pm).toEqual({ name: "Viola", color: "#000000" });
+  it("uses the default for new projects and keeps project overrides out of the agent catalog", async () => {
+    const { home, templates } = await forgeHome();
+    await writeFile(join(home, "agents.json"), JSON.stringify({ agents: [
+      { id: "developer", name: "Developer", kind: "worker", model: null, compaction: { auto: 131072, max: 262144 } },
+    ] }));
+    const engine = await Engine.start({ home, templates });
+    try {
+      const agents = globalFileHandlers(engine);
+      const save = async (query: { role: "pm"; project?: string }, name: string, compaction: { auto: number; max: number }): Promise<void> => {
+        const file = await agents.getChatAgentSettings({ query, params: undefined, body: undefined });
+        await agents.putChatAgentSettings({ query, params: undefined, body: { value: { ...file.value, name, compaction }, baseSha256: file.sha256 } });
+      };
+      await engine.createProject({ id: "one", name: "One", repo: null });
+      await engine.createProject({ id: "two", name: "Two", repo: null });
+      expect(engine.projectManagerIdentity("one")).toMatchObject({ name: "Eva" });
+      expect(engine.projectManagerIdentity("two")).toMatchObject({ name: "Viola" });
+      await save({ role: "pm" }, "Project Manager Default", { auto: 65536, max: 131072 });
+      expect(engine.chatAgent("one")?.compaction).toEqual({ auto: 65536, max: 131072 });
+      expect(engine.chatAgent("two")?.compaction).toEqual({ auto: 65536, max: 131072 });
+      await save({ role: "pm", project: "one" }, "Evelyn", { auto: 262144, max: 524288 });
+      expect(engine.chatAgent("one")).toMatchObject({ name: "Evelyn", compaction: { auto: 262144, max: 524288 } });
+      expect(engine.chatAgent("two")).toMatchObject({ name: "Viola", compaction: { auto: 65536, max: 131072 } });
+      await expect(save({ role: "pm", project: "one" }, "Viola", { auto: 65536, max: 131072 })).rejects.toThrow("already uses this name");
+      const catalog = await agents.getAgents();
+      expect(catalog.value.agents.map(({ name, kind }) => ({ name, kind }))).toEqual([{ name: "Developer", kind: "agent" }]);
+      await agents.putAgents({ params: undefined, query: undefined, body: { value: { agents: [] }, baseSha256: catalog.sha256 } });
+      expect(engine.chatAgent("one")?.name).toBe("Evelyn");
     } finally {
       await engine.shutdown();
     }
@@ -52,9 +77,9 @@ describe("Project Manager names and colours per project", () => {
 
     const engine = await Engine.start({ home, templates });
     try {
-      expect(engine.project("alpha").ctx.project.pm).toEqual({ name: "Eva", color: "#FFDE38" });
+      expect(engine.project("alpha").ctx.project.pm).toMatchObject({ name: "Eva", color: "#FFDE38" });
       expect(engine.project("beta").ctx.project.pm).toEqual({ name: "Viola", color: "#9D57FF" });
-      expect(engine.project("gamma").ctx.project.pm).toEqual({ name: "Mara", color: "#2F8E76" });
+      expect(engine.project("gamma").ctx.project.pm).toMatchObject({ name: "Mara", color: "#2F8E76" });
       expect(JSON.parse(await readFile(join(home, "projects", "gamma", "project.json"), "utf8"))).toMatchObject({ pm: { name: "Mara" } });
     } finally {
       await engine.shutdown();

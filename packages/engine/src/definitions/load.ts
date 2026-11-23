@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { z } from "zod";
-import { Accounts, Profiles, Project, Recipe, Settings, StoredNode, Tiers, unknownPlaceholders } from "@pecore/schemas";
+import { Accounts, AgentDefinitions, Profiles, Project, Recipe, Settings, StoredNode, Tiers, unknownPlaceholders } from "@pecore/schemas";
 import type { Node } from "@pecore/schemas";
 import { checkRecipe } from "./recipe-check";
 
@@ -165,10 +165,10 @@ async function parseOptional<S extends z.ZodType>(file: string, schema: S, prepa
   return parseFile(file, schema, prepare);
 }
 
-export type Global = { settings: Settings; accounts: Accounts; profiles: Profiles; tiers: Tiers };
+export type Global = { settings: Settings; agents: AgentDefinitions; accounts: Accounts; profiles: Profiles; tiers: Tiers };
 
 export async function loadGlobal(home: string): Promise<{ value: Global | null; errors: DefinitionError[] }> {
-  const [settings, accounts, profiles, tiers] = await Promise.all([
+  const [settings, agents, accounts, profiles, tiers] = await Promise.all([
     parseOptional(join(home, "settings.json"), Settings, (value) => {
       if (value !== null && typeof value === "object") {
         for (const key of ["firstRunDone", "prices", "projectPaths", "programPaths"]) Reflect.deleteProperty(value, key);
@@ -180,19 +180,31 @@ export async function loadGlobal(home: string): Promise<{ value: Global | null; 
       }
       return value;
     }),
+    parseOptional(join(home, "agents.json"), AgentDefinitions, (value) => {
+      if (value && typeof value === "object" && "agents" in value && Array.isArray(value.agents)) {
+        return { ...value, agents: (value.agents as unknown[]).map((agent) =>
+          agent && typeof agent === "object" && "kind" in agent && agent.kind === "worker" ? { ...agent, kind: "agent" } : agent) };
+      }
+      return value;
+    }),
     parseOptional(join(home, "accounts.json"), Accounts),
     parseOptional(join(home, "profiles.json"), Profiles),
     parseOptional(join(home, "tiers.json"), Tiers),
   ]);
-  const errors = [...settings.errors, ...accounts.errors, ...profiles.errors, ...tiers.errors];
-  if (!settings.value || !accounts.value || !profiles.value || !tiers.value) return { value: null, errors };
-  const g = { settings: settings.value, accounts: accounts.value, profiles: profiles.value, tiers: tiers.value };
+  const errors = [...settings.errors, ...agents.errors, ...accounts.errors, ...profiles.errors, ...tiers.errors];
+  if (!settings.value || !agents.value || !accounts.value || !profiles.value || !tiers.value) return { value: null, errors };
+  const g: Global = { settings: settings.value, agents: agents.value, accounts: accounts.value, profiles: profiles.value, tiers: tiers.value };
   const accountIds = new Set(g.accounts.accounts.map((a) => a.id));
   const profileIds = new Set(g.profiles.profiles.map((p) => p.id));
   for (const [i, p] of g.profiles.profiles.entries()) {
     const acc = g.accounts.accounts.find((a) => a.id === p.account);
     if (!accountIds.has(p.account)) errors.push({ file: join(home, "profiles.json"), path: `profiles.${i}.account`, message: `account ${p.account} not found` });
     else if (acc?.kind !== "model") errors.push({ file: join(home, "profiles.json"), path: `profiles.${i}.account`, message: `account ${p.account} is not a model account` });
+  }
+  for (const [i, { model }] of g.agents.agents.entries()) {
+    if (model && !g.accounts.accounts.some(({ id, kind }) => id === model.account && kind === "model")) {
+      errors.push({ file: join(home, "agents.json"), path: `agents.${i}.model.account`, message: `model account ${model.account} not found` });
+    }
   }
   for (const [tier, list] of Object.entries(g.tiers.tiers)) {
     for (const [i, id] of list.entries()) {

@@ -1,5 +1,5 @@
-import { appName, ChatConfirmationRow, ChatForm, ChatImageMime, ExportFinding, ImportProjectPreview, chatAttachmentMaxBytes, chatCompactCommand, chatFormProblem, roleProfile } from "@pecore/schemas";
-import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatFormAnswer, ChatFormAnswers, ChatFormQuestion, ChatMessageView, ChatSender, ProjectManagerIdentity, Role } from "@pecore/schemas";
+import { ChatConfirmationRow, ChatForm, ChatImageMime, ExportFinding, ImportProjectPreview, chatAttachmentMaxBytes, chatCompactCommand, chatFormProblem } from "@pecore/schemas";
+import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatFormAnswer, ChatFormAnswers, ChatFormQuestion, ChatMessageView, ChatSender, ProjectManagerIdentity } from "@pecore/schemas";
 import { ProjectManagerAvatar } from "../components/ProjectManager";
 import { Fragment, createContext, useContext, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode, RefObject } from "react";
@@ -19,8 +19,8 @@ import { Alert, Badge, Spinner } from "../ds/feedback";
 import { TextField } from "../ds/field";
 import { ArrowUpIcon, ClipIcon, CompactIcon, SparkIcon, TrashIcon, XIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
-import { definitionUrl, object, settingUrl, string } from "./NodeEditor";
-import { harnessName } from "./Settings";
+import { definitionUrl, object, string } from "./NodeEditor";
+import { harnessName } from "../components/AgentFields";
 import s from "./AssistantChat.module.css";
 
 type SelectedFile = { key: number; file: File; image: boolean; attachmentId?: string };
@@ -665,22 +665,21 @@ export function ChatPanel() {
 }
 
 function Chat({ project }: { project: string | null }) {
-  const role: Role = project === null ? "assistant" : "pm";
   const agent: string = project === null ? "Assistant" : "Project Manager";
   const [target] = useState<ChatTarget>(() => ({ api: chatApi(project), agent }));
   const api: ChatApi = target.api;
   const connected: boolean = useConnected();
-  const settings = useData(() => call("getSettings"), [], (event) => event.type === "definition.changed" && event.path === "settings.json");
-  const profileId: string | null = settings.data ? roleProfile(settings.data.value, role) : null;
-  const ready: boolean | null = settings.data ? profileId !== null : null;
-  const profiles = useData(() => call("getProfiles"), [], (event) => event.type === "definition.changed" && event.path === "profiles.json");
+  const settings = useData(() => call("getChatAgentSettings", { query: project === null ? { role: "assistant" } : { role: "pm", project } }), [project],
+    (event) => event.type === "project.updated" || (event.type === "definition.changed" && ["agents.json", "settings.json", "profiles.json"].includes(event.path)));
   const accounts = useData(() => call("getAccounts"), [], (event) => event.type === "definition.changed" && event.path === "accounts.json");
-  const projectList = useData(() => call("listProjects"), [], (event) => event.type === "project.updated");
+  const projectList = useData(() => call("listProjects"), [], (event) => event.type === "project.updated" || (event.type === "definition.changed" && event.path === "agents.json"));
   const projects: Map<string, ProjectEntry> = new Map((projectList.data ?? []).map(({ id, project: loaded }) => [id, { name: loaded?.name ?? id, pm: loaded?.pm ?? null }]));
   const own: ProjectEntry | undefined = project === null ? undefined : projects.get(project);
   const pm: ProjectManagerIdentity | null = own?.pm ?? null;
-  const title: string = pm?.name ?? agent;
-  const profile = profiles.data?.value.profiles.find(({ id }) => id === profileId);
+  const configured = settings.data?.value;
+  const title: string = configured?.name ?? pm?.name ?? agent;
+  const profile = settings.data?.effectiveModel;
+  const ready: boolean | null = settings.data ? !!profile : null;
   const allAccounts = accounts.data?.value.accounts ?? [];
   const account = allAccounts.find(({ id }) => id === profile?.account);
   const projectName: string | null = project === null ? null : own?.name ?? project;
@@ -798,8 +797,8 @@ function Chat({ project }: { project: string | null }) {
       </div>
       {ready === false && connected && (
         <div className={s.footnote}>
-          <Alert tone="warning" title={`No ${agent} yet`} actions={<Link to={settingUrl(role)}>Choose one in Settings</Link>}>
-            Log in to Claude Code, Codex or OpenCode and {appName} picks one for you.
+          <Alert tone="warning" title={`No model for ${agent}`} actions={<Link to={project === null ? "/settings?section=assistant" : `/projects/${project}?tab=project-manager`}>Open settings</Link>}>
+            Choose a provider and model.
           </Alert>
         </div>
       )}

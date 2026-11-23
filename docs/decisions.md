@@ -225,6 +225,20 @@
 - Why: switching project took a trip back to the Projects list.
 - Replaces: nothing.
 
+## 2026-11-23: Agents are configured in one place
+
+- The Agents page holds one Assistant, multiple Project Managers and multiple Workers. Every name or Worker title is unique, ignoring case. Each agent has a provider, model, effort, two context compaction thresholds and an optional Markdown context file. The Assistant and Project Managers also have personality traits.
+- New projects require an available Project Manager. A Project Manager can serve one project at a time. Existing projects keep their manager and configuration.
+- Workers live in Agents. Recipe nodes continue to choose models through profiles and tiers.
+
+## 2026-11-23: Assistant and Project Manager defaults return to Settings
+
+- Settings holds Assistant and Project Manager Default. Each project has a Project Manager tab. New projects inherit the default and get their own identity automatically.
+- Assistant and Project Manager Default save automatically after a valid change.
+- For Project Managers, personality is configured in each project's Project Manager tab.
+- The project's Project Manager form edits initial context in a five-row text area.
+- Agents contains reusable configurations, previously called Workers. A future change will let users assign these agents to recipe nodes.
+
 ## 2026-11-23: Node editor shows the same fields when editing
 
 - Decision: editing a node shows the same fields as creating it, with their info icons. A command is one line written as in a terminal, with quotes around an argument with spaces. Source nodes show the command or script of each action. Runs as uses readable labels: "Project user, in the job's files" and "PeCore, with its logins".
@@ -237,6 +251,7 @@
 - Decision: five rules for every page, in ui-design.md "Page layout rules". Saving: explicit Save at the top right of the title for anything that makes a commit; app preferences save by themselves. The main action sits at the top right, primary with an icon. Pages use the whole column; forms and wizards are narrow; only the recipe editor and Knowledge fill the height. Each setting is changed in one place. Only design-system controls.
 - Why: pages had drifted apart: Save in the title, in a card or automatic; main buttons in different styles; native checkboxes next to design-system ones; the Assistant and Project Managers configured in three places.
 - Replaces: per-page choices.
+- Then: the project tabs' actions (Save, Discard, Export, Delete project, New file, Upload) moved into the page header next to "New job", which is secondary outside the Jobs tab. The Project Manager's colour keeps the system colour picker, the one exception to rule 5.
 
 ## 2026-11-23: No git for the app's data
 
@@ -250,4 +265,5 @@
 - Why: the user wants one folder with no leftovers elsewhere, with the permissions managed inside it.
 - Replaces: `~/.pecore-chats` and `~/.pecore-harness` in each OS user's home.
 - Found by the protected-mode test: `pecore-agent` has no git name or email, so every job commit failed in protected mode. Job commands now get the app user's git name and email (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`), or "PeCore <pecore@localhost>" when the app user has none.
-- Tests: `osuser/permissions.test.ts` checks folder modes, ACLs and token modes on every run; `test/e2e/protected-mode.test.ts` creates the real `pecore-agent` in CI and checks that it runs jobs and chats but cannot read settings, accounts, the app user's logins or other projects' data.
+- Found by the protected-mode test: `pecore-agent` could read any file of `PECORE_HOME` whose path it knew (settings, accounts, project databases), because the app wrote files readable by everyone and `pecore-agent` may pass through `PECORE_HOME` to reach its folders. The engine now creates every file private (umask 077) and at start removes other users' access from existing files and from folder listings, except the folders opened to `pecore-agent`: `adapters/`, `chats/`, `harness/<user>/`, and each project's `work/` and `repo.git/`.
+- Tests: `osuser/permissions.test.ts` checks folder modes, ACLs and token modes on every run; `test/e2e/protected-mode.test.ts` creates the real `pecore-agent` in CI and checks that it runs jobs and chats but cannot read settings, accounts, profiles, the app user's logins, templates, chat history or project data.

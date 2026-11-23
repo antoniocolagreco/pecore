@@ -8,7 +8,7 @@ function nearestSize(tokens: number, sizes: readonly number[]): number {
   return sizes.reduce((best, size) => Math.abs(Math.log2(size / tokens)) < Math.abs(Math.log2(best / tokens)) ? size : best);
 }
 
-const Compaction = z
+export const Compaction = z
   .object({ auto: z.number().positive().default(defaultCompaction.auto), max: z.number().positive().default(defaultCompaction.max) })
   .strict()
   .transform(({ auto, max }) => {
@@ -68,14 +68,17 @@ export function traitConflict(traits: readonly AssistantTraitId[]): [AssistantTr
   return null;
 }
 
-const AssistantAgent = z
-  .object({ ...agentFields, traits: z.array(AssistantTraitId).default([]) })
-  .strict()
-  .superRefine(({ traits }, ctx) => {
-    if (new Set(traits).size !== traits.length) ctx.addIssue({ code: "custom", path: ["traits"], message: "lists a trait twice" });
+export const AgentTraits = z.array(AssistantTraitId)
+  .superRefine((traits, ctx) => {
+    if (new Set(traits).size !== traits.length) ctx.addIssue({ code: "custom", message: "lists a trait twice" });
     const conflict = traitConflict(traits);
-    if (conflict) ctx.addIssue({ code: "custom", path: ["traits"], message: `${conflict[0]} does not go with ${conflict[1]}` });
+    if (conflict) ctx.addIssue({ code: "custom", message: `${conflict[0]} does not go with ${conflict[1]}` });
   })
+  .default([]);
+
+const AssistantAgent = z
+  .object({ ...agentFields, traits: AgentTraits })
+  .strict()
   .default({ profile: null, compaction: defaultCompaction, traits: [] });
 
 export const Settings = z

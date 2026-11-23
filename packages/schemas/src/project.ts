@@ -12,6 +12,7 @@ export function projectIdCandidate(name: string, index: number): string {
 export const ProjectManagerIdentity = z.strictObject({
   name: z.string().trim().min(1).max(24),
   color: z.string().regex(/^#[0-9A-F]{6}$/, "a colour like #FFDE38"),
+  agentId: Name.optional(),
 });
 export type ProjectManagerIdentity = z.infer<typeof ProjectManagerIdentity>;
 

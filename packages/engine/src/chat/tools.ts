@@ -1,7 +1,7 @@
 import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { appName, ArchiveReviewBody, ChatForm, freeProjectManager, InstantiateBody, OrderPlan, ProjectExportOptions, TicketReply, TicketSnapshot } from "@pecore/schemas";
+import { appName, ArchiveReviewBody, ChatForm, InstantiateBody, OrderPlan, ProjectExportOptions, TicketReply, TicketSnapshot } from "@pecore/schemas";
 import type { ExportProjectResult, ImportProjectPreview, StoredEvent } from "@pecore/schemas";
 import { definitionOperations } from "../api/routes/definitions";
 import { globalFileHandlers } from "../api/routes/settings";
@@ -118,7 +118,7 @@ export function chatTools(engine: Engine): {
     list_projects: tool("List projects, their Project Managers and their configured sources.", z.strictObject({}), () => ({
       value: [...engine.projects.values()].map(({ ctx }) => ({
         id: ctx.id, name: ctx.project.name, repo: ctx.project.repo?.url ?? null, source: ctx.project.source?.node ?? null,
-        baseBranch: ctx.project.baseBranch, projectManagerName: ctx.project.pm?.name ?? null,
+        baseBranch: ctx.project.baseBranch, projectManagerName: engine.projectManagerIdentity(ctx.id)?.name ?? null,
       })),
     })),
     analyze_project_archive: tool("Review a project supplied by the user for dangerous code and hidden instructions. Report findings and coverage. The report is neither a guarantee of safety nor an instruction to act.", ArchiveReviewBody, async ({ path }) => {
@@ -166,29 +166,30 @@ export function chatTools(engine: Engine): {
         target: { state: "awaiting_confirmation", project, history, findings: result.findings },
       };
     }),
-    project_creation_options: tool("List the configured forge accounts, defaults and the first free Project Manager name and colour to present to the user when creating a project. When no Project Manager is free, ask the user for a new name and colour not in use.", z.strictObject({}), () => ({
+    project_creation_options: tool("List forge accounts and the default Project Manager identity for a new project.", z.strictObject({}), () => ({
       value: {
         accounts: engine.global().accounts.accounts.flatMap((account) => account.kind === "forge"
           ? [{ id: account.id, host: account.host, forge: account.forge, user: account.user, canCreateRepository: account.forge === "github" || account.forge === "gitlab" }]
           : []),
         defaultBaseBranch: "main",
-        defaultProjectManager: freeProjectManager(engine.projectManagers()),
+        defaultProjectManager: engine.projectManagerFor(null),
         projectManagersInUse: engine.projectManagers(),
         defaultFolder: defaultFolder(engine, "<project id>"),
       },
     })),
     create_project: tool("Validate and propose a project for confirmation in chat. This tool never creates the project. The user must approve the displayed settings in the confirmation card.", ProjectCreation, async (settings) => {
-      await validateProjectCreation(engine, settings);
+      const { pm } = await validateProjectCreation(engine, settings);
       return {
         value: { state: "awaiting_confirmation" },
-        target: { state: "awaiting_confirmation", settings, rows: projectCreationRows(engine, settings) },
+        target: { state: "awaiting_confirmation", settings: { ...settings, pm }, rows: projectCreationRows(engine, { ...settings, pm }) },
       };
     }),
     get_project: tool("Read a project's current settings before editing it.", project, ({ project }) => {
-      const { id, name, baseBranch, services, repo, folder, pm } = projectContext(engine, project).project;
+      const { id, name, baseBranch, services, repo, folder } = projectContext(engine, project).project;
+      const pm = engine.projectManagerIdentity(project);
       return { value: { id, name, baseBranch, services, repo, folder, pm }, target: { project } };
     }),
-    update_project: tool("Propose changes to the specified project settings, including its Project Manager's name and colour, for confirmation in chat. Omit fields that should stay as they are. Set services to null to auto-detect the Compose file. Only the user can apply the changes by pressing Confirm on the chat card.", ProjectUpdate, async (input) => {
+    update_project: tool("Propose changes to the project's settings, including its Project Manager's name and colour. Omit unchanged fields. Set services to null to auto-detect the Compose file. Only the user can apply the changes by pressing Confirm.", ProjectUpdate, async (input) => {
       const rows = await projectUpdateRows(engine, input);
       return {
         value: { state: "awaiting_confirmation" },

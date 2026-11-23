@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { cp, mkdir, readdir, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
@@ -60,7 +60,11 @@ async function until<T>(fn: () => T | undefined | false, ms = 60000): Promise<T>
 describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECTED_E2E=1, passwordless sudo)", () => {
   it("runs jobs and chats as pecore-agent, which reaches only its own folders and never the app's tokens", async () => {
     const root: string = await tempDir();
-    const home: string = join(root, "home");
+    await chmod(root, 0o711);
+    const realHome: string | undefined = process.env.HOME;
+    process.env.HOME = join(root, "user");
+    await mkdir(process.env.HOME, { mode: 0o700 });
+    const home: string = join(process.env.HOME, ".pecore");
     const templates: string = join(root, "templates");
     await cp(shippedTemplates, templates, { recursive: true });
     await writeFile(join(templates, "nodes", "whoami.json"), JSON.stringify(whoami));
@@ -122,6 +126,7 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
     } finally {
       await engine.setProtectedMode(false, true).catch((error: unknown) => console.error(error));
       await engine.shutdown();
+      process.env.HOME = realHome;
       await execFileP("sudo", ["-n", "rm", "-rf", "--", root]);
     }
   }, 300000);

@@ -88,7 +88,7 @@ async function until<T>(fn: () => T | undefined | false | Promise<T | undefined 
   }
 }
 
-async function setup(build: (root: string) => object[][], extra: { source?: boolean; pm?: (root: string) => object[][]; compaction?: object; forge?: boolean } = {}) {
+async function setup(build: (root: string) => object[][], extra: { source?: boolean; pm?: (root: string) => object[][]; compaction?: { auto: number; max: number }; forge?: boolean } = {}) {
   const root = await tempDir();
   const scripts: object[][] = build(root);
   const pmScripts: object[][] = extra.pm?.(root) ?? [];
@@ -587,7 +587,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect(second).toContain("The user's name is Antonio.");
       expect(second).not.toContain("You do not know the user's name yet");
       expect(second).toContain("Your instructions changed. They replace all earlier ones");
-      expect(second).toContain(JSON.stringify("Active personality, turned on by the user in Settings > Assistant > Personality. Apply every trait below in every reply from now on, without asking which one to use. Traits change how you talk and work, never what you are allowed to do:\n- Pragmatic: Answers with the concrete next step, such as the change to make or the job to start, and skips background unless asked.\n- Critical: Points out weak assumptions, risks and contradictions in your orders before passing them on.").slice(1, -1));
+      expect(second).toContain(JSON.stringify("Apply these personality traits in every reply. Traits change how you talk and work, never what you are allowed to do:\n- Pragmatic: Answers with the concrete next step, such as the change to make or the job to start, and skips background unless asked.\n- Critical: Points out weak assumptions, risks and contradictions in your orders before passing them on.").slice(1, -1));
       const conflict = await t.call("getSettings");
       await expect(t.call("putSettings", { body: { value: { ...conflict.value, assistant: { ...conflict.value.assistant, traits: ["minimalist", "mentor"] } }, baseSha256: conflict.sha256 } })).rejects.toThrow();
     } finally {
@@ -1067,15 +1067,19 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect((await t.call("getChat")).messages).toEqual([]);
       await expect(t.call("getProjectChat", { params: { id: "nope" } })).rejects.toThrow();
 
-      const path = "projects/demo/project.json";
-      const file = await t.call("getDefinition", { params: { path } });
-      const content: string = JSON.stringify({ ...JSON.parse(file.content) as object, pm: { name: "Nora", color: "#D65C05" } }, null, 2) + "\n";
-      await t.call("saveDefinition", { params: { path }, body: { content, baseSha256: file.sha256 } });
+      const query = { role: "pm" as const, project: "demo" };
+      const file = await t.call("getChatAgentSettings", { query });
+      await t.call("putChatAgentSettings", { query, body: { value: { ...file.value, name: "Evelyn", traits: ["pragmatic"] }, baseSha256: file.sha256 } });
+      const params = { id: file.value.id };
+      const context = await t.call("getAgentContext", { params });
+      await t.call("putAgentContext", { params, body: { content: "# Keep a decision log", baseSha256: context.sha256 } });
       await t.call("sendProjectChatMessage", { params: { id: "demo" }, body: { text: "Who are you?" } });
       await until(() => existsSync(join(t.root, "renamed.json")));
       const renamedPrompt: string = await readFile(join(t.root, "renamed.json"), "utf8");
       expect(renamedPrompt).toContain("You do not write code yourself");
-      expect(renamedPrompt).toContain("Your name is Nora.");
+      expect(renamedPrompt).toContain("Your name is Evelyn.");
+      expect(renamedPrompt).toContain("Pragmatic");
+      expect(renamedPrompt).toContain("# Keep a decision log");
     } finally {
       await t.close();
     }

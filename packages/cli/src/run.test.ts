@@ -51,8 +51,9 @@ describe("pecore CLI over the local API", () => {
     expect(await run(["validate", join(home, "projects", "demo", "project.json")], v.io, env)).toBe(0);
     expect(v.out[0]).toContain("project.json: ok");
     const g = capture();
-    expect(await run(["validate", join(home, ".gitignore")], g.io, env)).toBe(1);
-    expect(g.err[0]).toMatch(/invalid definition path .gitignore/);
+    await writeFile(join(home, "notes.txt"), "not a definition\n");
+    expect(await run(["validate", join(home, "notes.txt")], g.io, env)).toBe(1);
+    expect(g.err[0]).toMatch(/invalid definition path notes.txt/);
 
     const bad = capture();
     expect(await run(["job", "why", "nope"], bad.io, env)).toBe(1);

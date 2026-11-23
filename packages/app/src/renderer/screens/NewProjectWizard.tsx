@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
-import { appName, freeProjectManager, projectIdCandidate } from "@pecore/schemas";
+import { appName, projectIdCandidate } from "@pecore/schemas";
 import type { CreationView, CreateProjectBody, ForgeAccount, ProjectManagerIdentity } from "@pecore/schemas";
-import { ProjectManagerField, projectManagerError } from "../components/ProjectManager";
 import { call } from "../api/client";
 import { errorText, useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
@@ -20,7 +19,6 @@ type RepoMode = "existing" | "new" | "local";
 type Inputs = { name: string; mode: RepoMode; url: string | null; account: string; folder: string | null; baseBranch: string; pm: ProjectManagerIdentity | null };
 
 const initialInputs: Inputs = { name: "", mode: "local", url: null, account: "", folder: null, baseBranch: "main", pm: null };
-const customProjectManager: ProjectManagerIdentity = { name: "", color: "#808080" };
 const formWidth: number = 680;
 const folderIn = (root: string, id: string): string => `${root.replace(/\/+$/, "")}/${id}`;
 const tasks: string[] = [
@@ -77,9 +75,6 @@ export function NewProjectWizard() {
     [creationId],
     (m) => !!creationId && (m.type === "project.updated" || m.type === "queue.updated" || m.type === "job.updated") && m.projectId === creationId,
   );
-  const projects = useData(() => call("listProjects"), [], (m) => m.type === "project.updated");
-  const usedManagers: ProjectManagerIdentity[] = (projects.data ?? []).flatMap(({ project }) => project?.pm ? [project.pm] : []);
-  const pm: ProjectManagerIdentity = inputs.pm ?? (projects.data ? freeProjectManager(usedManagers) ?? customProjectManager : customProjectManager);
   const forgeAccounts: ForgeAccount[] = (accounts.data?.value.accounts ?? []).filter((account) => account.kind === "forge");
   const available: ForgeAccount[] = forgeAccounts.filter((account) => inputs.mode !== "new" || account.forge === "github" || account.forge === "gitlab");
   const account: ForgeAccount | undefined = available.find((entry) => entry.id === inputs.account);
@@ -91,7 +86,7 @@ export function NewProjectWizard() {
     : "";
   const repoUrl: string = inputs.url ?? suggestedUrl;
   const folder: string = inputs.folder ?? (projectsFolder && folderIn(projectsFolder, projectIdCandidate(inputs.name.trim(), 1)));
-  const valid: boolean = !!inputs.name.trim() && !!inputs.baseBranch.trim() && !!folder.trim() && !!projects.data && projectManagerError(pm, usedManagers) === null &&
+  const valid: boolean = !!inputs.name.trim() && !!inputs.baseBranch.trim() && !!folder.trim() &&
     (inputs.mode === "local" || (!!account && !!repoUrl.trim()));
   const update = (changes: Partial<Inputs>) => setInputs((current) => ({ ...current, ...changes }));
   const create = useAction(async () => {
@@ -107,7 +102,7 @@ export function NewProjectWizard() {
         baseBranch: inputs.baseBranch.trim(),
         createRepo,
         services: null,
-        pm: { name: pm.name.trim(), color: pm.color },
+        pm: inputs.pm,
         source: null,
       },
     };
@@ -225,8 +220,7 @@ export function NewProjectWizard() {
             onValueChange={(value) => update({ folder: value })}
             action={<Button disabled={!connected} onClick={() => void window.pecore.pickFolder().then((picked) => picked && update({ folder: picked }))}>Choose…</Button>} />
           <TextField label="Base branch" required mono disabled={!connected} value={inputs.baseBranch} onValueChange={(baseBranch) => update({ baseBranch })} />
-          <ProjectManagerField value={pm} used={usedManagers} disabled={!connected} onChange={(next) => update({ pm: next })} />
-          <ErrorText error={projects.error ?? create.error} />
+          <ErrorText error={create.error} />
           <div className={w.actions}>
             <Button disabled={!connected} onClick={() => void navigate("/projects")}>Cancel</Button>
             <Button kind="primary" type="submit" disabled={!connected || !valid}>Create project</Button>
