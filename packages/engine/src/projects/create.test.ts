@@ -105,10 +105,11 @@ describe("project creation with a remote (section Project creation, decision 13)
   it("a job without a recipe uses the project's only recipe, and must choose when there are more (decision 77)", async () => {
     const { home, templates } = await forgeHome();
     const engine = await Engine.start({ home, templates });
-    await createProjectWithRecipes(engine, { id: "one", name: "One", repo: null }, ["empty"]);
+    await createProjectWithRecipes(engine, { id: "one", name: "One", repo: null }, ["local-only"]);
     const id = await engine.createJob("one", { title: "Nothing", ticket: { text: "nothing" } });
-    expect(JSON.parse(engine.project("one").executor.job(id).recipe)).toMatchObject({ name: "empty" });
-    await createProjectWithRecipes(engine, { id: "two", name: "Two", repo: null }, ["empty", "local-only"]);
+    expect(JSON.parse(engine.project("one").executor.job(id).recipe)).toMatchObject({ name: "local-only" });
+    await writeFile(join(home, "templates", "recipes", "nothing.json"), JSON.stringify({ name: "nothing", description: "No nodes" }));
+    await createProjectWithRecipes(engine, { id: "two", name: "Two", repo: null }, ["local-only", "nothing"]);
     await expect(engine.createJob("two", { title: "Nothing", ticket: { text: "nothing" } })).rejects.toThrow("project two has 2 recipes; choose one");
     await engine.shutdown();
   });

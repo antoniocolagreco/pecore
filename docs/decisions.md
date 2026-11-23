@@ -47,3 +47,9 @@
 - Decision: both chats accept any file up to 10 MB, from the clip button, a paste or a drop anywhere on the chat panel. Images still reach the model as images. Other files go to a folder the agent can read, and the message tells it where they are.
 - Why: the user wants to drop logs, documents and archives into the chat, not only images.
 - Replaces: image-only attachments, with no drop.
+
+## 2026-11-23: The Empty recipe template is removed
+
+- Decision: the app no longer ships the Empty recipe template. New Recipe starts an empty recipe. A recipe with no nodes stays valid.
+- Why: Empty duplicated New Recipe and looked like a recipe a job could use.
+- Replaces: `templates/recipes/empty.json` and its icon.

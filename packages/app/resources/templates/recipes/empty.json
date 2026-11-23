@@ -1,5 +1,0 @@
-{
-  "$schema": "../../schemas/recipe.json",
-  "name": "empty",
-  "description": "A recipe with no nodes: the job ends at once as succeeded. Start here to build a recipe in the graph editor"
-}

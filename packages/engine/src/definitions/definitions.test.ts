@@ -125,7 +125,7 @@ describe("phase 1 gate: shipped templates", () => {
     const lib = await loadTemplates(shippedTemplates);
     expect(lib.errors).toEqual([]);
     expect(lib.nodes.size).toBeGreaterThan(0);
-    expect(lib.recipes.has("empty")).toBe(true);
+    expect(lib.recipes.has("feature")).toBe(true);
   });
 });
 
@@ -150,9 +150,9 @@ describe("instantiate", () => {
   it("instantiates a recipe and gives a valid project", async () => {
     const project = join(await tempDir(), "demo");
     await mkdir(project);
-    expect((await instantiateRecipe(shippedTemplates, project, "empty")).errors).toEqual([]);
+    expect((await instantiateRecipe(shippedTemplates, project, "local-only")).errors).toEqual([]);
     await writeFile(join(project, "project.json"), JSON.stringify({
-      id: "demo", name: "Demo", repo: null, defaultRecipe: "empty", limits: { jobs: 2, budget: { jobUsd: 5 } },
+      id: "demo", name: "Demo", repo: null, defaultRecipe: "local-only", limits: { jobs: 2, budget: { jobUsd: 5 } },
     }));
     const loaded = await loadProject(project);
     expect(loaded.errors).toEqual([]);

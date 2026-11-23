@@ -1358,7 +1358,6 @@ Stored in the repository under `packages/app/resources/` and bundled with the ap
 | `templates/nodes/cargo-check.json`, `cargo-clippy.json`, `cargo-test.json` | Rust checks, for G2; `cargo-test` has `cleanCheckout: true` |
 | `templates/nodes/github-issues.json`, `gitlab-issues.json`, `markdown-folder.json` | ticket source nodes of section 7, with `label` and `trusted` params. `markdown-folder`: tickets are `*.md` files; `comment` appends to `<ticket>.comments.md`; `replies` reads lines added there after a time |
 | `templates/nodes/jira.json` | ticket source through `acli` (Atlassian CLI), which keeps its own login |
-| `templates/recipes/empty.json` | only `start` and end, no nodes (D7) |
 | `templates/recipes/feature.json` | the recipe of 3.2 |
 | `templates/recipes/bugfix.json` | the `feature` recipe of 3.2 plus a `github-issue-comment` node after `pr` (outcome `opened`), with `successOutcomes` on the comment node's `done`; its spec writer prompt asks for a failing test that reproduces the bug (CUJ 1) |
 | `templates/recipes/local-only.json` | the nodes of `feature` up to `git-commit`, with `successOutcomes` `commit:done` (CUJ 4); its reviewer has no `providerNot`, so it runs with a single provider |
