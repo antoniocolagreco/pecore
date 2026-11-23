@@ -75,7 +75,7 @@ a.entry:focus-visible {
   position: absolute;
   inset: 0 auto 0 0;
   width: 3px;
-  background: var(--recipe-node-kind);
+  background: var(--recipe-node-stripe, var(--recipe-node-kind));
   content: "";
 }
 
@@ -86,16 +86,10 @@ a.entry:focus-visible {
 .kind {
   display: flex;
   align-items: center;
-  gap: 4px;
 }
 
 .kind > span > span {
   font-size: 12px;
-}
-
-.kind small {
-  color: var(--text-2);
-  font-size: 0.75em;
 }
 
 .card strong {

@@ -73,7 +73,7 @@
 - Why: a two-line title moved the icon up on that card only.
 - Replaces: a title as tall as its text.
 - A one-line title is centred in the two-line space. Node and recipe names are limited to 24 characters, so every title fits on its card.
-- Node template cards use a coloured left stripe and a kind badge. Human cards also show their mode. Search matches the name, kind and tags.
+- Node template cards use a coloured left stripe and a kind badge. Search matches the name, kind and tags.
 
 ## 2026-11-23: Recipe editor uses a drag-and-drop palette
 

@@ -71,6 +71,7 @@ const previousShippedHashes: ReadonlyMap<string, readonly string[]> = new Map([
   ["nodes/git-push.sh", ["e80165bc3cdb599bac5010afbca5ee8b43f2603acb1f36a870520778c5ed2a1c"]],
   ["nodes/human-review.json", ["c2fa7065b330a6fd005aa4da046f3b7253047accdb97c9197740930ed72aeb70", "f636c8d7191eeb8784b1a2e4a0e3d6d4701f1e4bf7c926f8486234dfb4d0269f", "c756cdb25911b08bb40af55b4eb2247ea4e5e019ccc3c90e3274f0ea9bbab248", "862971a038f216fc253f531458a91d5fbf669255b640ef70da501160eb0c1274"]],
   ["nodes/human-decision.json", ["d495a500dc693c40c6ee68685ddbaa1ce3ec14ee20e718875283138c5b0412c4"]],
+  ["icons/node-human-decision.svg", ["41e4acfbb118105fb6c7844edb5fbfb15fc79f8ea939a805c0f4d823905bc0ad"]],
   ["nodes/gitlab-mr.json", ["6c397335104ed03e0b576aa45a57d13d250d0e126b8b4a158bec6d1ddfd631c7", "290ae9f7ad93471bd3aaf15fffc822e9b21f116a2a87d7c85ca885d660e9e178", "00b6b137b30e4916421ad25ad1552fcd35e4094cce90534dfc0bfde0c3275470"]],
   ["nodes/cargo-check.json", ["8be45f65d6f300465dca1a411613414c891ae2d8a5ff9e1d41a1e191d312673e", "fc4a64d7c36290dde5a858afeefc962e447552b107fd2753cb2cf2d60704dbf5"]],
   ["forges/git.json", ["4d4ae33b99e70c1c2cbf250d14b6895d192bdd113200ce8d0004f7d48f318b66"]],

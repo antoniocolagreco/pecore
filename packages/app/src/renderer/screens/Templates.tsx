@@ -55,13 +55,12 @@ function TemplateList({ type, icons }: { type: DefinitionType; icons: ReadonlyMa
           const description: string = string(definition.description);
           const kind: RecipeNodeKind | undefined = type === "node" ? recipeNodeKind(definition.kind) : undefined;
           const source: boolean = type === "node" && definition.kind === "source";
-          const mode: string = definition.kind === "human-decision" ? "Decision" : definition.kind === "human-review" ? "Review" : "";
           const kindClass: string | undefined = kind ? editorStyles[kind] : source ? s.source : undefined;
           const contents = <>
             <Card className={[s.card, kindClass && s.nodeCard, kindClass].filter(Boolean).join(" ")}>
               <span className={s.glyph}><DefinitionIcon icons={icons} type={type} name={name} selected={string(definition.icon)} /></span>
               <strong title={title}><span>{title}</span></strong>
-              {kind && <div className={s.kind}><RecipeNodeKindBadge kind={kind} />{mode && <small>{mode}</small>}</div>}
+              {kind && <div className={s.kind}><RecipeNodeKindBadge kind={kind} /></div>}
               {source && <div className={s.kind}><Badge tone="success" dot>Source</Badge></div>}
             </Card>
             <div className={s.description}>
