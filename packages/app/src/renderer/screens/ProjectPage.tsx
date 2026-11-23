@@ -8,6 +8,7 @@ import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { DefinitionIcon, useDefinitionIcons } from "../components/DefinitionIcon";
+import { PageActions, PageActionsSlot } from "../components/PageActions";
 import { Button, Empty, ErrorText, Page, ui } from "../components/ui";
 import { Button as DsButton, IconButton } from "../ds/button";
 import { RadioGroup } from "../ds/choice";
@@ -161,7 +162,7 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
     else set({ services: picked.slice(folder.length + 1) });
   };
   return (
-    <form className={s.form} onSubmit={(e) => { e.preventDefault(); if (dirty && valid && !disabled) void save.run(); }}>
+    <form id="project-settings" className={s.form} onSubmit={(e) => { e.preventDefault(); if (dirty && valid && !disabled) void save.run(); }}>
       <dl className={`${ui.kv} ${s.details}`}>
         <dt>Project ID</dt><dd>{id}</dd>
       </dl>
@@ -190,12 +191,12 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
         action={<DsButton disabled={disabled} onClick={() => void pickCompose()}>Choose…</DsButton>} />
       <ErrorText error={save.error} />
       {deleteNotice}
-      <div className={s.formActions}>
-        <div className={`${s.grow} ${ui.row}`}>{projectActions}</div>
+      <PageActions>
+        {projectActions}
         {savedAt && !dirty && <span className={ui.muted} role="status">Saved</span>}
         <DsButton disabled={!dirty || disabled} onClick={() => setDraft(null)}>Discard</DsButton>
-        <DsButton type="submit" variant="primary" disabled={!dirty || !valid || disabled} loading={save.busy}>Save settings</DsButton>
-      </div>
+        <DsButton type="submit" form="project-settings" variant="primary" disabled={!dirty || !valid || disabled} loading={save.busy}>Save</DsButton>
+      </PageActions>
     </form>
   );
 }
@@ -312,21 +313,21 @@ function ProjectVariables({ id, onSaved }: { id: string; onSaved(): void }) {
   if (!rows) return file.loading ? <Spinner /> : <ErrorText error={file.error ?? "Unable to read the project definition."} />;
   const disabled: boolean = !connected || save.busy;
   return (
-    <form className={s.form} onSubmit={(event) => { event.preventDefault(); if (dirty && !disabled) void save.run(); }}>
+    <form id="project-variables" className={s.form} onSubmit={(event) => { event.preventDefault(); if (dirty && !disabled) void save.run(); }}>
       <section className={s.keyValues}>
         <h2>Project variables</h2>
         <p className={ui.muted}>A recipe can use a variable such as <code>build-dir</code> with <code>{"{project.vars.build-dir}"}</code>.</p>
         <VariableTable label="Project variables" keyLabel="Name" rows={rows} disabled={disabled} onChange={set} />
       </section>
       <ErrorText error={save.error ?? file.error} />
-      <div className={s.formActions}>
-        <div className={`${s.grow} ${ui.row}`}>
-          <DsButton icon={<PlusIcon />} disabled={disabled} onClick={() => set([...rows, newVariable()])}>Add variable</DsButton>
-        </div>
+      <div className={ui.row}>
+        <DsButton icon={<PlusIcon />} disabled={disabled} onClick={() => set([...rows, newVariable()])}>Add variable</DsButton>
+      </div>
+      <PageActions>
         {saved && <span className={ui.muted} role="status">Saved</span>}
         <DsButton disabled={!dirty || disabled} onClick={() => { setDraft(null); save.clear(); }}>Discard</DsButton>
-        <DsButton type="submit" variant="primary" disabled={!dirty || disabled} loading={save.busy}>Save changes</DsButton>
-      </div>
+        <DsButton type="submit" form="project-variables" variant="primary" disabled={!dirty || disabled} loading={save.busy}>Save</DsButton>
+      </PageActions>
     </form>
   );
 }
@@ -376,6 +377,7 @@ function ProjectDetails({ id }: { id: string }) {
   const [deleting, setDeleting] = useState<boolean>(false);
   const [exporting, setExporting] = useState<boolean>(false);
   const [creatingJob, setCreatingJob] = useState<boolean>(false);
+  const [actionSlot, setActionSlot] = useState<HTMLSpanElement | null>(null);
   const data = useData(() => call("getProject", { params: { id } }), [id], (m) =>
     (m.type === "project.updated" && m.projectId === id) || (m.type === "definition.changed" && (m.path.startsWith(`projects/${id}/`) || m.path === "agents.json")),
   );
@@ -388,15 +390,17 @@ function ProjectDetails({ id }: { id: string }) {
   const view: ProjectView | undefined = data.data;
   const project: ProjectView["project"] | undefined = view?.project;
   return (
-    <Page title={project?.name ?? id} fillHeight={activeTab === "knowledge"} actions={project && !view?.creating &&
-      <DsButton variant="primary" icon={<PlusIcon />} disabled={!connected} onClick={() => setCreatingJob(true)}>New job</DsButton>}>
+    <Page title={project?.name ?? id} fillHeight={activeTab === "knowledge"} actions={project && !view?.creating && <>
+      <span ref={setActionSlot} className={ui.row} />
+      <DsButton variant={activeTab === "jobs" ? "primary" : "secondary"} icon={<PlusIcon />} disabled={!connected} onClick={() => setCreatingJob(true)}>New job</DsButton>
+    </>}>
       {creatingJob && <NewJobDialog id={id} onClose={() => setCreatingJob(false)} />}
       {exporting && <ProjectExportDialog id={id} onClose={() => setExporting(false)} />}
       <ErrorText error={data.error} />
       {data.loading && !view && <Spinner />}
       {view?.errors.map(({ file, path, message }, index) => <ErrorText key={index} error={`${file}${path ? ` · ${path}` : ""}: ${message}`} />)}
       {view?.creating ? <Alert tone="warning" actions={connected && <Link to={`/projects/new?resume=${id}`}>Resume creation</Link>}>This project was not fully created.</Alert> : project && (
-        <>
+        <PageActionsSlot.Provider value={actionSlot}>
           <Tabs
             value={activeTab}
             onValueChange={setActiveTab}
@@ -447,7 +451,7 @@ function ProjectDetails({ id }: { id: string }) {
             {running && <span>Stop the running jobs first.</span>}
             <ErrorText error={remove.error} />
           </Dialog>
-        </>
+        </PageActionsSlot.Provider>
       )}
     </Page>
   );

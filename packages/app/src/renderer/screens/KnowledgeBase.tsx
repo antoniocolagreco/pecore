@@ -5,6 +5,7 @@ import type { DefinitionEntry } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
+import { PageActions } from "../components/PageActions";
 import { Button, ErrorText, ui } from "../components/ui";
 import { Card, Spinner } from "../ds/feedback";
 import { TextField } from "../ds/field";
@@ -38,8 +39,9 @@ function KnowledgeFile({ path, name, creating, names, actions, onCreated, onDirt
   return <div className={s.editor}>
     <header className={s.editorHeader}>
       <h2>{name}</h2>
-      <span className={s.headerActions}>{actions}{file.saveButton()}</span>
+      {actions && <span className={s.headerActions}>{actions}</span>}
     </header>
+    <PageActions>{file.saveButton()}</PageActions>
     {file.feedback}
     <div className={s.desk}>
       {file.ready && <Sidecar paper className={s.sheet} content={file.content} change={file.update} disabled={!file.editable} isMarkdown
@@ -135,15 +137,15 @@ export function KnowledgeBase({ id }: { id: string }) {
     }}>
     {dropping && <div className={s.drop} aria-hidden="true">Drop Markdown files to add them to the knowledge</div>}
     <Card className={s.list} padded={false}>
-      <div className={s.listActions}>
+      <PageActions>
         <Button disabled={!connected} onClick={() => open("new")}>New file</Button>
         <Button disabled={!connected || upload.busy} onClick={() => input.current?.click()}>{upload.busy ? "Uploading…" : "Upload"}</Button>
-        <input ref={input} type="file" accept=".md,text/markdown" multiple hidden onChange={(event) => {
-          const chosen: File[] = [...(event.target.files ?? [])];
-          event.target.value = "";
-          if (chosen.length) void upload.run(chosen);
-        }} />
-      </div>
+      </PageActions>
+      <input ref={input} type="file" accept=".md,text/markdown" multiple hidden onChange={(event) => {
+        const chosen: File[] = [...(event.target.files ?? [])];
+        event.target.value = "";
+        if (chosen.length) void upload.run(chosen);
+      }} />
       <ErrorText error={entries.error ?? upload.error} />
       {entries.loading && !entries.data && <Spinner />}
       {entries.data && !files.length && !selected?.creating && <p className={ui.muted}>No knowledge files yet.</p>}

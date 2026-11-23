@@ -250,3 +250,4 @@
 - Decision: five rules for every page, in ui-design.md "Page layout rules". Saving: explicit Save at the top right of the title for anything that makes a commit; app preferences save by themselves. The main action sits at the top right, primary with an icon. Pages use the whole column; forms and wizards are narrow; only the recipe editor and Knowledge fill the height. Each setting is changed in one place. Only design-system controls.
 - Why: pages had drifted apart: Save in the title, in a card or automatic; main buttons in different styles; native checkboxes next to design-system ones; the Assistant and Project Managers configured in three places.
 - Replaces: per-page choices.
+- Then: the project tabs' actions (Save, Discard, Export, Delete project, New file, Upload) moved into the page header next to "New job", which is secondary outside the Jobs tab. The Project Manager's colour keeps the system colour picker, the one exception to rule 5.

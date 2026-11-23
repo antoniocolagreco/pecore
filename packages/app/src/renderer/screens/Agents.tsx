@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router";
 import { ChatAgent, NodeAgentCatalog, Compaction, compactionSizes } from "@pecore/schemas";
 import type { Account, AgentDefinition, AssistantTraitId, NodeAgent, Role } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useAutoSave, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
+import { PageActions } from "../components/PageActions";
 import { ErrorText, Page, ui } from "../components/ui";
 import { ModelPicker, Traits } from "../components/AgentFields";
 import { Button } from "../ds/button";
@@ -97,6 +98,7 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, eff
   };
   const [draft, setDraft] = useState<{ content: string; sha256: string | undefined } | null>(null);
   const [remove, setRemove] = useState<boolean>(false);
+  const formId: string = useId();
   const upload = useRef<HTMLInputElement>(null);
   const showContext: boolean = !scope || !!scope.project;
   const context = useData(() => showContext && !creating ? call("getAgentContext", { params: { id: agent.id } }) : Promise.resolve(undefined), [agent.id, creating, showContext]);
@@ -139,10 +141,12 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, eff
   const tooLong: boolean = agent.name.trim().length > (agent.kind === "pm" ? 24 : 80);
   const valid: boolean = !!agent.name.trim() && !duplicate && !tooLong && (agent.model === null ? !!scope : !!agent.model.model) && content.length <= 1_000_000;
   const inheritance: string | undefined = scope?.project ? "Project Manager Default" : scope?.role === "pm" ? "Default model" : scope ? "Auto-configured model" : undefined;
-  return <form className={s.form} onSubmit={(event) => { event.preventDefault(); if (!onAutoChange && editable && valid && (dirty || contextDirty)) void save.run(); }}>
+  return <form id={formId} className={s.form} onSubmit={(event) => { event.preventDefault(); if (!onAutoChange && editable && valid && (dirty || contextDirty)) void save.run(); }}>
     <Card title={title} actions={<>
       {!creating && catalog && <Button disabled={!editable} onClick={() => setRemove(true)}>Delete</Button>}
-      {!onAutoChange && <Button type="submit" variant="primary" disabled={!editable || !valid || (!dirty && !contextDirty)}>{saved ? "Save" : "Create"}</Button>}
+      {!onAutoChange && <PageActions>
+        <Button type="submit" form={formId} variant="primary" disabled={!editable || !valid || (!dirty && !contextDirty)}>{saved ? "Save" : "Create"}</Button>
+      </PageActions>}
     </>}>
       <div className={s.fields}>
         {(agent.kind !== "pm" || scope?.project) && <div className={s.pair}>
