@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { ApiError, appName, forgeHost, Settings as SettingsSchema } from "@pecore/schemas";
+import { appName, forgeHost, Settings as SettingsSchema } from "@pecore/schemas";
 import type { Account, ForgeAccount, LiveMessage, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { call } from "../api/client";
-import { errorText, useAction, useData } from "../api/hooks";
+import { useAction, useAutoSave, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
 import { ErrorText, Field, Page, ui } from "../components/ui";
 import { harnessName } from "../components/AgentFields";
@@ -39,74 +39,10 @@ const sections: { id: string; title: string }[] = [
   { id: "prerequisites", title: "Diagnostics" },
 ];
 
-const saveDelayMs = 600;
-
-function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (body: { value: T; baseSha256: string }) => Promise<{ sha256: string }>, valid: (value: T) => boolean = () => true) {
+function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (body: { value: T; baseSha256: string }) => Promise<{ sha256: string }>, valid?: (value: T) => boolean) {
   const remote = useData(get, [], (message) => message.type === "definition.changed" && message.path === name + ".json");
-  const [local, setLocal] = useState<T>();
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const shown: T | undefined = local ?? remote.data?.value;
-  const latest = useRef<T | undefined>(shown);
-  latest.current = shown;
-  const sha = useRef<string | undefined>(undefined);
-  const writes = useRef<Promise<unknown>>(Promise.resolve());
-  const inFlight = useRef(0);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const waiting = useRef<T | undefined>(undefined);
-  useEffect(() => {
-    if (!remote.data || inFlight.current || remote.data.sha256 === sha.current) return;
-    const first: boolean = sha.current === undefined;
-    sha.current = remote.data.sha256;
-    if (first) return;
-    setLocal(undefined);
-  }, [remote.data]);
-  const commit = (value: T): Promise<boolean> => {
-    inFlight.current += 1;
-    setSaving(true);
-    const write: Promise<boolean> = writes.current.then(async () => {
-      try {
-        const result = await put({ value, baseSha256: sha.current ?? "" });
-        sha.current = result.sha256;
-        setError(null);
-        return true;
-      } catch (failure) {
-        if (failure instanceof ApiError && failure.status === 409) {
-          sha.current = undefined;
-          setLocal(undefined);
-          remote.reload();
-          setError(`Changed elsewhere, so ${appName} loaded the new version. Make your last change again.`);
-        } else setError(errorText(failure));
-        return false;
-      } finally {
-        inFlight.current -= 1;
-        if (!inFlight.current) setSaving(false);
-      }
-    });
-    writes.current = write;
-    return write;
-  };
-  const flush = (): void => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = undefined;
-    const value: T | undefined = waiting.current;
-    waiting.current = undefined;
-    if (value !== undefined && valid(value)) void commit(value);
-  };
-  const flushOnLeave = useRef(flush);
-  flushOnLeave.current = flush;
-  useEffect(() => () => flushOnLeave.current(), []);
   return {
-    value: shown, current: remote.data?.value, reload: remote.reload, saving, commit, error,
-    update(change: T | ((value: T) => T)): void {
-      if (latest.current === undefined) return;
-      const value: T = typeof change === "function" ? (change as (value: T) => T)(latest.current) : change;
-      latest.current = value;
-      setLocal(value);
-      waiting.current = value;
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(flush, saveDelayMs);
-    },
+    ...useAutoSave(remote, put, valid),
     feedback: <>
       {remote.loading && !remote.data && <Spinner />}
       <ErrorText error={remote.error} />

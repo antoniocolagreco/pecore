@@ -233,6 +233,7 @@
 ## 2026-11-23: Assistant and Project Manager defaults return to Settings
 
 - Settings holds Assistant and Project Manager Default. Each project has a Project Manager tab. New projects inherit the default and get their own identity automatically.
+- Assistant and Project Manager Default save automatically after a valid change.
 - Agents contains reusable configurations, previously called Workers. A future change will let users assign these agents to recipe nodes.
 
 ## 2026-11-23: Node editor shows the same fields when editing

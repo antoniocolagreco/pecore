@@ -43,11 +43,11 @@ export function globalFileHandlers(engine: Engine) {
     });
   }
 
-  function put<K extends keyof Global>(kind: K, value: Global[K], baseSha256: string, prepare?: () => Global[K]): Promise<{ sha256: string }> {
+  function put<K extends keyof Global>(kind: K, value: Global[K], baseSha256: string, prepare?: () => Global[K], version?: () => string): Promise<{ sha256: string }> {
     return engine.withGlobalFiles(async () => {
       const file: string = paths[kind];
       const before: Buffer | null = await readBytes(file);
-      if (sha256(before ?? "") !== baseSha256) throw new HttpError("conflict", "the file changed since it was loaded");
+      if ((version?.() ?? sha256(before ?? "")) !== baseSha256) throw new HttpError("conflict", "the file changed since it was loaded");
       if (kind === "settings" && "protectedMode" in value && value.protectedMode !== engine.global().settings.protectedMode) {
         throw new HttpError("bad_request", "protected mode changes only through POST /protected-mode");
       }
@@ -64,7 +64,7 @@ export function globalFileHandlers(engine: Engine) {
       await commitDefinition(paths.home, [file], commitMessage(kind, name, "edited"));
       const hash: string = sha256(content);
       engine.definitionChanged(name, hash);
-      return { sha256: hash };
+      return { sha256: version?.() ?? hash };
     });
   }
 
@@ -76,11 +76,10 @@ export function globalFileHandlers(engine: Engine) {
       const saved = engine.global().agents;
       return { ...body.value, agents: [...saved.agents.filter(({ kind }) => kind !== "agent"), ...body.value.agents] };
     }),
-    getChatAgentSettings: ({ query }) => engine.withGlobalFiles(async () => ({
-      value: chatSettings(query),
-      effectiveModel: engine.chatAgent(query.project, query.role)?.model ?? null,
-      sha256: sha256(await readBytes(paths.agents) ?? ""),
-    })),
+    getChatAgentSettings: ({ query }) => engine.withGlobalFiles(async () => {
+      const value: ChatAgent = chatSettings(query);
+      return { value, effectiveModel: engine.chatAgent(query.project, query.role)?.model ?? null, sha256: sha256(JSON.stringify(value)) };
+    }),
     putChatAgentSettings: ({ query, body }) => put("agents", engine.global().agents, body.baseSha256, () => {
       const current: ChatAgent = chatSettings(query);
       const { value } = body;
@@ -89,7 +88,7 @@ export function globalFileHandlers(engine: Engine) {
       const saved = engine.global().agents;
       if (saved.agents.some(({ id, kind }) => id === value.id && kind !== value.kind)) throw new HttpError("conflict", "The agent ID is already in use.");
       return { ...saved, agents: [...saved.agents.filter(({ id }) => id !== value.id), value] };
-    }),
+    }, () => sha256(JSON.stringify(chatSettings(query)))),
     getAgentContext: ({ params }) => engine.withGlobalFiles(async () => {
       if (!knownAgent(params.id)) throw new HttpError("not_found", "Agent not found.");
       const content: string = await engine.agentContext(params.id);

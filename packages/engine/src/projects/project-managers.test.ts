@@ -6,6 +6,27 @@ import { Engine } from "../main";
 import { globalFileHandlers } from "../api/routes/settings";
 
 describe("Project Manager names and colours per project", () => {
+  it("saves Assistant and Project Manager Default independently and rejects a stale edit to the same role", async () => {
+    const { home, templates } = await forgeHome();
+    const engine = await Engine.start({ home, templates });
+    try {
+      const handlers = globalFileHandlers(engine);
+      const assistant = { query: { role: "assistant" as const }, params: undefined };
+      const pm = { query: { role: "pm" as const }, params: undefined };
+      const first = await handlers.getChatAgentSettings({ ...assistant, body: undefined });
+      const second = await handlers.getChatAgentSettings({ ...pm, body: undefined });
+      const editAssistant = { ...assistant, body: { value: { ...first.value, name: "Nova" }, baseSha256: first.sha256 } };
+      const editPm = { ...pm, body: { value: { ...second.value, compaction: { auto: 65536, max: 131072 } }, baseSha256: second.sha256 } };
+      const [updatedAssistant] = await Promise.all([handlers.putChatAgentSettings(editAssistant), handlers.putChatAgentSettings(editPm)]);
+      const saved = await handlers.getChatAgentSettings({ ...assistant, body: undefined });
+      expect(saved).toMatchObject({ value: { name: "Nova" }, sha256: updatedAssistant.sha256 });
+      expect(engine.chatAgent(undefined, "pm")?.compaction).toEqual({ auto: 65536, max: 131072 });
+      await expect(handlers.putChatAgentSettings(editAssistant)).rejects.toThrow("changed since it was loaded");
+    } finally {
+      await engine.shutdown();
+    }
+  });
+
   it("uses the default for new projects and keeps project overrides out of the agent catalog", async () => {
     const { home, templates } = await forgeHome();
     await writeFile(join(home, "agents.json"), JSON.stringify({ agents: [

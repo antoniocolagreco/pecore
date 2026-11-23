@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
-import { NodeAgentCatalog, Compaction, compactionSizes } from "@pecore/schemas";
+import { ChatAgent, NodeAgentCatalog, Compaction, compactionSizes } from "@pecore/schemas";
 import type { Account, AgentDefinition, AssistantTraitId, NodeAgent, Role } from "@pecore/schemas";
 import { call } from "../api/client";
-import { useAction, useData } from "../api/hooks";
+import { useAction, useAutoSave, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { ErrorText, Page, ui } from "../components/ui";
 import { ModelPicker, Traits } from "../components/AgentFields";
@@ -52,17 +52,23 @@ export function ChatAgentSettings({ role, project }: { role: Role; project?: str
   const accounts = useData(() => call("getAccounts"), [], (event) => event.type === "definition.changed" && event.path === "accounts.json");
   const connected: boolean = useConnected();
   const data = settings.data;
+  const automatic: boolean = project === undefined;
+  const autosave = useAutoSave(settings, (body) => call("putChatAgentSettings", { query, body }), (value) => ChatAgent.safeParse(value).success);
   return <>
-    <ErrorText error={settings.error ?? accounts.error} />
+    <ErrorText error={settings.error ?? accounts.error ?? autosave.error} />
     {settings.loading && !data && <Spinner />}
-    {data && <AgentEditor key={data.value.id} initial={data.value} baseSha256={data.sha256} scope={query}
+    {data && <AgentEditor key={data.value.id} initial={automatic ? autosave.value ?? data.value : data.value} baseSha256={data.sha256} scope={query}
       title={project ? "Project Manager" : "Configuration"}
       effectiveModel={data.effectiveModel} accounts={accounts.data?.value.accounts.filter(({ kind }) => kind === "model") ?? []}
-      creating={false} disabled={!connected} onSaved={() => settings.reload()} />}
+      creating={false} disabled={!connected} onSaved={() => settings.reload()}
+      onAutoChange={automatic ? (update) => autosave.update((current) => {
+        const next: AgentDefinition = update(current);
+        return next.kind === "agent" ? current : next;
+      }) : undefined} />}
   </>;
 }
 
-function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, effectiveModel, creating, disabled, onSaved, onDeleted }: {
+function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, effectiveModel, creating, disabled, onSaved, onDeleted, onAutoChange }: {
   initial: AgentDefinition;
   baseSha256: string;
   catalog?: NodeAgentCatalog;
@@ -74,6 +80,7 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, eff
   disabled: boolean;
   onSaved(id: string): void;
   onDeleted?(): void;
+  onAutoChange?(update: (agent: AgentDefinition) => AgentDefinition): void;
 }) {
   const [edit, setEdit] = useState<{ value: AgentDefinition; base: AgentDefinition | null; sha256: string } | null>(null);
   useEffect(() => {
@@ -82,6 +89,10 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, eff
   const agent: AgentDefinition = edit?.value ?? initial;
   const saved: AgentDefinition | null = edit ? edit.base : creating ? null : initial;
   const changeAgent = (update: (agent: AgentDefinition) => AgentDefinition): void => {
+    if (onAutoChange) {
+      onAutoChange(update);
+      return;
+    }
     setEdit((prior) => ({ value: update(prior?.value ?? initial), base: prior ? prior.base : saved, sha256: prior?.sha256 ?? baseSha256 }));
   };
   const [draft, setDraft] = useState<{ content: string; sha256: string | undefined } | null>(null);
@@ -127,15 +138,15 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, eff
   const tooLong: boolean = agent.name.trim().length > (agent.kind === "pm" ? 24 : 80);
   const valid: boolean = !!agent.name.trim() && !duplicate && !tooLong && (agent.model === null ? !!scope : !!agent.model.model) && content.length <= 1_000_000;
   const inheritance: string | undefined = scope?.project ? "Project Manager Default" : scope?.role === "pm" ? "Default model" : scope ? "Auto-configured model" : undefined;
-  return <form className={s.form} onSubmit={(event) => { event.preventDefault(); if (editable && valid && (dirty || contextDirty)) void save.run(); }}>
+  return <form className={s.form} onSubmit={(event) => { event.preventDefault(); if (!onAutoChange && editable && valid && (dirty || contextDirty)) void save.run(); }}>
     <Card title={title} actions={<>
       {!creating && catalog && <Button disabled={!editable} onClick={() => setRemove(true)}>Delete</Button>}
-      <Button type="submit" variant="primary" disabled={!editable || !valid || (!dirty && !contextDirty)}>{saved ? "Save" : "Create"}</Button>
+      {!onAutoChange && <Button type="submit" variant="primary" disabled={!editable || !valid || (!dirty && !contextDirty)}>{saved ? "Save" : "Create"}</Button>}
     </>}>
       <div className={s.fields}>
         {(agent.kind !== "pm" || scope?.project) && <div className={s.compaction}>
           <TextField label={agent.kind === "agent" ? "Title" : "Name"} value={agent.name} disabled={!editable}
-            error={duplicate ? "This name is already in use." : tooLong ? "This name is too long." : undefined}
+            error={duplicate ? "This name is already in use." : tooLong ? "This name is too long." : onAutoChange && !agent.name.trim() ? "Enter a name." : undefined}
             onValueChange={(name) => changeAgent((entry) => ({ ...entry, name }))} />
           {agent.kind === "pm" && scope?.project && <label className={s.color}>Colour
             <input type="color" value={agent.color.toLowerCase()} disabled={!editable} onChange={(event) => {
