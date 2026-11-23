@@ -87,6 +87,7 @@ describe("project access script", () => {
     expect(await mode(join(project, "repo.git"))).toBe(0o755);
     expect(await mode(join(project, "work"))).toBe(0o700);
     expect((await mode(join(project, "repo.git", "config"))) & 0o022).toBe(0);
+    expect(projectAccessScript("/home/ann/pecore/projects/demo", "ann", false)).toContain(`chown -hRP -- 'ann':"$(id -gn -- 'ann')" '/home/ann/pecore/projects/demo/repo.git/objects'`);
   });
 
   it("refuses a project directory that is a symlink", async () => {

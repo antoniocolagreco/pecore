@@ -64,6 +64,7 @@ export function projectAccessScript(projectDir: string, appUser: string, protect
   const repo = join(project, "repo.git");
   const owner = quote(protectedMode ? protectedUser : app);
   const group = protectedMode ? quote(protectedUser) : `"$(id -gn -- ${quote(app)})"`;
+  const regroup = (flags: string, path: string): string => (protectedMode ? `chgrp ${flags}-- ${group} ${path}` : `chown ${flags}-- ${quote(app)}:${group} ${path}`);
   const commands = [
     "set -eu",
     "export PATH=/usr/sbin:/usr/bin:/sbin:/bin",
@@ -80,7 +81,7 @@ export function projectAccessScript(projectDir: string, appUser: string, protect
     commands.push(
       `test ! -L ${path}`,
       `if test -d ${path}; then`,
-      `  chgrp -hRP -- ${group} ${path}`,
+      `  ${regroup("-hRP ", path)}`,
       `  chmod -R ${protectedMode ? "g+rwX" : "g-w"} -- ${path}`,
       `  find -P ${path} -type d -exec chmod ${protectedMode ? "g+s" : "g-s"} -- {} +`,
       "fi",
@@ -89,7 +90,7 @@ export function projectAccessScript(projectDir: string, appUser: string, protect
   const packedRefs = quote(join(repo, "packed-refs"));
   commands.push(
     `test ! -L ${packedRefs}`,
-    `if test -f ${packedRefs}; then chgrp -- ${group} ${packedRefs}; chmod ${protectedMode ? "g+rw" : "g-w"} -- ${packedRefs}; fi`,
+    `if test -f ${packedRefs}; then ${regroup("", packedRefs)}; chmod ${protectedMode ? "g+rw" : "g-w"} -- ${packedRefs}; fi`,
     `chown -- ${quote(app)}:${group} ${quote(repo)} ${quote(work)}`,
     `chmod ${protectedMode ? "3775" : "00755"} -- ${quote(repo)}`,
     `chmod ${protectedMode ? "2770" : "00700"} -- ${quote(work)}`,

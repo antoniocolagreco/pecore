@@ -58,7 +58,7 @@ async function until<T>(fn: () => T | undefined | false, ms = 60000): Promise<T>
 }
 
 describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECTED_E2E=1, passwordless sudo)", () => {
-  it("runs jobs and chats as pecore-agent, which reaches only its own folders and never the app's tokens", async () => {
+  it("runs jobs and chats as pecore-agent, which reaches only its own folders and never the app's tokens, and gives the project back to the app when turned off", async () => {
     const root: string = await tempDir();
     await chmod(root, 0o711);
     const realHome: string | undefined = process.env.HOME;
@@ -126,6 +126,14 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
       expect((await as(protectedUser, 'cat -- "$1"', join(login!.configDir, "auth.json"))).out).toBe("agent-secret");
       expect((await as("nobody", 'cat -- "$1"', join(login!.configDir, "auth.json"))).ok).toBe(false);
       expect((await as("nobody", 'ls -- "$1"', join(p.harness, protectedUser))).ok).toBe(false);
+
+      await engine.setProtectedMode(false, true);
+      const repo: string = join(project.ctx.dir, "repo.git");
+      expect((await execFileP("find", [repo, join(project.ctx.dir, "work"), "!", "-user", appUser])).stdout).toBe("");
+      await gitApp(repo, ["update-ref", "-d", `refs/heads/factory/${job}`]);
+      const after: string = await engine.createJob("demo", { title: "Who runs jobs now", ticket: { text: "write who.txt" } });
+      await until(() => project.executor.job(after).state === "succeeded");
+      expect((await gitApp(repo, ["show", `factory/${after}:who.txt`])).trim()).toBe(appUser);
     } finally {
       await engine.setProtectedMode(false, true).catch((error: unknown) => console.error(error));
       await engine.shutdown();
