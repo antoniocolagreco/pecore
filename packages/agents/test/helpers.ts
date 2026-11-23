@@ -68,7 +68,7 @@ export function replaySpawn(lines: Line[]): Spawn {
 export const processSpawn =
   (extraEnv: Record<string, string> = {}): Spawn =>
   async (p) => {
-    const child = nodeSpawn(p.argv[0]!, p.argv.slice(1), { cwd: p.cwd, env: { PATH: process.env.PATH ?? "", ...p.env, ...extraEnv }, detached: true, stdio: ["pipe", "pipe", "pipe"] });
+    const child = nodeSpawn(p.argv[0]!, p.argv.slice(1), { cwd: p.cwd, env: { PATH: process.env.PATH ?? "", ELECTRON_RUN_AS_NODE: "1", ...p.env, ...extraEnv }, detached: true, stdio: ["pipe", "pipe", "pipe"] });
     const exited = new Promise<{ code: number | null; signal: string | null }>((r) => child.once("close", (code, signal) => r({ code, signal })));
     await new Promise<void>((r, j) => {
       child.once("spawn", () => r());

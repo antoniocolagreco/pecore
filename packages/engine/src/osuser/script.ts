@@ -73,7 +73,7 @@ export function projectAccessScript(projectDir: string, appUser: string, protect
     const path = quote(join(repo, name));
     commands.push(`test ! -L ${path}`);
     commands.push(name === "hooks" || name === "info" ? `mkdir -p -- ${path}` : `test -f ${path}`);
-    commands.push(`chown -hRP -- ${quote(app)} ${path}`, `chmod -R go-w -- ${path}`);
+    commands.push(`chown -hRP -- ${quote(app)} ${path}`, `chmod -R go-w,a+rX -- ${path}`);
   }
   for (const name of ["objects", "refs", "logs", "worktrees"]) {
     const path = quote(join(repo, name));
