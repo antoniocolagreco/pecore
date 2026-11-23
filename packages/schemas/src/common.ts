@@ -4,7 +4,9 @@ export const SchemaRef = z.string().optional();
 
 export const Name = z.string().regex(/^[a-z][a-z0-9-]*$/, "lower case letters, digits and dashes, starting with a letter");
 
-export const Outcome = z.string().regex(/^[a-z][a-z0-9_]*$/, "lower case letters, digits and underscores, starting with a letter");
+export const DefinitionName = Name.max(24, "at most 24 characters, so it fits on its card");
+
+export const Outcome =z.string().regex(/^[a-z][a-z0-9_]*$/, "lower case letters, digits and underscores, starting with a letter");
 
 export const Argv = z.array(z.string()).min(1);
 

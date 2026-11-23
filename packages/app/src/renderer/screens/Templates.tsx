@@ -63,7 +63,7 @@ function TemplateList({ type, icons }: { type: DefinitionType; icons: ReadonlyMa
           const contents = <>
             <Card className={s.card}>
               <span className={s.glyph}><DefinitionIcon icons={icons} type={type} name={name} selected={string(definition.icon)} /></span>
-              <strong title={title}>{title}</strong>
+              <strong title={title}><span>{title}</span></strong>
             </Card>
             <div className={s.description}>
               {description}

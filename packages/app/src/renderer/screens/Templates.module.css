@@ -60,14 +60,19 @@ a.entry:focus-visible {
 }
 
 .card strong {
-  display: -webkit-box;
+  display: grid;
+  align-items: center;
   height: 2lh;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
   font-size: var(--text-size-sm);
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+
+.card strong > span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .glyph {

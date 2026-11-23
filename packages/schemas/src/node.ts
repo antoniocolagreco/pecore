@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ArtifactType } from "./artifacts";
-import { Argv, JsonSchemaObject, Name, Outcome, SchemaRef, TierName } from "./common";
+import { Argv, DefinitionName, JsonSchemaObject, Name, Outcome, SchemaRef, TierName } from "./common";
 
 const jobPlaceholders = ["job.id", "job.title", "job.branch", "job.base", "job.oldBase", "job.target", "job.commit"];
 const projectPlaceholders = ["project.repoDir", "project.repo.url", "project.repo.owner", "project.repo.name"];
@@ -54,7 +54,7 @@ export type OutputRule = z.infer<typeof OutputRule>;
 
 const Base = {
   $schema: SchemaRef,
-  name: Name,
+  name: DefinitionName,
   description: z.string().min(1),
   icon: Name.optional(),
   tags: z.array(z.string().trim().min(1)).default([]),

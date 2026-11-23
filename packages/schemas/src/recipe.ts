@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { JsonSchemaObject, Name, Outcome, SchemaRef, TierName } from "./common";
+import { DefinitionName, JsonSchemaObject, Name, Outcome, SchemaRef, TierName } from "./common";
 
 const NodeId = z.string().regex(/^[a-z][a-z0-9-]*$/);
 
@@ -36,7 +36,7 @@ export type Edge = z.infer<typeof Edge>;
 export const Recipe = z
   .object({
     $schema: SchemaRef,
-    name: Name,
+    name: DefinitionName,
     description: z.string().min(1),
     icon: Name.optional(),
     start: NodeId.optional(),

@@ -65,6 +65,11 @@ describe("recipe schema", () => {
     expect(issues({ name: "empty", description: "No nodes" })).toEqual([]);
   });
 
+  it("limits the name to 24 characters so it fits on its card", () => {
+    expect(issues({ name: "feature-to-local-commits", description: "No nodes" })).toEqual([]);
+    expect(issues({ name: "feature-to-local-commitss", description: "No nodes" })).toEqual(["name: at most 24 characters, so it fits on its card"]);
+  });
+
   it("rejects two edges with the same from and on", () => {
     expect(issues({ ...feature, edges: [...feature.edges, { from: "spec", on: "accepted", to: "code" }] })).toContain("edges.22: two edges from spec on accepted");
   });

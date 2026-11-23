@@ -72,3 +72,4 @@
 - Decision: a template card reserves two lines for its title, so the icon stays at the same height whether the title takes one line or two.
 - Why: a two-line title moved the icon up on that card only.
 - Replaces: a title as tall as its text.
+- A one-line title is centred in the two-line space. Node and recipe names are limited to 24 characters, so every title fits on its card.
