@@ -29,3 +29,9 @@
 - Decision: the Icon field in the node and recipe editors opens a grid of icons, with each name as a tooltip.
 - Why: a list of file names does not show what the icon looks like.
 - Replaces: the dropdown list of icon file names.
+
+## 2026-11-23: OpenCode ignores Claude Code's files; the Assistant knows who it is
+
+- Decision: OpenCode starts with `OPENCODE_DISABLE_CLAUDE_CODE=1`. The Assistant says it is <PE/CORE>'s Assistant whatever other instructions say, and names the model chosen in Settings > Assistant when asked.
+- Why: OpenCode read the user's `~/.claude/CLAUDE.md` and answered with the name and identity written there.
+- Replaces: OpenCode loading Claude Code's instructions and skills.

@@ -5,6 +5,7 @@
   "kind": "native",
   "harness": { "program": "opencode", "versionArgs": ["--version"], "versionRange": ">=2.3.0" },
   "command": ["{harnessPath}", "acp"],
+  "env": { "OPENCODE_DISABLE_CLAUDE_CODE": "1" },
   "sessionConfig": [["mode", "build"], ["model", "{model}"], ["effort", "{effort}"]],
   "reader": "opencode",
   "errors": [{ "pattern": "Free usage limit reached", "in": "error", "kind": "quota" }],
