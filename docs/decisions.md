@@ -170,3 +170,10 @@
 - Why: the user could remove a limit only with the keyboard, could not read what "Skip when unchanged" does, and thought a step in the recipe always runs.
 - Replaces: an empty Max rounds with "No limit" as placeholder, the "Skip when unchanged" label and the "when the job's specification asks for it" wording.
 - Known gap: the engine does not tell the Spec Writer which Optional steps the recipe has, so it cannot list them yet.
+
+## 2026-11-23: Knowledge is a flat set of project Markdown files with a file manager
+
+- Decision: knowledge exists only in a project; there is no global knowledge. `knowledge/` is one flat directory of `.md` files, and links between them use bare file names. The Knowledge tab becomes a file manager: file list on the left (new, upload, rename, delete), text editor on the right. Files can be written in the GUI, uploaded, written or improved by the Project Manager or the Assistant on request, or created by a project bootstrap or wizard. A node lists the knowledge files it receives by name, chosen from the project's files.
+- Why: the current tab is a single list with a raw text box and a file-name field; the user wants to organise, write and assign documents like in a file manager.
+- Replaces: `knowledge/**.md` with subfolders, `knowledge` globs on agent nodes, and `write_knowledge` reserved to the Project Manager.
+- Not implemented yet.
