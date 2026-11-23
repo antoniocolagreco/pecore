@@ -109,7 +109,13 @@ export function KnowledgeBase({ id }: { id: string }) {
     setDialog(kind);
   };
 
-  const carriesFiles = (event: DragEvent): boolean => [...event.dataTransfer.types].includes("Files");
+  const canSubmitName: boolean = connected && !!candidate && !nameError && !rename.busy && !(dialog === "rename" && candidate === selected?.name);
+  const submitName = (): void => {
+    if (dialog === "rename") void rename.run();
+    else { choose({ name: candidate, creating: true }); setDialog(null); }
+  };
+
+  const carriesFiles =(event: DragEvent): boolean => [...event.dataTransfer.types].includes("Files");
 
   return <div className={s.layout}
     onDragOverCapture={(event) => {
@@ -168,13 +174,11 @@ export function KnowledgeBase({ id }: { id: string }) {
       description={dialog === "rename" ? "Links to it in the other files are updated." : undefined}
       footer={<>
         <Button onClick={() => setDialog(null)}>Cancel</Button>
-        <Button kind="primary" disabled={!connected || !candidate || !!nameError || rename.busy || (dialog === "rename" && candidate === selected?.name)}
-          onClick={() => {
-            if (dialog === "rename") void rename.run();
-            else { choose({ name: candidate, creating: true }); setDialog(null); }
-          }}>{dialog === "rename" ? "Rename" : "Create"}</Button>
+        <Button kind="primary" disabled={!canSubmitName} onClick={submitName}>{dialog === "rename" ? "Rename" : "Create"}</Button>
       </>}>
-      <TextField label="File name" mono placeholder="architecture.md" value={draftName} onValueChange={setDraftName} error={nameError} />
+      <form onSubmit={(event) => { event.preventDefault(); if (canSubmitName) submitName(); }}>
+        <TextField label="File name" mono autoFocus placeholder="architecture.md" value={draftName} onValueChange={setDraftName} error={nameError} />
+      </form>
       <ErrorText error={rename.error} />
     </Dialog>
     <Dialog open={removedLinks.length > 0} onOpenChange={(value) => { if (!value) setRemovedLinks([]); }} title="Links removed"
