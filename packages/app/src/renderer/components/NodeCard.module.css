@@ -84,7 +84,7 @@
   width: 120px;
   height: 120px;
   border: 1px solid var(--recipe-node-kind);
-  background: color-mix(in srgb, var(--recipe-node-kind) 24%, var(--bg));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--recipe-node-kind) 40%, var(--bg)), color-mix(in srgb, var(--recipe-node-kind) 8%, var(--bg)));
   color: var(--text);
 }
 

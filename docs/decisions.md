@@ -120,3 +120,4 @@
 - Decision: Start and End keep their green or red fill, border and centred label. Only their shape follows the node card: 120×120 with its rounded corners.
 - Why: the user asked for the card's shape only, not its content.
 - Replaces: Start and End with a play or stop icon and a stripe.
+- Their fill fades from the top-left corner to the bottom-right. Other node cards keep a plain fill.
