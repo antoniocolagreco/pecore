@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { appName, projectIdCandidate } from "@pecore/schemas";
 import type { CreationView, CreateProjectBody, ForgeAccount, ProjectManagerIdentity } from "@pecore/schemas";
-import { ProjectManagerField, useProjectManagers } from "../components/ProjectManager";
 import { call } from "../api/client";
 import { errorText, useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
@@ -76,8 +75,6 @@ export function NewProjectWizard() {
     [creationId],
     (m) => !!creationId && (m.type === "project.updated" || m.type === "queue.updated" || m.type === "job.updated") && m.projectId === creationId,
   );
-  const { managers, ready: managersReady, error: managersError } = useProjectManagers();
-  const pm: ProjectManagerIdentity | undefined = managers.find(({ agentId }) => agentId === inputs.pm?.agentId);
   const forgeAccounts: ForgeAccount[] = (accounts.data?.value.accounts ?? []).filter((account) => account.kind === "forge");
   const available: ForgeAccount[] = forgeAccounts.filter((account) => inputs.mode !== "new" || account.forge === "github" || account.forge === "gitlab");
   const account: ForgeAccount | undefined = available.find((entry) => entry.id === inputs.account);
@@ -89,11 +86,11 @@ export function NewProjectWizard() {
     : "";
   const repoUrl: string = inputs.url ?? suggestedUrl;
   const folder: string = inputs.folder ?? (projectsFolder && folderIn(projectsFolder, projectIdCandidate(inputs.name.trim(), 1)));
-  const valid: boolean = !!inputs.name.trim() && !!inputs.baseBranch.trim() && !!folder.trim() && managersReady && !!pm &&
+  const valid: boolean = !!inputs.name.trim() && !!inputs.baseBranch.trim() && !!folder.trim() &&
     (inputs.mode === "local" || (!!account && !!repoUrl.trim()));
   const update = (changes: Partial<Inputs>) => setInputs((current) => ({ ...current, ...changes }));
   const create = useAction(async () => {
-    if (!valid || !pm) return;
+    if (!valid) return;
     const name: string = inputs.name.trim();
     const taken: Set<string> = new Set((await call("listProjects")).map(({ id }) => id));
     const body: CreateProjectBody = {
@@ -105,7 +102,7 @@ export function NewProjectWizard() {
         baseBranch: inputs.baseBranch.trim(),
         createRepo,
         services: null,
-        pm,
+        pm: inputs.pm,
         source: null,
       },
     };
@@ -223,8 +220,7 @@ export function NewProjectWizard() {
             onValueChange={(value) => update({ folder: value })}
             action={<Button disabled={!connected} onClick={() => void window.pecore.pickFolder().then((picked) => picked && update({ folder: picked }))}>Choose…</Button>} />
           <TextField label="Base branch" required mono disabled={!connected} value={inputs.baseBranch} onValueChange={(baseBranch) => update({ baseBranch })} />
-          <ProjectManagerField value={pm?.agentId ?? null} managers={managers} disabled={!connected || !managersReady} onChange={(next) => update({ pm: next })} />
-          <ErrorText error={managersError ?? create.error} />
+          <ErrorText error={create.error} />
           <div className={w.actions}>
             <Button disabled={!connected} onClick={() => void navigate("/projects")}>Cancel</Button>
             <Button kind="primary" type="submit" disabled={!connected || !valid}>Create project</Button>

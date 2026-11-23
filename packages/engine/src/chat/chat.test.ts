@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { apiClient } from "@pecore/schemas";
 import type { ChatDetail, LiveMessage } from "@pecore/schemas";
 import { FakeForge, forgeAccount } from "../../test/fake-forge";
-import { createProjectWithRecipes, seedProjectManagers } from "../../test/project";
+import { createProjectWithRecipes } from "../../test/project";
 import { shippedTemplates, tempDir } from "../../test/tmp";
 import { handlers } from "../api/handlers";
 import { startApi } from "../api/server";
@@ -133,7 +133,6 @@ async function setup(build: (root: string) => object[][], extra: { source?: bool
     await writeFile(join(home, "settings.json"), JSON.stringify({ assistant: { profile: "p1" } }));
   }
   await writeFile(join(home, "tiers.json"), JSON.stringify({ tiers: { strong: ["p1"] } }));
-  await seedProjectManagers(home, extra.pm ? { account: "background", model: "m2", effort: null } : { account: "fake", model: "m1", effort: null }, extra.compaction);
   const agents = { connectorsDir: connectors, adaptersDir: join(root, "adapters"), adapters: {} };
   const open = async () => {
     const engine = await Engine.start({ home, templates, agents, checkLogins: false });
@@ -1063,11 +1062,10 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect((await t.call("getChat")).messages).toEqual([]);
       await expect(t.call("getProjectChat", { params: { id: "nope" } })).rejects.toThrow();
 
-      const file = await t.call("getAgents");
-      const agents = file.value.agents.map((agent) => agent.kind === "pm" && agent.id === "eva"
-        ? { ...agent, name: "Evelyn", traits: ["pragmatic" as const] } : agent);
-      await t.call("putAgents", { body: { value: { ...file.value, agents }, baseSha256: file.sha256 } });
-      const params = { id: "eva" };
+      const query = { role: "pm" as const, project: "demo" };
+      const file = await t.call("getChatAgentSettings", { query });
+      await t.call("putChatAgentSettings", { query, body: { value: { ...file.value, name: "Evelyn", traits: ["pragmatic"] }, baseSha256: file.sha256 } });
+      const params = { id: file.value.id };
       const context = await t.call("getAgentContext", { params });
       await t.call("putAgentContext", { params, body: { content: "# Keep a decision log", baseSha256: context.sha256 } });
       await t.call("sendProjectChatMessage", { params: { id: "demo" }, body: { text: "Who are you?" } });

@@ -10,7 +10,6 @@ import { apiProject } from "../../test/api-project";
 import { forgeAccount } from "../../test/fake-forge";
 import { forgeProject, until } from "../../test/forge-project";
 import { shippedTemplates, tempDir } from "../../test/tmp";
-import { seedProjectManagers } from "../../test/project";
 import { handlers } from "../api/handlers";
 import { startApi } from "../api/server";
 import { Engine } from "../main";
@@ -556,8 +555,6 @@ describe("project import and export from the app and the Assistant (decisions 85
     await cp(shippedTemplates, templates, { recursive: true });
     const engine: Engine = await Engine.start({ home, templates, downloads });
     try {
-      await seedProjectManagers(home);
-      expect(await engine.reloadGlobal()).toEqual([]);
       await engine.createProject({ id: "demo", name: "Demo", repo: null });
       const path: string = join(downloads, "demo.tar.zst");
       expect(await engine.exportProjectToDownloads("demo", false)).toEqual({ state: "written", path });

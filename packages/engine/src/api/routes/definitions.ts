@@ -366,17 +366,12 @@ export function definitionOperations(engine: Engine) {
           if (issues.length) throw new HttpError("bad_request", issues.map(({ message }) => message).join("\n"));
         }
       }
-      if (next.pm?.agentId && next.pm.agentId !== current.pm?.agentId) {
-        next.pm = engine.projectManagerFor(next.pm, id);
-        saved = Buffer.from(JSON.stringify(next, null, 2) + "\n");
-      }
       if (!next.pm && current.pm) throw new HttpError("bad_request", "Choose a Project Manager.");
-      if (next.pm && !next.pm.agentId && next.pm.name.toLowerCase() !== current.pm?.name.toLowerCase()) {
-        const name: string = next.pm.name.toLowerCase();
-        if (engine.agentCatalog().agents.some((agent) => agent.name.toLowerCase() === name)) throw new HttpError("bad_request", "This agent name is already in use.");
-      }
-      const clash = next.pm && !next.pm.agentId && projectManagerClash(next.pm, engine.projectManagers(id));
+      const clash = next.pm && JSON.stringify(next.pm) !== JSON.stringify(current.pm) && projectManagerClash(next.pm, engine.projectManagers(id));
       if (clash) throw new HttpError("bad_request", `Another project's Project Manager already uses this ${clash === "name" ? "name" : "colour"}.`);
+      if (next.pm?.agentId && next.pm.agentId !== current.pm?.agentId && engine.projectManagers(id).some(({ agentId }) => agentId === next.pm?.agentId)) {
+        throw new HttpError("bad_request", "This Project Manager already belongs to another project.");
+      }
       if (current.folder !== next.folder || !sameRepository(current.repo, next.repo)) {
         if (engine.creating.has(id) || loaded.deleting || loaded.executor.jobs().some(({ state }) => !isFinal(state))) {
           throw new HttpError("conflict", "Finish or stop this project's jobs before changing its repository or folder.");

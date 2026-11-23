@@ -180,7 +180,13 @@ export async function loadGlobal(home: string): Promise<{ value: Global | null; 
       }
       return value;
     }),
-    parseOptional(join(home, "agents.json"), AgentDefinitions),
+    parseOptional(join(home, "agents.json"), AgentDefinitions, (value) => {
+      if (value && typeof value === "object" && "agents" in value && Array.isArray(value.agents)) {
+        return { ...value, agents: (value.agents as unknown[]).map((agent) =>
+          agent && typeof agent === "object" && "kind" in agent && agent.kind === "worker" ? { ...agent, kind: "agent" } : agent) };
+      }
+      return value;
+    }),
     parseOptional(join(home, "accounts.json"), Accounts),
     parseOptional(join(home, "profiles.json"), Profiles),
     parseOptional(join(home, "tiers.json"), Tiers),

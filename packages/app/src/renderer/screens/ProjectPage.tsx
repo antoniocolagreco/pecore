@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { appName, ProjectManagerIdentity } from "@pecore/schemas";
+import { appName } from "@pecore/schemas";
 import type { DefinitionEntry, ForgeAccount, Project, ProjectView } from "@pecore/schemas";
-import { ProjectManagerField, useProjectManagers } from "../components/ProjectManager";
+import { ChatAgentSettings } from "./Agents";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
@@ -90,7 +90,7 @@ function Recipes({ id }: { id: string }) {
 }
 
 
-type SettingsForm = { name: string; baseBranch: string; services: string; folder: string; remote: boolean; account: string; url: string; pm: ProjectManagerIdentity };
+type SettingsForm = { name: string; baseBranch: string; services: string; folder: string; remote: boolean; account: string; url: string };
 
 function useProjectDefinition(id: string) {
   const path: string = `projects/${id}/project.json`;
@@ -110,7 +110,6 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
   const { path, file, raw } = useProjectDefinition(id);
   const accounts = useData(() => call("getAccounts"), [], (m) => m.type === "definition.changed" && m.path === "accounts.json");
   const forgeAccounts: ForgeAccount[] = (accounts.data?.value.accounts ?? []).filter((account) => account.kind === "forge");
-  const { managers, ready: managersReady, error: managersError } = useProjectManagers(id);
   const [draft, setDraft] = useState<{ values: SettingsForm; sha256: string } | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
@@ -123,7 +122,6 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
     remote: repo !== null,
     account: repo?.account ?? "",
     url: repo?.url ?? "",
-    pm: ProjectManagerIdentity.safeParse(raw.pm).data ?? { name: "", color: "#808080" },
   };
   const value: SettingsForm | null = draft?.values ?? current;
   const dirty: boolean = draft !== null && JSON.stringify(draft.values) !== JSON.stringify(current);
@@ -140,7 +138,6 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
       folder: value.folder.trim() || null,
       repo: value.remote ? { url: value.url.trim(), account: value.account } : null,
       createRepo: value.remote && value.url.trim() === repo?.url ? raw.createRepo ?? null : null,
-      pm: value.pm,
     };
     Reflect.deleteProperty(next, "limits");
     Reflect.deleteProperty(next, "defaultRecipe");
@@ -155,8 +152,7 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
   const folder: string | null = current.folder.replace(/\/+$/, "") || null;
   const account: ForgeAccount | undefined = forgeAccounts.find(({ id }) => id === value.account);
   const existingRemote: boolean = current.remote && value.account === current.account && value.url === current.url;
-  const managerId: string = value.pm.agentId ?? `legacy-${id}`;
-  const valid: boolean = !!value.name.trim() && !!value.baseBranch.trim() && managersReady && managers.some(({ agentId }) => agentId === managerId) && (!value.remote || existingRemote || (!!account && !!value.url.trim()));
+  const valid: boolean = !!value.name.trim() && !!value.baseBranch.trim() && (!value.remote || existingRemote || (!!account && !!value.url.trim()));
   const pickCompose = async (): Promise<void> => {
     setPickError(null);
     const picked: string | null = await window.pecore.pickFile(folder);
@@ -173,8 +169,6 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
         <TextField label="Name" value={value.name} onValueChange={(name) => set({ name })} disabled={disabled} error={value.name.trim() ? undefined : "Give the project a name."} />
         <TextField label="Base branch" mono value={value.baseBranch} onValueChange={(baseBranch) => set({ baseBranch })} disabled={disabled} description="New jobs start from here." />
       </div>
-      <ProjectManagerField value={managerId} managers={managers} disabled={disabled || !managersReady} onChange={(pm) => set({ pm })} />
-      <ErrorText error={managersError} />
       <RadioGroup label="Repository" value={value.remote ? "remote" : "local"} disabled={disabled}
         options={[{ value: "local", label: "Local only" }, { value: "remote", label: "Existing remote repository" }]}
         onValueChange={(mode) => set({ remote: mode === "remote", account: value.account || (forgeAccounts.length === 1 ? forgeAccounts[0]!.id : "") })} />
@@ -375,7 +369,10 @@ function ProjectDetails({ id }: { id: string }) {
   const navigate = useNavigate();
   const [query] = useSearchParams();
   const tab: string | null = query.get("tab");
-  const [activeTab, setActiveTab] = useState<string>(tab === "recipes" || tab === "variables" || tab === "knowledge" ? tab : "jobs");
+  const [activeTab, setActiveTab] = useState<string>(tab === "recipes" || tab === "variables" || tab === "knowledge" || tab === "project-manager" ? tab : "jobs");
+  useEffect(() => {
+    if (tab === "project-manager") setActiveTab(tab);
+  }, [tab]);
   const [deleting, setDeleting] = useState<boolean>(false);
   const [exporting, setExporting] = useState<boolean>(false);
   const [creatingJob, setCreatingJob] = useState<boolean>(false);
@@ -410,6 +407,7 @@ function ProjectDetails({ id }: { id: string }) {
                 label: "Jobs",
                 content: <><ErrorText error={jobs.error} /><JobTable jobs={jobs.data ?? []} project={false} loading={jobs.loading} empty="No jobs in this project yet." /></>,
               },
+              { value: "project-manager", label: "Project Manager", content: <div className={s.narrow}><ChatAgentSettings role="pm" project={id} /></div> },
               {
                 value: "settings",
                 label: "Settings",

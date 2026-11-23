@@ -128,11 +128,11 @@
 | Id | Element | Source |
 |---|---|---|
 | IG1 | Accounts: AI tools (found by themselves), Git hosting (public services and private Git servers), services | 3.4 |
-| IG2 | The Assistant, Project Managers and Workers choose their model in Agents. Recipe nodes use profiles and tiers. | 3.4, 6 |
+| IG2 | Agents lists reusable configurations for future use by recipe nodes. | 3.4, 6 |
 | IG3 | Global limits, services runtime, disk threshold, merge check interval | 4.7, 4.9, "Risks & Limits" |
 | IG4 | Withdrawn: the Usage page | 4.7 |
 | IG5 | Setup status and next steps | G14 |
-| IG6 | Moved to Agents. | 6 |
+| IG6 | Settings configures Assistant and Project Manager Default. Each project has a Project Manager tab for its own settings. | 6 |
 | IG7 | Auto-update | "Fixed implementation choices" |
 | IG8 | Withdrawn: quiet hours are left to the operating system | 9 |
 | IG9 | Appearance: theme, reduced motion | UI4, UI6 |
@@ -240,7 +240,7 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 ### Assistant chat (right panel)
 
 *   One chat panel, always on the right of every screen. No conversation list, no page of its own. It follows the page: inside a project (the project page and its sub-pages, the recipe and node editors of its files) and on a single job's page it shows that project's Project Manager; everywhere else, the Jobs list included, it shows the Assistant. Each chat keeps its own history. Switching page switches the conversation and discards text typed and not sent.
-*   Its header shows who you talk to, "Assistant" or the Project Manager's name with its avatar, and below it in small muted text "Project Manager" and the project name for a Project Manager, then the harness, model and effort from Settings > Assistant or Settings > Project Manager, for example "Project Manager · Shop · Claude Code · claude-opus-5-5 · high" ("default effort" when none is chosen). The header also has two icon buttons: Compact, and Clear, which after a confirmation deletes the conversation and starts a new session.
+*   The chat header shows the agent's name and the current harness, model and effort. A Project Manager also shows its avatar and project name. Compact frees context. Clear deletes the conversation after confirmation.
 *   Each project's Project Manager has a name and a colour (design.md `pm`), for example Eva in sun yellow. Its replies, and its reports in the Assistant's chat, show an avatar shaped and shaded like the Assistant's (a rounded square with a gradient from a lighter tint to the colour) with the name's initial: white, or a dark shade of the colour on light colours such as Eva's yellow. Their text sits in a bubble with a light tint of the same colour. Avatar and bubble have the outline of the chat cards. Above the bubble the author reads "Eva - Project Manager"; in the Assistant's chat the project name follows below in small secondary text. The Assistant keeps its spark icon.
 *   The Project Manager's chat also shows the tickets it handled on its own: each appears as "Ticket 42" with its reply, without the raw ticket data. Talking to it, the user can ask what it did on a ticket. It runs the project's work: jobs, recipes, nodes, knowledge, tickets and agent questions. It writes no code itself. Asked to create a file, it saves it in the project's Knowledge; a file for the repository needs a job, which it starts or offers. Project settings, creating, deleting, importing or exporting projects and editing the templates stay with the Assistant. What it does on new tickets also arrives as a notification, for example "Shop, ticket 42: The Project Manager created the job Fix login.".
 *   The Assistant reads every project but does no project work. Asked for it, for example "add a job to Shop to fix the login", it passes the order to Shop's Project Manager and says so in one line, never "done". The order appears in the Project Manager's chat from "Assistant". When the Project Manager finishes, fails or is interrupted, its final reply appears in the Assistant's chat from "Eva - Project Manager" of Shop, without starting a new Assistant reply.
@@ -252,7 +252,7 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 *   After sending, the cursor stays in the message box.
 *   Files: the clip button, pasting into the message box (for example a screenshot just taken with Print Screen), or dropping files anywhere on the chat panel, which shows "Drop files to attach" while dragging. Any file type, up to 10 MB each. Each file shows above the message box in a 16:9 tile, 128 px wide, with a remove button in its corner: an image fits whole, never cropped; another file shows its name. The pasted text, if any, is not inserted. When the model cannot read images, an image is refused with the reason; other files still attach. A sent message keeps each image as the same 16:9 thumbnail, with its name and size as a tooltip, and lists other files by name and size.
 *   Compaction: the Compact button, or `/compact` typed as a message, sends the harness's own compaction command to the chat's session. The chat shows a divider ("Compacting the conversation…", then "Conversation compacted"), no reply.
-*   Automatic compaction: above the maximum threshold (default 262,144 tokens, 256K) the chat compacts at once; above the automatic threshold (default 131,072, 128K) it compacts after 5 minutes without use. Both thresholds are in Settings > Assistant; the Project Manager's sessions have their own pair in Settings > Project Manager. The size comes from what the harness reports after each reply.
+*   Chat compacts at the maximum threshold or after five idle minutes above the automatic threshold. Settings holds the Assistant and Project Manager Default thresholds. A project's Project Manager tab can override its thresholds.
 *   An order the user gives in the chat is authorised as given: if the user asks to comment on an issue, the Project Manager posts it. A question the Project Manager wants to ask while handling a new ticket still waits for approval in Notifications.
 *   The Assistant can change a project's name, base branch, services Compose path and Project Manager name and colour: a "Change project" card lists each change as "old → new" with Confirm and Reject, and nothing changes before Confirm. Sending a job or other frequent operations have no card. A deletion request shows the project and what will be removed in a card with Confirm and Reject. Confirm deletes <PE/CORE>'s data only, using the same operation as the project settings page.
 *   "Ask the AI" (IE5) puts the cursor in the chat with the current screen's object as context.
@@ -280,7 +280,7 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 
 Pages: Inputs and Create. Create runs the tasks of design.md "Project creation" in order; the project exists when Create ends.
 
-1.  **Inputs:** name, repo (existing URL, a new repo to create with a chosen repo creation node, or local only), forge account, folder, base branch, Project Manager. The Project Manager field, as in Settings, starts with the first free name and colour; when all twenty are used it starts empty and the user enters a new name and colour. Folder is the user's copy of the code: typed by hand or picked with "Choose…" (system folder dialog); it starts as the projects folder of Settings plus `<id>` and follows the name until the user edits it. No recipes: the user adds them afterwards from Templates or the project page, and a recipe that pushes or opens a PR cannot be added to a project without a remote repo. The id comes from the name.
+1.  **Inputs:** name, repository, forge account, folder and base branch. The wizard assigns a unique Project Manager identity and uses Project Manager Default. The folder starts as the projects folder of Settings plus `<id>` and follows the name until edited. Add recipes after creation. Recipes that push or open a PR need a remote.
 2.  **Create:** the tasks of "Project creation" (validation, project directory, clone or repo creation, `repo.git` setup and home check, access for `pecore-agent` in protected mode, commit), each with its state. A failed task undoes the tasks before it, says why, and returns to Inputs with the values kept. A repo created on the forge is never deleted by the undo: the page lists it as left on the forge.
 3.  No logins page: logins belong to the user, not to the project (Settings > Accounts).
 
@@ -341,7 +341,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 ### Settings
 
-*   Sections: You, Accounts (IG1), Protected mode (IF6), Projects, Limits and disk threshold, Services runtime, Merge check interval (IG3), Updates (IG7), Appearance (IG9).
+*   Sections: You, Accounts (IG1), Assistant, Project Manager Default (IG6), Protected mode (IF6), Projects, Limits and disk threshold, Services runtime, Merge check interval (IG3), Updates (IG7), Appearance (IG9).
 *   The section list is in the main sidebar. Sections adapt to the window width, and each has a one-line description under its title.
 *   No text or JSON editing and no user-typed IDs; raw validation errors are never shown.
 *   Every change saves by itself, a moment after the last keystroke and at once when the page is left; there is no Save or Discard button. A value that is not valid is not saved and the problem shows at the bottom of the page.

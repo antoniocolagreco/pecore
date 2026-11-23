@@ -2,7 +2,7 @@ import { cp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Engine } from "../src/main";
 import { FakeForge, forgeAccount } from "./fake-forge";
-import { createProjectWithRecipes, seedProjectManagers } from "./project";
+import { createProjectWithRecipes } from "./project";
 import { shippedTemplates, tempDir } from "./tmp";
 
 const writeSpec = {
@@ -42,7 +42,7 @@ export async function until<T>(fn: () => T | undefined | false | Promise<T | und
   }
 }
 
-export async function forgeHome({ managers = true }: { managers?: boolean } = {}) {
+export async function forgeHome() {
   const forge = await FakeForge.start();
   const root = await tempDir();
   const home = join(root, "home");
@@ -52,7 +52,6 @@ export async function forgeHome({ managers = true }: { managers?: boolean } = {}
   await writeFile(join(templates, "recipes", "deliver.json"), JSON.stringify(deliver));
   await mkdir(home, { recursive: true });
   await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [forgeAccount] }));
-  if (managers) await seedProjectManagers(home);
   return { forge, home, templates };
 }
 

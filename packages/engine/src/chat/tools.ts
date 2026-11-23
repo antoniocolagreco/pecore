@@ -166,14 +166,13 @@ export function chatTools(engine: Engine): {
         target: { state: "awaiting_confirmation", project, history, findings: result.findings },
       };
     }),
-    project_creation_options: tool("List forge accounts and available Project Managers for a new project. If none are available, tell the user to create one in Agents.", z.strictObject({}), () => ({
+    project_creation_options: tool("List forge accounts and the default Project Manager identity for a new project.", z.strictObject({}), () => ({
       value: {
         accounts: engine.global().accounts.accounts.flatMap((account) => account.kind === "forge"
           ? [{ id: account.id, host: account.host, forge: account.forge, user: account.user, canCreateRepository: account.forge === "github" || account.forge === "gitlab" }]
           : []),
         defaultBaseBranch: "main",
-        defaultProjectManager: engine.availableProjectManagers()[0] ?? null,
-        availableProjectManagers: engine.availableProjectManagers(),
+        defaultProjectManager: engine.projectManagerFor(null),
         projectManagersInUse: engine.projectManagers(),
         defaultFolder: defaultFolder(engine, "<project id>"),
       },
@@ -190,7 +189,7 @@ export function chatTools(engine: Engine): {
       const pm = engine.projectManagerIdentity(project);
       return { value: { id, name, baseBranch, services, repo, folder, pm }, target: { project } };
     }),
-    update_project: tool("Propose changes to the project's settings. To replace its Project Manager, choose an available one from project_creation_options. Omit unchanged fields. Set services to null to auto-detect the Compose file. Only the user can apply the changes by pressing Confirm.", ProjectUpdate, async (input) => {
+    update_project: tool("Propose changes to the project's settings, including its Project Manager's name and colour. Omit unchanged fields. Set services to null to auto-detect the Compose file. Only the user can apply the changes by pressing Confirm.", ProjectUpdate, async (input) => {
       const rows = await projectUpdateRows(engine, input);
       return {
         value: { state: "awaiting_confirmation" },

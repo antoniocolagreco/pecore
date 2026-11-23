@@ -21,7 +21,7 @@ export const ProjectCreation = z.strictObject({
   ]),
   folder: requiredText.optional(),
   baseBranch: requiredText,
-  pm: ProjectManagerIdentity.optional().describe("An available Project Manager from project_creation_options. Omit it to use the first available one."),
+  pm: ProjectManagerIdentity.optional().describe("The Project Manager's name and colour. Omit it to assign a default identity."),
 });
 
 export const defaultFolder = (engine: Engine, id: string): string => join(engine.global().settings.projectsFolder, id);

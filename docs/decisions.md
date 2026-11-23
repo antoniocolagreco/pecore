@@ -230,6 +230,11 @@
 - New projects require an available Project Manager. A Project Manager can serve one project at a time. Existing projects keep their manager and configuration.
 - Workers live in Agents. Recipe nodes continue to choose models through profiles and tiers.
 
+## 2026-11-23: Assistant and Project Manager defaults return to Settings
+
+- Settings holds Assistant and Project Manager Default. Each project has a Project Manager tab. New projects inherit the default and get their own identity automatically.
+- Agents contains reusable configurations, previously called Workers. A future change will let users assign these agents to recipe nodes.
+
 ## 2026-11-23: Node editor shows the same fields when editing
 
 - Decision: editing a node shows the same fields as creating it, with their info icons. A command is one line written as in a terminal, with quotes around an argument with spaces. Source nodes show the command or script of each action. Runs as uses readable labels: "Project user, in the job's files" and "PeCore, with its logins".

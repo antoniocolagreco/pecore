@@ -2,7 +2,7 @@ import { z } from "zod";
 import { Accounts } from "./accounts";
 import { Artifact } from "./artifacts";
 import { Profiles } from "./profiles";
-import { AgentDefinitions } from "./agent";
+import { ChatAgent, NodeAgentCatalog } from "./agent";
 import { Settings } from "./settings";
 import { Tiers } from "./tiers";
 import { KnowledgeFileName, Name } from "./common";
@@ -448,7 +448,9 @@ const globalFile = <S extends z.ZodType>(name: string, schema: S) =>
     put: { method: "PUT", path: `/${name}`, body: z.object({ value: schema, baseSha256: Sha }).strict(), response: z.object({ sha256: Sha }) },
   }) as const;
 const settingsFile = globalFile("settings", Settings);
-const agentsFile = globalFile("agents", AgentDefinitions);
+const agentsFile = globalFile("agents", NodeAgentCatalog);
+const chatAgentQuery = z.object({ project: ProjectId.optional(), role: z.enum(["assistant", "pm"]).default("assistant") })
+  .refine(({ project, role }) => !project || role === "pm", "Only a Project Manager can belong to a project.");
 const accountsFile = globalFile("accounts", Accounts);
 const profilesFile = globalFile("profiles", Profiles);
 const tiersFile = globalFile("tiers", Tiers);
@@ -624,6 +626,8 @@ export const routes = {
   putSettings: settingsFile.put,
   getAgents: agentsFile.get,
   putAgents: agentsFile.put,
+  getChatAgentSettings: { method: "GET", path: "/chat-agent-settings", query: chatAgentQuery, response: z.object({ value: ChatAgent, effectiveModel: ChatAgent.options[0].shape.model, sha256: Sha }) },
+  putChatAgentSettings: { method: "PUT", path: "/chat-agent-settings", query: chatAgentQuery, body: z.strictObject({ value: ChatAgent, baseSha256: Sha }), response: z.object({ sha256: Sha }) },
   getAgentContext: { method: "GET", path: "/agents/:id/context", params: z.object({ id: Name }), response: z.object({ content: z.string(), sha256: Sha }) },
   putAgentContext: { method: "PUT", path: "/agents/:id/context", params: z.object({ id: Name }), body: z.strictObject({ content: z.string().max(1_000_000), baseSha256: Sha }), bodyLimit: 6_001_024, response: z.object({ sha256: Sha }) },
   getAccounts: accountsFile.get,

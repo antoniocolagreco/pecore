@@ -1,25 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { ApiError, appName, assistantTraits, forgeHost, incompatibleTraits, Settings as SettingsSchema } from "@pecore/schemas";
-import type { Account, AssistantTraitId, BuiltInHarness, ForgeAccount, LiveMessage, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
+import { ApiError, appName, forgeHost, Settings as SettingsSchema } from "@pecore/schemas";
+import type { Account, ForgeAccount, LiveMessage, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { call } from "../api/client";
 import { errorText, useAction, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
 import { ErrorText, Field, Page, ui } from "../components/ui";
-import { Button, IconButton } from "../ds/button";
+import { harnessName } from "../components/AgentFields";
+import { Button } from "../ds/button";
 import { Switch } from "../ds/choice";
 import { Alert, Badge, Card, Spinner } from "../ds/feedback";
 import { TextField } from "../ds/field";
 import { CheckCircleIcon, AlertIcon, PlusIcon, RefreshIcon } from "../ds/icons";
-import { Dialog, Tooltip } from "../ds/overlay";
-import { Combobox, Select } from "../ds/select";
+import { Dialog } from "../ds/overlay";
+import { Select } from "../ds/select";
 import { NumberField, Segmented } from "../ds/values";
-import { install } from "../shell/SetupBanner";
 import { SidebarItem, SidebarSection } from "../shell/sidebar";
 import { builtInThemes, themePrefs } from "../theme/themes";
 import type { ThemePrefs } from "../theme/themes";
 import { DefinitionErrors, settingUrl } from "./NodeEditor";
+import { ChatAgentSettings } from "./Agents";
 import s from "./Settings.module.css";
 
 type Snapshot<T> = { value: T; sha256: string };
@@ -29,6 +30,8 @@ type Progress = { lines: string[]; url: string | null; done: boolean };
 const sections: { id: string; title: string }[] = [
   { id: "you", title: "You" },
   { id: "accounts", title: "Accounts" },
+  { id: "assistant", title: "Assistant" },
+  { id: "pm", title: "Project Manager Default" },
   { id: "projects", title: "Projects" },
   { id: "limits", title: "Limits" },
   { id: "protectedMode", title: "Protected mode" },
@@ -171,12 +174,6 @@ function AccountRow({ name, detail, state, checking, actions, children }: { name
     </div>
     {children && <div className={s.rowExtra}>{children}</div>}
   </li>;
-}
-
-export function harnessName(account: Account, all: Account[]): string {
-  if (account.kind !== "model") return account.id;
-  const name: string = install[account.connector as BuiltInHarness]?.name ?? account.connector;
-  return all.filter((other) => other.kind === "model" && other.connector === account.connector).length > 1 ? `${name} · ${account.id}` : name;
 }
 
 function LoginControls({ accounts, protectedOnly = false, kind = "model" }: { accounts: Account[]; protectedOnly?: boolean; kind?: "model" | "tool" }) {
@@ -347,67 +344,6 @@ function AddForgeAccount({ open, onClose, onAdd, taken }: { open: boolean; onClo
   );
 }
 
-type ModelChoice = { account: string; model: string; effort: string | null };
-
-export function ModelPicker({ accounts, choice, onChoice, disabled }: { accounts: Account[]; choice: ModelChoice | null; onChoice(choice: ModelChoice): void; disabled: boolean }) {
-  const account: string = choice?.account ?? "";
-  const model: string = choice?.model ?? "";
-  const options = useData(() => account ? call("accountOptions", { params: { id: account }, query: {} }) : Promise.resolve(null), [account]);
-  const offered = useData(() => account && model ? call("accountOptions", { params: { id: account }, query: { model } }) : Promise.resolve(null), [account, model]);
-  const refresh = useAction(async () => {
-    await call("refreshAccountOptions", { params: { id: account } });
-    options.reload();
-    offered.reload();
-  });
-  const models: string[] = [...new Set([...(options.data?.models ?? []), ...(model ? [model] : [])])];
-  const efforts: string[] = [...new Set([...(offered.data?.efforts ?? []).filter((effort) => effort !== "default"), ...(choice?.effort ? [choice.effort] : [])])];
-  const loading: boolean = !!account && (options.loading || refresh.busy);
-  const readingEfforts: boolean = !!model && (offered.loading || refresh.busy);
-  const current: Account | undefined = accounts.find(({ id }) => id === account);
-  return <div className={s.grid}>
-    <Select label="Provider" value={account || null} disabled={disabled} placeholder="Choose a provider"
-      onValueChange={(next) => {
-        if (next && next !== account) onChoice({ account: next, model: "", effort: null });
-      }}
-      options={accounts.map((item) => ({ value: item.id, label: harnessName(item, accounts) }))} />
-    <div className={s.withButton}>
-      {loading
-        ? <TextField label="Model" leading={<Spinner />} value="" placeholder={`Reading models from ${current ? harnessName(current, accounts) : account}…`} readOnly />
-        : <Combobox label="Model" value={choice?.model || null} disabled={disabled || !account} placeholder="Choose a model"
-          onValueChange={(next) => { if (choice && next && next !== model) onChoice({ ...choice, model: next, effort: null }); }}
-          options={models.map((model) => ({ value: model, label: model }))} />}
-      <IconButton label="Read the models again" icon={<RefreshIcon />} disabled={disabled || !account || loading} onClick={() => void refresh.run()} />
-    </div>
-    {loading || readingEfforts
-      ? <TextField label="Effort" leading={<Spinner />} value="" placeholder="Reading…" readOnly />
-      : <Select label="Effort" value={choice?.effort ?? "default"} disabled={disabled || !choice?.model}
-        onValueChange={(effort) => { if (choice) onChoice({ ...choice, effort: !effort || effort === "default" ? null : effort }); }}
-        options={[{ value: "default", label: "Default" }, ...efforts.map((effort) => ({ value: effort, label: effort }))]} />}
-  </div>;
-}
-
-export function Traits({ value, disabled, onChange }: { value: AssistantTraitId[]; disabled: boolean; onChange(traits: AssistantTraitId[]): void }) {
-  return (
-    <div className={s.nested}>
-      <span className={s.label}>Personality</span>
-      <div className={s.traits} role="group" aria-label="Personality">
-        {assistantTraits.map(({ id, label, description }) => {
-          const on: boolean = value.includes(id);
-          const blocked: string[] = on ? [] : incompatibleTraits[id].filter((other) => value.includes(other)).map((other) => assistantTraits.find((trait) => trait.id === other)!.label);
-          return (
-            <Tooltip key={id} delay={0} side="top" content={blocked.length ? `${description} Does not go with ${blocked.join(" or ")}.` : description}>
-              <button type="button" className={s.trait} aria-pressed={on} aria-disabled={disabled || blocked.length > 0}
-                onClick={() => { if (!disabled && !blocked.length) onChange(on ? value.filter((trait) => trait !== id) : [...value, id]); }}>
-                {label}
-              </button>
-            </Tooltip>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 export function Settings() {
   const connected: boolean = useConnected();
   const { search } = useLocation();
@@ -471,6 +407,12 @@ export function Settings() {
           onAdd={(account) => { if (accounts.value) void accounts.commit({ ...accounts.value, accounts: [...accounts.value.accounts, account] }); }} />
 
         {settings.feedback}
+        <Section id="assistant" title="Assistant" plain>
+          <ChatAgentSettings role="assistant" />
+        </Section>
+        <Section id="pm" title="Project Manager Default" description="Used by projects until their Project Manager is customized." plain>
+          <ChatAgentSettings role="pm" />
+        </Section>
         {value && <>
 
           <Section id="projects" title="Projects" description="Where the code of new projects goes.">

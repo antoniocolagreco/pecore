@@ -20,7 +20,7 @@ import { TextField } from "../ds/field";
 import { ArrowUpIcon, ClipIcon, CompactIcon, SparkIcon, TrashIcon, XIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { definitionUrl, object, string } from "./NodeEditor";
-import { harnessName } from "./Settings";
+import { harnessName } from "../components/AgentFields";
 import s from "./AssistantChat.module.css";
 
 type SelectedFile = { key: number; file: File; image: boolean; attachmentId?: string };
@@ -669,16 +669,17 @@ function Chat({ project }: { project: string | null }) {
   const [target] = useState<ChatTarget>(() => ({ api: chatApi(project), agent }));
   const api: ChatApi = target.api;
   const connected: boolean = useConnected();
-  const agents = useData(() => call("getAgents"), [], (event) => event.type === "project.updated" || (event.type === "definition.changed" && ["agents.json", "settings.json", "profiles.json"].includes(event.path)));
+  const settings = useData(() => call("getChatAgentSettings", { query: project === null ? { role: "assistant" } : { role: "pm", project } }), [project],
+    (event) => event.type === "project.updated" || (event.type === "definition.changed" && ["agents.json", "settings.json", "profiles.json"].includes(event.path)));
   const accounts = useData(() => call("getAccounts"), [], (event) => event.type === "definition.changed" && event.path === "accounts.json");
   const projectList = useData(() => call("listProjects"), [], (event) => event.type === "project.updated" || (event.type === "definition.changed" && event.path === "agents.json"));
   const projects: Map<string, ProjectEntry> = new Map((projectList.data ?? []).map(({ id, project: loaded }) => [id, { name: loaded?.name ?? id, pm: loaded?.pm ?? null }]));
   const own: ProjectEntry | undefined = project === null ? undefined : projects.get(project);
   const pm: ProjectManagerIdentity | null = own?.pm ?? null;
-  const configured = agents.data?.value.agents.find(({ id }) => id === (project === null ? "assistant" : pm?.agentId));
+  const configured = settings.data?.value;
   const title: string = configured?.name ?? pm?.name ?? agent;
-  const profile = configured?.model;
-  const ready: boolean | null = agents.data ? !!profile : null;
+  const profile = settings.data?.effectiveModel;
+  const ready: boolean | null = settings.data ? !!profile : null;
   const allAccounts = accounts.data?.value.accounts ?? [];
   const account = allAccounts.find(({ id }) => id === profile?.account);
   const projectName: string | null = project === null ? null : own?.name ?? project;
@@ -796,8 +797,8 @@ function Chat({ project }: { project: string | null }) {
       </div>
       {ready === false && connected && (
         <div className={s.footnote}>
-          <Alert tone="warning" title={`No model for ${agent}`} actions={<Link to="/agents">Open Agents</Link>}>
-            Choose a provider and model in Agents.
+          <Alert tone="warning" title={`No model for ${agent}`} actions={<Link to={project === null ? "/settings?section=assistant" : `/projects/${project}?tab=project-manager`}>Open settings</Link>}>
+            Choose a provider and model.
           </Alert>
         </div>
       )}

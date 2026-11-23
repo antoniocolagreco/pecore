@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { isDeepStrictEqual } from "node:util";
+import type { ChatAgent } from "@pecore/schemas";
 import type { Global } from "../../definitions/load";
 import { commitDefinition, commitMessage } from "../../home/git-commit";
 import { homePaths } from "../../home/layout";
@@ -24,6 +24,17 @@ function sha256(bytes: Buffer | string): string {
 
 export function globalFileHandlers(engine: Engine) {
   const paths = homePaths(resolve(engine.opts.home));
+
+  function chatSettings({ project, role }: { project?: string; role: "assistant" | "pm" }): ChatAgent {
+    const value: ChatAgent | undefined = engine.chatAgentSettings(project, role);
+    if (!value) throw new HttpError("not_found", "Project Manager not found.");
+    return value;
+  }
+
+  function knownAgent(id: string): boolean {
+    return id === "assistant" || id === "pm-default" || engine.agentCatalog().agents.some((agent) => agent.id === id)
+      || engine.projectManagers().some(({ agentId }) => agentId === id);
+  }
 
   function get<K extends keyof Global>(kind: K): Promise<{ value: Global[K]; sha256: string }> {
     return engine.withGlobalFiles(async () => {
@@ -62,26 +73,30 @@ export function globalFileHandlers(engine: Engine) {
     putSettings: ({ body }) => put("settings", body.value, body.baseSha256),
     getAgents: () => engine.withGlobalFiles(async () => ({ value: engine.agentCatalog(), sha256: sha256(await readBytes(paths.agents) ?? "") })),
     putAgents: ({ body }) => put("agents", body.value, body.baseSha256, () => {
-      const current = engine.agentCatalog();
       const saved = engine.global().agents;
-      const next = body.value;
-      if (!next.agents.some(({ kind }) => kind === "assistant")) throw new HttpError("bad_request", "Keep the Assistant.");
-      for (const { agentId } of engine.projectManagers()) {
-        if (!next.agents.some(({ id, kind }) => id === agentId && kind === "pm")) throw new HttpError("conflict", "Reassign the project before removing its Project Manager.");
-      }
-      for (const agent of next.agents) {
-        const before = current.agents.find(({ id }) => id === agent.id);
-        if (before && before.kind !== agent.kind) throw new HttpError("bad_request", "An agent's kind cannot change.");
-      }
-      return { ...next, agents: next.agents.filter((agent) => agent.kind !== "assistant" || saved.agents.some(({ id }) => id === agent.id) || !isDeepStrictEqual(current.agents.find(({ id }) => id === agent.id), agent)) };
+      return { ...body.value, agents: [...saved.agents.filter(({ kind }) => kind !== "agent"), ...body.value.agents] };
+    }),
+    getChatAgentSettings: ({ query }) => engine.withGlobalFiles(async () => ({
+      value: chatSettings(query),
+      effectiveModel: engine.chatAgent(query.project, query.role)?.model ?? null,
+      sha256: sha256(await readBytes(paths.agents) ?? ""),
+    })),
+    putChatAgentSettings: ({ query, body }) => put("agents", engine.global().agents, body.baseSha256, () => {
+      const current: ChatAgent = chatSettings(query);
+      const { value } = body;
+      if (current.id !== value.id || current.kind !== value.kind) throw new HttpError("bad_request", "The chat agent's identity changed.");
+      if (query.project && value.kind === "pm") engine.projectManagerFor(value, query.project);
+      const saved = engine.global().agents;
+      if (saved.agents.some(({ id, kind }) => id === value.id && kind !== value.kind)) throw new HttpError("conflict", "The agent ID is already in use.");
+      return { ...saved, agents: [...saved.agents.filter(({ id }) => id !== value.id), value] };
     }),
     getAgentContext: ({ params }) => engine.withGlobalFiles(async () => {
-      if (!engine.agentCatalog().agents.some(({ id }) => id === params.id)) throw new HttpError("not_found", "Agent not found.");
+      if (!knownAgent(params.id)) throw new HttpError("not_found", "Agent not found.");
       const content: string = await engine.agentContext(params.id);
       return { content, sha256: sha256(content) };
     }),
     putAgentContext: ({ params, body }) => engine.withGlobalFiles(async () => {
-      if (!engine.agentCatalog().agents.some(({ id }) => id === params.id)) throw new HttpError("not_found", "Agent not found.");
+      if (!knownAgent(params.id)) throw new HttpError("not_found", "Agent not found.");
       const before: string = await engine.agentContext(params.id);
       if (sha256(before) !== body.baseSha256) throw new HttpError("conflict", "The context changed since it was loaded.");
       const file: string = join(paths.agentContexts, `${params.id}.md`);
