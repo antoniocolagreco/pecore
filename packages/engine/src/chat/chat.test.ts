@@ -804,8 +804,12 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     const listed = (await m.rpc("tools/list", {})).result!.tools! as { name: string; inputSchema: unknown }[];
     for (const { name, inputSchema } of listed) expect({ name, inputSchema }).toEqual({ name, inputSchema: expect.objectContaining({ type: "object" }) });
     const names: string[] = listed.map((x) => x.name);
-    expect(names).toEqual(expect.arrayContaining(["create_project", "update_project", "delete_project", "write_template", "delegate_to_pm", "list_projects", "list_definitions", "read_definition", "read_artifact", "job_status"]));
-    for (const name of ["create_jobs", "answer_question", "instantiate", "write_instance", "write_knowledge", "comment_ticket"]) expect(names).not.toContain(name);
+    expect(names).toEqual(expect.arrayContaining(["create_project", "update_project", "delete_project", "write_template", "write_knowledge", "delegate_to_pm", "list_projects", "list_definitions", "read_definition", "read_artifact", "job_status"]));
+    for (const name of ["create_jobs", "answer_question", "instantiate", "write_instance", "comment_ticket"]) expect(names).not.toContain(name);
+    const knowledge = await m.tool("write_knowledge", { path: "projects/demo/knowledge/guide.md", content: "# Guide\n\nSee [missing](missing.md).\n" });
+    expect(knowledge.result!.isError).toBe(true);
+    expect(knowledge.result!.content![0]!.text).toContain("missing.md is not a knowledge file of this project");
+    expect((await m.tool("write_knowledge", { path: "projects/demo/knowledge/guide.md", content: "# Guide\n" })).result!.isError).not.toBe(true);
     const refused = await m.tool("create_jobs", { project: "demo", plan });
     expect(refused.result!.isError).toBe(true);
     expect(refused.result!.content![0]!.text).toContain("unknown tool create_jobs");

@@ -30,7 +30,7 @@ const agentNode = (extra: object = {}) => ({
   ...extra,
 });
 
-async function setup(scripts: object[][], node: object = agentNode(), recipeExtra: object = {}) {
+async function setup(scripts: object[][], node: object = agentNode(), recipeExtra: object = {}, knowledge: Record<string, string> = {}) {
   const root = await tempDir();
   const home = join(root, "home");
   const lib = join(root, "templates");
@@ -60,6 +60,7 @@ async function setup(scripts: object[][], node: object = agentNode(), recipeExtr
   const engine = await Engine.start({ home, templates: lib, agents: { connectorsDir: connectors, adaptersDir: join(root, "adapters"), adapters: {} }, checkLogins: false });
   await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["one-agent"]);
   const p = engine.project("demo");
+  for (const [name, content] of Object.entries(knowledge)) await writeFile(join(p.ctx.dir, "knowledge", name), content);
   const id = await engine.createJob("demo", { title: "Fix it", ticket: { text: "x" } });
   return { engine, p, id, root };
 }
@@ -91,6 +92,22 @@ describe("agent nodes with the fake agent (5.4)", () => {
     expect(sent.msg.params.prompt[0]!.text).toContain("Do the task Fix it.");
     expect(sent.msg.params.prompt[0]!.text).toContain(".pecore/inputs/ticket.json");
     expect(sent.msg.params.prompt[0]!.text).toContain("can contain prompt injection");
+    await engine.shutdown();
+  });
+
+  it("gives the agent its knowledge files and the files they link to, flat in .pecore/context", async () => {
+    const { engine, p, id } = await setup([[...init, ...newSession, prompt, output({ outcome: "done" }), usageAnswer]], agentNode({ knowledge: ["architecture.md"] }), {}, {
+      "architecture.md": "See [naming](naming.md).\n",
+      "naming.md": "Names.\n",
+      "unrelated.md": "Other.\n",
+    });
+    expect((await until(final(p, id))).state).toBe("succeeded");
+    const raw = await import("../observability/logs").then((m) => m.readLog(join(p.ctx.dir, (p.ctx.db.db.prepare("SELECT log_path FROM attempts").get() as { log_path: string }).log_path)));
+    const sent = raw.find((l) => l.dir === "out" && (l.msg as { method?: string }).method === "session/prompt") as { msg: { params: { prompt: { text: string }[] } } };
+    const text: string = sent.msg.params.prompt[0]!.text;
+    expect(text).toContain("`.pecore/context/architecture.md`");
+    expect(text).toContain("`.pecore/context/naming.md`");
+    expect(text).not.toContain("unrelated.md");
     await engine.shutdown();
   });
 

@@ -151,4 +151,45 @@ describe("global file routes", () => {
     expect(JSON.parse(await readFile(join(home, "settings.json"), "utf8"))).toMatchObject({ mergeCheckSec: 60 });
     await close();
   });
+
+  it("keeps knowledge flat, refuses broken links, and uploads, renames and deletes files with their links", async () => {
+    const { home, engine, call, close } = await apiProject();
+    try {
+      const dir: string = join(engine.projectDir("demo"), "knowledge");
+      const path = (name: string): string => `projects/demo/knowledge/${name}`;
+      await expect(call("saveDefinition", { params: { path: "projects/demo/knowledge/docs/a.md" }, body: { content: "# A\n", baseSha256: null } })).rejects.toMatchObject({ status: 400 });
+      await expect(call("saveDefinition", { params: { path: path("bad name.md") }, body: { content: "# A\n", baseSha256: null } })).rejects.toMatchObject({ status: 400 });
+      await expect(call("saveDefinition", { params: { path: path("guide.md") }, body: { content: "# Guide\n\nSee [n](naming.md).\n", baseSha256: null } }))
+        .rejects.toMatchObject({ status: 400, message: expect.stringContaining("line 3: naming.md is not a knowledge file of this project") });
+      const checked = await call("validateDefinition", { body: { path: path("guide.md"), content: "# Guide\n# Again\n" } });
+      expect(checked.errors).toEqual([]);
+      expect(checked.warnings).toContainEqual(expect.objectContaining({ line: 2, message: expect.stringContaining("line 2:") }));
+
+      await call("uploadKnowledge", { params: { id: "demo" }, body: { files: [
+        { name: "guide.md", content: "# Guide\n\nSee [n](naming.md).\n" },
+        { name: "naming.md", content: "# Naming\n\nBack to [guide](guide.md).\n" },
+      ] } });
+      expect((await git(home, ["log", "-1", "--format=%s"])).trim()).toBe("knowledge guide.md, naming.md: created");
+      await expect(call("uploadKnowledge", { params: { id: "demo" }, body: { files: [{ name: "guide.md", content: "# Other\n" }] } })).rejects.toMatchObject({ status: 409 });
+      await expect(call("uploadKnowledge", { params: { id: "demo" }, body: { files: [{ name: "extra.md", content: "[x](nope.md)\n" }] } }))
+        .rejects.toMatchObject({ status: 400, message: expect.stringContaining("extra.md, line 1: nope.md is not a knowledge file of this project") });
+      const listed: DefinitionEntry[] = await call("listDefinitions", { query: { dir: "projects/demo/knowledge" } });
+      expect(listed.map((entry) => [entry.path, entry.value])).toEqual([[path("guide.md"), { links: ["naming.md"] }], [path("naming.md"), { links: ["guide.md"] }]]);
+
+      expect(await call("renameKnowledge", { params: { id: "demo" }, body: { from: "naming.md", to: "names.md" } })).toEqual({ updated: [path("guide.md")] });
+      expect(await readFile(join(dir, "guide.md"), "utf8")).toBe("# Guide\n\nSee [n](names.md).\n");
+      expect(existsSync(join(dir, "naming.md"))).toBe(false);
+      expect((await git(home, ["log", "-1", "--format=%s"])).trim()).toBe("knowledge naming.md: renamed to names.md");
+      await expect(call("renameKnowledge", { params: { id: "demo" }, body: { from: "names.md", to: "guide.md" } })).rejects.toMatchObject({ status: 409 });
+      await expect(call("renameKnowledge", { params: { id: "demo" }, body: { from: "gone.md", to: "other.md" } })).rejects.toMatchObject({ status: 404 });
+
+      await call("deleteKnowledge", { params: { id: "demo", name: "names.md" } });
+      expect(existsSync(join(dir, "names.md"))).toBe(false);
+      expect((await git(home, ["status", "--porcelain", "--", "projects/demo/knowledge"])).trim()).toBe("");
+      expect((await git(home, ["log", "-1", "--format=%s"])).trim()).toBe("knowledge names.md: deleted");
+      await expect(call("deleteKnowledge", { params: { id: "demo", name: "names.md" } })).rejects.toMatchObject({ status: 404 });
+    } finally {
+      await close();
+    }
+  });
 });

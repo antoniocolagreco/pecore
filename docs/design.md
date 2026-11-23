@@ -331,7 +331,7 @@ Fields by kind:
     *   `prompt`: path of the Markdown prompt template.
     *   `agent`: `tier` (for example `strong`) or an ordered list of `profiles`; optional `providerNot`, a list of recipe node ids whose provider this node must not use.
     *   `outputSchema`: JSON Schema of the structured output the agent must write to `.pecore/output.json` (section 5); it contains a field `outcome` whose value must be one of `outcomes`.
-    *   `knowledge`: names of the project's knowledge files the node receives, for example `["architecture.md", "naming.md"]`. The node editor offers them as a list of the project's files.
+    *   `knowledge`: names of the project's knowledge files the node receives, for example `["architecture.md", "naming.md"]`. Node templates are shared, so the node editor offers the knowledge file names found in all projects; each project gives its own file with that name, and a project without it gives nothing. An older entry with a glob (for example `*.md`) still matches the file names.
     *   `resume`: `true` to resume the harness session when the node runs again in the same job.
 *   **`human`**
     *   `mode`: `decision` for a question or `review` for artifact review.
@@ -1067,7 +1067,8 @@ Recorded ACP traffic for tests lives in `packages/agents/fixtures/<connector>/<c
 | `POST /prerequisites/check` | checks the prerequisites for the features in use and points each result to its setting |
 | `GET /themes` | the theme files of `PECORE_HOME/themes/`, each with its tokens or its validation error |
 | `GET /queue`, `POST /queue/:id` | waiting items and the user's choice; the body carries `{choice, note, input, hash}`, where `hash` is the sha256 of the item's `subject` the GUI showed; the engine refuses the choice (409) if the item changed, was resolved or was cancelled since |
-| `GET /definitions?dir`, `GET/PUT /definitions/*path`, `POST /definitions/validate`, `POST /definitions/instantiate` | templates and instances, by path under the `PECORE_HOME` layout (`templates/...`, `projects/<id>/...`); `GET` returns the file's sha256, `PUT` carries it as `baseSha256` (null for a new file) and is refused (409) when the file changed since |
+| `GET /definitions?dir`, `GET/PUT /definitions/*path`, `POST /definitions/validate`, `POST /definitions/instantiate` | templates and instances, by path under the `PECORE_HOME` layout (`templates/...`, `projects/<id>/...`); `GET` returns the file's sha256, `PUT` carries it as `baseSha256` (null for a new file) and is refused (409) when the file changed since. `validate` returns `errors` and `warnings`; for a knowledge file both carry line and column. Listing a knowledge directory returns each file's internal links as `value.links` |
+| `POST /projects/:id/knowledge`, `POST /projects/:id/knowledge/rename`, `DELETE /projects/:id/knowledge/:name` | knowledge files: upload up to 50 `.md` files at once (their links may point to each other; an existing name is 409), rename one and update the links that point to it, delete one; each is one commit |
 | `DELETE /projects/:id` | project delete (4.8) |
 | `POST /protected-mode` | `{on: true}` creates `pecore-agent` if missing and switches every project to it; `{on: false}` switches back; `{on: false, removeUser: true}` also removes the user (admin prompt) |
 | `POST /accounts/:id/recheck` | re-runs the identity check of a forge or service account, or of every login of a model account, and releases runs waiting with `auth` on them |
@@ -1227,6 +1228,7 @@ Everything that knows ACP or a harness lives here (section 5). It imports only `
 | `src/projects/defaults.ts` | the forge's nodes from `templates/forges/`: a recipe added to a project gets the delivery, comment, repo creation and source nodes of the project's forge (`github-pr` and `github-issue-comment`, or `gitlab-mr` and `gitlab-issue-comment`); a project without a remote repo (`repo: null`) gets no renames. A new project has no recipes: the user adds them afterwards |
 | **definitions/** | |
 | `src/definitions/load.ts` | reads and validates definition files; returns typed errors with file and field |
+| `src/definitions/knowledge.ts` | knowledge checks with `markdownlint` and a custom link rule, link renaming, and the files a node receives with the files they link to |
 | `src/definitions/recipe-check.ts` | recipe rules beyond the schema: `use` exists in the project, every edge outcome exists on its node, inputs producible before use (3.3), a parent recipe has a commit node (4.6), `providerNot` targets exist; in a project without a remote repo, no node that uses `project.account` (push, PR, MR, ticket comment), so saving or adding such a recipe fails |
 | `src/definitions/instantiate.ts` | copies a template into a project; no link kept (D19). Instantiating a recipe also instantiates every node template it uses that the project lacks; a node instance with the same name is kept, and the GUI shows that the recipe uses the existing one |
 | **store/** | |

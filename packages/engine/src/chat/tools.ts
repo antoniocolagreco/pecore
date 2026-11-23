@@ -84,7 +84,7 @@ function definitionPath(path: string, scope: "template" | "knowledge" | "any"): 
 
 const intakeToolNames: Set<string> = new Set(["list_projects", "list_recipes", "read_ticket", "create_jobs", "job_status", "read_artifact", "comment_ticket", "read_replies"]);
 const questionToolNames: Set<string> = new Set(["list_recipes", "list_definitions", "read_definition", "read_ticket", "read_replies", "job_status", "read_artifact", "answer_question"]);
-const projectWorkToolNames: Set<string> = new Set(["create_jobs", "answer_question", "instantiate", "write_knowledge", "comment_ticket"]);
+const projectWorkToolNames: Set<string> = new Set(["create_jobs", "answer_question", "instantiate", "comment_ticket"]);
 const assistantOnlyToolNames: Set<string> = new Set(["analyze_project_archive", "import_project", "export_project", "project_creation_options", "create_project", "update_project", "delete_project", "write_template", "delegate_to_pm", "set_user_name"]);
 const definitionToolNames: Set<string> = new Set(["write_knowledge"]);
 const readToolNames: Set<string> = new Set(["list_definitions", "read_definition", "validate"]);
@@ -314,7 +314,7 @@ export function chatTools(engine: Engine): {
       const value = await definitions.instantiate(input);
       return { value, target: { ...input, paths: value.created }, isError: value.errors.length > 0 };
     }),
-    write_knowledge: write("knowledge", "Validate and save a Markdown file under the project's knowledge directory."),
+    write_knowledge: write("knowledge", "Validate and save a Markdown file in a project's knowledge directory, projects/<id>/knowledge/<name>.md. The directory is flat: no subfolders. Link another knowledge file by its name only, for example [naming](naming.md). A link to a missing file or with a path is refused; formatting findings come back as warnings to fix."),
     validate: tool("Validate a proposed template or knowledge file without saving it.", definition, async ({ path, content }) => {
       definitionPath(path, "any");
       const value = await definitions.handlers.validateDefinition({ params: undefined, query: undefined, body: { path, content } });

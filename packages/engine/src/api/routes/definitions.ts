@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { Name, Node, normalizeLegacyHumanNode, Project, projectManagerClash, Recipe, StoredNode } from "@pecore/schemas";
+import { KnowledgeFileName, Name, Node, normalizeLegacyHumanNode, Project, projectManagerClash, Recipe, StoredNode } from "@pecore/schemas";
 import type { DefinitionEntry, InstantiateBody, RouteOutput } from "@pecore/schemas";
 import { validIcon } from "../../definitions/icon";
 import { instantiateNode, instantiateRecipe } from "../../definitions/instantiate";
+import { checkKnowledge, knowledgeLinks, knowledgeNames, renameKnowledgeLinks } from "../../definitions/knowledge";
+import type { KnowledgeIssue } from "../../definitions/knowledge";
 import { loadTemplates, loadProject, zodErrors } from "../../definitions/load";
 import type { DefinitionError } from "../../definitions/load";
 import { checkRecipe, remoteIssues } from "../../definitions/recipe-check";
@@ -20,7 +22,16 @@ import { HttpError } from "../server";
 import type { Handlers } from "../server";
 
 type DefinitionKind = "node" | "recipe" | "project" | "knowledge" | "prompt" | "script" | "icon";
+type Inspection = Pick<DefinitionEntry, "value" | "errors"> & { warnings?: DefinitionError[] };
 const pendingDefinitions: WeakMap<Engine, Promise<unknown>> = new WeakMap();
+
+function knowledgeInspection(path: string, content: string, names: ReadonlySet<string>): Inspection {
+  const { errors, warnings, links } = checkKnowledge(content, names);
+  const view = (issue: KnowledgeIssue): DefinitionError => ({
+    file: path, path: "", message: `line ${issue.line}: ${issue.message}`, line: issue.line, column: issue.column, length: issue.length,
+  });
+  return { value: { links }, errors: errors.map(view), warnings: warnings.map(view) };
+}
 
 function pathParts(path: string): string[] {
   const parts: string[] = path.split("/");
@@ -85,9 +96,7 @@ async function definitionFiles(dir: string, directory: string): Promise<string[]
   const files: string[] = [];
   for (const entry of entries) {
     if (entry.name.includes("\\")) continue;
-    if (entry.isDirectory() && directory === "knowledge") {
-      for (const file of await definitionFiles(join(dir, entry.name), directory)) files.push(`${entry.name}/${file}`);
-    }
+    if (directory === "knowledge" && !KnowledgeFileName.safeParse(entry.name).success) continue;
     if (entry.isFile() && fileKind(directory, entry.name)) files.push(entry.name);
   }
   return files;
@@ -127,7 +136,7 @@ export function definitionOperations(engine: Engine) {
     const definitionDirectory: boolean = directory === "nodes" || directory === "recipes";
     const projectDirectory: boolean = !!id && (
       (definitionDirectory && parts.length === 3) ||
-      (directory === "knowledge" && (!listing || nested.length === 0))
+      (directory === "knowledge" && nested.length === 0)
     );
     const homeDirectory: string | undefined =
       scope === "templates" && parts.length === 2 && (definitionDirectory || directory === "icons")
@@ -136,6 +145,10 @@ export function definitionOperations(engine: Engine) {
     const kind: DefinitionKind | undefined = projectFile ? "project" : fileKind(directory, file);
     if ((!projectFile && !projectDirectory && !homeDirectory) || (!listing && !kind)) {
       throw new HttpError("bad_request", `invalid definition path ${path}`);
+    }
+    const knowledgeName = kind === "knowledge" ? KnowledgeFileName.safeParse(file) : undefined;
+    if (knowledgeName && !knowledgeName.success) {
+      throw new HttpError("bad_request", `invalid knowledge file name ${file}: ${knowledgeName.error.issues[0]?.message ?? "invalid"}`);
     }
     if (id) {
       const ctx = projectContext(engine, id);
@@ -150,7 +163,8 @@ export function definitionOperations(engine: Engine) {
 
   function inspect(path: string, kind: DefinitionKind | undefined, id: string | undefined, content: string, reading = false): Pick<DefinitionEntry, "value" | "errors"> {
     const errors: DefinitionError[] = [];
-    if (kind === "knowledge" || kind === "prompt" || kind === "script") return { value: null, errors };
+    if (kind === "knowledge") return { value: { links: knowledgeLinks(content) }, errors };
+    if (kind === "prompt" || kind === "script") return { value: null, errors };
     if (kind === "icon") return validIcon(content)
       ? { value: content, errors }
       : { value: null, errors: [{ file: path, path: "", message: "Use an SVG with a viewBox and basic shapes only." }] };
@@ -189,7 +203,17 @@ export function definitionOperations(engine: Engine) {
     return { value, errors };
   }
 
-  async function inspectWritable(path: string, kind: DefinitionKind | undefined, id: string | undefined, content: string): Promise<Pick<DefinitionEntry, "value" | "errors">> {
+  function knowledgeDir(id: string): string {
+    projectContext(engine, id);
+    return join(resolve(engine.projectDir(id)), "knowledge");
+  }
+
+  async function inspectWritable(path: string, kind: DefinitionKind | undefined, id: string | undefined, content: string): Promise<Inspection> {
+    if (kind === "knowledge" && id) {
+      const names = new Set<string>(await knowledgeNames(knowledgeDir(id)));
+      names.add(basename(path));
+      return knowledgeInspection(path, content, names);
+    }
     const inspected = inspect(path, kind, id, content);
     if (kind !== "recipe" || id || inspected.errors.length) return inspected;
     const recipe: Recipe = Recipe.parse(inspected.value);
@@ -237,8 +261,62 @@ export function definitionOperations(engine: Engine) {
     },
     validateDefinition: async ({ body: { path, content } }) => {
       const { kind, id } = location(path, false);
-      return { errors: (await inspectWritable(path, kind, id, content)).errors };
+      const { errors, warnings } = await inspectWritable(path, kind, id, content);
+      return { errors, warnings: warnings ?? [] };
     },
+    uploadKnowledge: ({ params: { id }, body: { files } }) => mutate(async () => {
+      const dir: string = knowledgeDir(id);
+      const projectDir: string = resolve(engine.projectDir(id));
+      const existing: string[] = await knowledgeNames(dir);
+      const batch: string[] = files.map(({ name }) => name);
+      const twice: string | undefined = batch.find((name, index) => batch.indexOf(name) !== index);
+      if (twice) throw new HttpError("bad_request", `${twice} is uploaded twice`);
+      const taken: string[] = batch.filter((name) => existing.includes(name));
+      if (taken.length) throw new HttpError("conflict", `${taken.join(", ")} already ${taken.length === 1 ? "exists" : "exist"}: rename or delete ${taken.length === 1 ? "it" : "them"} first`);
+      const names = new Set<string>([...existing, ...batch]);
+      const problems: string[] = files.flatMap(({ name, content }) =>
+        knowledgeInspection(`projects/${id}/knowledge/${name}`, content, names).errors.map(({ message }) => `${name}, ${message}`));
+      if (problems.length) throw new HttpError("bad_request", problems.join("\n"));
+      await rejectSymlinks(projectDir, dir);
+      await mkdir(dir, { recursive: true });
+      for (const { name, content } of files) await writeFile(join(dir, name), content, { flag: "wx" });
+      await commitFiles(home.home, projectDir, [dir], commitMessage("knowledge", batch.join(", "), "created"));
+      const saved: string[] = batch.map((name) => `projects/${id}/knowledge/${name}`);
+      for (const [index, { content }] of files.entries()) engine.definitionChanged(saved[index]!, sha256(Buffer.from(content, "utf8")));
+      return { saved };
+    }),
+    renameKnowledge: ({ params: { id }, body: { from, to } }) => mutate(async () => {
+      if (from === to) return { updated: [] };
+      const dir: string = knowledgeDir(id);
+      const projectDir: string = resolve(engine.projectDir(id));
+      await rejectSymlinks(projectDir, dir);
+      const names: string[] = await knowledgeNames(dir);
+      if (!names.includes(from)) throw new NotFoundError(`knowledge file ${from} not found`);
+      if (names.includes(to)) throw new HttpError("conflict", `${to} already exists`);
+      await rename(join(dir, from), join(dir, to));
+      const updated: string[] = [];
+      for (const name of names.map((name) => name === from ? to : name)) {
+        const content: string = await readFile(join(dir, name), "utf8");
+        const next: string = renameKnowledgeLinks(content, from, to);
+        if (next === content) continue;
+        await writeFile(join(dir, name), next);
+        if (name !== to) updated.push(name);
+      }
+      await commitFiles(home.home, projectDir, [dir], `knowledge ${from}: renamed to ${to}`);
+      engine.definitionChanged(`projects/${id}/knowledge/${from}`, null);
+      for (const name of [to, ...updated]) engine.definitionChanged(`projects/${id}/knowledge/${name}`, sha256(await readFile(join(dir, name))));
+      return { updated: updated.map((name) => `projects/${id}/knowledge/${name}`) };
+    }),
+    deleteKnowledge: ({ params: { id, name } }) => mutate(async () => {
+      const dir: string = knowledgeDir(id);
+      const projectDir: string = resolve(engine.projectDir(id));
+      await rejectSymlinks(projectDir, dir);
+      if (!(await knowledgeNames(dir)).includes(name)) throw new NotFoundError(`knowledge file ${name} not found`);
+      await rm(join(dir, name));
+      await commitFiles(home.home, projectDir, [dir], commitMessage("knowledge", name, "deleted"));
+      engine.definitionChanged(`projects/${id}/knowledge/${name}`, null);
+      return { ok: true as const };
+    }),
     saveDefinition: ({ params: { path }, body: { content, baseSha256 } }) => mutate(async () => save(path, content, baseSha256)),
     instantiate: ({ body }) => mutate(async () => {
       const { errors, ...result } = await instantiate(body);
@@ -394,11 +472,11 @@ export function definitionOperations(engine: Engine) {
     write: (path: string, content: string) => mutate(async () => {
       const { root, absPath, kind, id } = location(path, false);
       await rejectSymlinks(root, absPath);
-      const { errors } = await inspectWritable(path, kind, id, content);
-      if (errors.length) return { errors };
+      const { errors, warnings = [] } = await inspectWritable(path, kind, id, content);
+      if (errors.length) return { errors, warnings };
       const before: Buffer | null = await optionalBytes(absPath);
       const baseSha256: string | null = before === null ? null : sha256(before);
-      return { errors, ...await save(path, content, baseSha256) };
+      return { errors, warnings, ...await save(path, content, baseSha256) };
     }),
     instantiate: (body: InstantiateBody) => mutate(async () => instantiate(body)),
   };

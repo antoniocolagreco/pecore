@@ -6,6 +6,8 @@ import type { DefinitionFile, Node, RouteResult } from "@pecore/schemas";
 import { basicSetup, EditorView } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
 import { lineNumbers } from "@codemirror/view";
+import { setDiagnostics } from "@codemirror/lint";
+import type { Diagnostic } from "@codemirror/lint";
 import { highlight } from "../components/CodeSnapshot";
 import { templateTitle } from "../components/templateTitle";
 import { markdown } from "@codemirror/lang-markdown";
@@ -19,7 +21,7 @@ import { restorePageScroll } from "../components/usePageScroll";
 import { Button, ErrorText, Modal, Page, Panel, ui } from "../components/ui";
 import { TextArea, TextField } from "../ds/field";
 import { FieldHelp } from "../ds/overlay";
-import { Select } from "../ds/select";
+import { MultiCombobox, Select } from "../ds/select";
 import { nodeKindLabels } from "../components/NodeCard";
 import s from "./Editors.module.css";
 
@@ -52,7 +54,7 @@ type Validation = RouteResult<"validateDefinition">;
 type Snapshot = Pick<DefinitionFile, "content"> & { sha256: string | null };
 export type NewDefinition = { content: string; path(content: string): string };
 
-export function useDefinitionDraft(existingPath: string, sidecar = false, creation?: NewDefinition) {
+export function useDefinitionDraft(existingPath: string, sidecar = false, creation?: NewDefinition, revalidate = "") {
   const connected: boolean = useConnected();
   const remote = useData(async (): Promise<Snapshot> => {
     if (creation) return { content: creation.content, sha256: null };
@@ -105,7 +107,7 @@ export function useDefinitionDraft(existingPath: string, sidecar = false, creati
       );
     }, 250);
     return () => { active = false; window.clearTimeout(timer); };
-  }, [path, content, connected, !!baseline, sidecar]);
+  }, [path, content, connected, !!baseline, sidecar, revalidate]);
 
   const compare = useAction(async () => {
     try {
@@ -162,10 +164,11 @@ export function useDefinitionDraft(existingPath: string, sidecar = false, creati
   });
 
   const errors = validation?.content === content ? validation.result?.errors : undefined;
+  const warnings = validation?.content === content ? validation.result?.warnings : undefined;
   const canSave: boolean = connected && !!path && !save.busy && !compare.busy && !reload.busy && (sidecar || errors?.length === 0);
 
   return {
-    content, dirty, ready: !!baseline && (!!creation || sidecar || baseline.sha256 !== null || dirty), errors, savedPath,
+    content, dirty, ready: !!baseline && (!!creation || sidecar || baseline.sha256 !== null || dirty), errors, warnings, savedPath,
     editable: connected && !save.busy && !reload.busy,
     update(value: string): void { if (!base && baseline) setBase(baseline); setDraft(value); },
     feedback: <>
@@ -220,7 +223,12 @@ const editorTheme = EditorView.theme({
 
 const paddedLineNumbers = lineNumbers({ formatNumber: (line, state) => String(line).padStart(String(state.doc.lines).length, "0") });
 
-function Sidecar({ content, disabled, change, isMarkdown }: { content: string; disabled: boolean; change(value: string): void; isMarkdown: boolean }) {
+type EditorIssue = { line?: number; column?: number; length?: number; message: string };
+const noIssues: EditorIssue[] = [];
+
+export function Sidecar({ content, disabled, change, isMarkdown, errors = noIssues, warnings = noIssues }: {
+  content: string; disabled: boolean; change(value: string): void; isMarkdown: boolean; errors?: EditorIssue[]; warnings?: EditorIssue[];
+}) {
   const parent = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView>(null);
   const binding = useRef({ content, disabled, change });
@@ -255,6 +263,19 @@ function Sidecar({ content, disabled, change, isMarkdown }: { content: string; d
     });
     syncing.current = false;
   }, [content, disabled]);
+  useEffect(() => {
+    const editor: EditorView | null = view.current;
+    if (!editor) return;
+    const doc = editor.state.doc;
+    const place = (issue: EditorIssue, severity: Diagnostic["severity"]): Diagnostic[] => {
+      if (!issue.line || issue.line > doc.lines) return [];
+      const line = doc.line(issue.line);
+      const from: number = Math.min(line.from + (issue.column ?? 1) - 1, line.to);
+      const to: number = issue.length ? Math.min(from + issue.length, line.to) : line.to;
+      return [{ from, to: Math.max(from, to), severity, message: issue.message }];
+    };
+    editor.dispatch(setDiagnostics(editor.state, [...errors.flatMap((issue) => place(issue, "error")), ...warnings.flatMap((issue) => place(issue, "warning"))]));
+  }, [content, errors, warnings]);
   return <div ref={parent} />;
 }
 
@@ -330,6 +351,12 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   const reviewView: ReviewView | undefined = ReviewView.safeParse(draft?.reviewView).data;
   const tags: string[] = Array.isArray(draft?.tags) ? draft.tags.map(string) : [];
   const descriptiveTags: string[] = tags.filter((tag) => !isNodeKindTag(tag));
+  const knowledge: string[] = Array.isArray(draft?.knowledge) ? draft.knowledge.map(string).filter(Boolean) : [];
+  const knowledgeNames = useData(async () => {
+    const projects = await call("listProjects");
+    const lists = await Promise.all(projects.map(({ id }) => call("listDefinitions", { query: { dir: `projects/${id}/knowledge` } }).catch(() => [])));
+    return [...new Set(lists.flat().map(({ path }) => path.slice(path.lastIndexOf("/") + 1)))].sort();
+  }, []);
   const definitionPath: string = creation ? creation.path(file.content) : path;
   const reference: string = string(draft?.[kind === "agent" ? "prompt" : "script"]);
   const validSidecar: string = (kind === "agent" && /^[\w.-]+\.md$/.test(reference)) || (kind === "command" && /^[\w.-]+\.sh$/.test(reference)) ? reference : "";
@@ -340,7 +367,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   const inlineKeys: string[] = [
     "description", "tags", "timeoutSec",
     ...(kind === "source" ? ["credentials"] : ["outcomes", "changesFiles"]),
-    ...(kind === "agent" ? ["prompt", "resume"] : []),
+    ...(kind === "agent" ? ["prompt", "resume", "knowledge"] : []),
     ...(kind === "command" ? ["script", "runsAs", "cleanCheckout"] : []),
     ...(human ? ["mode", "show", "reviewView", "answer"] : []),
   ];
@@ -424,6 +451,13 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
             {!human && flag("changesFiles", "Changes files", "Enable this if the node writes to the job's files. PeCore fails the step if a read-only node changes them.")}
           </>}
           {kind === "agent" && <>{textField("prompt", "Prompt file", "Enter the name of the Markdown file containing instructions for the AI model.")}
+            <div>
+              <MultiCombobox label="Knowledge" placeholder="Choose knowledge files" value={knowledge} disabled={!file.editable}
+                labelAction={help("Knowledge", "The project knowledge files this node gives its agent, and the files they link to. Each project gives its own file with that name; a project without it gives nothing. Write them in the project's Knowledge tab.")}
+                options={[...new Set([...(knowledgeNames.data ?? []), ...knowledge])].map((name) => ({ value: name, label: name }))}
+                onValueChange={(next) => update("knowledge", next.length ? next : undefined)} />
+              {fieldErrors("knowledge")}
+            </div>
             {flag("resume", "Resume session", "Continue the previous conversation if this step runs again in the same job.")}</>}
           {kind === "command" && <>
             {creation && !draft.script && commandField("Command", draft.command, (command) => update("command", command))}

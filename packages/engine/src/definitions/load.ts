@@ -5,7 +5,7 @@ import { Accounts, Profiles, Project, Recipe, Settings, StoredNode, Tiers, unkno
 import type { Node } from "@pecore/schemas";
 import { checkRecipe } from "./recipe-check";
 
-export type DefinitionError = { file: string; path: string; message: string };
+export type DefinitionError = { file: string; path: string; message: string; line?: number; column?: number; length?: number };
 
 export type Loaded<T> = { value: T | null; errors: DefinitionError[] };
 

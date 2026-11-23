@@ -4,7 +4,7 @@ import { Artifact } from "./artifacts";
 import { Profiles } from "./profiles";
 import { Settings } from "./settings";
 import { Tiers } from "./tiers";
-import { Name } from "./common";
+import { KnowledgeFileName, Name } from "./common";
 import { AuthKind, JobState, NodeRunState } from "./errors";
 import { QueueKind } from "./events";
 import { Project, ProjectId } from "./project";
@@ -173,7 +173,10 @@ export type ApiErrorBody = z.infer<typeof ApiErrorBody>;
 const Ok = z.object({ ok: z.literal(true) });
 const IdParams = z.object({ id: z.string().min(1) });
 
-export const DefinitionErrorView = z.object({ file: z.string(), path: z.string(), message: z.string() });
+export const DefinitionErrorView = z.object({
+  file: z.string(), path: z.string(), message: z.string(),
+  line: z.number().int().positive().optional(), column: z.number().int().positive().optional(), length: z.number().int().nonnegative().optional(),
+});
 
 export const chatAttachmentMaxBytes = 10_000_000;
 export const chatCompactCommand = "/compact";
@@ -423,6 +426,16 @@ export const SaveDefinitionResult = z.object({ sha256: Sha });
 
 export const ValidateDefinitionBody = z.object({ path: z.string().min(1), content: z.string() }).strict();
 
+export const UploadKnowledgeBody = z.object({
+  files: z.array(z.object({ name: KnowledgeFileName, content: z.string().max(1_000_000) }).strict()).min(1).max(50),
+}).strict();
+export type UploadKnowledgeBody = z.infer<typeof UploadKnowledgeBody>;
+
+export const RenameKnowledgeBody = z.object({ from: KnowledgeFileName, to: KnowledgeFileName }).strict();
+export type RenameKnowledgeBody = z.infer<typeof RenameKnowledgeBody>;
+
+const KnowledgeParams = z.object({ id: z.string().min(1), name: KnowledgeFileName });
+
 export const InstantiateBody = z.object({ kind: z.enum(["node", "recipe"]), name: Name, project: ProjectId }).strict();
 export type InstantiateBody = z.infer<typeof InstantiateBody>;
 
@@ -600,7 +613,10 @@ export const routes = {
   listDefinitions: { method: "GET", path: "/definitions", query: z.object({ dir: z.string().min(1) }), response: z.array(DefinitionEntry) },
   getDefinition: { method: "GET", path: "/definitions/*path", params: PathParams, response: DefinitionFile },
   saveDefinition: { method: "PUT", path: "/definitions/*path", params: PathParams, body: SaveDefinitionBody, response: SaveDefinitionResult },
-  validateDefinition: { method: "POST", path: "/definitions/validate", body: ValidateDefinitionBody, response: z.object({ errors: z.array(DefinitionErrorView) }) },
+  validateDefinition: { method: "POST", path: "/definitions/validate", body: ValidateDefinitionBody, response: z.object({ errors: z.array(DefinitionErrorView), warnings: z.array(DefinitionErrorView) }) },
+  uploadKnowledge: { method: "POST", path: "/projects/:id/knowledge", params: IdParams, body: UploadKnowledgeBody, response: z.object({ saved: z.array(z.string()) }) },
+  renameKnowledge: { method: "POST", path: "/projects/:id/knowledge/rename", params: IdParams, body: RenameKnowledgeBody, response: z.object({ updated: z.array(z.string()) }) },
+  deleteKnowledge: { method: "DELETE", path: "/projects/:id/knowledge/:name", params: KnowledgeParams, response: Ok },
   instantiate: { method: "POST", path: "/definitions/instantiate", body: InstantiateBody, response: InstantiateResult },
   getSettings: settingsFile.get,
   putSettings: settingsFile.put,

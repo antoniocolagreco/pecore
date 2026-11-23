@@ -184,3 +184,9 @@
 - Why: an agent cannot follow a link to a file it did not receive, and broken links or bad formatting should be caught when the file is written, by the user or by an agent.
 - Replaces: nothing; knowledge files had no checks.
 - Formatting findings warn instead of blocking, so a long file is never stuck on a style rule. Not implemented yet.
+
+## 2026-11-23: Knowledge file manager implemented; template nodes name knowledge files
+
+- Decision: the knowledge decisions above are implemented. Node templates are shared across projects, so a node's Knowledge field offers the file names found in all projects; each project gives its own file with that name, and a project without it gives nothing. An upload may contain files that link to each other. Older `knowledge` globs still match flat file names; files in subfolders are no longer listed or given to agents. The Assistant can write knowledge files too.
+- Why: knowledge belongs to a project, but nodes are templates; naming files keeps one node usable in every project.
+- Replaces: the single-list Knowledge tab with a raw text box and a file-name field; the `knowledge` globs on nested paths.

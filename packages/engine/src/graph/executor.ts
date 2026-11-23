@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { basename, join, matchesGlob, relative } from "node:path";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { basename, join, relative } from "node:path";
 import { monotonicFactory } from "ulid";
 import type { RawLine, Usage } from "@pecore/agents";
 import type { AgentNode, Artifact, ArtifactType, DeliveryArtifact, FailureReason, ForgeAccount, JobDefinitions, JobState, Node, Profiles, Project, Settings, Tiers, WaitingReason } from "@pecore/schemas";
 import { isHumanNode, Recipe, SpecArtifact } from "@pecore/schemas";
 import { spawnFor } from "../accounts/agents";
 import type { AgentServices } from "../accounts/agents";
+import { knowledgeClosure } from "../definitions/knowledge";
 import type { Definitions } from "../definitions/load";
 import { jobDefinitions, jobNodes, snapshotDefinitions } from "../definitions/snapshot";
 import { effectRecorder } from "../jobs/effects";
@@ -1047,13 +1048,9 @@ export class JobExecutor {
     void this.tick(jobId);
   }
 
-  private async knowledgeFiles(globs: string[]): Promise<{ rel: string; abs: string }[]> {
-    if (globs.length === 0) return [];
+  private async knowledgeFiles(wanted: string[]): Promise<{ rel: string; abs: string }[]> {
     const root = join(this.ctx.dir, "knowledge");
-    const files = (await readdir(root, { recursive: true, withFileTypes: true }).catch(() => []))
-      .filter((e) => e.isFile())
-      .map((e) => relative(root, join(e.parentPath, e.name)));
-    return files.filter((f) => globs.some((g) => matchesGlob(f, g))).map((rel) => ({ rel, abs: join(root, rel) }));
+    return (await knowledgeClosure(root, wanted)).map((rel) => ({ rel, abs: join(root, rel) }));
   }
 
   private async agentAttempt(

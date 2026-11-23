@@ -2,13 +2,13 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { appName, ProjectManagerIdentity } from "@pecore/schemas";
-import type { DefinitionEntry, DefinitionFile, ForgeAccount, Project, ProjectView } from "@pecore/schemas";
+import type { DefinitionEntry, ForgeAccount, Project, ProjectView } from "@pecore/schemas";
 import { ProjectManagerField, projectManagerError } from "../components/ProjectManager";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { DefinitionIcon, useDefinitionIcons } from "../components/DefinitionIcon";
-import { Button, Empty, ErrorText, Field, Page, ui } from "../components/ui";
+import { Button, Empty, ErrorText, Page, ui } from "../components/ui";
 import { Button as DsButton, IconButton } from "../ds/button";
 import { RadioGroup } from "../ds/choice";
 import { Table, Tabs } from "../ds/data";
@@ -18,76 +18,12 @@ import { PlusIcon, TrashIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
 import { JobTable, useJobs } from "./Jobs";
+import { KnowledgeBase } from "./KnowledgeBase";
 import { object, string } from "./NodeEditor";
 import { ProjectExportDialog } from "./ProjectShareDialogs";
 import s from "./ProjectPage.module.css";
 
 const pageSize: number = 100;
-
-type Draft = { text: string; baseSha256: string | null };
-
-function FileEditor({ file, path, onSaved }: {
-  file: DefinitionFile | null;
-  path: string;
-  onSaved(file: DefinitionFile): void;
-}) {
-  const connected: boolean = useConnected();
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [comparison, setComparison] = useState<{ sha256: string | null } | null>(null);
-  const latestText: string = file?.content ?? "";
-  const latestHash: string | null = file?.sha256 ?? null;
-  const text: string = draft?.text ?? latestText;
-  const changed: boolean = draft !== null && draft.baseSha256 !== latestHash;
-  const comparing: boolean = comparison !== null && comparison.sha256 === latestHash;
-  const save = useAction(async (baseSha256: string | null) => {
-    const { sha256 } = await call("saveDefinition", { params: { path }, body: { content: text, baseSha256 } });
-    setDraft(null);
-    setComparison(null);
-    onSaved({ path, content: text, sha256 });
-  });
-  const disabled: boolean = !connected || save.busy;
-  return (
-    <div className={ui.stack}>
-      <Field label={path.split("/knowledge/")[1] ?? path}>
-        <textarea className={s.editor} rows={10} spellCheck={false} disabled={disabled} value={text}
-          onChange={(e) => setDraft({ text: e.target.value, baseSha256: draft ? draft.baseSha256 : latestHash })} />
-      </Field>
-      {changed && (
-        <div className={ui.banner}>
-          Changed elsewhere.
-          <div className={ui.row}>
-            <Button disabled={disabled} onClick={() => { setDraft(null); setComparison(null); save.clear(); }}>Reload</Button>
-            <Button disabled={disabled} onClick={() => setComparison(comparing ? null : { sha256: latestHash })}>{comparing ? "Hide comparison" : "Compare"}</Button>
-            {comparing && <Button disabled={disabled} onClick={() => void save.run(latestHash)}>Keep mine and save</Button>}
-          </div>
-        </div>
-      )}
-      {changed && comparing && <Field label="Current file"><textarea className={s.editor} rows={10} readOnly disabled={!connected} value={latestText} /></Field>}
-      <ErrorText error={save.error} />
-      <div>
-        <Button kind="primary" disabled={disabled || changed || (file !== null && text === latestText)} onClick={() => void save.run(latestHash)}>
-          {save.busy ? "Saving…" : "Save"}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function ExistingEditor({ path }: { path: string }) {
-  const data = useData(() => call("getDefinition", { params: { path } }), [path], (m) => m.type === "definition.changed" && m.path === path);
-  const [saved, setSaved] = useState<{ file: DefinitionFile; previous: DefinitionFile } | null>(null);
-  const file: DefinitionFile | undefined = saved && data.data === saved.previous ? saved.file : data.data;
-  return (
-    <>
-      <ErrorText error={data.error} />
-      {data.loading && !file && <Empty>Loading file…</Empty>}
-      {file && data.data && <FileEditor path={path} file={file} onSaved={(result) => {
-        if (data.data) setSaved({ file: result, previous: data.data });
-        data.reload();
-      }} />}
-    </>
-  );
-}
 
 function Recipes({ id }: { id: string }) {
   const connected: boolean = useConnected();
@@ -152,54 +88,6 @@ function Recipes({ id }: { id: string }) {
   );
 }
 
-function Knowledge({ id }: { id: string }) {
-  const connected: boolean = useConnected();
-  const dir: string = `projects/${id}/knowledge`;
-  const entries = useData(() => call("listDefinitions", { query: { dir } }), [dir], (m) => m.type === "definition.changed" && m.path.startsWith(dir + "/"));
-  const [selected, setSelected] = useState<string>("");
-  const [newName, setNewName] = useState<string>("");
-  const [newPath, setNewPath] = useState<string>("");
-  const [page, setPage] = useState<number>(0);
-  const files: DefinitionEntry[] = (entries.data ?? []).filter((entry) => entry.path.endsWith(".md"));
-  const start: number = Math.min(page, Math.max(0, Math.ceil(files.length / pageSize) - 1)) * pageSize;
-  const name: string = newName.trim();
-  const validName: boolean = /^[^/\\]+\.md$/.test(name) && !name.includes("\0") && name.length > 3;
-  const exists: boolean = files.some((entry) => entry.path === `${dir}/${name}`);
-  return (
-    <div>
-      <div className={ui.stack}>
-        <span className={ui.muted}>Markdown notes every agent of this project reads: conventions, architecture, how to run the app.</span>
-        <ErrorText error={entries.error} />
-        {entries.loading && !entries.data && <Spinner />}
-        {entries.data && files.length === 0 && <Empty>No knowledge files</Empty>}
-        {files.length > 0 && (
-          <ul className={s.files}>{files.slice(start, start + pageSize).map(({ path }) => (
-            <li key={path}><button type="button" className={s.file} aria-pressed={path === selected} disabled={!connected} onClick={() => { setNewPath(""); setSelected(path); }}>{path.slice(dir.length + 1)}</button></li>
-          ))}</ul>
-        )}
-        {files.length > pageSize && <div className={ui.row}>
-          <Button disabled={!connected || start === 0} onClick={() => setPage(start / pageSize - 1)}>Previous</Button>
-          <Button disabled={!connected || start + pageSize >= files.length} onClick={() => setPage(start / pageSize + 1)}>Show more</Button>
-        </div>}
-        <form className={s.instantiate} onSubmit={(e) => {
-          e.preventDefault();
-          if (connected && validName && !exists) { setNewPath(`${dir}/${name}`); setSelected(""); }
-        }}>
-          <TextField label="New Markdown file" mono placeholder="notes.md" value={newName} disabled={!connected} onValueChange={setNewName}
-            error={exists ? "File already exists." : undefined} />
-          <Button type="submit" disabled={!connected || !validName || exists}>New file</Button>
-        </form>
-        {newPath && <FileEditor key={newPath} path={newPath} file={null} onSaved={() => {
-          entries.reload();
-          setSelected(newPath);
-          setNewPath("");
-          setNewName("");
-        }} />}
-        {selected && <ExistingEditor key={selected} path={selected} />}
-      </div>
-    </div>
-  );
-}
 
 type SettingsForm = { name: string; baseBranch: string; services: string; folder: string; remote: boolean; account: string; url: string; pm: ProjectManagerIdentity };
 
@@ -540,7 +428,7 @@ function ProjectDetails({ id }: { id: string }) {
               },
               { value: "variables", label: "Variables", content: <Card padded className={s.narrow}><ProjectVariables id={id} onSaved={data.reload} /></Card> },
               { value: "recipes", label: "Recipes", content: <Card padded className={s.narrow}><Recipes id={id} /></Card> },
-              { value: "knowledge", label: "Knowledge", content: <Card padded className={s.narrow}><Knowledge id={id} /></Card> },
+              { value: "knowledge", label: "Knowledge", content: <KnowledgeBase id={id} /> },
             ]}
           />
           <Dialog
