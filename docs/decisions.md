@@ -236,7 +236,6 @@
 - Assistant and Project Manager Default save automatically after a valid change.
 - For Project Managers, personality is configured in each project's Project Manager tab.
 - The project's Project Manager form edits initial context in a five-row text area.
-- Project tabs share a sticky action bar below the tabs. Save and the primary action sit on the right. Actions for a single recipe or knowledge file stay with that item.
 - Agents contains reusable configurations, previously called Workers. A future change will let users assign these agents to recipe nodes.
 
 ## 2026-11-23: Node editor shows the same fields when editing
