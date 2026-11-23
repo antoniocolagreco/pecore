@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { call } from "../api/client";
 import { useData } from "../api/hooks";
 import { BoxIcon, BookIcon } from "../ds/icons";
@@ -45,12 +45,13 @@ export function DefinitionIcon({ icons, type, name, selected, size = "md" }: {
   return type === "node" ? <span aria-hidden="true" className={s.nodeTile} data-node-icon={size}>{glyph}</span> : glyph;
 }
 
-export function DefinitionIconField({ icons, type, name, value, disabled, onChange }: {
+export function DefinitionIconField({ icons, type, name, value, disabled, labelAction, onChange }: {
   icons: IconLibrary | undefined;
   type: DefinitionType;
   name: string;
   value: string;
   disabled: boolean;
+  labelAction?: ReactNode;
   onChange(value: string): void;
 }) {
   const defaultIcon: string = defaultDefinitionIcon[type];
@@ -61,5 +62,5 @@ export function DefinitionIconField({ icons, type, name, value, disabled, onChan
       .map((icon) => ({ value: icon, label: icon, icon: <DefinitionIcon icons={icons} type={type} name={name} selected={icon} /> })),
   ];
   if (value && value !== defaultIcon && !icons?.has(value)) options.push({ value, label: value, icon: <DefinitionIcon icons={icons} type={type} name={name} selected={value} /> });
-  return <IconSelect label="Icon" value={selected} options={options} disabled={disabled} onValueChange={onChange} />;
+  return <IconSelect label="Icon" labelAction={labelAction} value={selected} options={options} disabled={disabled} onValueChange={onChange} />;
 }

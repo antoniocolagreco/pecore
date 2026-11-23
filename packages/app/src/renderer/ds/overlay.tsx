@@ -1,9 +1,10 @@
 import { Dialog as BaseDialog } from "@base-ui/react/dialog";
 import { Menu as BaseMenu } from "@base-ui/react/menu";
+import { Popover } from "@base-ui/react/popover";
 import { Toast } from "@base-ui/react/toast";
 import { Tooltip as BaseTooltip } from "@base-ui/react/tooltip";
 import type { CSSProperties, ReactElement, ReactNode } from "react";
-import { BellIcon, XIcon } from "./icons";
+import { BellIcon, InfoIcon, XIcon } from "./icons";
 import s from "./overlay.module.css";
 
 export function Tooltip({ content, shortcut, side = "bottom", delay, children }: { content: ReactNode; shortcut?: string; side?: "top" | "bottom" | "left" | "right"; delay?: number; children: ReactElement }) {
@@ -24,6 +25,22 @@ export function Tooltip({ content, shortcut, side = "bottom", delay, children }:
 
 export function TooltipProvider({ children }: { children: ReactNode }) {
   return <BaseTooltip.Provider delay={450} closeDelay={80}>{children}</BaseTooltip.Provider>;
+}
+
+export function FieldHelp({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Popover.Root>
+      <Popover.Trigger className={s.helpTrigger} aria-label={`About ${title}`}><InfoIcon /></Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Positioner className={s.helpPositioner} align="start" sideOffset={6}>
+          <Popover.Popup className={s.helpPopup} initialFocus={false}>
+            <Popover.Title className={s.helpTitle}>{title}</Popover.Title>
+            <Popover.Description className={s.helpText}>{children}</Popover.Description>
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
+  );
 }
 
 export function Dialog({

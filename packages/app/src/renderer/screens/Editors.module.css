@@ -7,6 +7,14 @@
   min-width: 0;
 }
 
+.fieldHeading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-size);
+  font-weight: 500;
+}
+
 .smallJson {
   min-height: 7rem;
   resize: vertical;

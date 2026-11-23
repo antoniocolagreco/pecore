@@ -28,7 +28,7 @@ function SelectItem({ option }: { option: Option }) {
 }
 
 export function Select({
-  label, description, error, disabled, className, options, value, defaultValue, onValueChange, placeholder = "Choose…", ariaLabel,
+  label, labelAction, description, error, disabled, className, options, value, defaultValue, onValueChange, placeholder = "Choose…", ariaLabel,
 }: FieldProps & {
   options: Option[] | OptionGroup[];
   value?: string | null;
@@ -39,7 +39,7 @@ export function Select({
 }) {
   const flat: Option[] = isGroups(options) ? options.flatMap((g) => g.options) : options;
   return (
-    <FieldFrame label={label} description={description} error={error} disabled={disabled} className={className}>
+    <FieldFrame label={label} labelAction={labelAction} description={description} error={error} disabled={disabled} className={className}>
       <BaseSelect.Root
         items={flat.map((o) => ({ value: o.value, label: o.label }))}
         value={value}
@@ -79,14 +79,14 @@ export function Select({
 
 export type IconOption = { value: string; label: string; icon: ReactNode };
 
-export function IconSelect({ label, disabled, options, value, onValueChange }: FieldProps & {
+export function IconSelect({ label, labelAction, disabled, options, value, onValueChange }: FieldProps & {
   options: IconOption[];
   value: string;
   onValueChange(value: string): void;
 }) {
   const selected: IconOption | undefined = options.find((o) => o.value === value);
   return (
-    <FieldFrame label={label} disabled={disabled}>
+    <FieldFrame label={label} labelAction={labelAction} disabled={disabled}>
       <BaseSelect.Root items={options.map((o) => ({ value: o.value, label: o.label }))} value={value}
         onValueChange={(next) => { if (typeof next === "string") onValueChange(next); }} disabled={disabled}>
         <BaseSelect.Trigger className={s.trigger}>

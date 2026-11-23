@@ -30,6 +30,54 @@
   font-size: var(--text-size-sm);
 }
 
+.helpTrigger {
+  display: inline-grid;
+  place-items: center;
+  width: var(--mini-h);
+  height: var(--mini-h);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.helpTrigger:hover,
+.helpTrigger[data-popup-open] {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.helpPositioner {
+  z-index: 70;
+}
+
+.helpPopup {
+  width: min(22rem, var(--available-width));
+  max-height: var(--available-height);
+  overflow: auto;
+  padding: 12px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--material-highlight), var(--popover-shadow);
+}
+
+.helpTitle,
+.helpText {
+  margin: 0;
+  font-size: var(--text-size-sm);
+}
+
+.helpTitle {
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.helpText {
+  color: var(--text-2);
+}
+
 .backdrop {
   position: fixed;
   inset: 0;

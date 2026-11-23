@@ -6,6 +6,7 @@ import { AlertIcon, EyeIcon, EyeOffIcon, SearchIcon, XIcon } from "./icons";
 
 export type FieldProps = {
   label?: ReactNode;
+  labelAction?: ReactNode;
   description?: ReactNode;
   error?: ReactNode;
   disabled?: boolean;
@@ -39,12 +40,13 @@ function useText(props: { value?: string; defaultValue?: string; onValueChange?:
   }];
 }
 
-export function FieldFrame({ label, description, error, disabled, className, footer, children }: FieldProps & { footer?: ReactNode; children: ReactNode }) {
+export function FieldFrame({ label, labelAction, description, error, disabled, className, footer, children }: FieldProps & { footer?: ReactNode; children: ReactNode }) {
   const shown = useRef<ReactNode>(error);
   if (error) shown.current = error;
+  const title: ReactNode = label && <Field.Label className={s.label}>{label}</Field.Label>;
   return (
     <Field.Root className={cx(s.field, className)} disabled={disabled} invalid={Boolean(error)}>
-      {label && <Field.Label className={s.label}>{label}</Field.Label>}
+      {labelAction ? <div className={s.labelRow}>{title}{labelAction}</div> : title}
       {children}
       <Field.Error className={s.error} match={Boolean(error)}>
         <AlertIcon />
@@ -60,7 +62,7 @@ export function FieldFrame({ label, description, error, disabled, className, foo
   );
 }
 
-export function TextField({ label, description, error, disabled, className, leading, prefix, suffix, action, size = "md", mono, ...input }: TextProps & { leading?: ReactNode; prefix?: string; suffix?: string; action?: ReactNode; type?: "text" | "email" | "url" }) {
+export function TextField({ label, labelAction, description, error, disabled, className, leading, prefix, suffix, action, size = "md", mono, ...input }: TextProps & { leading?: ReactNode; prefix?: string; suffix?: string; action?: ReactNode; type?: "text" | "email" | "url" }) {
   const [value, setValue] = useText(input);
   const control = (
       <div className={cx(s.shell, size === "sm" && s.sm)}>
@@ -83,19 +85,19 @@ export function TextField({ label, description, error, disabled, className, lead
       </div>
   );
   return (
-    <FieldFrame label={label} description={description} error={error} disabled={disabled} className={className}>
+    <FieldFrame label={label} labelAction={labelAction} description={description} error={error} disabled={disabled} className={className}>
       {action ? <div className={s.controlRow}>{control}{action}</div> : control}
     </FieldFrame>
   );
 }
 
-export function TextArea({ label, description, error, disabled, className, maxLength, mono, ...input }: TextProps & { maxLength?: number }) {
+export function TextArea({ label, labelAction, description, error, disabled, className, maxLength, mono, ...input }: TextProps & { maxLength?: number }) {
   const [value, setValue] = useText(input);
   const counter = maxLength === undefined ? undefined : (
     <span className={s.counter} data-over={value.length > maxLength ? "" : undefined}>{value.length} / {maxLength}</span>
   );
   return (
-    <FieldFrame label={label} description={description} error={error} disabled={disabled} className={className} footer={counter}>
+    <FieldFrame label={label} labelAction={labelAction} description={description} error={error} disabled={disabled} className={className} footer={counter}>
       <div className={s.shell}>
         <Field.Control
           render={<textarea />}
