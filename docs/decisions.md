@@ -11,3 +11,9 @@
 - Decision: `packages/app/test/gui.test.ts` and `playwright-core` are removed. The app keeps `--user-data-dir` when given.
 - Why: the tests drove the whole app, took minutes, checked an outdated interface, and since 2026-11-21 ran on the user's real home because the app ignored `--user-data-dir`.
 - Replaces: the GUI gate of phase 5. Engine tests cover the behaviour; the interface is checked by hand.
+
+## 2026-11-23: The Assistant mentions icons only for templates
+
+- Decision: the Assistant mentions or offers icons only while creating or editing a node or recipe template, or when the user asks for one.
+- Why: it listed icons among the things it can create in unrelated conversations.
+- Replaces: icons offered as a standalone thing to create.
