@@ -1,0 +1,22 @@
+{
+  "$schema": "../../schemas/node.json",
+  "name": "resolve-rebase-conflicts",
+  "tags": ["git", "rebase", "conflicts", "agent"],
+  "description": "Resolve conflicts while rebasing the job branch onto its new base.",
+  "kind": "agent",
+  "prompt": "resolve-rebase-conflicts.md",
+  "agent": { "tier": "strong" },
+  "optionalInputs": ["ticket", "spec", "check-log"],
+  "outcomes": ["resolved", "unresolved"],
+  "failOutcomes": ["unresolved"],
+  "changesFiles": true,
+  "timeoutSec": 1800,
+  "outputSchema": {
+    "type": "object",
+    "required": ["outcome", "summary"],
+    "properties": {
+      "outcome": { "enum": ["resolved", "unresolved"] },
+      "summary": { "type": "string" }
+    }
+  }
+}

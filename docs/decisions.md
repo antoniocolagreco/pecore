@@ -79,6 +79,10 @@
 - Drag a node from the horizontal palette into the graph. Drag sideways to scroll the palette. Its title bar has a name and tag filter.
 - Agent, Command and Human nodes use distinct labels and colours. A recipe step keeps its node type. Remove node deletes the step and its references from the draft.
 - Arrange lays out the flow horizontally. Nodes snap to invisible cells on release. Arrows update during a drag, stay behind cards and use separate attachment points. Drop a connection on a card to let the editor pick its entry side.
+- Return arrows and arrows to End share the same lane allocation. When their horizontal spans overlap, their lanes stay at least 24 canvas pixels apart.
+- The recipe inspector omits `On base changed`. Git Rebase is available in the palette as a Command node.
+- Connect the Wait for CI command after a GitHub PR or GitLab merge request. It checks every 30 seconds for up to 30 minutes and emits `success` or `failure`.
+- Connect a Git Rebase conflict to the Resolve Rebase Conflicts agent. The PR templates rerun lint on `resolved` and end with failure on `unresolved`.
 
 ## 2026-11-23: Recipes start at Start and finish at End
 

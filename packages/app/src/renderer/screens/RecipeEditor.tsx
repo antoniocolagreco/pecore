@@ -122,7 +122,6 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
     }];
   });
   const stepOptions: Option[] = entries.map(([value]) => ({ value, label: templateTitle(value) }));
-  const optionalSteps: Option[] = [{ value: "", label: "None" }, ...stepOptions];
   const questionParameter = object(object(object(nodeValue.params).properties).question);
   const update = (changes: Record<string, unknown>): void => file.update(JSON.stringify({ ...draft, ...changes }, null, 2) + "\n");
   const updateNode = (key: string, value: unknown): void => update({ nodes: { ...nodes, [selected]: { ...selectedNode, [key]: value } } });
@@ -312,7 +311,7 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
           <Card title={selected ? templateTitle(string(selectedNode.use) || selected) : "Recipe settings"}
             actions={selected ? <div className={s.inspectorActions}>
               <IconButton label="Recipe settings" icon={<GearIcon />} onClick={() => setSelected("")} />
-              <IconButton label="Remove node" variant="danger" icon={<TrashIcon />} disabled={!editable} onClick={removeSelected} />
+              <IconButton label="Remove node" icon={<TrashIcon />} disabled={!editable} onClick={removeSelected} />
             </div> : undefined}
             className={s.inspector}>
             <fieldset className={s.inspectorFields} disabled={!editable}>
@@ -367,21 +366,6 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
                   onValueChange={(description) => update({ description })} className={s.recipeDescription} />
                 <DefinitionIconField icons={icons.data} type="recipe" name={string(draft.name)} value={string(draft.icon)} disabled={!editable}
                   onChange={(icon) => update({ icon })} />
-                <Select label="On base changed" options={optionalSteps} value={string(draft.onBaseChanged)} disabled={!editable} placeholder="None"
-                  onValueChange={(next) => update({ onBaseChanged: next || undefined })} />
-                <Select label="Wait for GitHub CI after" options={optionalSteps} value={string(ci.after)} disabled={!editable} placeholder="None" onValueChange={(after) => {
-                  update({ ci: after ? { on: "opened", checks: [], intervalSec: 30, timeoutSec: 1800, maxCorrections: 2, ...ci, after } : undefined });
-                }} />
-                {typeof ci.after === "string" && <>
-                  <TextField label="Trigger outcome" disabled={!editable} value={string(ci.on)} onValueChange={(on) => update({ ci: { ...ci, on } })} />
-                  <TextField label="CI checks (comma separated)" disabled={!editable} value={Array.isArray(ci.checks) ? ci.checks.join(",") : ""}
-                    onValueChange={(value) => update({ ci: { ...ci, checks: value.split(",") } })} />
-                  {(["intervalSec", "timeoutSec", "maxCorrections"] as const).map((key) => <NumberField key={key}
-                    label={{ intervalSec: "Poll every", timeoutSec: "Timeout", maxCorrections: "Maximum corrections" }[key]}
-                    unit={key === "maxCorrections" ? undefined : "s"} min={key === "maxCorrections" ? 0 : 1}
-                    value={typeof ci[key] === "number" ? ci[key] : null} disabled={!editable}
-                    onValueChange={(next) => update({ ci: { ...ci, [key]: next ?? undefined } })} />)}
-                </>}
                 <NumberField label="Max node runs" min={1} value={typeof draft.maxNodeRuns === "number" ? draft.maxNodeRuns : null}
                   disabled={!editable} onValueChange={(next) => update({ maxNodeRuns: next ?? undefined })} />
               </>}

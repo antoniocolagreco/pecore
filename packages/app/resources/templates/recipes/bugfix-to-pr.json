@@ -9,6 +9,7 @@
     { "from": "spec", "on": "rejected", "result": "not_delivered" },
     { "from": "human", "on": "reject", "result": "not_delivered" },
     { "from": "commit", "on": "failed", "result": "failed" },
+    { "from": "resolve-conflicts", "on": "unresolved", "result": "failed" },
     { "from": "push", "on": "failed", "result": "failed" },
     { "from": "pr", "on": "failed", "result": "failed" },
     { "from": "comment", "on": "done", "result": "succeeded" },
@@ -28,6 +29,7 @@
     "human": { "use": "human-review" },
     "commit": { "use": "git-commit", "requires": ["lint", "types", "test", "human"] },
     "rebase": { "use": "git-rebase" },
+    "resolve-conflicts": { "use": "resolve-rebase-conflicts" },
     "push": { "use": "git-push" },
     "pr": { "use": "github-pr" },
     "comment": { "use": "github-issue-comment" }
@@ -56,7 +58,8 @@
     { "from": "commit", "on": "stale", "to": "lint" },
     { "from": "push", "on": "pushed", "to": "pr" },
     { "from": "rebase", "on": "clean", "to": "lint" },
-    { "from": "rebase", "on": "conflict", "to": "code" },
+    { "from": "rebase", "on": "conflict", "to": "resolve-conflicts" },
+    { "from": "resolve-conflicts", "on": "resolved", "to": "lint" },
     { "from": "pr", "on": "opened", "to": "comment" }
   ]
 }

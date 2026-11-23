@@ -1,0 +1,21 @@
+{
+  "$schema": "../../schemas/node.json",
+  "name": "wait-for-ci",
+  "tags": ["ci", "github", "gitlab", "command"],
+  "description": "Poll GitHub checks or the GitLab pipeline for the delivered commit.",
+  "kind": "command",
+  "runsAs": "engine",
+  "credentials": ["project.account"],
+  "inputs": ["commit", "delivery"],
+  "outcomes": ["success", "failure"],
+  "failOutcomes": ["failure"],
+  "changesFiles": false,
+  "retry": 0,
+  "script": "wait-for-ci.sh",
+  "probe": ["/bin/true"],
+  "outcomeRules": [
+    { "exitCode": 0, "outcome": "success" },
+    { "exitCode": "other", "outcome": "failure" }
+  ],
+  "timeoutSec": 1860
+}
