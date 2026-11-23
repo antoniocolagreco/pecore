@@ -4,7 +4,7 @@ import { Background, BackgroundVariant, ConnectionMode, Handle, MarkerType, Pane
 import type { Connection, Node, NodeProps, OnConnectEnd, OnNodeDrag, ReactFlowInstance, Viewport, XYPosition } from "@xyflow/react";
 import { Button, IconButton } from "../ds/button";
 import { MinusIcon, MonitorIcon, PlusIcon } from "../ds/icons";
-import { RecipeEdge, recipeAttachments } from "./RecipeEdge";
+import { RecipeEdge, recipeAttachments, recipeLaneGap } from "./RecipeEdge";
 import type { RoutedRecipeEdge } from "./RecipeEdge";
 import type { RecipeNodeKind } from "./RecipeNodeKind";
 import { recipeEnd, recipeGrid, recipeStart, samePosition, slotTaken, snapRecipePosition } from "./recipeLayout";
@@ -81,9 +81,10 @@ export function RecipeGraph({ ref, steps, links, layout, automatic, start, edita
   }), [flow]);
   const attachments = recipeAttachments(links);
   const returns: boolean[] = links.map(({ from, to }) => automatic[to]!.x < automatic[from]!.x);
+  const returnCount: number = returns.filter(Boolean).length;
   const lanes = new Map<number, number>(returns.map((_, index) => index)
     .sort((first, second) => Number(returns[second]) - Number(returns[first]))
-    .map((index, lane) => [index, 42 + lane * 24]));
+    .map((index, lane) => [index, 42 + lane * recipeLaneGap]));
   const endings: RecipeGraphLink[] = links.filter(({ from, to }) => to === recipeEnd && from !== recipeStart);
   const directCandidates: RecipeGraphLink[] = endings.filter(({ targetPort }) => !targetPort || targetPort === "left");
   const direct: RecipeGraphLink | undefined = directCandidates.find((link) => !link.failed && !link.neutral) ?? directCandidates[0];
@@ -104,7 +105,7 @@ export function RecipeGraph({ ref, steps, links, layout, automatic, start, edita
         sourcePort: link.sourcePort ?? (terminal ? side : undefined),
         targetPort: link.targetPort ?? (terminal ? side : undefined),
         laneOffset: lanes.get(index)!,
-        terminalLane: terminal ? { side, offset: 44 + terminalCounts[side]++ * 30 } : undefined,
+        terminalLane: terminal ? { side, offset: 44 + (side === "top" ? returnCount * recipeLaneGap : 0) + terminalCounts[side]++ * 30 } : undefined,
       },
       label: link.caption ?? (link.invalid ? link.on + " (invalid)" : link.on),
       markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 16, height: 16 },

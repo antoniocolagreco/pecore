@@ -1,10 +1,12 @@
-import { BaseEdge, getSmoothStepPath, Position, useInternalNode } from "@xyflow/react";
-import type { Edge, EdgeProps, InternalNode, XYPosition } from "@xyflow/react";
+import { BaseEdge, getSmoothStepPath, Position, useStore } from "@xyflow/react";
+import type { Edge, EdgeProps, InternalNode, ReactFlowState, XYPosition } from "@xyflow/react";
 import type { EdgePort } from "@pecore/schemas";
 import type { RecipeLink } from "./recipeLayout";
 
 type Attachment = { source: number; target: number };
 type TerminalLane = { side: "top" | "bottom"; offset: number };
+type HorizontalLane = { left: number; right: number; y: number };
+type EdgePath = [path: string, labelX: number, labelY: number];
 
 export type RoutedRecipeEdge = Edge<{
   attachment: Attachment;
@@ -16,6 +18,8 @@ export type RoutedRecipeEdge = Edge<{
 
 const endpointGap: number = 3;
 const bendRadius: number = 18;
+export const recipeLaneGap: number = 24;
+const pathsByState = new WeakMap<ReactFlowState, Map<string, EdgePath>>();
 
 const positions: Record<EdgePort, Position> = {
   left: Position.Left,
@@ -73,8 +77,22 @@ function attachmentPoint(node: InternalNode, side: Position, offset: number): XY
   }
 }
 
-function returnPath(source: XYPosition, target: XYPosition, offset: number): [string, number, number] {
-  const lane: number = Math.min(0, source.y, target.y) - offset;
+function reserveLane(lanes: HorizontalLane[], fromX: number, toX: number, preferred: number, side: TerminalLane["side"]): number {
+  const left: number = Math.min(fromX, toX);
+  const right: number = Math.max(fromX, toX);
+  const overlapping: HorizontalLane[] = lanes.filter((lane) => left < lane.right && lane.left < right);
+  const direction: number = side === "top" ? -1 : 1;
+  let y: number = preferred;
+  for (const lane of overlapping.sort((first, second) => direction * (first.y - second.y))) {
+    if (Math.abs(lane.y - y) < recipeLaneGap) y = lane.y + direction * recipeLaneGap;
+  }
+  lanes.push({ left, right, y });
+  return y;
+}
+
+function returnPath(source: XYPosition, target: XYPosition, offset: number, lanes: HorizontalLane[]): EdgePath {
+  const preferred: number = Math.min(0, source.y, target.y) - offset;
+  const lane: number = reserveLane(lanes, source.x, target.x, preferred, "top");
   const radius: number = Math.min(bendRadius, Math.abs(target.x - source.x) / 2);
   const bend: number = Math.sign(target.x - source.x) * radius;
   const path: string = `M ${source.x},${source.y} V ${lane + radius} Q ${source.x},${lane} ${source.x + bend},${lane} H ${target.x - bend} Q ${target.x},${lane} ${target.x},${lane + radius} V ${target.y}`;
@@ -115,35 +133,80 @@ function roundedPath(points: XYPosition[]): string {
 }
 
 function terminalPath(from: InternalNode, to: InternalNode, start: XYPosition, end: XYPosition,
-  source: Position, target: Position, band: TerminalLane): [string, number, number] {
-  const lane: number = band.side === "top"
+  source: Position, target: Position, band: TerminalLane, lanes: HorizontalLane[]): EdgePath {
+  const preferred: number = band.side === "top"
     ? Math.min(from.internals.positionAbsolute.y, to.internals.positionAbsolute.y) - band.offset
     : Math.max(
       from.internals.positionAbsolute.y + (from.measured.height ?? from.height ?? 0),
       to.internals.positionAbsolute.y + (to.measured.height ?? to.height ?? 0),
     ) + band.offset;
-  const lead: XYPosition[] = laneLead(from, start, source, lane);
-  const approach: XYPosition[] = laneLead(to, end, target, lane);
-  return [roundedPath([...lead, ...approach.toReversed()]), (lead.at(-1)!.x + approach.at(-1)!.x) / 2, lane];
+  const lead: XYPosition[] = laneLead(from, start, source, preferred);
+  const approach: XYPosition[] = laneLead(to, end, target, preferred);
+  const leadLane: XYPosition = lead.at(-1)!;
+  const approachLane: XYPosition = approach.at(-1)!;
+  const lane: number = reserveLane(lanes, leadLane.x, approachLane.x, preferred, band.side);
+  leadLane.y = lane;
+  approachLane.y = lane;
+  return [roundedPath([...lead, ...approach.toReversed()]), (leadLane.x + approachLane.x) / 2, lane];
 }
 
-export function RecipeEdge({ id, source, target, data, label, markerEnd, style }: EdgeProps<RoutedRecipeEdge>) {
-  const from = useInternalNode(source);
-  const to = useInternalNode(target);
-  if (!from || !to || !data) return null;
+function mixedPath(start: XYPosition, end: XYPosition, source: Position, target: Position, lanes: HorizontalLane[]): EdgePath | undefined {
+  const reversed: boolean = source === Position.Top || source === Position.Bottom;
+  const horizontal: Position = reversed ? target : source;
+  const vertical: Position = reversed ? source : target;
+  if (horizontal !== Position.Left && horizontal !== Position.Right) return undefined;
+  if (vertical !== Position.Top && vertical !== Position.Bottom) return undefined;
+  const from: XYPosition = reversed ? end : start;
+  const to: XYPosition = reversed ? start : end;
+  const dx: number = to.x - from.x;
+  if (horizontal === Position.Left ? dx >= 0 : dx <= 0) return undefined;
 
+  const top: boolean = vertical === Position.Top;
+  const preferred: number = top ? Math.min(from.y, to.y - 20) : Math.max(from.y, to.y + 20);
+  const leadX: number = from.x + Math.sign(dx) * Math.min(20, Math.abs(dx) / 2);
+  const lane: number = reserveLane(lanes, from.x, to.x, preferred, top ? "top" : "bottom");
+  const points: XYPosition[] = [from, { x: leadX, y: from.y }, { x: leadX, y: lane }, { x: to.x, y: lane }, to];
+  return [roundedPath(reversed ? points.reverse() : points), ((lane === from.y ? from.x : leadX) + to.x) / 2, lane];
+}
+
+function recipePath(from: InternalNode, to: InternalNode, data: NonNullable<RoutedRecipeEdge["data"]>, lanes: HorizontalLane[]): EdgePath {
   const [defaultSource, defaultTarget] = facingSides(from.internals.positionAbsolute, to.internals.positionAbsolute);
   const sourcePosition: Position = data.sourcePort ? positions[data.sourcePort] : defaultSource;
   const targetPosition: Position = data.targetPort ? positions[data.targetPort] : defaultTarget;
   const start: XYPosition = attachmentPoint(from, sourcePosition, data.attachment.source);
   const end: XYPosition = attachmentPoint(to, targetPosition, data.attachment.target);
-  const [path, labelX, labelY] = data.terminalLane
-    ? terminalPath(from, to, start, end, sourcePosition, targetPosition, data.terminalLane)
-    : sourcePosition === Position.Top && targetPosition === Position.Top
-      ? returnPath(start, end, data.laneOffset)
-      : getSmoothStepPath({
-      sourceX: start.x, sourceY: start.y, sourcePosition,
-      targetX: end.x, targetY: end.y, targetPosition, borderRadius: bendRadius,
-    });
+  if (data.terminalLane) return terminalPath(from, to, start, end, sourcePosition, targetPosition, data.terminalLane, lanes);
+  if (sourcePosition === Position.Top && targetPosition === Position.Top) return returnPath(start, end, data.laneOffset, lanes);
+  const mixed: EdgePath | undefined = mixedPath(start, end, sourcePosition, targetPosition, lanes);
+  if (mixed) return mixed;
+  const [path, labelX, labelY] = getSmoothStepPath({
+    sourceX: start.x, sourceY: start.y, sourcePosition,
+    targetX: end.x, targetY: end.y, targetPosition, borderRadius: bendRadius,
+  });
+  return [path, labelX, labelY];
+}
+
+function recipePaths(state: ReactFlowState): Map<string, EdgePath> {
+  const cached: Map<string, EdgePath> | undefined = pathsByState.get(state);
+  if (cached) return cached;
+
+  const paths = new Map<string, EdgePath>();
+  const lanes: HorizontalLane[] = [];
+  for (const edge of state.edges) {
+    if (edge.type !== "routed") continue;
+    const { id, source, target, data } = edge as RoutedRecipeEdge;
+    const from: InternalNode | undefined = state.nodeLookup.get(source);
+    const to: InternalNode | undefined = state.nodeLookup.get(target);
+    if (from && to && data) paths.set(id, recipePath(from, to, data, lanes));
+  }
+  pathsByState.set(state, paths);
+  return paths;
+}
+
+export function RecipeEdge({ id, label, markerEnd, style }: EdgeProps<RoutedRecipeEdge>) {
+  const route: EdgePath | undefined = useStore((state) => recipePaths(state).get(id),
+    (first, second) => first?.[0] === second?.[0] && first?.[1] === second?.[1] && first?.[2] === second?.[2]);
+  if (!route) return null;
+  const [path, labelX, labelY] = route;
   return <BaseEdge id={id} path={path} label={label} labelX={labelX} labelY={labelY} markerEnd={markerEnd} style={style} />;
 }
