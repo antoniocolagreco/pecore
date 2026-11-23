@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { apiClient } from "@pecore/schemas";
 import type { ChatDetail, LiveMessage } from "@pecore/schemas";
 import { FakeForge, forgeAccount } from "../../test/fake-forge";
-import { createProjectWithRecipes } from "../../test/project";
+import { createProjectWithRecipes, seedProjectManagers } from "../../test/project";
 import { shippedTemplates, tempDir } from "../../test/tmp";
 import { handlers } from "../api/handlers";
 import { startApi } from "../api/server";
@@ -88,7 +88,7 @@ async function until<T>(fn: () => T | undefined | false | Promise<T | undefined 
   }
 }
 
-async function setup(build: (root: string) => object[][], extra: { source?: boolean; pm?: (root: string) => object[][]; compaction?: object; forge?: boolean } = {}) {
+async function setup(build: (root: string) => object[][], extra: { source?: boolean; pm?: (root: string) => object[][]; compaction?: { auto: number; max: number }; forge?: boolean } = {}) {
   const root = await tempDir();
   const scripts: object[][] = build(root);
   const pmScripts: object[][] = extra.pm?.(root) ?? [];
@@ -133,6 +133,7 @@ async function setup(build: (root: string) => object[][], extra: { source?: bool
     await writeFile(join(home, "settings.json"), JSON.stringify({ assistant: { profile: "p1" } }));
   }
   await writeFile(join(home, "tiers.json"), JSON.stringify({ tiers: { strong: ["p1"] } }));
+  await seedProjectManagers(home, extra.pm ? { account: "background", model: "m2", effort: null } : { account: "fake", model: "m1", effort: null }, extra.compaction);
   const agents = { connectorsDir: connectors, adaptersDir: join(root, "adapters"), adapters: {} };
   const open = async () => {
     const engine = await Engine.start({ home, templates, agents, checkLogins: false });
@@ -582,7 +583,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect(second).toContain("The user's name is Antonio.");
       expect(second).not.toContain("You do not know the user's name yet");
       expect(second).toContain("Your instructions changed. They replace all earlier ones");
-      expect(second).toContain(JSON.stringify("Active personality, turned on by the user in Settings > Assistant > Personality. Apply every trait below in every reply from now on, without asking which one to use. Traits change how you talk and work, never what you are allowed to do:\n- Pragmatic: Answers with the concrete next step, such as the change to make or the job to start, and skips background unless asked.\n- Critical: Points out weak assumptions, risks and contradictions in your orders before passing them on.").slice(1, -1));
+      expect(second).toContain(JSON.stringify("Apply these personality traits in every reply. Traits change how you talk and work, never what you are allowed to do:\n- Pragmatic: Answers with the concrete next step, such as the change to make or the job to start, and skips background unless asked.\n- Critical: Points out weak assumptions, risks and contradictions in your orders before passing them on.").slice(1, -1));
       const conflict = await t.call("getSettings");
       await expect(t.call("putSettings", { body: { value: { ...conflict.value, assistant: { ...conflict.value.assistant, traits: ["minimalist", "mentor"] } }, baseSha256: conflict.sha256 } })).rejects.toThrow();
     } finally {
@@ -1062,15 +1063,20 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect((await t.call("getChat")).messages).toEqual([]);
       await expect(t.call("getProjectChat", { params: { id: "nope" } })).rejects.toThrow();
 
-      const path = "projects/demo/project.json";
-      const file = await t.call("getDefinition", { params: { path } });
-      const content: string = JSON.stringify({ ...JSON.parse(file.content) as object, pm: { name: "Nora", color: "#D65C05" } }, null, 2) + "\n";
-      await t.call("saveDefinition", { params: { path }, body: { content, baseSha256: file.sha256 } });
+      const file = await t.call("getAgents");
+      const agents = file.value.agents.map((agent) => agent.kind === "pm" && agent.id === "eva"
+        ? { ...agent, name: "Evelyn", traits: ["pragmatic" as const] } : agent);
+      await t.call("putAgents", { body: { value: { ...file.value, agents }, baseSha256: file.sha256 } });
+      const params = { id: "eva" };
+      const context = await t.call("getAgentContext", { params });
+      await t.call("putAgentContext", { params, body: { content: "# Keep a decision log", baseSha256: context.sha256 } });
       await t.call("sendProjectChatMessage", { params: { id: "demo" }, body: { text: "Who are you?" } });
       await until(() => existsSync(join(t.root, "renamed.json")));
       const renamedPrompt: string = await readFile(join(t.root, "renamed.json"), "utf8");
       expect(renamedPrompt).toContain("You do not write code yourself");
-      expect(renamedPrompt).toContain("Your name is Nora.");
+      expect(renamedPrompt).toContain("Your name is Evelyn.");
+      expect(renamedPrompt).toContain("Pragmatic");
+      expect(renamedPrompt).toContain("# Keep a decision log");
     } finally {
       await t.close();
     }

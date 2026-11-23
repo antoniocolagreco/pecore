@@ -315,7 +315,8 @@ export function definitionOperations(engine: Engine) {
       engine.definitionChanged(`projects/${id}/knowledge/${name}`, null);
       return { ok: true as const };
     }),
-    saveDefinition: ({ params: { path }, body: { content, baseSha256 } }) => mutate(async () => save(path, content, baseSha256)),
+    saveDefinition: ({ params: { path }, body: { content, baseSha256 } }) => mutate(async () =>
+      /^projects\/[^/]+\/project\.json$/.test(path) ? engine.withGlobalFiles(() => save(path, content, baseSha256)) : save(path, content, baseSha256)),
     instantiate: ({ body }) => mutate(async () => {
       const { errors, ...result } = await instantiate(body);
       if (errors.length) throw new HttpError("bad_request", errors.map((error) => error.message).join("\n"));
@@ -365,7 +366,16 @@ export function definitionOperations(engine: Engine) {
           if (issues.length) throw new HttpError("bad_request", issues.map(({ message }) => message).join("\n"));
         }
       }
-      const clash = next.pm && projectManagerClash(next.pm, engine.projectManagers(id));
+      if (next.pm?.agentId && next.pm.agentId !== current.pm?.agentId) {
+        next.pm = engine.projectManagerFor(next.pm, id);
+        saved = Buffer.from(JSON.stringify(next, null, 2) + "\n");
+      }
+      if (!next.pm && current.pm) throw new HttpError("bad_request", "Choose a Project Manager.");
+      if (next.pm && !next.pm.agentId && next.pm.name.toLowerCase() !== current.pm?.name.toLowerCase()) {
+        const name: string = next.pm.name.toLowerCase();
+        if (engine.agentCatalog().agents.some((agent) => agent.name.toLowerCase() === name)) throw new HttpError("bad_request", "This agent name is already in use.");
+      }
+      const clash = next.pm && !next.pm.agentId && projectManagerClash(next.pm, engine.projectManagers(id));
       if (clash) throw new HttpError("bad_request", `Another project's Project Manager already uses this ${clash === "name" ? "name" : "colour"}.`);
       if (current.folder !== next.folder || !sameRepository(current.repo, next.repo)) {
         if (engine.creating.has(id) || loaded.deleting || loaded.executor.jobs().some(({ state }) => !isFinal(state))) {

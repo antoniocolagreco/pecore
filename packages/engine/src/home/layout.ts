@@ -23,6 +23,8 @@ export function homePaths(home: string) {
   return {
     home,
     settings: join(home, "settings.json"),
+    agents: join(home, "agents.json"),
+    agentContexts: join(home, "agents"),
     accounts: join(home, "accounts.json"),
     profiles: join(home, "profiles.json"),
     autoSetup: join(home, "auto-setup.json"),

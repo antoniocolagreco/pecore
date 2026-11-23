@@ -10,3 +10,4 @@ export { NodeEditor } from "./NodeEditor";
 export { RecipeEditor } from "./RecipeEditor";
 export { Templates } from "./Templates";
 export { Settings } from "./Settings";
+export { Agents } from "./Agents";

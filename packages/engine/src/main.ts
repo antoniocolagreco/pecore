@@ -10,7 +10,8 @@ import { globalFileHandlers } from "./api/routes/settings";
 import { appName, BuiltInHarness, defaultJobLimit, freeProjectManager, projectManagerClash, roleProfile, withForgeHosts } from "@pecore/schemas";
 import { listOptions, satisfies } from "@pecore/agents";
 import type { LoginState } from "@pecore/agents";
-import type { Account, AccountOptions, Accounts, ForgeAccount, JobState, LiveMessage, LoginView, NotificationTarget, Profiles, ProjectInput, ProjectManagerIdentity, Settings, SetupView, Tiers, WhyView } from "@pecore/schemas";
+import type { Account, AccountOptions, Accounts, AgentDefinition, AgentDefinitions, ForgeAccount, JobState, LiveMessage, LoginView, NotificationTarget, Profiles, ProjectInput, ProjectManagerIdentity, Role, Settings, SetupView, Tiers, WhyView } from "@pecore/schemas";
+import { HttpError } from "./api/server";
 import type { CompleteProjectImportBody, ExportProjectBody, ExportProjectResult, ImportProjectBody, ImportProjectPreview, ImportProjectResult } from "@pecore/schemas";
 import { AgentServices, protectedUser, spawnFor } from "./accounts/agents";
 import type { AgentPaths, LoginInfo } from "./accounts/agents";
@@ -71,6 +72,7 @@ export class Engine extends EventEmitter {
   private settings!: Settings;
   private accounts!: Accounts;
   private profiles!: Profiles;
+  private agentDefinitions!: AgentDefinitions;
   private tiers!: Tiers;
   agents: AgentServices | null = null;
   agentChats!: AgentChats;
@@ -113,6 +115,7 @@ export class Engine extends EventEmitter {
       throw new EngineStartError(global.errors);
     }
     this.settings = global.value.settings;
+    this.agentDefinitions = global.value.agents;
     this.accounts = withForgeHosts(global.value.accounts);
     this.profiles = global.value.profiles;
     this.tiers = global.value.tiers;
@@ -167,9 +170,8 @@ export class Engine extends EventEmitter {
         .then(async () => {
           if (this.shuttingDown) return;
           const reads: Promise<unknown>[] = this.accounts.accounts.filter(({ kind }) => kind === "model").map(({ id }) => this.accountOptions(id));
-          for (const role of ["assistant", "pm"] as const) {
-            const profile: Profiles["profiles"][number] | undefined = this.profiles.profiles.find(({ id }) => id === roleProfile(this.settings, role));
-            if (profile) reads.push(this.accountOptions(profile.account, profile.model));
+          for (const { model } of this.agentCatalog().agents) {
+            if (model) reads.push(this.accountOptions(model.account, model.model));
           }
           await Promise.allSettled(reads);
         });
@@ -184,7 +186,48 @@ export class Engine extends EventEmitter {
   }
 
   global(): Global {
-    return { settings: this.settings, accounts: this.accounts, profiles: this.profiles, tiers: this.tiers };
+    return { settings: this.settings, agents: this.agentDefinitions, accounts: this.accounts, profiles: this.profiles, tiers: this.tiers };
+  }
+
+  private legacyModel(role: Role): AgentDefinition["model"] {
+    const profile = this.profiles.profiles.find(({ id }) => id === roleProfile(this.settings, role));
+    return profile ? { account: profile.account, model: profile.model, effort: profile.effort } : null;
+  }
+
+  agentCatalog(): AgentDefinitions {
+    const saved: AgentDefinition[] = this.agentDefinitions.agents;
+    const legacy: AgentDefinition[] = [];
+    if (!saved.some(({ kind }) => kind === "assistant")) {
+      const { compaction, traits } = this.settings.assistant;
+      legacy.push({ id: "assistant", kind: "assistant", name: "Assistant", model: this.legacyModel("assistant"), compaction, traits });
+    }
+    for (const [project, { ctx }] of this.projects) {
+      const pm: ProjectManagerIdentity | null = ctx.project.pm;
+      if (!pm) continue;
+      const id: string = this.managerId(project, pm);
+      if (!saved.some((agent) => agent.id === id)) {
+        legacy.push({ id, kind: "pm", name: pm.name, color: pm.color, model: this.legacyModel("pm"), compaction: this.settings.pm.compaction, traits: [] });
+      }
+    }
+    return { ...this.agentDefinitions, agents: [...saved, ...legacy] };
+  }
+
+  managerId(project: string, pm: ProjectManagerIdentity): string {
+    return pm.agentId ?? `legacy-${project}`;
+  }
+
+  chatAgent(project?: string | null): Exclude<AgentDefinition, { kind: "worker" }> | undefined {
+    const agents: AgentDefinition[] = this.agentCatalog().agents;
+    if (project == null) return agents.find((agent) => agent.kind === "assistant");
+    const pm: ProjectManagerIdentity | null | undefined = this.projects.get(project)?.ctx.project.pm;
+    return pm ? agents.find((agent): agent is Extract<AgentDefinition, { kind: "pm" }> => agent.kind === "pm" && agent.id === this.managerId(project, pm)) : undefined;
+  }
+
+  async agentContext(id: string): Promise<string> {
+    return readFile(join(homePaths(this.opts.home).agentContexts, `${id}.md`), "utf8").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return "";
+      throw error;
+    });
   }
 
   withGlobalFiles<T>(work: () => Promise<T>): Promise<T> {
@@ -230,8 +273,8 @@ export class Engine extends EventEmitter {
     return { harnesses: this.setupHarnesses, modelAccountWorks };
   }
 
-  private orderSink(): OrderSink | null {
-    return this.opts.orders ?? (roleProfile(this.settings, "pm") ? this.intake : null);
+  private orderSink(project?: string): OrderSink | null {
+    return this.opts.orders ?? (this.chatAgent(project)?.model ? this.intake : null);
   }
 
   async startAgentChats(url: string, token: string): Promise<void> {
@@ -246,8 +289,8 @@ export class Engine extends EventEmitter {
   }
 
   private async refreshSourcePolling(): Promise<void> {
-    const sink: OrderSink | null = this.orderSink();
     for (const project of this.projects.values()) {
+      const sink: OrderSink | null = this.orderSink(project.ctx.id);
       if (!sink && project.sourcePolling) {
         const existing = project.sourcePolling;
         delete project.sourcePolling;
@@ -255,7 +298,7 @@ export class Engine extends EventEmitter {
       }
       if (sink && !project.sourcePolling && !this.creating.has(project.ctx.id)) {
         const resumed: TicketOrder[] = await resumeOrders(project.ctx);
-        if (sink === this.orderSink() && !this.stoppingAgentChats && !project.sourcePolling) {
+        if (sink === this.orderSink(project.ctx.id) && !this.stoppingAgentChats && !project.sourcePolling) {
           project.sourcePolling = startSourcePolling(project.ctx, sink, resumed);
         }
       }
@@ -273,6 +316,7 @@ export class Engine extends EventEmitter {
     }
     if (loaded.errors.length) this.projectErrors.set(id, loaded.errors);
     else this.projectErrors.delete(id);
+    await this.refreshSourcePolling();
     this.live({ type: "project.updated", projectId: id });
     return loaded.errors;
   }
@@ -281,6 +325,7 @@ export class Engine extends EventEmitter {
     const g = await loadGlobal(this.opts.home);
     if (!g.value) return g.errors;
     this.settings = g.value.settings;
+    this.agentDefinitions = g.value.agents;
     this.accounts = withForgeHosts(g.value.accounts);
     this.profiles = g.value.profiles;
     this.tiers = g.value.tiers;
@@ -606,27 +651,44 @@ export class Engine extends EventEmitter {
   }
 
   projectManagers(except?: string): ProjectManagerIdentity[] {
-    return [...this.projects.values()].flatMap(({ ctx }) => ctx.id !== except && ctx.project.pm ? [ctx.project.pm] : []);
+    return [...this.projects.values()].flatMap(({ ctx }) => {
+      const pm: ProjectManagerIdentity | null = this.projectManagerIdentity(ctx.id);
+      return ctx.id !== except && pm ? [pm] : [];
+    });
+  }
+
+  projectManagerIdentity(project: string): ProjectManagerIdentity | null {
+    const agent = this.chatAgent(project);
+    return agent?.kind === "pm" ? { agentId: agent.id, name: agent.name, color: agent.color } : null;
+  }
+
+  availableProjectManagers(except?: string): ProjectManagerIdentity[] {
+    const used: Set<string | undefined> = new Set(this.projectManagers(except).map(({ agentId }) => agentId));
+    return this.agentCatalog().agents.flatMap((agent) => agent.kind === "pm" && !used.has(agent.id)
+      ? [{ agentId: agent.id, name: agent.name, color: agent.color }] : []);
   }
 
   projectManagerFor(pm: ProjectManagerIdentity | null | undefined, except?: string): ProjectManagerIdentity {
-    const used: ProjectManagerIdentity[] = this.projectManagers(except);
-    if (pm) {
-      const clash = projectManagerClash(pm, used);
-      if (clash) throw new Error(`Another project's Project Manager already uses this ${clash === "name" ? "name" : "colour"}.`);
-      return pm;
-    }
-    const free: ProjectManagerIdentity | null = freeProjectManager(used);
-    if (!free) throw new Error("All Project Manager names and colours are in use. Choose a new name and colour for this project's Project Manager.");
-    return free;
+    const available: ProjectManagerIdentity[] = this.availableProjectManagers(except);
+    const chosen: ProjectManagerIdentity | undefined = pm
+      ? available.find((entry) => pm.agentId ? entry.agentId === pm.agentId : entry.name.toLowerCase() === pm.name.toLowerCase())
+      : available[0];
+    if (!chosen) throw new HttpError("bad_request", "Choose an available Project Manager in Agents.");
+    return chosen;
   }
 
   private async assignProjectManager(id: string): Promise<void> {
     const { ctx } = this.project(id);
     const current: ProjectManagerIdentity | null = ctx.project.pm;
-    const used: ProjectManagerIdentity[] = this.projectManagers(id);
-    if (current && !projectManagerClash(current, used)) return;
-    const pm: ProjectManagerIdentity | null = freeProjectManager(used);
+    if (current?.agentId && !this.projectManagers(id).some(({ agentId }) => agentId === current.agentId)) return;
+    const used: ProjectManagerIdentity[] = [
+      ...this.projectManagers(id),
+      ...this.agentDefinitions.agents.filter((agent) => agent.kind === "pm"),
+    ];
+    if (current && !projectManagerClash(current, used) && !this.agentCatalog().agents.some((agent) => agent.id !== this.managerId(id, current) && agent.name.toLowerCase() === current.name.toLowerCase())) return;
+    const names: Set<string> = new Set(this.agentCatalog().agents.map(({ name }) => name.toLowerCase()));
+    const unused = used.concat([...names].map((name) => ({ name, color: "" })));
+    const pm: ProjectManagerIdentity | null = freeProjectManager(unused);
     if (!pm) return;
     const path: string = `projects/${id}/project.json`;
     const definitions = definitionOperations(this).handlers;
@@ -636,7 +698,12 @@ export class Engine extends EventEmitter {
   }
 
   async createProject(input: ProjectInput): Promise<void> {
-    const project = await beginProject(this.opts.home, { ...input, pm: this.projectManagerFor(input.pm, input.id) }, this.createOptions());
+    const project = await this.withGlobalFiles(async () => {
+      const project = await beginProject(this.opts.home, { ...input, pm: this.projectManagerFor(input.pm) }, this.createOptions());
+      await this.openProject(project.id);
+      this.setCreating(project.id, { step: 3, error: null });
+      return project;
+    });
     await this.continueCreation(project.id);
   }
 
@@ -699,7 +766,7 @@ export class Engine extends EventEmitter {
         return;
       }
       const findings = await finishProject(this.opts.home, dir, ctx.project, this.createOptions());
-      const sink: OrderSink | null = this.orderSink();
+      const sink: OrderSink | null = this.orderSink(id);
       if (sink && !loaded.sourcePolling) loaded.sourcePolling = startSourcePolling(ctx, sink, []);
       this.setCreating(id, null);
       for (const f of findings) {

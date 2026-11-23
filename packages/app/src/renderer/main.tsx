@@ -26,6 +26,7 @@ const router = createHashRouter([
       { path: "/templates", element: <screens.Templates /> },
       { path: "/templates/nodes/new", element: <screens.NodeEditor newTemplate /> },
       { path: "/templates/recipes/new", element: <screens.RecipeEditor newTemplate /> },
+      { path: "/agents", element: <screens.Agents /> },
       { path: "/settings", element: <screens.Settings /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],

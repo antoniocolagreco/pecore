@@ -224,3 +224,8 @@
 - Decision: on the Projects list and on a project's page, the sidebar shows a Projects section with every project, like the Templates and Settings sections.
 - Why: switching project took a trip back to the Projects list.
 - Replaces: nothing.
+## 2026-11-23: Agents are configured in one place
+
+- The Agents page holds one Assistant, multiple Project Managers and multiple Workers. Every name or Worker title is unique, ignoring case. Each agent has a provider, model, effort, two context compaction thresholds and an optional Markdown context file. The Assistant and Project Managers also have personality traits.
+- New projects require an available Project Manager. A Project Manager can serve one project at a time. Existing projects keep their manager and configuration.
+- Workers live in Agents. Recipe nodes continue to choose models through profiles and tiers.

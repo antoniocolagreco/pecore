@@ -7,7 +7,7 @@ import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { Button, IconButton } from "../ds/button";
 import { Alert, Count } from "../ds/feedback";
-import { BellIcon, BookIcon, FactoryIcon, FolderIcon, GearIcon, ListIcon, PauseIcon, PlayIcon, SidebarIcon } from "../ds/icons";
+import { BellIcon, BookIcon, FactoryIcon, FolderIcon, GearIcon, ListIcon, PauseIcon, PlayIcon, SidebarIcon, SparkIcon } from "../ds/icons";
 import { ChatPanel } from "../screens/AssistantChat";
 import { CommandPalette } from "./CommandPalette";
 import { SetupBanner } from "./SetupBanner";
@@ -36,6 +36,7 @@ const nav: { group: string | null; items: { to: string; label: string; icon: Rea
       { to: "/jobs", label: "Jobs", icon: <ListIcon size="md" /> },
       { to: "/notifications", label: "Notifications", icon: <BellIcon size="md" />, badge: "notifications" },
       { to: "/templates", label: "Templates", icon: <BookIcon size="md" /> },
+      { to: "/agents", label: "Agents", icon: <SparkIcon size="md" /> },
       { to: "/settings", label: "Settings", icon: <GearIcon size="md" /> },
     ],
   },

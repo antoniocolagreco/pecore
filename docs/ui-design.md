@@ -128,11 +128,11 @@
 | Id | Element | Source |
 |---|---|---|
 | IG1 | Accounts: AI tools (found by themselves), Git hosting (public services and private Git servers), services | 3.4 |
-| IG2 | Withdrawn: the profile and tier editor. Model choices are on agent nodes and in Settings for the Assistant and Project Manager. | 3.4 |
+| IG2 | The Assistant, Project Managers and Workers choose their model in Agents. Recipe nodes use profiles and tiers. | 3.4, 6 |
 | IG3 | Global limits, services runtime, disk threshold, merge check interval | 4.7, 4.9, "Risks & Limits" |
 | IG4 | Withdrawn: the Usage page | 4.7 |
 | IG5 | Setup status and next steps | G14 |
-| IG6 | Assistant and Project Manager, each: provider, model, effort, automatic and maximum compaction thresholds | 6 |
+| IG6 | Moved to Agents. | 6 |
 | IG7 | Auto-update | "Fixed implementation choices" |
 | IG8 | Withdrawn: quiet hours are left to the operating system | 9 |
 | IG9 | Appearance: theme, reduced motion | UI4, UI6 |
@@ -162,7 +162,7 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 *   Window: menu on the left, the page in the centre, the Assistant chat on the right. By default the chat takes 30% of the width, between 300 and 380 px.
 *   The menu collapses and expands with a button at the top left. The choice is remembered; the first time, the menu starts collapsed below 1280 px of width. Collapsed, it is a column of icons, each showing its name on pointing.
 *   The chat panel's width changes by dragging its left edge or with the arrow keys on it.
-*   One list, without group titles. Order: Factory, Projects, Jobs, Notifications (IA2), Templates, Settings.
+*   One list, without group titles. Order: Factory, Projects, Jobs, Notifications (IA2), Templates, Agents, Settings.
 *   Under the list, the open page's own sub-navigation: Settings sections.
 *   Note: a project's recipes, nodes and settings are reached through Projects; the node editor and the job view are detail pages, not menu items.
 *   Page width follows the content: pages with tables, lists or graphs (Factory, Jobs, Projects, Notifications, a project page, a job) use the full width; pages that are only a form or text to read (Settings, the wizards) are centred with a maximum width. Inside a full-width page, a form keeps its maximum width and stays aligned to the left with the tabs.
@@ -340,7 +340,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 ### Settings
 
-*   Sections: You, Accounts (IG1), Protected mode (IF6), Assistant and Project Manager (IG6), Projects, Limits and disk threshold, Services runtime, Merge check interval (IG3), Updates (IG7), Appearance (IG9). No Models section and no Notifications section.
+*   Sections: You, Accounts (IG1), Protected mode (IF6), Projects, Limits and disk threshold, Services runtime, Merge check interval (IG3), Updates (IG7), Appearance (IG9).
 *   The section list is in the main sidebar. Sections adapt to the window width, and each has a one-line description under its title.
 *   No text or JSON editing and no user-typed IDs; raw validation errors are never shown.
 *   Every change saves by itself, a moment after the last keystroke and at once when the page is left; there is no Save or Discard button. A value that is not valid is not saved and the problem shows at the bottom of the page.

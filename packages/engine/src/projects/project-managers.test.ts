@@ -1,35 +1,40 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { forgeHome } from "../../test/forge-project";
 import { Engine } from "../main";
 import { definitionOperations } from "../api/routes/definitions";
+import { globalFileHandlers } from "../api/routes/settings";
+import { seedProjectManagers } from "../../test/project";
 
 const projectFile = (engine: Engine, id: string) => join(engine.projectDir(id), "project.json");
 
 describe("Project Manager names and colours per project", () => {
-  it("gives each new project the first free Project Manager, keeps a chosen one and refuses one already in use", async () => {
-    const { home, templates } = await forgeHome();
+  it("requires a Project Manager and assigns each one to at most one project", async () => {
+    const { home, templates } = await forgeHome({ managers: false });
     const engine = await Engine.start({ home, templates });
     try {
-      await engine.createProject({ id: "one", name: "One", repo: null });
-      await engine.createProject({ id: "two", name: "Two", repo: null, pm: { name: "Kim", color: "#123456" } });
+      await expect(engine.createProject({ id: "one", name: "One", repo: null })).rejects.toThrow("Choose an available Project Manager");
+      await seedProjectManagers(home);
+      expect(await engine.reloadGlobal()).toEqual([]);
+      const eva = { agentId: "eva", name: "Eva", color: "#FFDE38" };
+      const results = await Promise.allSettled([
+        engine.createProject({ id: "one", name: "One", repo: null, pm: eva }),
+        engine.createProject({ id: "two", name: "Two", repo: null, pm: eva }),
+      ]);
+      expect(results.map(({ status }) => status)).toEqual(["fulfilled", "rejected"]);
+      expect(JSON.parse(await readFile(projectFile(engine, "one"), "utf8"))).toMatchObject({ pm: eva });
+      expect(engine.availableProjectManagers().map(({ agentId }) => agentId)).not.toContain("eva");
       await engine.createProject({ id: "three", name: "Three", repo: null });
-      expect(engine.project("one").ctx.project.pm).toEqual({ name: "Eva", color: "#FFDE38" });
-      expect(engine.project("two").ctx.project.pm).toEqual({ name: "Kim", color: "#123456" });
-      expect(engine.project("three").ctx.project.pm).toEqual({ name: "Viola", color: "#9D57FF" });
-      expect(JSON.parse(await readFile(projectFile(engine, "one"), "utf8"))).toMatchObject({ pm: { name: "Eva", color: "#FFDE38" } });
-      await expect(engine.createProject({ id: "four", name: "Four", repo: null, pm: { name: "kim", color: "#654321" } })).rejects.toThrow("already uses this name");
-      await expect(engine.createProject({ id: "four", name: "Four", repo: null, pm: { name: "Lee", color: "#FFDE38" } })).rejects.toThrow("already uses this colour");
-      expect(engine.projects.has("four")).toBe(false);
-
       const path = "projects/three/project.json";
       const definitions = definitionOperations(engine).handlers;
       const file = await definitions.getDefinition({ params: { path }, query: undefined, body: undefined });
-      const content = (pm: object) => JSON.stringify({ ...JSON.parse(file.content) as object, pm }, null, 2) + "\n";
-      await expect(definitions.saveDefinition({ params: { path }, query: undefined, body: { content: content({ name: "Eva", color: "#000000" }), baseSha256: file.sha256 } })).rejects.toThrow("already uses this name");
-      await definitions.saveDefinition({ params: { path }, query: undefined, body: { content: content({ name: "Viola", color: "#000000" }), baseSha256: file.sha256 } });
-      expect(engine.project("three").ctx.project.pm).toEqual({ name: "Viola", color: "#000000" });
+      const content: string = JSON.stringify({ ...JSON.parse(file.content) as object, pm: eva });
+      await expect(definitions.saveDefinition({ params: { path }, query: undefined, body: { content, baseSha256: file.sha256 } })).rejects.toThrow("Choose an available Project Manager");
+      const agents = globalFileHandlers(engine);
+      const fileContent = await agents.getAgents();
+      const value = { ...fileContent.value, agents: fileContent.value.agents.filter(({ id }) => id !== "eva") };
+      await expect(agents.putAgents({ params: undefined, query: undefined, body: { value, baseSha256: fileContent.sha256 } })).rejects.toThrow("Reassign the project");
     } finally {
       await engine.shutdown();
     }
@@ -42,6 +47,7 @@ describe("Project Manager names and colours per project", () => {
     await first.createProject({ id: "beta", name: "Beta", repo: null });
     await first.createProject({ id: "gamma", name: "Gamma", repo: null });
     await first.shutdown();
+    await rm(join(home, "agents.json"));
     const strip = async (id: string, pm: unknown): Promise<void> => {
       const path = join(home, "projects", id, "project.json");
       await writeFile(path, JSON.stringify({ ...JSON.parse(await readFile(path, "utf8")) as object, pm }, null, 2) + "\n");

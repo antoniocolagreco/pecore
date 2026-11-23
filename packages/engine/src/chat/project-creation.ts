@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { z } from "zod";
-import { freeProjectManager, projectIdCandidate, ProjectManagerIdentity } from "@pecore/schemas";
+import { projectIdCandidate, ProjectManagerIdentity } from "@pecore/schemas";
 import type { ProjectInput } from "@pecore/schemas";
 import { homePaths } from "../home/layout";
 import type { Engine } from "../main";
@@ -21,7 +21,7 @@ export const ProjectCreation = z.strictObject({
   ]),
   folder: requiredText.optional(),
   baseBranch: requiredText,
-  pm: ProjectManagerIdentity.optional().describe("The Project Manager's name and colour. Omit it to use the first free one from project_creation_options."),
+  pm: ProjectManagerIdentity.optional().describe("An available Project Manager from project_creation_options. Omit it to use the first available one."),
 });
 
 export const defaultFolder = (engine: Engine, id: string): string => join(engine.global().settings.projectsFolder, id);
@@ -81,7 +81,7 @@ export async function validateProjectCreation(engine: Engine, { name, repository
 }
 
 export function projectCreationRows(engine: Engine, { name, repository, folder, baseBranch, pm }: Settings): { label: string; value: string }[] {
-  const manager: ProjectManagerIdentity | null = pm ?? freeProjectManager(engine.projectManagers());
+  const manager: ProjectManagerIdentity = engine.projectManagerFor(pm);
   return [
     { label: "Name", value: name },
     { label: "Repository", value: { local: "Local only", existing: "Existing repository", new: "New repository" }[repository.mode] },
@@ -92,7 +92,7 @@ export function projectCreationRows(engine: Engine, { name, repository, folder, 
     ...(repository.mode === "new" ? [{ label: "Remote setup", value: `Create a private repository if needed and push ${baseBranch}` }] : []),
     { label: "Folder", value: folder ?? defaultFolder(engine, projectIdCandidate(name, 1)) },
     { label: "Base branch", value: baseBranch },
-    { label: "Project Manager", value: manager ? `${manager.name} (${manager.color})` : "Choose a name and colour" },
+    { label: "Project Manager", value: `${manager.name} (${manager.color})` },
   ];
 }
 

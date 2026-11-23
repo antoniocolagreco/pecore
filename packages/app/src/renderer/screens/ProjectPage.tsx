@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { appName, ProjectManagerIdentity } from "@pecore/schemas";
 import type { DefinitionEntry, ForgeAccount, Project, ProjectView } from "@pecore/schemas";
-import { ProjectManagerField, projectManagerError } from "../components/ProjectManager";
+import { ProjectManagerField, useProjectManagers } from "../components/ProjectManager";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
@@ -110,8 +110,7 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
   const { path, file, raw } = useProjectDefinition(id);
   const accounts = useData(() => call("getAccounts"), [], (m) => m.type === "definition.changed" && m.path === "accounts.json");
   const forgeAccounts: ForgeAccount[] = (accounts.data?.value.accounts ?? []).filter((account) => account.kind === "forge");
-  const projects = useData(() => call("listProjects"), [], (m) => m.type === "project.updated");
-  const usedManagers: ProjectManagerIdentity[] = (projects.data ?? []).flatMap(({ id: other, project }) => other !== id && project?.pm ? [project.pm] : []);
+  const { managers, ready: managersReady, error: managersError } = useProjectManagers(id);
   const [draft, setDraft] = useState<{ values: SettingsForm; sha256: string } | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
@@ -141,7 +140,7 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
       folder: value.folder.trim() || null,
       repo: value.remote ? { url: value.url.trim(), account: value.account } : null,
       createRepo: value.remote && value.url.trim() === repo?.url ? raw.createRepo ?? null : null,
-      pm: { name: value.pm.name.trim(), color: value.pm.color },
+      pm: value.pm,
     };
     Reflect.deleteProperty(next, "limits");
     Reflect.deleteProperty(next, "defaultRecipe");
@@ -156,7 +155,8 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
   const folder: string | null = current.folder.replace(/\/+$/, "") || null;
   const account: ForgeAccount | undefined = forgeAccounts.find(({ id }) => id === value.account);
   const existingRemote: boolean = current.remote && value.account === current.account && value.url === current.url;
-  const valid: boolean = !!value.name.trim() && !!value.baseBranch.trim() && !!projects.data && projectManagerError(value.pm, usedManagers) === null && (!value.remote || existingRemote || (!!account && !!value.url.trim()));
+  const managerId: string = value.pm.agentId ?? `legacy-${id}`;
+  const valid: boolean = !!value.name.trim() && !!value.baseBranch.trim() && managersReady && managers.some(({ agentId }) => agentId === managerId) && (!value.remote || existingRemote || (!!account && !!value.url.trim()));
   const pickCompose = async (): Promise<void> => {
     setPickError(null);
     const picked: string | null = await window.pecore.pickFile(folder);
@@ -173,8 +173,8 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
         <TextField label="Name" value={value.name} onValueChange={(name) => set({ name })} disabled={disabled} error={value.name.trim() ? undefined : "Give the project a name."} />
         <TextField label="Base branch" mono value={value.baseBranch} onValueChange={(baseBranch) => set({ baseBranch })} disabled={disabled} description="New jobs start from here." />
       </div>
-      <ProjectManagerField value={value.pm} used={usedManagers} disabled={disabled} onChange={(pm) => set({ pm })} />
-      <ErrorText error={projects.error} />
+      <ProjectManagerField value={managerId} managers={managers} disabled={disabled || !managersReady} onChange={(pm) => set({ pm })} />
+      <ErrorText error={managersError} />
       <RadioGroup label="Repository" value={value.remote ? "remote" : "local"} disabled={disabled}
         options={[{ value: "local", label: "Local only" }, { value: "remote", label: "Existing remote repository" }]}
         onValueChange={(mode) => set({ remote: mode === "remote", account: value.account || (forgeAccounts.length === 1 ? forgeAccounts[0]!.id : "") })} />
@@ -380,7 +380,7 @@ function ProjectDetails({ id }: { id: string }) {
   const [exporting, setExporting] = useState<boolean>(false);
   const [creatingJob, setCreatingJob] = useState<boolean>(false);
   const data = useData(() => call("getProject", { params: { id } }), [id], (m) =>
-    (m.type === "project.updated" && m.projectId === id) || (m.type === "definition.changed" && m.path.startsWith(`projects/${id}/`)),
+    (m.type === "project.updated" && m.projectId === id) || (m.type === "definition.changed" && (m.path.startsWith(`projects/${id}/`) || m.path === "agents.json")),
   );
   const jobs = useJobs("false", id);
   const running: boolean = jobs.data?.some((job) => job.state === "running") ?? false;

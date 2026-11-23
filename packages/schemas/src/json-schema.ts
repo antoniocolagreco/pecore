@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Accounts } from "./accounts";
+import { AgentDefinitions } from "./agent";
 import { Connector } from "./connector";
 import { Node } from "./node";
 import { Profiles } from "./profiles";
@@ -13,6 +14,7 @@ export const definitionSchemas = {
   recipe: Recipe,
   project: Project,
   accounts: Accounts,
+  agents: AgentDefinitions,
   profiles: Profiles,
   tiers: Tiers,
   settings: Settings,
