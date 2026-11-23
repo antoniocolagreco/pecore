@@ -25,10 +25,9 @@
   gap: 6px;
 }
 
-.notice {
+.removed {
   margin: 0;
-  color: var(--text-2);
-  font-size: var(--text-size-sm);
+  padding-left: 18px;
   overflow-wrap: anywhere;
 }
 
@@ -87,10 +86,16 @@
 }
 
 .editorHeader > h2 {
-  margin: 0 auto 0 0;
+  margin: 0;
   font-family: var(--mono);
   font-size: var(--text-size-md);
   overflow-wrap: anywhere;
+}
+
+.headerActions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
 }
 
 .desk {
@@ -108,6 +113,20 @@
   border-radius: 3px;
   background: var(--paper);
   box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 2px 4px rgb(0 0 0 / 0.06), 0 12px 28px -12px rgb(0 0 0 / 0.3);
+}
+
+.blank {
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  padding: 32px;
+  color: var(--text-2);
+  text-align: center;
+}
+
+.blank > p {
+  max-width: 34rem;
+  margin: 0;
 }
 
 .issues {

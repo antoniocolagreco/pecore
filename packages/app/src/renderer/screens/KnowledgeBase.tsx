@@ -36,7 +36,10 @@ function KnowledgeFile({ path, name, creating, names, actions, onCreated, onDirt
   useEffect(() => { onDirty(file.dirty); return () => onDirty(false); }, [file.dirty, onDirty]);
   useEffect(() => { if (file.savedPath) onCreated(); }, [file.savedPath, onCreated]);
   return <div className={s.editor}>
-    <header className={s.editorHeader}><h2>{name}</h2>{actions}{file.saveButton()}</header>
+    <header className={s.editorHeader}>
+      <h2>{name}</h2>
+      <span className={s.headerActions}>{actions}{file.saveButton()}</span>
+    </header>
     {file.feedback}
     <div className={s.desk}>
       {file.ready && <Sidecar paper className={s.sheet} content={file.content} change={file.update} disabled={!file.editable} isMarkdown
@@ -136,9 +139,6 @@ export function KnowledgeBase({ id }: { id: string }) {
         }} />
       </div>
       <ErrorText error={entries.error ?? upload.error} />
-      {removedLinks.length > 0 && <p className={s.notice} role="status">
-        Links to files that are not in this project were removed, keeping their text: {removedLinks.map(({ file, link }) => `${file} → ${link}`).join(", ")}.
-      </p>}
       {entries.loading && !entries.data && <Spinner />}
       {entries.data && !files.length && !selected?.creating && <p className={ui.muted}>No knowledge files yet.</p>}
       <ul className={s.files} aria-label="Knowledge files">
@@ -156,7 +156,12 @@ export function KnowledgeBase({ id }: { id: string }) {
             <Button disabled={!connected} onClick={() => open("rename")}>Rename</Button>
             <Button disabled={!connected} onClick={() => open("delete")}>Delete</Button>
           </>} />
-        : <p className={ui.muted}>Select a file, create one, or upload or drop Markdown files here. A node gives its agent the files assigned to it and the files they link to. Link another file by its name, for example [naming](naming.md).</p>}
+        : <div className={s.desk}>
+          <div className={`${s.sheet} ${s.blank}`}>
+            <p>Select a file, create one, or upload or drop Markdown files here.</p>
+            <p>A node gives its agent the files assigned to it and the files they link to. Link another file by its name, for example [naming](naming.md).</p>
+          </div>
+        </div>}
     </Card>
     <Dialog open={dialog === "new" || dialog === "rename"} onOpenChange={(value) => { if (!value) setDialog(null); }}
       title={dialog === "rename" ? `Rename ${selected?.name ?? ""}` : "New knowledge file"}
@@ -171,6 +176,15 @@ export function KnowledgeBase({ id }: { id: string }) {
       </>}>
       <TextField label="File name" mono placeholder="architecture.md" value={draftName} onValueChange={setDraftName} error={nameError} />
       <ErrorText error={rename.error} />
+    </Dialog>
+    <Dialog open={removedLinks.length > 0} onOpenChange={(value) => { if (!value) setRemovedLinks([]); }} title="Links removed"
+      description="These files linked to files that are not in this project. The links were removed and their text kept."
+      footer={<Button kind="primary" onClick={() => setRemovedLinks([])}>OK</Button>}>
+      <ul className={s.removed}>
+        {[...new Set(removedLinks.map(({ file }) => file))].map((file) => <li key={file}>
+          <strong>{file}</strong>: {removedLinks.filter((link) => link.file === file).map(({ link }) => link).join(", ")}
+        </li>)}
+      </ul>
     </Dialog>
     <Dialog open={dialog === "delete"} onOpenChange={(value) => { if (!value) setDialog(null); }} title={`Delete ${selected?.name ?? ""}?`}
       footer={<>

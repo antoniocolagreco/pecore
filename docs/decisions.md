@@ -205,3 +205,4 @@
 - Decision: an upload removes links to files that are neither in the project nor in the same upload, and links with a path. The link text stays (`[notes](old.md)` becomes `notes`); a broken reference definition line is deleted. The app lists the removed links. Saving a file from the editor still refuses broken links.
 - Why: imported documents often link to files that do not come along; refusing the whole upload made importing them painful.
 - Replaces: refusing an upload with any broken link.
+- The removed links appear in a dialog with only OK, grouped by file, so the user cannot miss them. With no file open, the instructions sit centred on a blank sheet.
