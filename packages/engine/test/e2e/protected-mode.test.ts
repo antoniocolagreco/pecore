@@ -77,6 +77,8 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
       await mkdir(appLogin, { recursive: true, mode: 0o700 });
       await writeFile(join(appLogin, ".credentials.json"), "app-secret\n", { mode: 0o600 });
       await writeFile(p.accounts, JSON.stringify({ accounts: [] }) + "\n", { mode: 0o600 });
+      await mkdir(p.adapters, { recursive: true, mode: 0o755 });
+      await writeFile(join(p.adapters, "version"), "0.0.0-test\n", { mode: 0o644 });
 
       await engine.setProtectedMode(true);
       expect((await as(protectedUser, "id -un")).out).toBe(protectedUser);
