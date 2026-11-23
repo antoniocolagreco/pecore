@@ -145,3 +145,9 @@
 - Decision: Max rounds fills the inspector's width, like the other inspector fields.
 - Why: it was the only short field in the node panels.
 - Replaces: Max rounds at the 168 px width of number fields.
+
+## 2026-11-23: The recipe inspector is at most 420 px wide
+
+- Decision: the recipe inspector takes 29% of the editor's width, at most 420 px. The canvas gets the rest.
+- Why: on wide windows the inspector grew past 600 px and took space from the graph.
+- Replaces: an inspector at 29% with no maximum.

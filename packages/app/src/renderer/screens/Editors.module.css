@@ -53,7 +53,7 @@
 }
 
 .workspace {
-  grid-template-columns: minmax(0, 1fr) minmax(16rem, 29%);
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, min(29%, 420px));
   grid-template-rows: minmax(0, 1fr);
   flex: 1;
   min-height: 0;
