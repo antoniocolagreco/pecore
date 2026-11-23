@@ -175,12 +175,12 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, eff
         <ErrorText error={save.error} />
       </div>
     </Card>
-    {showContext && <Card title="Initial context" actions={<Button disabled={!contextEditable || readContext.busy} onClick={() => upload.current?.click()}>Upload Markdown</Button>}>
-      <input type="file" ref={upload} accept=".md,text/markdown" hidden onChange={(event) => {
+    {showContext && <Card title="Initial context" actions={!scope && <Button disabled={!contextEditable || readContext.busy} onClick={() => upload.current?.click()}>Upload Markdown</Button>}>
+      {!scope && <input type="file" ref={upload} accept=".md,text/markdown" hidden onChange={(event) => {
         const file: File | undefined = event.target.files?.[0];
         event.target.value = "";
         if (file) void readContext.run(file);
-      }} />
+      }} />}
       <Sidecar isMarkdown paper content={content} disabled={!contextEditable} change={changeContent} className={s.markdown} />
       <ErrorText error={context.error ?? readContext.error ?? (content.length > 1_000_000 ? "Keep the Markdown file below 1,000,000 characters." : null)} />
     </Card>}
