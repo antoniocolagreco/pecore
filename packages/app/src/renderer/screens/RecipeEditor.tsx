@@ -1,37 +1,52 @@
-import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { Background, Controls, ReactFlow } from "@xyflow/react";
-import type { Connection, Edge, Node, NodeChange, NodePositionChange, ReactFlowInstance, XYPosition } from "@xyflow/react";
-import { Name, Outcome } from "@pecore/schemas";
+import type { Connection, XYPosition } from "@xyflow/react";
+import { EdgePort, Name, Outcome, RecipeEnd, RecipeEndResult } from "@pecore/schemas";
 import type { DefinitionEntry } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { defaultDefinitionIcon, definitionIconName, DefinitionIcon, DefinitionIconField, useDefinitionIcons } from "../components/DefinitionIcon";
 import { restorePageScroll } from "../components/usePageScroll";
-import { Button, Empty, ErrorText, Field, Modal, Page, Panel, ui } from "../components/ui";
-import { Button as DsButton } from "../ds/button";
-import { TextField } from "../ds/field";
-import { Select } from "../ds/select";
+import { ErrorText, Page, Panel } from "../components/ui";
+import { Button, IconButton } from "../ds/button";
+import { Checkbox } from "../ds/choice";
+import { Card } from "../ds/feedback";
+import { TextArea, TextField } from "../ds/field";
+import { GearIcon, TrashIcon } from "../ds/icons";
+import { Dialog } from "../ds/overlay";
+import { MultiCombobox, Select } from "../ds/select";
+import type { Option } from "../ds/select";
+import { NumberField } from "../ds/values";
 import { DefinitionErrors, definitionUrl, object, parseDraft, string, useDefinitionDraft, useUnsaved } from "./NodeEditor";
 import type { NewDefinition } from "./NodeEditor";
+import { RecipeGraph } from "./RecipeGraph";
+import type { RecipeCanvas, RecipeGraphLink, RecipeGraphNode } from "./RecipeGraph";
+import { RecipeNodeKindBadge, recipeNodeKind } from "./RecipeNodeKind";
+import { RecipePalette } from "./RecipePalette";
+import type { PaletteNode } from "./RecipePalette";
+import { arrangeRecipe, freeRecipeSlot, recipeEnd, recipeLayout, recipeStart, snapRecipePosition, withRecipeBoundaries } from "./recipeLayout";
+import type { RecipeLayout, RecipeLink } from "./recipeLayout";
 import { templateTitle } from "../components/templateTitle";
-import "@xyflow/react/dist/style.css";
 import s from "./Editors.module.css";
 
-type LinkDraft = { from: string; to: string; on: string };
-const grid: [number, number] = [20, 20];
+const failureOutcomes: ReadonlySet<string> = new Set<string>([
+  "failed", "conflict", "unexpected_pass", "stale", "ci_failed", "ci_exhausted", "ci_timeout",
+]);
+const endLabels: Record<RecipeEndResult, string> = { succeeded: "Success", failed: "Failure", not_delivered: "Not delivered" };
+const endOptions: Option[] = ["succeeded", "failed"].map((value) => ({ value, label: endLabels[value as RecipeEndResult] }));
+type DraftConnection = RecipeLink & { result?: RecipeEndResult };
 
-function position(layout: Record<string, unknown>, id: string, index: number): XYPosition {
-  const point = object(layout[id]);
-  return typeof point.x === "number" && typeof point.y === "number" ? { x: point.x, y: point.y } : { x: index % 4 * 200, y: Math.floor(index / 4) * 120 };
+function graphTitle(id: string): string {
+  if (id === recipeStart) return "Start";
+  if (id === recipeEnd) return "End";
+  return templateTitle(id);
 }
 
 function RecipeFile({ path, project, newTemplate }: { path: string; project?: string; newTemplate: boolean }) {
   const navigate = useNavigate();
   const scope: string = newTemplate ? "templates" : project ? `projects/${project}` : path.slice(0, path.lastIndexOf("/recipes/"));
   const creation = useMemo<NewDefinition | undefined>(() => newTemplate || project ? {
-    content: JSON.stringify({ $schema: newTemplate ? "../../schemas/recipe.json" : "../../../schemas/recipe.json", name: "", description: "", icon: defaultDefinitionIcon.recipe, nodes: {}, edges: [] }, null, 2) + "\n",
+    content: JSON.stringify({ $schema: newTemplate ? "../../schemas/recipe.json" : "../../../schemas/recipe.json", name: "", description: "", icon: defaultDefinitionIcon.recipe, nodes: {}, edges: [], ends: [] }, null, 2) + "\n",
     path(content) {
       const name = Name.safeParse(parseDraft(content)?.name);
       return name.success ? `${scope}/recipes/${name.data}.json` : "";
@@ -59,12 +74,9 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
     const saved: string | undefined = destination ?? file.savedPath;
     if (saved) void navigate(definitionUrl("recipe", saved), { replace: true });
   }, [destination, file.savedPath]);
-  const [json, setJson] = useState(false);
   const [selected, setSelected] = useState("");
-  const [template, setTemplate] = useState("");
-  const [connection, setConnection] = useState<LinkDraft>();
-  const [drag, setDrag] = useState<Record<string, XYPosition>>({});
-  const [flow, setFlow] = useState<ReactFlowInstance>();
+  const [connection, setConnection] = useState<DraftConnection>();
+  const canvas = useRef<RecipeCanvas>(null);
   const projectId: string | undefined = project ?? /^projects\/([^/]+)$/.exec(scope)?.[1];
   const directory: string = scope + "/nodes";
   const definitions = useData(() => call("listDefinitions", { query: { dir: directory } }), [directory], (event) => event.type === "definition.changed" && event.path.startsWith(directory + "/"));
@@ -81,88 +93,194 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
     if (!project || !templateNode) return;
     await call("instantiate", { body: { kind: "node", name: templateNode, project } });
     definitions.reload();
-    setTemplate(templateNode);
     setTemplateNode(null);
   });
   const importing: boolean = importRecipe.busy || importNode.busy;
   const editable: boolean = file.editable && !importing;
   const draft = parseDraft(file.content);
   const nodes = object(draft?.nodes);
-  const layout = object(draft?.layout);
   const ci = object(draft?.ci);
   const entries = Object.entries(nodes);
   const edges: unknown[] = Array.isArray(draft?.edges) ? draft.edges : [];
-  useEffect(() => { void flow?.fitView(); }, [entries.length]);
   const selectedNode = object(nodes[selected]);
   const palette = (definitions.data ?? []).filter((item) => item.path.endsWith(".json") && !item.errors.length && string(object(item.value).name) && object(item.value).kind !== "source");
-  const nodeIcons = new Map<string, string>(palette.map(({ value }) => [string(object(value).name), string(object(value).icon)]));
-  const definition = palette.find((item) => object(item.value).name === selectedNode.use);
+  const nodeDefinitions = new Map<string, DefinitionEntry>(palette.map((item) => [string(object(item.value).name), item]));
+  const definition: DefinitionEntry | undefined = nodeDefinitions.get(string(selectedNode.use));
   const nodeValue = object(definition?.value);
+  const selectedKind = recipeNodeKind(nodeValue.kind);
+  const paletteNodes: PaletteNode[] = palette.flatMap(({ value }) => {
+    const node = object(value);
+    const kind = recipeNodeKind(node.kind);
+    if (!kind) return [];
+    const name: string = string(node.name);
+    return [{
+      name,
+      title: templateTitle(name),
+      tags: Array.isArray(node.tags) ? node.tags.map(string).filter(Boolean) : [],
+      icon: <DefinitionIcon icons={icons.data} type="node" name={name} selected={string(node.icon)} />,
+      kind,
+    }];
+  });
+  const stepOptions: Option[] = entries.map(([value]) => ({ value, label: templateTitle(value) }));
+  const optionalSteps: Option[] = [{ value: "", label: "None" }, ...stepOptions];
   const questionParameter = object(object(object(nodeValue.params).properties).question);
   const update = (changes: Record<string, unknown>): void => file.update(JSON.stringify({ ...draft, ...changes }, null, 2) + "\n");
   const updateNode = (key: string, value: unknown): void => update({ nodes: { ...nodes, [selected]: { ...selectedNode, [key]: value } } });
-  const layoutNow = (): Record<string, unknown> => ({ ...layout, ...Object.fromEntries(entries.map(([id], index) => [id, position(layout, id, index)])) });
   const highlight = (key: string): boolean => !!file.errors?.some(({ path: at }) => at === key || at.startsWith(key + "."));
-  const graphNodes: Node[] = entries.map(([id, value], index) => {
+  const start: string = string(draft?.start);
+  const ends: RecipeEnd[] = Array.isArray(draft?.ends)
+    ? draft.ends.flatMap((value) => {
+      const parsed = RecipeEnd.safeParse(value);
+      return parsed.success ? [parsed.data] : [];
+    })
+    : entries.flatMap(([from, value]) => {
+      const node = object(nodeDefinitions.get(string(object(value).use))?.value);
+      const declared: unknown = node.failOutcomes;
+      return outcomesFor(from).filter((on) => !edges.some((edge) => object(edge).from === from && object(edge).on === on)).map((on) => {
+        const failed: boolean = on === "stale" || (Array.isArray(declared) && declared.includes(on))
+          || (from === ci.after && ["ci_failed", "ci_exhausted", "ci_timeout"].includes(on));
+        const succeeded: boolean = Array.isArray(draft?.successOutcomes) && draft.successOutcomes.includes(`${from}:${on}`);
+        return { from, on, result: failed ? "failed" : succeeded ? "succeeded" : "not_delivered" };
+      });
+    });
+  const updateGraph = (changes: Record<string, unknown>): void => update({ ends, successOutcomes: undefined, ...changes });
+  const graphNodes: RecipeGraphNode[] = entries.map(([id, value]) => {
     const name: string = string(object(value).use);
+    const stepTitle: string = templateTitle(id);
+    const title: string = templateTitle(name) || stepTitle;
+    const definitionValue = object(nodeDefinitions.get(name)?.value);
+    const kind = recipeNodeKind(definitionValue.kind);
+    const showStepTitle: boolean = stepTitle !== title && stepTitle.toLowerCase() !== kind;
     return {
       id,
-      position: drag[id] ?? position(layout, id, index),
-      data: { label: <><DefinitionIcon icons={icons.data} type="node" name={name} selected={nodeIcons.get(name)} size="sm" /> {id}
-        <br /><small>{name}</small>{highlight("nodes." + id) && <><br /><strong>Invalid</strong></>}</> },
-      selected: selected === id,
-      style: highlight("nodes." + id) ? { borderColor: "var(--status-failed)" } : undefined,
+      label: <>
+        <strong title={title}><DefinitionIcon icons={icons.data} type="node" name={name} selected={string(definitionValue.icon)} size="sm" /> <span>{title}</span></strong>
+        {(kind || showStepTitle) && <div className={s.graphNodeMeta}>
+          {kind && <RecipeNodeKindBadge kind={kind} />}
+          {showStepTitle && <small title={stepTitle}>{stepTitle}</small>}
+        </div>}
+      </>,
+      invalid: highlight("nodes." + id),
+      kind,
     };
   });
-  const graphEdges: Edge[] = edges.flatMap((value, index) => {
+  const graphEdges: RecipeGraphLink[] = edges.flatMap((value, index) => {
     const edge = object(value);
-    const invalid: boolean = highlight("edges." + index);
-    if (!Object.hasOwn(nodes, string(edge.from)) || !Object.hasOwn(nodes, string(edge.to))) return [];
-    return [{ id: String(index), source: string(edge.from), target: string(edge.to), label: invalid ? string(edge.on) + " (invalid)" : string(edge.on), style: invalid ? { stroke: "var(--status-failed)", strokeWidth: 2 } : undefined }];
+    const from: string = string(edge.from);
+    const to: string = string(edge.to);
+    if (!Object.hasOwn(nodes, from) || !Object.hasOwn(nodes, to)) return [];
+    const on: string = string(edge.on);
+    const definitionName: string = string(object(nodes[from]).use);
+    const declaredFailures: unknown = object(nodeDefinitions.get(definitionName)?.value).failOutcomes;
+    return [{
+      from,
+      to,
+      on,
+      maxRounds: typeof edge.maxRounds === "number" ? edge.maxRounds : undefined,
+      sourcePort: EdgePort.safeParse(edge.sourcePort).data,
+      targetPort: EdgePort.safeParse(edge.targetPort).data,
+      invalid: highlight("edges." + index),
+      failed: failureOutcomes.has(on) || (Array.isArray(declaredFailures) && declaredFailures.includes(on)),
+    }];
   });
-  const add = (): void => {
-    if (!palette.some((item) => object(item.value).name === template)) return;
+  const automatic: RecipeLayout = arrangeRecipe(Object.keys(nodes), graphEdges, string(draft?.start), string(draft?.onBaseChanged));
+  const savedLayout: RecipeLayout = Object.fromEntries(Object.entries(object(draft?.layout)).flatMap(([id, value]) => {
+    const { x, y } = object(value);
+    return typeof x === "number" && Number.isFinite(x) && typeof y === "number" && Number.isFinite(y) ? [[id, { x, y }]] : [];
+  }));
+  const layout: RecipeLayout = recipeLayout(automatic, savedLayout);
+  const graphLayout: RecipeLayout = recipeLayout(withRecipeBoundaries(layout, start), { ...savedLayout, ...layout });
+  const startTarget: string = entries.length ? start : recipeEnd;
+  const startPorts = object(draft?.startPorts);
+  const boundaryLinks: RecipeGraphLink[] = ends.filter(({ from }) => Object.hasOwn(nodes, from)).map(({ from, on, result, sourcePort, targetPort }) => ({
+    from, on, to: recipeEnd, sourcePort, targetPort,
+    caption: `${on} · ${endLabels[result]}`, invalid: false, failed: result === "failed", neutral: result === "not_delivered",
+  }));
+  if (startTarget === recipeEnd || Object.hasOwn(nodes, startTarget)) {
+    boundaryLinks.push({
+      from: recipeStart, on: "", to: startTarget,
+      sourcePort: EdgePort.safeParse(startPorts.sourcePort).data, targetPort: EdgePort.safeParse(startPorts.targetPort).data,
+      failed: false, invalid: false,
+    });
+  }
+  const boundaryNodes: RecipeGraphNode[] = [recipeStart, recipeEnd].map((id) => ({
+    id, label: <strong>{graphTitle(id)}</strong>, invalid: id === recipeStart && highlight("start"),
+  }));
+  const add = (template: string, point: XYPosition): void => {
+    if (!editable || !nodeDefinitions.has(template)) return;
+    const drop: XYPosition | undefined = canvas.current?.dropPosition(point);
+    if (!drop) return;
     let id: string = template;
     for (let number: number = 2; Object.hasOwn(nodes, id); number++) id = template + "-" + number;
-    update({ nodes: { ...nodes, [id]: { use: template } }, start: draft?.start ?? id, layout: { ...layoutNow(), [id]: position({}, id, entries.length) } });
-    setSelected(id);
-    setTemplate("");
-  };
-  const move = (changes: NodeChange<Node>[]): void => {
-    if (!editable) return;
-    const moves = changes.filter((change): change is NodePositionChange & { position: XYPosition } => change.type === "position" && !!change.position);
-    if (!moves.length) return;
-    setDrag((previous) => {
-      const next: Record<string, XYPosition> = { ...previous };
-      for (const change of moves) {
-        if (change.dragging) next[change.id] = change.position;
-        else delete next[change.id];
-      }
-      return next;
+    const position: XYPosition = freeRecipeSlot(graphLayout, snapRecipePosition(drop));
+    updateGraph({
+      nodes: { ...nodes, [id]: { use: template } },
+      layout: { ...savedLayout, ...layout, [id]: position },
+      startPorts: entries.length ? draft?.startPorts : undefined,
     });
-    const finished = moves.filter((change) => !change.dragging);
-    if (finished.length) update({ layout: { ...layoutNow(), ...Object.fromEntries(finished.map((change) => [change.id, change.position])) } });
+    setSelected(id);
   };
-  const connect = ({ source, target }: Connection): void => {
-    if (editable) setConnection({ from: source, to: target, on: "" });
+  const removeSelected = (): void => {
+    if (!editable || !draft || !Object.hasOwn(nodes, selected)) return;
+    const remaining: Record<string, unknown> = Object.fromEntries(entries.filter(([id]) => id !== selected).map(([id, value]) => {
+      const node = object(value);
+      const agent = object(node.agent);
+      const requires: unknown = Array.isArray(node.requires) ? node.requires.filter((ref) => ref !== selected) : node.requires;
+      const providerNot: unknown = Array.isArray(agent.providerNot) ? agent.providerNot.filter((ref) => ref !== selected) : agent.providerNot;
+      return [id, { ...node, requires, agent: node.agent && { ...agent, providerNot } }];
+    }));
+    updateGraph({
+      nodes: remaining,
+      edges: edges.filter((value) => object(value).from !== selected && object(value).to !== selected),
+      layout: Object.fromEntries(Object.entries(graphLayout).filter(([id]) => id !== selected)),
+      start: draft.start === selected ? undefined : draft.start,
+      startPorts: draft.start === selected ? undefined : draft.startPorts,
+      onBaseChanged: draft.onBaseChanged === selected ? undefined : draft.onBaseChanged,
+      ci: ci.after === selected ? undefined : draft.ci,
+      ends: ends.filter(({ from }) => from !== selected),
+    });
+    setSelected("");
   };
-  const nodeSelect = (key: string, label: string): ReactNode => <Field label={label}><select value={string(draft?.[key])} onChange={(event) => update({ [key]: event.target.value || undefined })}>
-    <option value="">None</option>{entries.map(([id]) => <option key={id}>{id}</option>)}
-  </select></Field>;
-  const outcomeSource = connection && palette.find((item) => object(item.value).name === object(nodes[connection.from]).use);
-  const sourceOutcomes: unknown = object(outcomeSource?.value).outcomes;
-  const outcomes: string[] = Array.isArray(sourceOutcomes) ? [...sourceOutcomes] : [];
-  if (connection && connection.from === ci.after) {
-    const index: number = outcomes.indexOf(string(ci.on));
-    if (index >= 0) outcomes.splice(index, 1);
-    outcomes.push("ci_passed", "ci_failed", "ci_exhausted", "ci_timeout");
+  const connect = ({ source, target, sourceHandle, targetHandle }: Connection): void => {
+    if (!editable || source === recipeEnd || target === recipeStart) return;
+    const sourcePort = EdgePort.safeParse(sourceHandle).data;
+    const targetPort = EdgePort.safeParse(targetHandle).data;
+    if (source === recipeStart) {
+      if (Object.hasOwn(nodes, target) || (target === recipeEnd && entries.length === 0)) {
+        updateGraph({ start: target === recipeEnd ? undefined : target, startPorts: { sourcePort, targetPort } });
+      }
+      return;
+    }
+    setConnection({
+      from: source,
+      to: target,
+      on: "",
+      sourcePort,
+      targetPort,
+    });
+  };
+  function outcomesFor(id: string): string[] {
+    const node = object(nodes[id]);
+    const sourceOutcomes: unknown = object(nodeDefinitions.get(string(node.use))?.value).outcomes;
+    const outcomes: string[] = Array.isArray(sourceOutcomes) ? sourceOutcomes.map(string).filter(Boolean) : [];
+    if (Array.isArray(node.requires) && node.requires.length) outcomes.push("stale");
+    if (node.optional === true) outcomes.push("skipped");
+    if (id === ci.after) {
+      const trigger: number = outcomes.indexOf(string(ci.on));
+      if (trigger >= 0) outcomes.splice(trigger, 1);
+      outcomes.push("ci_passed", "ci_failed", "ci_exhausted", "ci_timeout");
+    }
+    return outcomes;
   }
+  const outcomes: Option[] = connection ? outcomesFor(connection.from).map((outcome) => ({ value: outcome, label: outcome })) : [];
+  const inspectorOutcomes: string[] = selected ? outcomesFor(selected) : [];
+  const required: string[] = Array.isArray(selectedNode.requires) ? selectedNode.requires.map(string) : [];
 
   const recipeOptions = templateOptions(recipeTemplates.data);
   const nodeOptions = templateOptions(nodeTemplates.data).filter(({ value }) => !palette.some((item) => object(item.value).name === value));
   return <Page title={creation ? "New Recipe" : templateTitle(string(draft?.name)) || "Recipe editor"} actions={<>
-    {!creation && scope === "templates" && <DsButton loading={duplicate.busy} disabled={!editable || !file.ready || !draft || file.dirty}
-      onClick={() => void duplicate.run()}>Duplicate</DsButton>}
+    {!creation && scope === "templates" && <Button loading={duplicate.busy} disabled={!editable || !file.ready || !draft || file.dirty}
+      onClick={() => void duplicate.run()}>Duplicate</Button>}
     {file.saveButton(importing)}
   </>}>
     {projectId && <Link to={`/projects/${encodeURIComponent(projectId)}?tab=recipes`} state={restorePageScroll}>Back to recipes</Link>}
@@ -171,103 +289,137 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
     <ErrorText error={duplicate.error} />
     {project && <Panel><div className={s.importRow}>
       <Select label="Recipe template" value={recipeTemplate} onValueChange={setRecipeTemplate} options={recipeOptions} disabled={!editable || !recipeOptions.length} placeholder="Choose a template" />
-      <DsButton loading={importRecipe.busy} disabled={!editable || !recipeTemplate} onClick={() => void importRecipe.run()}>Import template</DsButton>
+      <Button loading={importRecipe.busy} disabled={!editable || !recipeTemplate} onClick={() => void importRecipe.run()}>Import template</Button>
     </div><ErrorText error={recipeTemplates.error ?? importRecipe.error} /></Panel>}
-    {file.ready && <Panel>
-      <div className={ui.row}>
-        <Button disabled={!file.connected || !draft} aria-pressed={!json && !!draft} onClick={() => setJson(false)}>Graph</Button>
-        <Button disabled={!file.connected} aria-pressed={json || !draft} onClick={() => setJson(true)}>JSON</Button>
-      </div>
-      {json || !draft ? <Field label="Recipe JSON"><textarea className={s.json} disabled={!editable} value={file.content} onChange={(event) => { setJson(true); file.update(event.target.value); }} /></Field> :
+    {file.ready && <div className={s.recipePanel}>
+      {draft ? <>
+        <RecipePalette nodes={paletteNodes} disabled={!editable} loading={definitions.loading} onAdd={add}>
+          <ErrorText error={definitions.error} />
+          {project && <div className={s.projectPalette}>
+            <div className={s.importRow}>
+              <Select label="Node template" value={templateNode} onValueChange={setTemplateNode} options={nodeOptions}
+                disabled={!editable || !nodeOptions.length} placeholder="Choose a node" />
+              <Button loading={importNode.busy} disabled={!editable || !templateNode} onClick={() => void importNode.run()}>Import node</Button>
+            </div>
+            <ErrorText error={nodeTemplates.error ?? importNode.error} />
+          </div>}
+        </RecipePalette>
         <div className={s.workspace}>
-          <div className={ui.stack}>
-            <ErrorText error={definitions.error} />
-            <div className={ui.row}>
-              <select aria-label="Node definition" disabled={!editable} value={template} onChange={(event) => setTemplate(event.target.value)}>
-                <option value="">{definitions.loading ? "Loading nodes…" : "Select a node"}</option>
-                {palette.map((item) => <option key={item.path}>{string(object(item.value).name)}</option>)}
-              </select>
-              <Button disabled={!editable || !template || !palette.some((item) => object(item.value).name === template)} onClick={add}>Add node</Button>
-            </div>
-            {project && <>
-              <div className={s.importRow}>
-                <Select label="Node template" value={templateNode} onValueChange={setTemplateNode} options={nodeOptions} disabled={!editable || !nodeOptions.length} placeholder="Choose a node" />
-                <DsButton loading={importNode.busy} disabled={!editable || !templateNode} onClick={() => void importNode.run()}>Import node</DsButton>
-              </div>
-              <ErrorText error={nodeTemplates.error ?? importNode.error} />
-            </>}
-            {!project && !definitions.loading && !palette.length && <Empty>No valid node definitions in this scope.</Empty>}
-            <div className={s.graph} inert={!editable}>
-              <ReactFlow nodes={graphNodes} edges={graphEdges} snapToGrid snapGrid={grid} fitView onInit={setFlow} deleteKeyCode={null}
-                onNodesChange={move} onConnect={connect} nodesDraggable={editable} nodesConnectable={editable}
-                onNodeClick={(_, node) => setSelected(node.id)} onPaneClick={() => setSelected("")}>
-                <Background gap={grid[0]} /><Controls showInteractive={false} />
-              </ReactFlow>
-            </div>
-          </div>
-          <fieldset className={s.fields} disabled={!editable}>
-            {Object.hasOwn(nodes, selected) ? <>
-              <div className={ui.row}><strong>{selected}</strong><Button onClick={() => setSelected("")}>Recipe settings</Button></div>
-              <Field label="Use"><select value={string(selectedNode.use)} onChange={(event) => updateNode("use", event.target.value)}>
-                {!definition && <option>{string(selectedNode.use)}</option>}
-                {palette.map((item) => <option key={item.path}>{string(object(item.value).name)}</option>)}
-              </select></Field>
-              {definition && <><span>{string(nodeValue.kind)}{Array.isArray(nodeValue.outcomes) && " · " + nodeValue.outcomes.join(", ")}</span>{file.editable && <Link to={definitionUrl("node", definition.path)}>Edit node</Link>}</>}
-              {nodeValue.kind === "human-decision" && questionParameter.type === "string" && <TextField label="Question"
-                value={string(object(selectedNode.params).question)} placeholder={string(questionParameter.default)}
-                onValueChange={(question) => updateNode("params", { ...object(selectedNode.params), question: question.trim() ? question : undefined })} />}
-              <Field label="Requires (comma separated)"><input value={Array.isArray(selectedNode.requires) ? selectedNode.requires.join(",") : ""} onChange={(event) => updateNode("requires", event.target.value ? event.target.value.split(",") : [])} /></Field>
-              <label><input type="checkbox" checked={selectedNode.optional === true} onChange={(event) => updateNode("optional", event.target.checked)} /> Optional</label>
-              <label><input type="checkbox" checked={selectedNode.skipWhenUnchanged === true} onChange={(event) => updateNode("skipWhenUnchanged", event.target.checked)} /> Skip when unchanged</label>
-              {edges.map((value, index) => {
-                const edge = object(value);
-                return edge.from === selected && <Field key={index} label={string(edge.on) + " → " + string(edge.to) + " · Max rounds"}>
-                  <input type="number" min={1} value={typeof edge.maxRounds === "number" ? edge.maxRounds : ""} onChange={(event) => update({ edges: edges.map((item, i) => i === index ? { ...edge, maxRounds: event.target.value ? Number(event.target.value) : undefined } : item) })} />
-                  <Button onClick={() => update({ edges: edges.filter((_, i) => i !== index) })}>Remove edge</Button>
-                </Field>;
-              })}
-            </> : <>
-              <strong>Recipe settings</strong>
-              {creation && <TextField label="Name" required value={string(draft.name)} onValueChange={(name) => update({ name })} description="Lowercase letters, digits and hyphens. Start with a letter." />}
-              <TextField label="Description" required value={string(draft.description)} onValueChange={(description) => update({ description })} />
-              <DefinitionIconField icons={icons.data} type="recipe" name={string(draft.name)} value={string(draft.icon)} disabled={!editable}
-                onChange={(icon) => update({ icon })} />
-              {nodeSelect("start", "Start")}
-              {nodeSelect("onBaseChanged", "On base changed")}
-              <Field label="Wait for GitHub CI after"><select value={string(ci.after)} onChange={(event) => {
-                const after: string = event.target.value;
-                update({ ci: after ? { on: "opened", checks: [], intervalSec: 30, timeoutSec: 1800, maxCorrections: 2, ...ci, after } : undefined });
-              }}><option value="">None</option>{entries.map(([id]) => <option key={id}>{id}</option>)}</select></Field>
-              {typeof ci.after === "string" && <>
-                <TextField label="Trigger outcome" value={string(ci.on)} onValueChange={(on) => update({ ci: { ...ci, on } })} />
-                <TextField label="CI checks (comma separated)" value={Array.isArray(ci.checks) ? ci.checks.join(",") : ""}
-                  onValueChange={(value) => update({ ci: { ...ci, checks: value.split(",") } })} />
-                {(["intervalSec", "timeoutSec", "maxCorrections"] as const).map((key) => <Field key={key}
-                  label={{ intervalSec: "Poll every (seconds)", timeoutSec: "Timeout (seconds)", maxCorrections: "Maximum corrections" }[key]}>
-                  <input type="number" min={key === "maxCorrections" ? 0 : 1} value={typeof ci[key] === "number" ? ci[key] : ""}
-                    onChange={(event) => update({ ci: { ...ci, [key]: event.target.value ? Number(event.target.value) : undefined } })} />
-                </Field>)}
+          <RecipeGraph ref={canvas} steps={[...graphNodes, ...boundaryNodes]} links={[...graphEdges, ...boundaryLinks]}
+            layout={graphLayout} automatic={withRecipeBoundaries(automatic, start)}
+            start={recipeStart} editable={editable} selected={selected} onSelect={setSelected}
+            onConnect={connect} onLayout={(next) => update({ layout: next })} />
+          <Card title={selected ? templateTitle(string(selectedNode.use) || selected) : "Recipe settings"}
+            actions={selected ? <div className={s.inspectorActions}>
+              <IconButton label="Recipe settings" icon={<GearIcon />} onClick={() => setSelected("")} />
+              <IconButton label="Remove node" variant="danger" icon={<TrashIcon />} disabled={!editable} onClick={removeSelected} />
+            </div> : undefined}
+            className={s.inspector}>
+            <fieldset className={s.inspectorFields} disabled={!editable}>
+              {selected ? <>
+                <div className={s.inspectorMeta}>
+                  {selectedKind && <RecipeNodeKindBadge kind={selectedKind} />}
+                  {nodeValue.kind === "human-decision" && <span>Decision</span>}
+                  {nodeValue.kind === "human-review" && <span>Review</span>}
+                  {definition && file.editable && <Link to={definitionUrl("node", definition.path)}>Edit definition</Link>}
+                </div>
+                {!!inspectorOutcomes.length && <div className={s.inspectorOutcomes}>
+                  <strong>Outcomes</strong>
+                  <span>{inspectorOutcomes.join(", ")}</span>
+                </div>}
+                {nodeValue.kind === "human-decision" && questionParameter.type === "string" && <TextField label="Question"
+                  value={string(object(selectedNode.params).question)} placeholder={string(questionParameter.default)} disabled={!editable}
+                  onValueChange={(question) => updateNode("params", { ...object(selectedNode.params), question: question.trim() ? question : undefined })} />}
+                <MultiCombobox label="Requires" placeholder="Choose nodes" value={required} disabled={!editable}
+                  options={stepOptions.filter(({ value }) => value !== selected || required.includes(value))}
+                  onValueChange={(next) => updateNode("requires", next)} />
+                <Checkbox label="Optional" checked={selectedNode.optional === true} disabled={!editable} onCheckedChange={(checked) => updateNode("optional", checked)} />
+                <Checkbox label="Skip when unchanged" checked={selectedNode.skipWhenUnchanged === true} disabled={!editable} onCheckedChange={(checked) => updateNode("skipWhenUnchanged", checked)} />
+                {edges.map((value, index) => {
+                  const edge = object(value);
+                  return edge.from === selected && <div key={index} className={s.inspectorEdge}>
+                    <div className={s.inspectorEdgeHeader}>
+                      <strong>{templateTitle(string(edge.on).replaceAll("_", "-"))} → {templateTitle(string(edge.to))}</strong>
+                      <IconButton label="Remove edge" icon={<TrashIcon />} disabled={!editable}
+                        onClick={() => updateGraph({ edges: edges.filter((_, i) => i !== index) })} />
+                    </div>
+                    <NumberField label="Max rounds" min={1} disabled={!editable} value={typeof edge.maxRounds === "number" ? edge.maxRounds : null}
+                      onValueChange={(next) => update({ edges: edges.map((item, i) => i === index ? { ...edge, maxRounds: next ?? undefined } : item) })} />
+                  </div>;
+                })}
+                {ends.filter(({ from }) => from === selected).map((end) => <div className={s.inspectorEdge} key={end.on}>
+                  <div className={s.inspectorEdgeHeader}>
+                    <strong>{end.on} → End</strong>
+                    <IconButton label="Remove connection to End" icon={<TrashIcon />} disabled={!editable}
+                      onClick={() => updateGraph({ ends: ends.filter((item) => item !== end) })} />
+                  </div>
+                  <Select label="Result" value={end.result} disabled={!editable}
+                    options={end.result === "not_delivered" ? [...endOptions, { value: end.result, label: endLabels[end.result] }] : endOptions}
+                    onValueChange={(value) => {
+                      const result = RecipeEndResult.safeParse(value);
+                      if (result.success) updateGraph({ ends: ends.map((item) => item === end ? { ...item, result: result.data } : item) });
+                    }} />
+                </div>)}
+              </> : <>
+                {creation && <TextField label="Name" required disabled={!editable} value={string(draft.name)}
+                  onValueChange={(name) => update({ name })} description="Lowercase letters, digits and hyphens. Start with a letter." />}
+                <TextArea label="Description" required disabled={!editable} value={string(draft.description)}
+                  onValueChange={(description) => update({ description })} className={s.recipeDescription} />
+                <DefinitionIconField icons={icons.data} type="recipe" name={string(draft.name)} value={string(draft.icon)} disabled={!editable}
+                  onChange={(icon) => update({ icon })} />
+                <Select label="On base changed" options={optionalSteps} value={string(draft.onBaseChanged)} disabled={!editable} placeholder="None"
+                  onValueChange={(next) => update({ onBaseChanged: next || undefined })} />
+                <Select label="Wait for GitHub CI after" options={optionalSteps} value={string(ci.after)} disabled={!editable} placeholder="None" onValueChange={(after) => {
+                  update({ ci: after ? { on: "opened", checks: [], intervalSec: 30, timeoutSec: 1800, maxCorrections: 2, ...ci, after } : undefined });
+                }} />
+                {typeof ci.after === "string" && <>
+                  <TextField label="Trigger outcome" disabled={!editable} value={string(ci.on)} onValueChange={(on) => update({ ci: { ...ci, on } })} />
+                  <TextField label="CI checks (comma separated)" disabled={!editable} value={Array.isArray(ci.checks) ? ci.checks.join(",") : ""}
+                    onValueChange={(value) => update({ ci: { ...ci, checks: value.split(",") } })} />
+                  {(["intervalSec", "timeoutSec", "maxCorrections"] as const).map((key) => <NumberField key={key}
+                    label={{ intervalSec: "Poll every", timeoutSec: "Timeout", maxCorrections: "Maximum corrections" }[key]}
+                    unit={key === "maxCorrections" ? undefined : "s"} min={key === "maxCorrections" ? 0 : 1}
+                    value={typeof ci[key] === "number" ? ci[key] : null} disabled={!editable}
+                    onValueChange={(next) => update({ ci: { ...ci, [key]: next ?? undefined } })} />)}
+                </>}
+                <NumberField label="Max node runs" min={1} value={typeof draft.maxNodeRuns === "number" ? draft.maxNodeRuns : null}
+                  disabled={!editable} onValueChange={(next) => update({ maxNodeRuns: next ?? undefined })} />
               </>}
-              <Field label="Max node runs"><input type="number" min={1} value={typeof draft.maxNodeRuns === "number" ? draft.maxNodeRuns : ""} placeholder="100" onChange={(event) => update({ maxNodeRuns: event.target.value ? Number(event.target.value) : undefined })} /></Field>
-              <Field label="Success outcomes (comma separated)"><input value={Array.isArray(draft.successOutcomes) ? draft.successOutcomes.join(",") : ""} onChange={(event) => update({ successOutcomes: event.target.value ? event.target.value.split(",") : [] })} /></Field>
-            </>}
-          </fieldset>
-        </div>}
+            </fieldset>
+          </Card>
+        </div>
+      </> : <ErrorText error="Unable to read the recipe definition." />}
       <DefinitionErrors errors={file.errors} />
-    </Panel>}
-    <Modal open={!!connection} onClose={() => setConnection(undefined)} title="Connect nodes">
-      {connection && <form className={ui.stack} onSubmit={(event) => {
+    </div>}
+    <Dialog open={!!connection} onOpenChange={(open) => { if (!open) setConnection(undefined); }} title="Connect nodes"
+      description={connection && `${graphTitle(connection.from)} → ${graphTitle(connection.to)}`}
+      footer={<>
+        <Button variant="ghost" onClick={() => setConnection(undefined)}>Cancel</Button>
+        <Button variant="primary" type="submit" form="recipe-connection"
+          disabled={!connection || !editable || !Outcome.safeParse(connection.on).success || (connection.to === recipeEnd && !connection.result)}>Connect</Button>
+      </>}>
+      {connection && <form id="recipe-connection" className={s.inspectorFields} onSubmit={(event) => {
         event.preventDefault();
-        if (!file.editable || !Outcome.safeParse(connection.on).success) return;
-        update({ edges: [...edges, connection] });
+        if (!editable || !Outcome.safeParse(connection.on).success) return;
+        const { from, on, to, sourcePort, targetPort, result } = connection;
+        const remainingEdges: unknown[] = edges.filter((value) => object(value).from !== from || object(value).on !== on);
+        const remainingEnds: RecipeEnd[] = ends.filter((item) => item.from !== from || item.on !== on);
+        if (to === recipeEnd) {
+          if (!result) return;
+          updateGraph({ edges: remainingEdges, ends: [...remainingEnds, { from, on, result, sourcePort, targetPort }] });
+        } else {
+          updateGraph({ edges: [...remainingEdges, { from, on, to, sourcePort, targetPort }], ends: remainingEnds });
+        }
         setConnection(undefined);
       }}>
-        <p>{connection.from} → {connection.to}</p>
-        <Field label="Outcome"><input disabled={!file.editable} list="edge-outcomes" value={connection.on} onChange={(event) => setConnection({ ...connection, on: event.target.value })} /></Field>
-        <datalist id="edge-outcomes">{Array.isArray(outcomes) && outcomes.map((value) => <option key={string(value)} value={string(value)} />)}</datalist>
-        <Button type="submit" kind="primary" disabled={!file.editable || !Outcome.safeParse(connection.on).success}>Connect</Button>
+        {outcomes.length
+          ? <Select label="Outcome" disabled={!editable} value={connection.on || null} options={outcomes}
+            onValueChange={(on) => setConnection({ ...connection, on: on ?? "" })} />
+          : <TextField label="Outcome" disabled={!editable} value={connection.on} onValueChange={(on) => setConnection({ ...connection, on })} />}
+        {connection.to === recipeEnd && <Select label="Result" options={endOptions} value={connection.result ?? null} disabled={!editable}
+          onValueChange={(value) => setConnection({ ...connection, result: RecipeEndResult.safeParse(value).data })} />}
       </form>}
-    </Modal>
+    </Dialog>
     {warn}
   </Page>;
 }
@@ -281,7 +433,7 @@ function useTemplates(section: "recipes" | "nodes", enabled: boolean) {
 function templateOptions(entries: DefinitionEntry[] | undefined): { value: string; label: string }[] {
   return (entries ?? []).flatMap(({ path, value, errors }) => {
     const name: string = string(object(value).name);
-    return path.endsWith(".json") && name && !errors.length && object(value).kind !== "source" ? [{ value: name, label: name }] : [];
+    return path.endsWith(".json") && name && !errors.length && object(value).kind !== "source" ? [{ value: name, label: templateTitle(name) }] : [];
   });
 }
 

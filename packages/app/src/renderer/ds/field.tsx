@@ -13,6 +13,7 @@ export type FieldProps = {
 };
 
 type TextProps = FieldProps & {
+  ariaLabel?: string;
   value?: string;
   defaultValue?: string;
   onValueChange?: (value: string) => void;
@@ -176,6 +177,7 @@ export function SearchField({ label, description, error, disabled, className, sh
           className={s.input}
           type="text"
           role="searchbox"
+          aria-label={input.ariaLabel}
           value={value}
           onValueChange={(next) => setValue(String(next))}
           onKeyDown={(event) => {

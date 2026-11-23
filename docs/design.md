@@ -391,7 +391,14 @@ A GitHub recipe can use `write-pr` to write a title and description and `github-
   "start": "spec",
   "onBaseChanged": "rebase",
   "maxNodeRuns": 60,
-  "successOutcomes": ["pr:opened"],
+  "ends": [
+    { "from": "spec", "on": "rejected", "result": "not_delivered" },
+    { "from": "human", "on": "reject", "result": "not_delivered" },
+    { "from": "commit", "on": "failed", "result": "failed" },
+    { "from": "push", "on": "failed", "result": "failed" },
+    { "from": "pr", "on": "opened", "result": "succeeded" },
+    { "from": "pr", "on": "failed", "result": "failed" }
+  ],
   "nodes": {
     "spec":    { "use": "spec-writer" },
     "tests":   { "use": "tests-writer" },
@@ -443,15 +450,17 @@ Recipe fields:
 | `start` | the first node |
 | `onBaseChanged` | the node the job re-enters when its base moves (D17, 4.2) |
 | `maxNodeRuns` | cap on node runs per job (4.2) |
-| `layout` | optional node positions for the graph editor (`{ "<node id>": { "x", "y" } }`, on a grid); ignored by the engine; a recipe without it is laid out automatically when opened |
-| `successOutcomes` | the final outcomes, as `<node>:<outcome>`, that mean the work was delivered (for example `pr:opened`, `commit:done`); they end the job as `succeeded` (4.1, 4.2). The validator requires each to be an outcome of that node with no edge and not in its `failOutcomes`, and at least one in every recipe that has nodes |
+| `layout` | optional node positions for the graph editor (`{ "<node id>": { "x", "y" } }`); ignored by the engine. The editor arranges a recipe without positions from left to right and snaps each node to a free grid cell when dropped. While a node moves, its arrows route from the live positions and keep any explicitly chosen sides. Arrange recalculates the positions in the draft |
+| `ends` | connections to End. Each has `from`, `on` and `result` (`succeeded`, `failed` or an existing `not_delivered` result). The editor saves any chosen sides in `sourcePort` and `targetPort`. Each reachable outcome must have exactly one connection |
+| `startPorts` | optional `sourcePort` and `targetPort` for the connection from Start |
+| `successOutcomes` | legacy list of successful `<node>:<outcome>` values for recipes saved without `ends` |
 | `nodes.<id>.use` | a node template name |
 | `nodes.<id>.params`, `nodes.<id>.agent` | step parameters and agent settings. Engine-user commands take their arguments from the node template |
 | `nodes.<id>.requires` | nodes whose latest outcome must be `passed` on the current content state (4.4) |
 | `nodes.<id>.optional` | runs only if the `spec` names it (4.2) |
 | `nodes.<id>.session` | a session group name for agent nodes. Agent nodes of the same job with the same group and the same profile share one harness session: each run resumes the session of the previous run in the group, so the fixed prompt is paid once. A node with no group gets a new session (or its own, with `resume`). A profile change (for example a fallback on quota) starts a new session for the group. Reviewers should have no group, so they judge the code without the builder's history |
 | `nodes.<id>.skipWhenUnchanged` | after a base change, if the rebase was clean and the job's own changes are identical to before (same `git patch-id` of the job's diff), the node ends at once with its previous outcome instead of running, and that outcome is bound to the new content state (4.4): an approval of the same patch carries over. Used to avoid repeating reviews and human approvals; checks never use it |
-| `edges` | `from`, `on` (outcome), `to`, optional `maxRounds` |
+| `edges` | `from`, `on` (outcome), `to`, optional `maxRounds`. The editor can save `sourcePort` and `targetPort` (left, right, top or bottom) for each arrow |
 
 Notes on the example:
 
@@ -459,7 +468,7 @@ Notes on the example:
 *   After a rebase the job runs again through `commit`, `push` and `pr`. `git-commit` with nothing new to commit ends with `done` on the current commit. `git-push` pushes `{job.commit}` with `--force-with-lease`; its probe compares the remote branch head with `{job.commit}`, so a rebased commit is always pushed. `github-pr` finds the existing PR through its probe and does not open a second one (4.8).
 *   The spec lists the interfaces (function names and signatures). The tests node writes the tests and stubs of those interfaces that throw "not implemented". `tests-check` runs the type checker: it passes when tests and stubs are valid, while the tests still fail when run. Failures go back to the tests node. The builder fills the stubs and never edits tests, so it never receives failures in test files it may not change (concepts brief, finding M2).
 *   `spec: rejected` means the spec writer found the ticket unclear or not feasible; the job ends and the reason is in the `spec` artifact. `code: tests_disputed` means the builder reports a test as wrong; the job goes back to the tests node with the builder's reason.
-*   `human: reject` has no edge and is not in `successOutcomes`, so it ends the job as `not_delivered` with outcome `human:reject`. `pr: failed` is in `failOutcomes` of `github-pr`, so with no edge it ends the job as `failed` (4.2).
+*   The connections to End give `human:reject` the result `not_delivered` and `pr:failed` the result `failed`.
 
 #### 3.3 Artifacts
 
@@ -565,7 +574,7 @@ Pause waits for the running node run to finish, then holds. Play moves a paused 
 *   **Start**: the job runs `start` first.
 *   **One node at a time**: a job has one workdir and runs one node at a time (4.5).
 *   **Edges**: when a node run ends with an outcome, the edge `from` that node `on` that outcome starts its target. The validator rejects two edges with the same `from` and `on`.
-*   **No edge**: an outcome with no edge ends the job, with that node and outcome recorded. The job is `failed` if the outcome is in the node's `failOutcomes` or is the built-in `stale`; `succeeded` if `<node>:<outcome>` is in the recipe's `successOutcomes` (for example `pr:opened`); otherwise `not_delivered` (for example `human:reject`, `spec:rejected`). The empty recipe ends `succeeded`. The job's failure reason is `<node>:<outcome>`.
+*   **End**: a step outcome either continues along an edge or reaches End with the result recorded in `ends`. The empty recipe goes directly from Start to End and succeeds. An unrouted outcome in an explicit recipe is a validation error. A previously saved recipe without `ends` retains its terminal rules based on `failOutcomes`, `successOutcomes` and `not_delivered`.
 *   **Rounds**: an edge with `maxRounds: n` can send the job back to its target at most `n` times. A job-wide `maxNodeRuns` caps the total number of node runs. When a cap blocks an edge, the job enters `waiting` with reason `round_limit` and asks the user: allow more rounds, or end the job as `failed`.
 *   **Optional nodes**: a recipe node with `optional: true` runs only if the `spec` artifact names it; otherwise it ends at once with the built-in outcome `skipped`, which the recipe must route.
 *   **Base change**: a job's base and target change only through a request, recorded as `job.base_change_requested`, in exactly three cases: its parent job's branch gets a new commit (from a node of the parent job); its parent's delivery is detected as merged (4.6); the user, the Assistant or the Project Manager asks to realign it to a branch. A job inherits its base branch from the project when it is created (or from the branch chosen at creation), and its base never moves while it works. A request is applied at once when the job is `queued`, `succeeded`, `not_delivered`, `stopped` or `failed`; otherwise it waits and is applied when the job reaches one of those states. Requests that wait are merged into one, the latest. A realign asked by the user is refused while the job is `running`, `waiting` or `paused`. Applying a request records `job.base_changed`; a job that has started then re-enters `running` at `onBaseChanged` (its worktree recreated if needed), where the rebase node moves its commits and the delivery node moves its PR or MR. If the recipe has no `onBaseChanged`, the job only shows that its base moved. Commits pushed to a branch by hand on the forge, or new commits on `baseBranch`, are not detected; the user realigns by hand.
