@@ -9,7 +9,7 @@ import { ErrorText, Page, ui } from "../components/ui";
 import { ModelPicker, Traits } from "../components/AgentFields";
 import { Button } from "../ds/button";
 import { Card, Spinner } from "../ds/feedback";
-import { TextField } from "../ds/field";
+import { TextArea, TextField } from "../ds/field";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
 import { SidebarItem, SidebarSection } from "../shell/sidebar";
@@ -135,6 +135,7 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, eff
   const readContext = useAction(async (file: File) => changeContent(await file.text()));
   const editable: boolean = !disabled && !save.busy && !destroy.busy;
   const contextEditable: boolean = editable && (creating || context.data !== undefined);
+  const contextError: string | undefined = context.error?.message ?? (content.length > 1_000_000 ? "Keep the context below 1,000,000 characters." : undefined);
   const tooLong: boolean = agent.name.trim().length > (agent.kind === "pm" ? 24 : 80);
   const valid: boolean = !!agent.name.trim() && !duplicate && !tooLong && (agent.model === null ? !!scope : !!agent.model.model) && content.length <= 1_000_000;
   const inheritance: string | undefined = scope?.project ? "Project Manager Default" : scope?.role === "pm" ? "Default model" : scope ? "Auto-configured model" : undefined;
@@ -172,17 +173,19 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, scope, eff
         </div>
         {(agent.kind === "assistant" || (agent.kind === "pm" && scope?.project)) && <Traits value={agent.traits} disabled={!editable}
           onChange={(traits: AssistantTraitId[]) => changeAgent((entry) => entry.kind === "agent" ? entry : { ...entry, traits })} />}
+        {scope?.project && <TextArea label="Initial context" rows={5} value={content} onValueChange={changeContent}
+          disabled={!contextEditable} error={contextError} />}
         <ErrorText error={save.error} />
       </div>
     </Card>
-    {showContext && <Card title="Initial context" actions={!scope && <Button disabled={!contextEditable || readContext.busy} onClick={() => upload.current?.click()}>Upload Markdown</Button>}>
-      {!scope && <input type="file" ref={upload} accept=".md,text/markdown" hidden onChange={(event) => {
+    {!scope && <Card title="Initial context" actions={<Button disabled={!contextEditable || readContext.busy} onClick={() => upload.current?.click()}>Upload Markdown</Button>}>
+      <input type="file" ref={upload} accept=".md,text/markdown" hidden onChange={(event) => {
         const file: File | undefined = event.target.files?.[0];
         event.target.value = "";
         if (file) void readContext.run(file);
-      }} />}
+      }} />
       <Sidecar isMarkdown paper content={content} disabled={!contextEditable} change={changeContent} className={s.markdown} />
-      <ErrorText error={context.error ?? readContext.error ?? (content.length > 1_000_000 ? "Keep the Markdown file below 1,000,000 characters." : null)} />
+      <ErrorText error={contextError ?? readContext.error} />
     </Card>}
     {catalog && <Dialog open={remove} onOpenChange={setRemove} title={`Delete ${agent.name}?`} footer={<>
       <Button onClick={() => setRemove(false)}>Cancel</Button>

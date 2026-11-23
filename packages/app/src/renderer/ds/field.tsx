@@ -91,7 +91,7 @@ export function TextField({ label, labelAction, description, error, disabled, cl
   );
 }
 
-export function TextArea({ label, labelAction, description, error, disabled, className, maxLength, mono, ...input }: TextProps & { maxLength?: number }) {
+export function TextArea({ label, labelAction, description, error, disabled, className, maxLength, mono, rows, ...input }: TextProps & { maxLength?: number; rows?: number }) {
   const [value, setValue] = useText(input);
   const counter = maxLength === undefined ? undefined : (
     <span className={s.counter} data-over={value.length > maxLength ? "" : undefined}>{value.length} / {maxLength}</span>
@@ -100,7 +100,7 @@ export function TextArea({ label, labelAction, description, error, disabled, cla
     <FieldFrame label={label} labelAction={labelAction} description={description} error={error} disabled={disabled} className={className} footer={counter}>
       <div className={s.shell}>
         <Field.Control
-          render={<textarea />}
+          render={<textarea rows={rows} />}
           aria-label={input.ariaLabel}
           className={cx(s.input, s.textarea, mono && s.mono)}
           value={value}
