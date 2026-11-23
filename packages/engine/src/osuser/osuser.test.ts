@@ -127,6 +127,7 @@ describe("home check", () => {
     await chmod(join(home, ".aws"), 0o750);
     await writeFile(join(home, ".claude.json"), "{}");
     await chmod(join(home, ".claude.json"), 0o600);
+    await mkdir(join(home, ".claude.lock"), { mode: 0o755 });
     const findings = await checkHome(home);
     expect(findings).toEqual([
       { path: join(home, ".config", "gh", "hosts.yml"), mode: 0o644, fix: ["chmod", "go-r", "--", join(home, ".config", "gh", "hosts.yml")] },

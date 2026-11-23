@@ -5,6 +5,8 @@ import { ApiError, ArtifactType, Name, normalizeLegacyHumanNode } from "@pecore/
 import type { DefinitionFile, Node, RouteResult } from "@pecore/schemas";
 import { basicSetup, EditorView } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
+import { lineNumbers } from "@codemirror/view";
+import { highlight } from "../components/CodeSnapshot";
 import { markdown } from "@codemirror/lang-markdown";
 import { StreamLanguage } from "@codemirror/language";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
@@ -208,7 +210,12 @@ const editorTheme = EditorView.theme({
   ".cm-gutters": { backgroundColor: "var(--surface-raised)", color: "var(--text-muted)" },
   ".cm-content": { caretColor: "var(--text)", fontFamily: "var(--mono)" },
   ".cm-scroller": { maxHeight: "55vh", minHeight: "12rem" },
+  ".cm-activeLine, .cm-activeLineGutter": { backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)" },
+  ".cm-activeLineGutter": { color: "var(--text)" },
+  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": { backgroundColor: "color-mix(in srgb, var(--accent) 30%, transparent)" },
 });
+
+const paddedLineNumbers = lineNumbers({ formatNumber: (line, state) => String(line).padStart(String(state.doc.lines).length, "0") });
 
 function Sidecar({ content, disabled, change, isMarkdown }: { content: string; disabled: boolean; change(value: string): void; isMarkdown: boolean }) {
   const parent = useRef<HTMLDivElement>(null);
@@ -224,7 +231,7 @@ function Sidecar({ content, disabled, change, isMarkdown }: { content: string; d
       parent: parent.current,
       doc: binding.current.content,
       extensions: [
-        basicSetup, editorTheme, isMarkdown ? markdown() : StreamLanguage.define(shell),
+        basicSetup, editorTheme, highlight, paddedLineNumbers, isMarkdown ? markdown() : StreamLanguage.define(shell),
         config.of([EditorState.readOnly.of(binding.current.disabled), EditorView.editable.of(!binding.current.disabled)]),
         EditorView.updateListener.of((event) => {
           if (event.docChanged && !syncing.current && !binding.current.disabled) binding.current.change(event.state.doc.toString());

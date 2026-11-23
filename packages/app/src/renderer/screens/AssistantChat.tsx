@@ -273,14 +273,17 @@ function FormCard({ action, form, connected }: { action: ChatActionView; form: C
   const problem: string | null = chatFormProblem(form, answers);
   const busy: boolean = submit.busy || !connected;
   return (
-    <section className={`${s.action} ${s.form}`} aria-label={form.title ?? "Questions"}>
+    <form className={`${s.action} ${s.form}`} aria-label={form.title ?? "Questions"} onSubmit={(event) => {
+      event.preventDefault();
+      if (!busy && problem === null) void submit.run();
+    }}>
       <div className={s.actionHead}><SparkIcon /><strong>{form.title ?? "Questions"}</strong></div>
       {form.questions.map((question) => <FormQuestion key={question.id} question={question} disabled={busy}
         draft={drafts[question.id] ?? { choices: [], other: false, text: "" }}
         onChange={(draft) => setDrafts((old) => ({ ...old, [question.id]: draft }))} />)}
       <ErrorText error={submit.error} />
-      <div><Button variant="primary" size="sm" disabled={busy || problem !== null} loading={submit.busy} onClick={() => void submit.run()}>Send</Button></div>
-    </section>
+      <div><Button type="submit" variant="primary" size="sm" disabled={busy || problem !== null} loading={submit.busy}>Send</Button></div>
+    </form>
   );
 }
 
@@ -434,6 +437,9 @@ function Message({ message, attachments, actions, connected, reload, working = f
       a: ({ href, children }) => connected && href?.startsWith("https://")
         ? <a href={href} target="_blank" rel="noreferrer">{children}</a>
         : <span>{children}</span>,
+      code: ({ className, children }) => typeof children === "string" && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(children)
+        ? <code className={className}><span className={s.colorSwatch} style={{ background: children }} aria-hidden />{children}</code>
+        : <code className={className}>{children}</code>,
     }}>{shown}</ReactMarkdown>
   </div>;
   return (
