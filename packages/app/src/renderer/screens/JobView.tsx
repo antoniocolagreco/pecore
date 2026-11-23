@@ -161,6 +161,7 @@ function Loaded({ detail, error, reasons, whyError, reload }: { detail: JobDetai
     void merge.run(false);
   }, [connected, canCheck]);
   const selected: NodeRunView | undefined = selection ? nodeRuns.find((run) => run.id === selection) : undefined;
+  const selectedNodeName: string | undefined = selected ? recipe.data?.recipe.nodes[selected.node]?.use : undefined;
   const info = jobState(job);
   const graph = (
     <div className={s.graph}>
@@ -207,7 +208,8 @@ function Loaded({ detail, error, reasons, whyError, reload }: { detail: JobDetai
             ]}
           />
         </Card>
-        {selected && <NodeRunDetail key={selected.id} detail={detail} run={selected} onSelect={setSelection} />}
+        {selected && <NodeRunDetail key={selected.id} detail={detail} run={selected} nodeName={selectedNodeName ?? selected.node}
+          icon={selectedNodeName ? recipe.data?.definitions.get(selectedNodeName)?.icon : undefined} onSelect={setSelection} />}
       </div>
     </Page>
   );

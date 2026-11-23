@@ -1,7 +1,7 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "gitlab-create-repo",
-  "tags": ["source control", "command"],
+  "tags": ["source control"],
   "description": "Create a private GitLab repository if needed and push its base branch.",
   "kind": "command",
   "runsAs": "engine",

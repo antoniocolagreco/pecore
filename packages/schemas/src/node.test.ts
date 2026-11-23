@@ -23,17 +23,29 @@ const githubPr = {
   timeoutSec: 120,
 };
 
-it("reads a legacy human decision without carrying its mode or unused fields forward", () => {
+it("reads a legacy human decision without carrying unused fields forward", () => {
   const legacy = {
     name: "pick", description: "Choose a branch", kind: "human", mode: "decision",
     outcomes: ["approve", "cancel"], show: ["diff"], changesFiles: false, timeoutSec: 2592000,
   };
   const loaded: Node = StoredNode.parse(legacy);
-  expect(loaded).toMatchObject({ kind: "human-decision", outcomes: ["approve", "cancel"], show: ["diff"] });
-  expect(loaded).not.toHaveProperty("mode");
+  expect(loaded).toMatchObject({ kind: "human", mode: "decision", outcomes: ["approve", "cancel"], show: ["diff"] });
   expect(loaded).not.toHaveProperty("changesFiles");
   expect(loaded).not.toHaveProperty("timeoutSec");
   expect(Node.safeParse(legacy).success).toBe(false);
+});
+
+it("preserves the outcomes of stored split human definitions", () => {
+  const decision: Node = StoredNode.parse({ name: "pick", description: "Choose a branch", kind: "human-decision", outcomes: ["accept", "decline"] });
+  const review: Node = StoredNode.parse({ name: "custom-review", description: "Review a report", kind: "human-review", show: ["diff"], outcomes: ["accept", "reject"] });
+  expect(decision).toMatchObject({ kind: "human", mode: "decision", outcomes: ["accept", "decline"] });
+  expect(review).toMatchObject({ kind: "human", mode: "review", outcomes: ["accept", "reject"] });
+});
+
+it("requires a mode on new human definitions and removes kind tags", () => {
+  expect(Node.safeParse({ name: "pick", description: "Choose a branch", kind: "human", outcomes: ["yes", "no"] }).success).toBe(false);
+  const decision: Node = Node.parse({ name: "pick", description: "Choose a branch", kind: "human", mode: "decision", outcomes: ["yes", "no"], tags: ["Human", "decision", "Run command"] });
+  expect(decision).toMatchObject({ kind: "human", mode: "decision", tags: ["decision"] });
 });
 
 const builder = {

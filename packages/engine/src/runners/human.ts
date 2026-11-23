@@ -16,7 +16,7 @@ export function subjectHash(subject: unknown): string {
 }
 
 export function humanItem(nodeRunId: string, recipeNodeId: string, node: HumanNode, artifacts: Artifact[], contentState: string | null, question?: unknown) {
-  const mode: HumanSubject["mode"] = node.kind === "human-decision" ? "decision" : "review";
+  const mode: HumanSubject["mode"] = node.mode;
   const subject: HumanSubject = {
     nodeRunId,
     node: recipeNodeId,

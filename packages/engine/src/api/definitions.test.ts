@@ -13,7 +13,7 @@ describe("definition routes", () => {
     const live: LiveMessage[] = [];
     engine.on("live", (m: LiveMessage) => live.push(m));
     const nodes = await call("listDefinitions", { query: { dir: "templates/nodes" } });
-    expect(nodes.find((n) => n.path === "templates/nodes/human-review.json")).toMatchObject({ value: { kind: "human-review" }, errors: [] });
+    expect(nodes.find((n) => n.path === "templates/nodes/human-review.json")).toMatchObject({ value: { kind: "human", mode: "review" }, errors: [] });
     expect(nodes.some((n) => n.path === "templates/nodes/git-commit.sh")).toBe(true);
     expect((await call("listDefinitions", { query: { dir: "projects/demo/recipes" } })).map((r) => r.path)).toEqual(["templates/recipes/reviewed.json"]);
 
@@ -45,10 +45,10 @@ describe("definition routes", () => {
       const path: string = "templates/nodes/tagged.json";
       const content: string = JSON.stringify({
         name: "tagged", description: "Tagged node", kind: "human-decision", outcomes: ["yes"],
-        tags: ["github", "pull request"],
+        tags: ["github", "Human", "pull request"],
       });
       await call("saveDefinition", { params: { path }, body: { content, baseSha256: null } });
-      expect(JSON.parse(await readFile(join(home, path), "utf8"))).toMatchObject({ tags: ["github", "pull request"] });
+      expect(JSON.parse(await readFile(join(home, path), "utf8"))).toMatchObject({ kind: "human", mode: "decision", tags: ["github", "pull request"] });
       const nodes: DefinitionEntry[] = await call("listDefinitions", { query: { dir: "templates/nodes" } });
       expect(nodes.find((entry) => entry.path === path)).toMatchObject({ value: { tags: ["github", "pull request"] } });
     } finally {

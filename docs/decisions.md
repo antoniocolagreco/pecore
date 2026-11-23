@@ -74,11 +74,13 @@
 - Replaces: a title as tall as its text.
 - A one-line title is centred in the two-line space. Node and recipe names are limited to 24 characters, so every title fits on its card.
 - Node template cards use a coloured left stripe and a kind badge. Search matches the name, kind and tags.
+- Node icons use the same rounded square and glyph proportions in templates, editors and job views.
+- Human uses one kind with `decision` and `review` modes. Older definitions load with their original outcomes. The UI shows `command` as Run command. Tags describe the node's purpose and omit kind names.
 
 ## 2026-11-23: Recipe editor uses a drag-and-drop palette
 
-- Drag a node from the horizontal palette into the graph. Drag sideways to scroll the palette. Its title bar has a name and tag filter.
-- Agent, Command and Human nodes use distinct labels and colours. A recipe step keeps its node type. Remove node deletes the step and its references from the draft.
+- Drag a node from the horizontal palette into the graph. Drag sideways to scroll the palette. Its title bar searches by name, kind and tag.
+- Agent, Run command and Human nodes use distinct labels and colours. A recipe step keeps its node type. Remove node deletes the step and its references from the draft.
 - Arrange lays out the flow horizontally. Nodes snap to invisible cells on release. Arrows update during a drag, stay behind cards and use separate attachment points. Drop a connection on a card to let the editor pick its entry side.
 - Return arrows and arrows to End share the same lane allocation. When their horizontal spans overlap, their lanes stay at least 24 canvas pixels apart.
 - The recipe inspector omits `On base changed`. Git Rebase is available in the palette as a Command node.

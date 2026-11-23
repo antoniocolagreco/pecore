@@ -1,7 +1,7 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "builder",
-  "tags": ["agent", "implementation"],
+  "tags": ["implementation"],
   "description": "Implements the spec by filling the stubs until the tests pass; never edits tests; reports a test it believes is wrong instead of changing it",
   "kind": "agent",
   "prompt": "builder.md",

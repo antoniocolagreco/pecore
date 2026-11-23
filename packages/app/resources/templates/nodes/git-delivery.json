@@ -1,7 +1,7 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "git-delivery",
-  "tags": ["source control", "command"],
+  "tags": ["source control"],
   "description": "Report the pushed job branch as the delivery.",
   "kind": "command",
   "runsAs": "engine",

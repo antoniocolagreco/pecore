@@ -1,7 +1,7 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "spec-writer",
-  "tags": ["agent", "specification"],
+  "tags": ["specification"],
   "description": "Reads the ticket and the code, and writes a spec: acceptance criteria, what the tests must check, the interfaces to add or change, and optional nodes to run; rejects a ticket that is unclear or not feasible",
   "kind": "agent",
   "prompt": "spec-writer.md",

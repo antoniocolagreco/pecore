@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Artifact, AttemptView, JobDetail, NodeRunView } from "@pecore/schemas";
 import { useConnected } from "../api/live";
 import { ArtifactView } from "./ArtifactView";
+import { DefinitionIcon, useDefinitionIcons } from "./DefinitionIcon";
 import { LogView } from "./LogView";
 import { Button, duration, Empty, Panel, ui } from "./ui";
 import { reasonLabel } from "./states";
@@ -19,8 +20,11 @@ function Pages({ page, count, onChange }: { page: number; count: number; onChang
   );
 }
 
-export function NodeRunDetail({ detail, run, onSelect }: { detail: JobDetail; run: NodeRunView; onSelect(id: string): void }) {
+export function NodeRunDetail({ detail, run, nodeName, icon, onSelect }: {
+  detail: JobDetail; run: NodeRunView; nodeName: string; icon?: string; onSelect(id: string): void;
+}) {
   const connected: boolean = useConnected();
+  const icons = useDefinitionIcons();
   const [selected, setSelected] = useState<string | null>(null);
   const [attemptPage, setAttemptPage] = useState<number>(0);
   const [runPage, setRunPage] = useState<number>(0);
@@ -43,7 +47,7 @@ export function NodeRunDetail({ detail, run, onSelect }: { detail: JobDetail; ru
   return (
     <Panel>
       <section className={ui.stack} aria-label="Node run detail">
-        <h2 className={ui.title}>{run.node} · Round {run.round}</h2>
+        <h2 className={`${ui.title} ${ui.row}`}><DefinitionIcon icons={icons.data} type="node" name={nodeName} selected={icon} /> {run.node} · Round {run.round}</h2>
         <dl className={ui.kv}>
           <dt>Duration</dt><dd>{run.startedAt === null ? "—" : duration((run.endedAt ?? now) - run.startedAt)}</dd>
           <dt>State</dt><dd>{run.state}</dd>

@@ -1,9 +1,10 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "human-review",
-  "tags": ["human", "review"],
+  "tags": ["review"],
   "description": "The user reviews the diff, with risky hunks first, and approves, asks for changes or rejects",
-  "kind": "human-review",
+  "kind": "human",
+  "mode": "review",
   "show": ["diff", "risk", "findings", "check-log", "spec"],
   "answer": true,
   "outputs": ["user-note"],

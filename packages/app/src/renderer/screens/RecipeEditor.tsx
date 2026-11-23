@@ -117,7 +117,7 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
       name,
       title: templateTitle(name),
       tags: Array.isArray(node.tags) ? node.tags.map(string).filter(Boolean) : [],
-      icon: <DefinitionIcon icons={icons.data} type="node" name={name} selected={string(node.icon)} />,
+      icon: <DefinitionIcon icons={icons.data} type="node" name={name} selected={string(node.icon)} size="sm" />,
       kind,
     }];
   });
@@ -317,16 +317,17 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
             <fieldset className={s.inspectorFields} disabled={!editable}>
               {selected ? <>
                 <div className={s.inspectorMeta}>
+                  <DefinitionIcon icons={icons.data} type="node" name={string(selectedNode.use)} selected={string(nodeValue.icon)} size="sm" />
                   {selectedKind && <RecipeNodeKindBadge kind={selectedKind} />}
-                  {nodeValue.kind === "human-decision" && <span>Decision</span>}
-                  {nodeValue.kind === "human-review" && <span>Review</span>}
+                  {nodeValue.kind === "human" && nodeValue.mode === "decision" && <span>Decision</span>}
+                  {nodeValue.kind === "human" && nodeValue.mode === "review" && <span>Review</span>}
                   {definition && file.editable && <Link to={definitionUrl("node", definition.path)}>Edit definition</Link>}
                 </div>
                 {!!inspectorOutcomes.length && <div className={s.inspectorOutcomes}>
                   <strong>Outcomes</strong>
                   <span>{inspectorOutcomes.join(", ")}</span>
                 </div>}
-                {nodeValue.kind === "human-decision" && questionParameter.type === "string" && <TextField label="Question"
+                {nodeValue.kind === "human" && nodeValue.mode === "decision" && questionParameter.type === "string" && <TextField label="Question"
                   value={string(object(selectedNode.params).question)} placeholder={string(questionParameter.default)} disabled={!editable}
                   onValueChange={(question) => updateNode("params", { ...object(selectedNode.params), question: question.trim() ? question : undefined })} />}
                 <MultiCombobox label="Requires" placeholder="Choose nodes" value={required} disabled={!editable}

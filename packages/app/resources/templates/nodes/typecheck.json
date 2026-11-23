@@ -1,7 +1,7 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "typecheck",
-  "tags": ["command", "check"],
+  "tags": ["check"],
   "description": "Run the TypeScript type checker on the project (tsc --noEmit)",
   "kind": "command",
   "command": ["npx", "--no-install", "tsc", "--noEmit"],

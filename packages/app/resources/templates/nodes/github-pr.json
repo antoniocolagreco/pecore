@@ -1,7 +1,7 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "github-pr",
-  "tags": ["github", "source control", "command"],
+  "tags": ["github", "source control"],
   "description": "Open a GitHub pull request for the job branch or move it to the job's target branch.",
   "kind": "command",
   "runsAs": "engine",

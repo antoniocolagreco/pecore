@@ -1,9 +1,10 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "human-decision",
-  "tags": ["human", "decision"],
+  "tags": ["decision"],
   "description": "Ask the user a question and follow the branch they choose.",
-  "kind": "human-decision",
+  "kind": "human",
+  "mode": "decision",
   "params": {
     "type": "object",
     "properties": {

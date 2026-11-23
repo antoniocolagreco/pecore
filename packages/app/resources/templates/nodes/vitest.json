@@ -1,7 +1,7 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "vitest",
-  "tags": ["test", "command"],
+  "tags": ["test"],
   "description": "Install dependencies in a clean checkout and run the Vitest tests; the suite param selects a Vitest project, empty runs all",
   "kind": "command",
   "params": {

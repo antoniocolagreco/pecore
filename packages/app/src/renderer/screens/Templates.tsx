@@ -14,7 +14,7 @@ import { SidebarItem, SidebarSection } from "../shell/sidebar";
 import { Badge, Card, EmptyState, Spinner } from "../ds/feedback";
 import { AlertIcon, PlusIcon } from "../ds/icons";
 import { definitionUrl, object, string } from "./NodeEditor";
-import { RecipeNodeKindBadge, recipeNodeKind } from "./RecipeNodeKind";
+import { nodeKindLabels, RecipeNodeKindBadge, recipeNodeKind } from "./RecipeNodeKind";
 import type { RecipeNodeKind } from "./RecipeNodeKind";
 import { templateTitle } from "../components/templateTitle";
 import editorStyles from "./Editors.module.css";
@@ -33,7 +33,8 @@ function TemplateList({ type, icons }: { type: DefinitionType; icons: ReadonlyMa
     const definition = object(value);
     const name: string = string(definition.name) || path.slice(dir.length + 1, -5);
     const tags: string[] = Array.isArray(definition.tags) ? definition.tags.map(string) : [];
-    const terms: string = [name, templateTitle(name), string(definition.kind), string(definition.mode), ...tags].join(" ").toLowerCase();
+    const kind: RecipeNodeKind | undefined = recipeNodeKind(definition.kind);
+    const terms: string = [name, templateTitle(name), string(definition.kind), kind && nodeKindLabels[kind], ...tags].join(" ").toLowerCase();
     return query.every((term) => terms.includes(term));
   });
   return (
@@ -58,7 +59,7 @@ function TemplateList({ type, icons }: { type: DefinitionType; icons: ReadonlyMa
           const kindClass: string | undefined = kind ? editorStyles[kind] : source ? s.source : undefined;
           const contents = <>
             <Card className={[s.card, kindClass && s.nodeCard, kindClass].filter(Boolean).join(" ")}>
-              <span className={s.glyph}><DefinitionIcon icons={icons} type={type} name={name} selected={string(definition.icon)} /></span>
+              <span className={s.glyph}><DefinitionIcon icons={icons} type={type} name={name} selected={string(definition.icon)} size={type === "node" ? "lg" : "md"} /></span>
               <strong title={title}><span>{title}</span></strong>
               {kind && <div className={s.kind}><RecipeNodeKindBadge kind={kind} /></div>}
               {source && <div className={s.kind}><Badge tone="success" dot>Source</Badge></div>}

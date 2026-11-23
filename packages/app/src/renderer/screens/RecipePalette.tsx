@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import type { XYPosition } from "@xyflow/react";
 import { SearchField } from "../ds/field";
 import { Card, Spinner } from "../ds/feedback";
-import { RecipeNodeKindBadge } from "./RecipeNodeKind";
+import { nodeKindLabels, RecipeNodeKindBadge } from "./RecipeNodeKind";
 import type { RecipeNodeKind } from "./RecipeNodeKind";
 import s from "./Editors.module.css";
 
@@ -30,8 +30,8 @@ export function RecipePalette({ nodes, disabled, loading, onAdd, children }: {
   const rail = useRef<HTMLUListElement>(null);
   const gesture = useRef<Gesture | undefined>(undefined);
   const terms: string[] = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
-  const filtered: PaletteNode[] = nodes.filter(({ name, title, tags }) => {
-    const text: string = [name, title, ...tags].join(" ").toLowerCase();
+  const filtered: PaletteNode[] = nodes.filter(({ name, title, tags, kind }) => {
+    const text: string = [name, title, nodeKindLabels[kind], ...tags].join(" ").toLowerCase();
     return terms.every((term) => text.includes(term));
   });
   const dragged: PaletteNode | undefined = preview && nodes.find(({ name }) => name === preview.name);
@@ -77,7 +77,7 @@ export function RecipePalette({ nodes, disabled, loading, onAdd, children }: {
   };
 
   return <Card title="Node palette" className={s.palettePanel} padded={false} actions={
-    <SearchField className={s.paletteFilter} ariaLabel="Filter nodes" placeholder="Name or tag" size="sm" value={query}
+    <SearchField className={s.paletteFilter} ariaLabel="Filter nodes" placeholder="Name, kind or tag" size="sm" value={query}
       onValueChange={(next) => {
         setQuery(next);
         if (rail.current) rail.current.scrollLeft = 0;
@@ -88,7 +88,7 @@ export function RecipePalette({ nodes, disabled, loading, onAdd, children }: {
         onPointerUp={(event) => finish(event, true)} onPointerCancel={(event) => finish(event, false)}
         onLostPointerCapture={(event) => finish(event, false)} onDragStart={(event) => event.preventDefault()}>
         {filtered.map(({ name, title, tags, icon, kind }) => {
-          const tagText: string = tags.filter((tag) => tag.toLowerCase() !== kind).join(", ");
+          const tagText: string = tags.join(", ");
           return <li key={name} data-node-template={name}>
             <Card className={s.paletteNode}>
               {icon}

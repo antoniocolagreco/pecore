@@ -299,7 +299,7 @@ Fields common to every node:
 | `name` | unique among the templates or in its project |
 | `description` | what the node does; the Assistant and the Project Manager read it to pick and build recipes |
 | `icon` | optional SVG icon name from `templates/icons/`, without the file extension |
-| `kind` | `agent`, `command`, `human-decision`, `human-review` or `source` (section 7) |
+| `kind` | `agent`, `command`, `human` or `source` (section 7) |
 | `params` | JSON Schema of the values a recipe can set |
 | `inputs` | artifact types the node reads (see 3.3) |
 | `optionalInputs` | artifact types the node reads when the job has them (for example the builder reads `findings` after a review asked for changes); the validator does not require them on every path |
@@ -330,7 +330,8 @@ Fields by kind:
     *   `outputSchema`: JSON Schema of the structured output the agent must write to `.pecore/output.json` (section 5); it contains a field `outcome` whose value must be one of `outcomes`.
     *   `knowledge`: glob patterns of knowledge base files the node receives.
     *   `resume`: `true` to resume the harness session when the node runs again in the same job.
-*   **`human-decision` and `human-review`**
+*   **`human`**
+    *   `mode`: `decision` for a question or `review` for artifact review.
     *   `show`: artifact types to display (summary, diff, check logs, `risk`). The approver's `risk` artifact exists for this: the human review shows risky hunks first.
     *   The outcomes are the buttons the user sees (for example `approve`, `changes`, `reject`).
     *   `answer`: whether the user can attach text, which becomes an artifact for the next node.

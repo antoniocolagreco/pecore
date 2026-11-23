@@ -34,13 +34,15 @@ export function DefinitionIcon({ icons, type, name, selected, size = "md" }: {
   type: DefinitionType;
   name: string;
   selected?: string;
-  size?: IconSize;
+  size?: IconSize | "lg";
 }) {
   const icon: string = selected || definitionIconName(icons, type, name);
   const image: string | undefined = icons?.get(icon);
-  if (image) return <span aria-hidden="true" className={s.icon} data-icon={size} style={{ "--icon-image": image } as CSSProperties} />;
   const Fallback = type === "node" ? BoxIcon : BookIcon;
-  return <Fallback size={size} />;
+  const glyphSize: IconSize = size === "lg" ? "md" : size;
+  const glyph = image ? <span aria-hidden="true" className={s.icon} data-icon={glyphSize} style={{ "--icon-image": image } as CSSProperties} />
+    : <Fallback size={glyphSize} />;
+  return type === "node" ? <span aria-hidden="true" className={s.nodeTile} data-node-icon={size}>{glyph}</span> : glyph;
 }
 
 export function DefinitionIconField({ icons, type, name, value, disabled, onChange }: {
@@ -59,8 +61,9 @@ export function DefinitionIconField({ icons, type, name, value, disabled, onChan
       .map((icon) => ({ value: icon, label: icon, icon: <DefinitionIcon icons={icons} type={type} name={name} selected={icon} /> })),
   ];
   if (value && value !== defaultIcon && !icons?.has(value)) options.push({ value, label: value, icon: <DefinitionIcon icons={icons} type={type} name={name} selected={value} /> });
+  const preview = <DefinitionIcon icons={icons} type={type} name={name} selected={selected} />;
   return <div className={s.field}>
-    <span className={s.preview}><DefinitionIcon icons={icons} type={type} name={name} selected={selected} /></span>
+    {type === "node" ? preview : <span className={s.preview}>{preview}</span>}
     <IconSelect label="Icon" value={selected} options={options} disabled={disabled} onValueChange={onChange} />
   </div>;
 }

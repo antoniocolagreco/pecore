@@ -1,7 +1,7 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "git-push",
-  "tags": ["source control", "command"],
+  "tags": ["source control"],
   "description": "Push the job commit with a lease on the remote branch head.",
   "kind": "command",
   "runsAs": "engine",

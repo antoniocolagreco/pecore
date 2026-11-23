@@ -64,7 +64,7 @@ a.entry:focus-visible {
 }
 
 .nodeCard {
-  --glyph-size: 34px;
+  --glyph-size: 38px;
   position: relative;
   grid-template-columns: minmax(0, 1fr);
   gap: 4px;

@@ -18,6 +18,36 @@
   height: var(--icon-size-xs);
 }
 
+.nodeTile {
+  --tile-size: var(--control-h);
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: var(--tile-size);
+  height: var(--tile-size);
+  vertical-align: middle;
+  border-radius: 22%;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+
+.nodeTile[data-node-icon="xs"] {
+  --tile-size: 18px;
+}
+
+.nodeTile[data-node-icon="sm"] {
+  --tile-size: 24px;
+}
+
+.nodeTile[data-node-icon="lg"] {
+  --tile-size: 38px;
+}
+
+.nodeTile > [data-icon] {
+  width: 62.5%;
+  height: 62.5%;
+}
+
 .field {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

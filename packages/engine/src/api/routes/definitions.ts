@@ -171,7 +171,9 @@ export function definitionOperations(engine: Engine) {
       return { value, errors };
     }
     const schema = kind === "node" ? (reading ? StoredNode : Node) : Project;
-    const result = schema.safeParse(value);
+    const definition: unknown = kind === "node" && value && typeof value === "object" && !Array.isArray(value)
+      ? normalizeLegacyHumanNode(value as Record<string, unknown>) : value;
+    const result = schema.safeParse(reading ? value : definition);
     if (!result.success) return { value, errors: zodErrors(path, result.error) };
     const name: string = basename(path, ".json");
     if (kind === "node" && "name" in result.data && result.data.name !== name) {
@@ -180,7 +182,11 @@ export function definitionOperations(engine: Engine) {
     if (kind === "project" && "id" in result.data && result.data.id !== id) {
       errors.push({ file: path, path: "id", message: `id must match the directory name ${id}` });
     }
-    return { value: kind === "node" && reading ? normalizeLegacyHumanNode(value as Record<string, unknown>) : value, errors };
+    if (kind === "node" && "tags" in result.data) {
+      const fields = definition as Record<string, unknown>;
+      return { value: Array.isArray(fields.tags) ? { ...fields, tags: result.data.tags } : fields, errors };
+    }
+    return { value, errors };
   }
 
   async function inspectWritable(path: string, kind: DefinitionKind | undefined, id: string | undefined, content: string): Promise<Pick<DefinitionEntry, "value" | "errors">> {
@@ -265,6 +271,9 @@ export function definitionOperations(engine: Engine) {
       await commitFiles(home.home, projectDir, [absPath], commitMessage(kind!, name, before === null ? "created" : "edited"));
     };
     let saved: Buffer = bytes;
+    if (kind === "node" && JSON.stringify(value) !== JSON.stringify(JSON.parse(content))) {
+      saved = Buffer.from(JSON.stringify(value, null, 2) + "\n");
+    }
     if (kind === "project" && id) {
       const loaded = engine.project(id);
       const current: Project = loaded.ctx.project;

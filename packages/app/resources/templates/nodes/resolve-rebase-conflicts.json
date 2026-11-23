@@ -1,7 +1,7 @@
 {
   "$schema": "../../schemas/node.json",
   "name": "resolve-rebase-conflicts",
-  "tags": ["git", "rebase", "conflicts", "agent"],
+  "tags": ["git", "rebase", "conflicts"],
   "description": "Resolve conflicts while rebasing the job branch onto its new base.",
   "kind": "agent",
   "prompt": "resolve-rebase-conflicts.md",
