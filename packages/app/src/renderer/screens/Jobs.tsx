@@ -152,7 +152,7 @@ export function Jobs() {
   const project: string | null = query.get("project");
   const [archived, setArchived] = useState<ArchiveFilter>("false");
   const [search, setSearch] = useState<string>("");
-  const jobs = useJobs("all", null);
+  const jobs = useJobs(archived, project);
   const projects = useData(() => call("listProjects"), [], (m) => m.type === "project.updated");
   const setFilter = (name: string, value: string | null): void => {
     const next = new URLSearchParams(query);
@@ -160,9 +160,7 @@ export function Jobs() {
     else next.delete(name);
     void setQuery(next, { replace: true });
   };
-  const visible: JobView[] = (jobs.data ?? []).filter((job) => (!project || job.projectId === project) &&
-    (archived === "all" || job.archived === (archived === "true")) &&
-    (!label || jobState(job).label === label) && job.title.toLowerCase().includes(search.trim().toLowerCase()));
+  const visible: JobView[] = (jobs.data ?? []).filter((job) => (!label || jobState(job).label === label) && job.title.toLowerCase().includes(search.trim().toLowerCase()));
   return (
     <Page title="Jobs">
       <div className={s.filters}>
@@ -191,7 +189,7 @@ export function Jobs() {
         />
       </div>
       <ErrorText error={jobs.error} />
-      <JobTable key={JSON.stringify([project, label, archived, search])} jobs={visible} loading={jobs.loading} />
+      <JobTable key={JSON.stringify([project, label, archived, search])} jobs={visible} loading={jobs.loading && !jobs.data} />
     </Page>
   );
 }
