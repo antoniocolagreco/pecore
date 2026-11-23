@@ -13,7 +13,7 @@ import { Checkbox } from "../ds/choice";
 import { Card } from "../ds/feedback";
 import { TextArea, TextField } from "../ds/field";
 import { GearIcon, TrashIcon } from "../ds/icons";
-import { Dialog } from "../ds/overlay";
+import { Dialog, FieldHelp } from "../ds/overlay";
 import { MultiCombobox, Select } from "../ds/select";
 import type { Option } from "../ds/select";
 import { NumberField } from "../ds/values";
@@ -363,7 +363,8 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
                   onValueChange={(description) => update({ description })} className={s.recipeDescription} />
                 <DefinitionIconField icons={icons.data} type="recipe" name={string(draft.name)} value={string(draft.icon)} disabled={!editable}
                   onChange={(icon) => update({ icon })} />
-                <NumberField label="Max node runs" min={1} value={typeof draft.maxNodeRuns === "number" ? draft.maxNodeRuns : null}
+                <NumberField label="Max node runs" min={1} fullWidth value={typeof draft.maxNodeRuns === "number" ? draft.maxNodeRuns : null}
+                  labelAction={<FieldHelp title="Max node runs">The most steps one job can run, repeated steps included. When a job reaches it, the job pauses and asks you whether to allow more steps or end it. It stops a loop, for example between review and code, from running forever.</FieldHelp>}
                   disabled={!editable} onValueChange={(next) => update({ maxNodeRuns: next ?? undefined })} />
               </>}
             </fieldset>

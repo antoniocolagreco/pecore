@@ -310,7 +310,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   Start and End are always present and can be moved on the grid. Start uses the theme’s Success colour and End uses Fail. Start can connect from any side to the first step. Connect a step outcome to any side of End and pick Success or Failure.
 *   Connections to End use separate lanes for their labels. Automatic connections can enter from different sides.
 *   Inspector for a node: read-only kind, `requires`, `optional`, `skipWhenUnchanged` and `maxRounds` of its outgoing edges. Edit definition opens the shared node. Remove node removes the selected step, its arrows and references from the draft.
-*   The recipe inspector includes `maxNodeRuns`. Git Rebase appears in the graph as a Command node.
+*   The recipe inspector includes `maxNodeRuns` as Max node runs, a field as wide as the inspector. An info icon next to the label explains it: the most steps one job can run, after which the job pauses and asks whether to continue. Git Rebase appears in the graph as a Command node.
 *   Add Wait for CI after the GitHub PR or GitLab merge request node. Connect `success` and `failure` in the graph.
 
 ### Node editor

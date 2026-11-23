@@ -121,3 +121,9 @@
 - Why: the user asked for the card's shape only, not its content.
 - Replaces: Start and End with a play or stop icon and a stripe.
 - Their fill fades from the top-left corner to the bottom-right. Other node cards keep a plain fill.
+
+## 2026-11-23: Max node runs is explained in the recipe inspector
+
+- Decision: the Max node runs field fills the inspector's width. An info icon next to its label explains that it caps the steps of one job, repeats included, and that the job then pauses and asks whether to continue.
+- Why: the user could not tell what the field does, and the inspector has no room for a description under it.
+- Replaces: a narrow field with no explanation.

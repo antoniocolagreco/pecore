@@ -23,6 +23,10 @@
   padding-right: 3px;
 }
 
+.numberGroup.fullWidth {
+  width: 100%;
+}
+
 .numberInput {
   font-variant-numeric: tabular-nums;
 }

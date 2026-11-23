@@ -12,8 +12,9 @@ import { ChevronDownIcon, ChevronUpIcon } from "./icons";
 import s from "./values.module.css";
 
 export function NumberField({
-  label, description, error, disabled, className, value, defaultValue, onValueChange, min, max, step = 1, unit,
+  label, labelAction, description, error, disabled, className, value, defaultValue, onValueChange, min, max, step = 1, unit, fullWidth,
 }: FieldProps & {
+  fullWidth?: boolean;
   value?: number | null;
   defaultValue?: number;
   onValueChange?: (value: number | null) => void;
@@ -35,16 +36,19 @@ export function NumberField({
         className={f.field}
       >
         {label && (
-          <BaseNumberField.ScrubArea className={s.scrub}>
-            <Field.Label className={s.label}>{label}</Field.Label>
-            <BaseNumberField.ScrubAreaCursor className={s.scrubCursor}>
-              <svg width="24" height="14" viewBox="0 0 24 14" fill="currentColor" stroke="var(--bg)" aria-hidden>
-                <path d="M19.5 5.5 6.5 5.52V2L1 7l5.5 5-.003-3.5H19.5V12L25 7l-5.5-5v3.5Z" />
-              </svg>
-            </BaseNumberField.ScrubAreaCursor>
-          </BaseNumberField.ScrubArea>
+          <div className={f.labelRow}>
+            <BaseNumberField.ScrubArea className={s.scrub}>
+              <Field.Label className={s.label}>{label}</Field.Label>
+              <BaseNumberField.ScrubAreaCursor className={s.scrubCursor}>
+                <svg width="24" height="14" viewBox="0 0 24 14" fill="currentColor" stroke="var(--bg)" aria-hidden>
+                  <path d="M19.5 5.5 6.5 5.52V2L1 7l5.5 5-.003-3.5H19.5V12L25 7l-5.5-5v3.5Z" />
+                </svg>
+              </BaseNumberField.ScrubAreaCursor>
+            </BaseNumberField.ScrubArea>
+            {labelAction}
+          </div>
         )}
-        <BaseNumberField.Group className={`${f.shell} ${s.numberGroup}`}>
+        <BaseNumberField.Group className={`${f.shell} ${s.numberGroup} ${fullWidth ? s.fullWidth : ""}`}>
           <BaseNumberField.Input className={`${f.input} ${s.numberInput}`} />
           {unit && <span className={s.unit}>{unit}</span>}
           <span className={s.stepper}>
