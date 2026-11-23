@@ -53,11 +53,14 @@
 
 .workspace {
   grid-template-columns: minmax(0, 1fr) minmax(16rem, 29%);
-  align-items: start;
+  flex: 1;
 }
 
 .recipePanel {
   container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
 .palettePanel, .inspector {
@@ -243,7 +246,7 @@
   --recipe-edge-forward: color-mix(in srgb, var(--status-success) 84%, transparent);
   --recipe-edge-return: color-mix(in srgb, var(--status-warning) 84%, transparent);
   --recipe-edge-failed: color-mix(in srgb, var(--status-failed) 84%, transparent);
-  height: clamp(25rem, 54vh, 44rem);
+  min-height: 25rem;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -356,5 +359,6 @@
 @container (max-width: 650px) {
   .workspace {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(25rem, 1fr) auto;
   }
 }

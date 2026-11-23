@@ -125,6 +125,20 @@
   margin: 0 auto;
 }
 
+.page[data-fill-height] {
+  padding-bottom: var(--gap);
+}
+
+.page[data-fill-height] > .pageInner {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.page[data-fill-height] > .pageInner > .stack {
+  flex: 1;
+}
+
 .pageHeader {
   display: flex;
   align-items: center;

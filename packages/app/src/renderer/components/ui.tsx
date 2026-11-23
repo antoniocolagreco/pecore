@@ -15,10 +15,10 @@ export function Panel({ children, className }: { children: ReactNode; className?
   return <section className={[s.panel, className ?? ""].join(" ")}>{children}</section>;
 }
 
-export function Page({ title, actions, width, children }: { title: string; actions?: ReactNode; width?: number; children: ReactNode }) {
+export function Page({ title, actions, width, fillHeight, children }: { title: string; actions?: ReactNode; width?: number; fillHeight?: boolean; children: ReactNode }) {
   const { page, content } = usePageScroll();
   return (
-    <div ref={page} className={s.page}>
+    <div ref={page} className={s.page} data-fill-height={fillHeight || undefined}>
       <div ref={content} className={s.pageInner} style={width ? { maxWidth: width } : undefined}>
         <header className={s.pageHeader}>
           <h1 className={s.title}>{title}</h1>

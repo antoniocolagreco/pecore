@@ -83,6 +83,7 @@
 - The recipe inspector omits `On base changed`. Git Rebase is available in the palette as a Command node.
 - Connect the Wait for CI command after a GitHub PR or GitLab merge request. It checks every 30 seconds for up to 30 minutes and emits `success` or `failure`.
 - Connect a Git Rebase conflict to the Resolve Rebase Conflicts agent. The PR templates rerun lint on `resolved` and end with failure on `unresolved`.
+- The recipe canvas and inspector fill the remaining page height. On narrow pages the inspector sits below the canvas.
 
 ## 2026-11-23: Recipes start at Start and finish at End
 

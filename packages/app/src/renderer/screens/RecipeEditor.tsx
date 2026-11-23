@@ -277,7 +277,7 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
 
   const recipeOptions = templateOptions(recipeTemplates.data);
   const nodeOptions = templateOptions(nodeTemplates.data).filter(({ value }) => !palette.some((item) => object(item.value).name === value));
-  return <Page title={creation ? "New Recipe" : templateTitle(string(draft?.name)) || "Recipe editor"} actions={<>
+  return <Page fillHeight title={creation ? "New Recipe" : templateTitle(string(draft?.name)) || "Recipe editor"} actions={<>
     {!creation && scope === "templates" && <Button loading={duplicate.busy} disabled={!editable || !file.ready || !draft || file.dirty}
       onClick={() => void duplicate.run()}>Duplicate</Button>}
     {file.saveButton(importing)}
