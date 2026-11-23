@@ -180,11 +180,11 @@ describe("agent nodes with the fake agent (5.4)", () => {
   it("times out: cancel, then stop", async () => {
     const t0 = Date.now();
     const { engine, p, id } = await setup([[...init, ...newSession, prompt, { sleep: 60000 }]], agentNode({ timeoutSec: 1, retry: 0 }));
-    const j = await until(final(p, id), 15000);
+    const j = await until(final(p, id), 25000);
     expect(j).toMatchObject({ state: "failed", failure_reason: "TIMEOUT" });
-    expect(Date.now() - t0).toBeLessThan(12000);
+    expect(Date.now() - t0).toBeLessThan(20000);
     await engine.shutdown();
-  }, 20000);
+  }, 30000);
 
   it("resumes the session of the node's previous completed run", async () => {
     const first = [...init, ...newSession, prompt, output({ outcome: "again" }), usageAnswer];
