@@ -339,7 +339,7 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
                       <IconButton label="Remove edge" icon={<TrashIcon />} disabled={!editable}
                         onClick={() => updateGraph({ edges: edges.filter((_, i) => i !== index) })} />
                     </div>
-                    <NumberField label="Max rounds" min={1} disabled={!editable} value={typeof edge.maxRounds === "number" ? edge.maxRounds : null}
+                    <NumberField label="Max rounds" min={1} fullWidth disabled={!editable} value={typeof edge.maxRounds === "number" ? edge.maxRounds : null}
                       onValueChange={(next) => update({ edges: edges.map((item, i) => i === index ? { ...edge, maxRounds: next ?? undefined } : item) })} />
                   </div>;
                 })}

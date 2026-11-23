@@ -139,3 +139,9 @@
 - Decision: the recipe editor page keeps the window's height. The inspector scrolls inside its card and its title stays visible.
 - Why: a node with many arrows made the whole page scroll, moving the canvas out of view.
 - Replaces: a page that grew with the inspector's content.
+
+## 2026-11-23: Recipe inspector fields fill its width
+
+- Decision: Max rounds fills the inspector's width, like the other inspector fields.
+- Why: it was the only short field in the node panels.
+- Replaces: Max rounds at the 168 px width of number fields.
