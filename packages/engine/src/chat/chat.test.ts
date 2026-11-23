@@ -96,6 +96,7 @@ async function setup(build: (root: string) => object[][], extra: { source?: bool
   await mkdir(process.env.HOME);
   const forge: FakeForge | null = extra.forge ? await FakeForge.start() : null;
   const home = join(root, "home");
+  engineHome = home;
   const templates = join(root, "templates");
   await cp(shippedTemplates, templates, { recursive: true });
   await writeFile(join(templates, "nodes", "write-hello.json"), JSON.stringify(writeHello));
@@ -163,7 +164,8 @@ function mcp(tokenFile: string) {
   return { rpc, tool, close: () => child.stdin!.end() };
 }
 
-const tokenFileOf = (chatId: string) => join(process.env.HOME!, ".pecore-chats", chatId, "mcp-token");
+let engineHome: string = "";
+const tokenFileOf = (chatId: string) => join(engineHome, "chats", chatId, "mcp-token");
 const intakeChat = (t: { engine: Engine }) => t.engine.agentChats.chats().find(({ project }) => project === "demo")!.id;
 const plan = [
   { key: "api", title: "API", ticketText: "add the endpoint", recipe: "reviewed", dependsOn: [] },
@@ -450,6 +452,9 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     try {
       await t.call("sendChatMessage", { body: { text: "Export and import Demo." } });
       await until(() => existsSync(join(t.root, "share-prompt.json")));
+      expect((await stat(tokenFile)).mode & 0o777).toBe(0o600);
+      expect((await stat(join(t.root, "home", "chats"))).mode & 0o777).toBe(0o700);
+      expect(existsSync(join(process.env.HOME!, ".pecore-chats"))).toBe(false);
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       const last = async () => (await t.call("getChat")).actions.at(-1)!;
       const archive: string = join(process.env.HOME!, "Downloads", "demo.tar.zst");

@@ -243,3 +243,10 @@
 - Decision: `PECORE_HOME` is no longer a git repository. Saving a definition, a setting or a knowledge file writes the file and makes no commit. Projects outside `PECORE_HOME` no longer get a git repository for their definitions. An existing `~/.pecore/.git` is left untouched and unused. Git stays for the projects' code.
 - Why: nothing in the app read that history; it only filled it with one commit per changed field.
 - Replaces: one commit per save in `PECORE_HOME`.
+
+## 2026-11-23: All the app's data in one folder
+
+- Decision: everything the app writes lives in `PECORE_HOME` (`~/.pecore`): chat folders in `chats/`, harness logins in `harness/<user>/<account>/`. At start the app moves an old `~/.pecore-harness` there without new logins and deletes an old `~/.pecore-chats`, also for `pecore-agent`. `PECORE_HOME` stays private (0700); in protected mode `pecore-agent` gets access only to `chats/` and `harness/pecore-agent/` (ACL), plus the job work folders as before. A harness's own default login (`~/.claude`, `~/.codex`) is the user's, not the app's, and stays where it is.
+- Why: the user wants one folder with no leftovers elsewhere, with the permissions managed inside it.
+- Replaces: `~/.pecore-chats` and `~/.pecore-harness` in each OS user's home.
+- Tests: `osuser/permissions.test.ts` checks folder modes, ACLs and token modes on every run; `test/e2e/protected-mode.test.ts` creates the real `pecore-agent` in CI and checks that it runs jobs and chats but cannot read settings, accounts, the app user's logins or other projects' data.

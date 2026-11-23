@@ -22,3 +22,18 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+
+  protected-mode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: sudo apt-get install -y acl
+      - run: pnpm install --frozen-lockfile
+      - run: ELECTRON_RUN_AS_NODE=1 pnpm exec electron node_modules/vitest/vitest.mjs run packages/engine/test/e2e/protected-mode.test.ts packages/engine/src/osuser
+        env:
+          PECORE_PROTECTED_E2E: "1"

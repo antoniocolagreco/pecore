@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdir, readdir, readFile } from "node:fs/promises";
 import { access, constants } from "node:fs/promises";
 import { delimiter, join, relative } from "node:path";
+import { privateDirectory } from "../osuser/acl";
 import { mkdirAs } from "../workdir/fs-as";
 import { promisify } from "node:util";
 import { checkLogin, parseConnector } from "@pecore/agents";
@@ -122,7 +123,11 @@ export class AgentServices {
 
   private loginTarget(connector: string, account: string, osUser: string, home: string, defaultDir: boolean): LoginInfo {
     const id: string = `${account}:${osUser}`;
-    return { id, account, osUser, connector, configDir: join(home, ".pecore-harness", account), defaultDir, home, state: this.loginStates.get(id) ?? { state: "unchecked" } };
+    return { id, account, osUser, connector, configDir: join(this.harnessDir(osUser), account), defaultDir, home, state: this.loginStates.get(id) ?? { state: "unchecked" } };
+  }
+
+  private harnessDir(osUser: string): string {
+    return join(this.home, "harness", osUser);
   }
 
   async login(accountId: string): Promise<LoginInfo> {
@@ -133,8 +138,10 @@ export class AgentServices {
   }
 
   async ensureProbeDir(l: LoginInfo): Promise<void> {
-    if (l.osUser === appUser) await mkdir(join(l.configDir, "probe"), { recursive: true });
-    else await mkdirAs(l.osUser, l.home, relative(l.home, join(l.configDir, "probe")));
+    const base: string = this.harnessDir(l.osUser);
+    await privateDirectory(base, l.osUser, this.home);
+    if (l.osUser === appUser) await mkdir(join(l.configDir, "probe"), { recursive: true, mode: 0o700 });
+    else await mkdirAs(l.osUser, base, relative(base, join(l.configDir, "probe")));
   }
 
   account(id: string): ModelAccount | undefined {

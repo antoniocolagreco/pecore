@@ -12,6 +12,8 @@ export function homePaths(home: string) {
     autoSetup: join(home, "auto-setup.json"),
     tiers: join(home, "tiers.json"),
     chatsDb: join(home, "chats.db"),
+    chats: join(home, "chats"),
+    harness: join(home, "harness"),
     templates: join(home, "templates"),
     templateNodes: join(home, "templates", "nodes"),
     templateRecipes: join(home, "templates", "recipes"),

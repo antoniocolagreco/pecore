@@ -30,6 +30,7 @@ import { resumeOrders } from "./jobs/plan";
 import type { CreateJob } from "./jobs/create";
 import type { TicketOrder } from "./jobs/plan";
 import { homePaths, initHome } from "./home/layout";
+import { moveLegacyFolders } from "./home/legacy";
 import { autoSetup, openCodeModels } from "./home/autosetup";
 import { takeLock } from "./home/lock";
 import { beginProject, cancelCreation, finishProject, prepareRepo, readCreation, repoCreated, setupJobId } from "./projects/create";
@@ -106,6 +107,7 @@ export class Engine extends EventEmitter {
     const p = homePaths(this.opts.home);
     await initHome(this.opts.home, { templates: this.opts.templates });
     this.releaseLock = await takeLock(p.lock);
+    await moveLegacyFolders(this.opts.home, await protectedUserExists()).catch((e: unknown) => console.error("moving old folders into PECORE_HOME:", e));
     const global = await loadGlobal(this.opts.home);
     if (!global.value) {
       await this.releaseLock();
