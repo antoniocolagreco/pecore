@@ -36,7 +36,7 @@ function KnowledgeFile({ path, name, creating, names, actions, onCreated, onDirt
     () => creating ? { content: `# ${name.slice(0, -3)}\n`, path: () => path } : undefined,
     [creating, name, path],
   );
-  const file = useDefinitionDraft(path, false, creation, names);
+  const file = useDefinitionDraft(path, false, creation, names, false);
   useEffect(() => { onDirty(file.dirty); return () => onDirty(false); }, [file.dirty, onDirty]);
   useEffect(() => { if (file.savedPath) onCreated(); }, [file.savedPath, onCreated]);
   return <div className={s.editor}>
@@ -47,8 +47,8 @@ function KnowledgeFile({ path, name, creating, names, actions, onCreated, onDirt
     <PageActions>{file.saveButton()}</PageActions>
     {file.feedback}
     <div className={s.desk}>
-      {file.ready && <Sidecar paper className={s.sheet} content={file.content} change={file.update} disabled={!file.editable} isMarkdown
-        errors={file.errors} warnings={file.warnings} />}
+      {file.ready ? <Sidecar paper className={s.sheet} content={file.content} change={file.update} disabled={!file.editable} isMarkdown
+        errors={file.errors} warnings={file.warnings} /> : <div className={`${editorStyles.paperSurface} ${s.sheet}`} aria-hidden />}
     </div>
     {(!!file.errors?.length || !!file.warnings?.length) && <div className={s.issues}>
       <DefinitionErrors errors={file.errors} />
@@ -164,10 +164,13 @@ export function KnowledgeBase({ id }: { id: string }) {
         ? <KnowledgeFile key={`${selected.name}:${selected.creating}`} path={`${dir}/${selected.name}`} name={selected.name} creating={selected.creating}
           names={names.join("\n")} onCreated={created} onDirty={setDirty}
           actions={!selected.creating && <Button disabled={!connected} onClick={() => open("rename")}>Rename</Button>} />
-        : <div className={s.desk}>
-          <div className={`${editorStyles.paperSurface} ${s.sheet} ${s.blank}`}>
-            <p>Select a file, create one, or upload or drop Markdown files here.</p>
-            <p>A node gives its agent the files assigned to it and the files they link to. Link another file by its name, for example [naming](naming.md).</p>
+        : <div className={s.editor}>
+          <div className={s.editorHeader} aria-hidden />
+          <div className={s.desk}>
+            <div className={`${editorStyles.paperSurface} ${s.sheet} ${s.blank}`}>
+              <p>Select a file, create one, or upload or drop Markdown files here.</p>
+              <p>A node gives its agent the files assigned to it and the files they link to. Link another file by its name, for example [naming](naming.md).</p>
+            </div>
           </div>
         </div>}
     </Card>

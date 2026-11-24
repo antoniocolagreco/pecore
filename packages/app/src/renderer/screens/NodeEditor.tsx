@@ -58,7 +58,7 @@ type Validation = RouteResult<"validateDefinition">;
 type Snapshot = Pick<DefinitionFile, "content"> & { sha256: string | null };
 export type NewDefinition = { content: string; path(content: string): string };
 
-export function useDefinitionDraft(existingPath: string, sidecar = false, creation?: NewDefinition, revalidate = "") {
+export function useDefinitionDraft(existingPath: string, sidecar = false, creation?: NewDefinition, revalidate = "", showLoading = true) {
   const connected: boolean = useConnected();
   const remote = useData(async (): Promise<Snapshot> => {
     if (creation || !existingPath) return { content: creation?.content ?? "", sha256: null };
@@ -181,7 +181,7 @@ export function useDefinitionDraft(existingPath: string, sidecar = false, creati
     update(value: string): void { if (!base && baseline) setBase(baseline); setDraft(value); },
     feedback: <>
       <ErrorText error={remote.error ?? save.error ?? compare.error ?? reload.error ?? (validation?.content === content ? validation.error : undefined)} />
-      {!baseline && remote.loading && <p className={ui.muted}>Loading definition…</p>}
+      {showLoading && !baseline && remote.loading && <p className={ui.muted}>Loading definition…</p>}
       {baseline?.sha256 === null && !creation && !sidecar && !dirty && <ErrorText error="Definition file is missing." />}
       {changed && <Card padded>
         <p>Changed elsewhere: reload, compare, keep mine</p>
