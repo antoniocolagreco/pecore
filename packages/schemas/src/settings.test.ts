@@ -19,10 +19,15 @@ describe("Assistant and Project Manager settings", () => {
 
   it("give the Project Manager the Assistant's model unless it has its own", () => {
     const settings: Settings = Settings.parse({ assistant: { profile: "a" } });
-    expect(roleProfile(settings, "assistant")).toBe("a");
-    expect(roleProfile(settings, "pm")).toBe("a");
-    expect(roleProfile(Settings.parse({ assistant: { profile: "a" }, pm: { profile: "p" } }), "pm")).toBe("p");
-    expect(roleProfile(Settings.parse({}), "pm")).toBeNull();
+    expect(roleProfile(settings, "assistant", ["s"])).toBe("a");
+    expect(roleProfile(settings, "pm", ["s"])).toBe("a");
+    expect(roleProfile(Settings.parse({ assistant: { profile: "a" }, pm: { profile: "p" } }), "pm", ["s"])).toBe("p");
+    expect(roleProfile(Settings.parse({}), "pm", [])).toBeNull();
+  });
+
+  it("uses the first standard profile when no profile is chosen", () => {
+    expect(roleProfile(Settings.parse({}), "assistant", ["claude-code-standard", "codex-standard"])).toBe("claude-code-standard");
+    expect(roleProfile(Settings.parse({}), "pm", ["codex-standard"])).toBe("codex-standard");
   });
 
   it("keep the user's name trimmed and refuse an empty one", () => {

@@ -364,6 +364,6 @@
 
 ## 2026-11-24: The Assistant starts on the standard profile
 
-- Decision: when no profile is set, the Assistant gets the first usable account's `standard` profile: the tool's default model with middle effort.
+- Decision: when no profile is set, the Assistant uses the first profile of the `standard` tier: the tool's default model with middle effort. "Auto-configured model" saves nothing and is resolved at each use. A one-time migration clears the profile that auto-setup had saved.
 - Why: the most expensive model at maximum effort was a costly default for chatting and configuring the app.
 - Replaces: the `frontier` profile as the Assistant's default.

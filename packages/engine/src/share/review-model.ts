@@ -20,9 +20,9 @@ const instructions: string = [
 ].join("\n");
 
 export async function reviewWithModel(engine: Engine, files: ReviewInput[]): Promise<ModelReview> {
-  const { settings, profiles } = engine.global();
+  const { settings, profiles, tiers } = engine.global();
   const agents = engine.agents;
-  const profile = profiles.profiles.find(({ id }) => id === roleProfile(settings, "assistant"));
+  const profile = profiles.profiles.find(({ id }) => id === roleProfile(settings, "assistant", tiers.tiers.standard));
   const account = profile && agents?.account(profile.account);
   const configured = account && agents?.connector(account.connector);
   if (!agents || !profile || !account || configured?.name !== "claude-code" || configured.harness.program !== "claude" || !Object.hasOwn(agents.paths.adapters, adapter) || files.length === 0) return { status: "unavailable" };

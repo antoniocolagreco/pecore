@@ -135,7 +135,7 @@ async function findHarness(agents: AgentServices, name: BuiltInHarness, accounts
 
 export async function autoSetup(configuration: Configuration, agents: AgentServices): Promise<SetupResult> {
   const current: Global = configuration.read();
-  const { accounts, profiles, tiers, settings } = current;
+  const { accounts, profiles, tiers } = current;
   const findings: Finding[] = await Promise.all(BuiltInHarness.options.map((name) => findHarness(agents, name, accounts)));
   const harnesses: Harness[] = findings.map((finding) => finding.harness);
   const eligible: Finding[] = findings.filter(({ harness, account }) => harness.loggedIn && (account || !accounts.accounts.some((a) => a.id === harness.connector)));
@@ -147,7 +147,6 @@ export async function autoSetup(configuration: Configuration, agents: AgentServi
   const refreshedProfiles: Map<number, Profile> = new Map();
   const additions: Record<TierName, string[]> = { frontier: [], strong: [], standard: [], cheap: [] };
   const titles: Set<string> = new Set();
-  let assistant: string | null = settings.assistant.profile;
   for (const { harness, title, account, provider, offer } of eligible) {
     const name: BuiltInHarness = harness.connector;
     const id: string = account?.id ?? name;
@@ -174,14 +173,6 @@ export async function autoSetup(configuration: Configuration, agents: AgentServi
         titles.add(title);
       }
     }
-    if (assistant === null) {
-      const standard: Profile | undefined = [...newProfiles, ...profiles.profiles].find((profile) => profile.account === id && profile.id === `${name}-standard`)
-        ?? tiers.tiers.standard.map((profileId) => profiles.profiles.find((profile) => profile.id === profileId)).find((profile) => profile?.account === id);
-      if (standard) {
-        assistant = standard.id;
-        titles.add(title);
-      }
-    }
   }
   const changes: Partial<Global> = {};
   if (newAccounts.length) changes.accounts = { accounts: [...accounts.accounts, ...newAccounts] };
@@ -193,7 +184,6 @@ export async function autoSetup(configuration: Configuration, agents: AgentServi
     for (const tier of TierName.options) if (additions[tier].length) entries[tier] = [...tiers.tiers[tier], ...additions[tier]];
     changes.tiers = { tiers: entries };
   }
-  if (assistant !== settings.assistant.profile) changes.settings = { ...settings, assistant: { ...settings.assistant, profile: assistant } };
   const changed: (keyof Global)[] = Object.keys(changes) as (keyof Global)[];
   if (!changed.length) return { harnesses, changes: null };
   if (!isDeepStrictEqual(configuration.read(), current) || !isDeepStrictEqual(configuration.autoSetupProfiles(), tracking)) {

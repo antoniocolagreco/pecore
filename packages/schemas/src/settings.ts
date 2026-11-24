@@ -106,8 +106,8 @@ export type Settings = z.infer<typeof Settings>;
 
 export type Role = "assistant" | "pm";
 
-export function roleProfile(settings: Pick<Settings, Role>, role: Role): string | null {
-  return role === "pm" ? settings.pm.profile ?? settings.assistant.profile : settings.assistant.profile;
+export function roleProfile(settings: Pick<Settings, Role>, role: Role, standard: readonly string[]): string | null {
+  return (role === "pm" ? settings.pm.profile ?? settings.assistant.profile : settings.assistant.profile) ?? standard[0] ?? null;
 }
 
 export function defaultJobLimit(cpuCount: number): number {

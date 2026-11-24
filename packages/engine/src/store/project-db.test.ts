@@ -135,7 +135,7 @@ describe("pecore.db", () => {
 describe("chats.db", () => {
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.version()).toBe(12);
+    expect(db.version()).toBe(13);
     for (let i = 0; i < notificationsKept + 3; i++) db.addNotification({ kind: "job", title: `n${i}`, body: "" }, 1000 + i);
     const kept = db.notifications();
     expect(kept).toHaveLength(notificationsKept);
@@ -157,7 +157,7 @@ describe("chats.db", () => {
       UPDATE schema_version SET version = 5`);
     old.close();
     const db = new ChatsDb(file);
-    expect(db.version()).toBe(12);
+    expect(db.version()).toBe(13);
     expect(db.messages(assistantChat)).toEqual([]);
     db.close();
   });

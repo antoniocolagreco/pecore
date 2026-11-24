@@ -201,8 +201,8 @@ export class Engine extends EventEmitter {
     return { settings: this.settings, agents: this.agentDefinitions, accounts: this.accounts, profiles: this.profiles, tiers: this.tiers };
   }
 
-  private legacyModel(role: Role): AgentDefinition["model"] {
-    const profile = this.profiles.profiles.find(({ id }) => id === roleProfile(this.settings, role));
+  private profileModel(role: Role): AgentDefinition["model"] {
+    const profile = this.profiles.profiles.find(({ id }) => id === roleProfile(this.settings, role, this.global().tiers.tiers.standard));
     return profile ? { account: profile.account, model: profile.model, effort: profile.effort } : null;
   }
 
@@ -235,9 +235,9 @@ export class Engine extends EventEmitter {
   chatAgent(project?: string | null, role: Role = project == null ? "assistant" : "pm"): ChatAgent | undefined {
     const agent: ChatAgent | undefined = this.chatAgentSettings(project, role);
     if (!agent || agent.model) return agent;
-    const model: ChatAgent["model"] = role === "assistant" ? this.legacyModel("assistant")
+    const model: ChatAgent["model"] = role === "assistant" ? this.profileModel("assistant")
       : project != null ? this.chatAgent(undefined, "pm")?.model ?? null
-        : (this.settings.pm.profile ? this.legacyModel("pm") : this.chatAgent()?.model ?? null);
+        : (this.settings.pm.profile ? this.profileModel("pm") : this.chatAgent()?.model ?? null);
     return { ...agent, model };
   }
 
