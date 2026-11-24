@@ -159,7 +159,7 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 ### Navigation (left)
 
 *   The expanded sidebar shows "<PE/CORE>" as the product name.
-*   Window: menu on the left, the page in the centre, the Assistant chat on the right. By default the chat takes 30% of the width, between 300 and 380 px.
+*   Window: menu on the left, the page in the centre, the Assistant chat on the right. By default the chat takes 35% of the width, between 340 and 520 px.
 *   The menu collapses and expands with a button at the top left. The choice is remembered; the first time, the menu starts collapsed below 1280 px of width. Collapsed, it is a column of icons, each showing its name on pointing.
 *   The chat panel's width changes by dragging its left edge or with the arrow keys on it.
 *   One list, without group titles. Order: Factory, Projects, Jobs, Notifications (IA2), Templates, Agents, Settings, Showcase.

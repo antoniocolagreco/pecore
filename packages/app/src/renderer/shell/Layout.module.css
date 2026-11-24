@@ -1,6 +1,6 @@
 .shell {
   --menu-width: 220px;
-  --chat-width: clamp(300px, 30vw, 380px);
+  --chat-width: clamp(340px, 35vw, 520px);
   display: grid;
   grid-template-columns: var(--menu-width) minmax(0, 1fr) clamp(300px, var(--chat-width), calc(100% - var(--menu-width) - 360px));
   height: 100%;
