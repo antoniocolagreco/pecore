@@ -6,19 +6,8 @@
   "kind": "agent",
   "prompt": "builder.md",
   "agent": { "tier": "strong" },
-  "inputs": ["ticket", "spec"],
-  "optionalInputs": ["check-log", "findings", "user-note"],
-  "outputs": [],
   "outcomes": ["done", "tests_disputed"],
+  "outputs": { "tests_disputed": "text" },
   "changesFiles": true,
-  "timeoutSec": 3600,
-  "outputSchema": {
-    "type": "object",
-    "required": ["outcome"],
-    "properties": {
-      "outcome": { "enum": ["done", "tests_disputed"] },
-      "summary": { "type": "string" },
-      "disputed": { "type": "array", "items": { "type": "object", "required": ["test", "reason"], "properties": { "test": { "type": "string" }, "reason": { "type": "string" } } } }
-    }
-  }
+  "timeoutSec": 3600
 }

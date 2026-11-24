@@ -5,8 +5,9 @@ fail() {
   exit 1
 }
 
-commit=$(jq -er '.sha | strings | select(test("^[0-9a-fA-F]{40}$"))' "$PECORE_INPUTS_COMMIT_PATH") || fail 'CI needs a saved commit SHA'
-url=$(jq -er '.url | strings | select(length > 0)' "$PECORE_INPUTS_DELIVERY_PATH") || fail 'CI needs a pull or merge request URL'
+commit=${PECORE_JOB_COMMIT:-}
+printf '%s\n' "$commit" | grep -Eq '^[0-9a-fA-F]{40}$' || fail 'CI needs a saved commit SHA'
+url=$(jq -er '.url | strings | select(length > 0)' "$PECORE_INPUTS_REFERENCE_PATH") || fail 'CI needs a pull or merge request URL'
 url=${url%/}
 request=${url##*/}
 case "$request" in

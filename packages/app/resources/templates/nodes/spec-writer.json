@@ -6,30 +6,8 @@
   "kind": "agent",
   "prompt": "spec-writer.md",
   "agent": { "tier": "strong" },
-  "inputs": ["ticket"],
-  "outputs": ["spec"],
   "outcomes": ["accepted", "rejected"],
+  "outputs": { "accepted": "spec", "rejected": "text" },
   "changesFiles": false,
-  "timeoutSec": 1800,
-  "outputSchema": {
-    "type": "object",
-    "required": ["outcome", "spec"],
-    "properties": {
-      "outcome": { "enum": ["accepted", "rejected"] },
-      "reason": { "type": "string" },
-      "spec": {
-        "type": "object",
-        "required": ["criteria", "tests", "interfaces"],
-        "properties": {
-          "criteria": { "type": "array", "items": { "type": "string" } },
-          "tests": { "type": "array", "items": { "type": "string" } },
-          "interfaces": {
-            "type": "array",
-            "items": { "type": "object", "required": ["name", "signature"], "properties": { "name": { "type": "string" }, "signature": { "type": "string" } } }
-          },
-          "optionalNodes": { "type": "array", "items": { "type": "string" } }
-        }
-      }
-    }
-  }
+  "timeoutSec": 1800
 }

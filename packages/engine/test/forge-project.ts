@@ -9,12 +9,12 @@ const writeSpec = {
   name: "write-spec",
   description: "writes hello.txt and a spec",
   kind: "command",
-  command: ["/bin/sh", "-c", 'echo hello > hello.txt && mkdir -p .pecore && printf \'{"title":"Add hello"}\' > .pecore/spec.json'],
-  outputs: ["spec"],
+  command: ["/bin/sh", "-c", 'echo hello > hello.txt && mkdir -p .pecore && printf \'{"criteria":["Add hello"],"tests":[],"interfaces":[]}\' > .pecore/spec.json'],
   outcomes: ["done"],
+  outputs: { done: "spec" },
   changesFiles: true,
   outcomeRules: [{ exitCode: 0, outcome: "done" }],
-  outputRules: { spec: { file: ".pecore/spec.json" } },
+  outputRules: { done: { file: ".pecore/spec.json" } },
   timeoutSec: 30,
 };
 
@@ -23,7 +23,7 @@ const deliver = {
   description: "write, commit, push, pull request, issue comment",
   start: "write",
   successOutcomes: ["comment:done"],
-  nodes: { write: { use: "write-spec" }, commit: { use: "git-commit" }, push: { use: "git-push" }, pr: { use: "github-pr" }, comment: { use: "github-issue-comment" } },
+  nodes: { write: { use: "write-spec" }, commit: { use: "git-commit" }, push: { use: "git-push" }, pr: { use: "github-pr", reads: ["write"] }, comment: { use: "github-issue-comment", reads: ["pr"] } },
   edges: [
     { from: "write", on: "done", to: "commit" },
     { from: "commit", on: "done", to: "push" },

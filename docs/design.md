@@ -308,10 +308,8 @@ Fields common to every node:
 | `icon` | optional SVG icon name from `templates/icons/`, without the file extension |
 | `kind` | `agent`, `command`, `human` or `source` (section 7) |
 | `params` | JSON Schema of the values a recipe can set |
-| `inputs` | artifact types the node reads (see 3.3) |
-| `optionalInputs` | artifact types the node reads when the job has them (for example the builder reads `findings` after a review asked for changes); the validator does not require them on every path |
-| `outputs` | artifact types the node writes |
 | `outcomes` | the outcome names the node can produce |
+| `outputs` | at most one artifact type (3.3) per outcome, for example `{ "accepted": "spec", "rejected": "text" }`; an outcome not listed produces nothing. The nodes that read this node (3.2) receive it |
 | `failOutcomes` | the outcomes that mean failure (for example `failed`); with no edge, they end the job as `failed` (4.2) |
 | `changesFiles` | whether a command or agent may modify the workdir (see 4.4) |
 | `scratchPaths` | glob patterns of files the node may create and that are thrown away after it (for example `coverage/**`, `**/*.tmp`); default empty |
@@ -321,6 +319,7 @@ Fields common to every node:
 Fields by kind:
 
 *   **`command`**
+    *   `inputs`: artifact types the command needs; `optionalInputs`: types it uses when they exist. A command reads fields from fixed files, so it declares them; the recipe says which node each comes from (3.2). Only commands declare inputs: agents and people read whatever the recipe gives them.
     *   `runsAs`: `project-user` (default) or `engine`. `engine` runs the command as the app user, where forge and service logins live.
     *   `command`: an argument array, run without a shell; placeholders are substituted into single arguments.
     *   `cleanCheckout`: `true` to run in a temporary worktree of the current content state with no ignored files (4.4); default `false`.
@@ -328,23 +327,25 @@ Fields by kind:
     *   `script`: instead of `command`, the name of a shell script stored next to the node file (`nodes/<instance>.sh`), run with `/bin/sh`. Use it when the logic needs conditions. Placeholders are not substituted into the script; they are passed as environment variables named after the placeholder in upper case with dots as underscores (`{job.branch}` becomes `PECORE_JOB_BRANCH`), so ticket text is never inserted into the script source; scripts must quote these variables. A node has exactly one of `command` and `script`.
     *   `credentials`: only for `runsAs: engine`; names of accounts the node uses, or `project.account` for the project's own account. The engine selects that account in the tool through environment variables (for example `GH_TOKEN` from `gh auth token --user <login>`, `GITLAB_HOST`, `AWS_PROFILE`).
     *   `outcomeRules`: how the outcome is computed: by exit code, or by a field of JSON printed on stdout.
-    *   `outputRules`: how each output artifact is read: `{ "file": "<path>" }`, `{ "stdoutJson": "<field>" }`, or `{ "stdoutLastLine": "<name>" }` (the last line of stdout, saved in the artifact under that name, for example `url`).
+    *   `outputRules`: for each outcome that has an output, how it is read: `{ "file": "<path>" }`, `{ "stdoutJson": "<field>" }`, or `{ "stdoutLastLine": "<name>" }` (the last line of stdout, saved in the artifact under that name, for example `url`). The engine checks the result against the structure of its type and fails the node with `INVALID_OUTPUT` when it does not match.
     *   `probe`: a command that reports whether the action already happened (see 4.8): an argument array, or `{ "script": "<file>" }` for a script next to the node, run like `script`. Every `runsAs: engine` node acts outside the machine, so the validator requires a probe on it. `mergedCheck` takes the same two forms.
     *   `probeRules`: how the probe result is read. Default: exit code 0 and non-empty stdout means `done`, and stdout is read with `outputRules`; exit code 0 and empty stdout means `not_done`; any other exit code means `unknown`. A rule can instead read a JSON field on stdout, mapping its values to `done` and `not_done`.
     *   `mergedCheck`: for delivery nodes; a command that reports whether the delivery was merged (for example `gh pr view <url> --json state --jq 'select(.state=="MERGED") | .state'`, which prints `MERGED` only when merged). Read like a probe: `done` means merged. The engine runs it periodically on `succeeded` jobs that have children (4.6).
 *   **`agent`**
     *   `prompt`: path of the Markdown prompt template.
     *   `agent`: `tier` (for example `strong`) or an ordered list of `profiles`; optional `providerNot`, a list of recipe node ids whose provider this node must not use.
-    *   `outputSchema`: JSON Schema of the structured output the agent must write to `.pecore/output.json` (section 5); it contains a field `outcome` whose value must be one of `outcomes`.
+    *   The agent writes `.pecore/output.json` as `{ "outcome": "<outcome>", "output": <value> }`; `output` is required when the outcome has an output and holds a value of that type. The engine writes the matching JSON Schema to `.pecore/output.schema.json` (5.8).
     *   `knowledge`: names of the project's knowledge files the node receives, for example `["architecture.md", "naming.md"]`. Node templates are shared, so the node editor offers the knowledge file names found in all projects; each project gives its own file with that name, and a project without it gives nothing. An older entry with a glob (for example `*.md`) still matches the file names.
     *   `resume`: `true` to resume the harness session when the node runs again in the same job.
 *   **`human`**
-    *   `mode`: `decision` for a question or `review` for artifact review.
-    *   A `report` review shows the latest textual artifact. A `code` review shows the latest diff and marks risk when the risk assessment matches its content state. Stored definitions with `show` keep their original artifact list.
-    *   The outcomes are the buttons the user sees (for example `approve`, `changes`, `reject`).
-    *   `answer`: whether the user can attach text, which becomes an artifact for the next node.
+    *   `interface`: the component the person uses to respond, from a list the app can extend:
+        *   `decision` asks a question in Notifications and shows what the node reads.
+        *   `code-review` shows the job's current diff, with the `findings` it reads that refer to the same content (risky hunks first).
+        *   `report-review` shows what the node reads.
+    *   Both reviews have the outcomes `approve`, `changes` and `reject`. For a decision, the outcomes are the buttons the user sees.
+    *   `outputs`: only `text`. An outcome with `text` shows a Note field; the note becomes the output of that outcome (for example `{ "changes": "text" }`).
 
-Placeholders in `command`, `probe` and prompts are plain substitution with no logic: `{params.<name>}`, `{job.id}`, `{job.title}`, `{job.branch}`, `{job.base}` (the base commit the job must be on now), `{job.oldBase}` (the base commit the job branch was last on), `{job.target}` (branch the delivery targets, see 4.6), `{job.commit}` (SHA in the latest `commit` artifact), `{ticket.id}` (the id of the job's ticket at its source, if any), `{workdir}`, `{project.repoDir}`, `{project.repo.url}`, `{project.repo.owner}`, `{project.repo.name}`, `{inputs.<type>.path}`. For nodes that run as the project user, the engine copies their input artifacts into `.pecore/inputs/` in the workdir, and `{inputs.<type>.path}` points there; `runsAs: engine` nodes read the originals under `artifacts/`.
+Placeholders in `command`, `probe` and prompts are plain substitution with no logic: `{params.<name>}`, `{job.id}`, `{job.title}`, `{job.branch}`, `{job.base}` (the base commit the job must be on now), `{job.oldBase}` (the base commit the job branch was last on), `{job.target}` (branch the delivery targets, see 4.6), `{job.commit}` (the SHA of the latest `reference` with a `sha`), `{ticket.id}` (the id of the job's ticket at its source, if any), `{workdir}`, `{project.repoDir}`, `{project.repo.url}`, `{project.repo.owner}`, `{project.repo.name}`, `{inputs.<type>.path}`. For commands that run as the project user, the engine copies their input artifacts into `.pecore/inputs/` in the workdir, and `{inputs.<type>.path}` points there; `runsAs: engine` nodes read the originals under `artifacts/`.
 
 Example instance of a delivery node. It runs after a `git-push` node, which pushes the job branch from `repo.git`:
 
@@ -356,14 +357,15 @@ Example instance of a delivery node. It runs after a `git-push` node, which push
   "kind": "command",
   "runsAs": "engine",
   "credentials": ["project.account"],
-  "inputs": ["commit", "spec"],
-  "outputs": ["delivery"],
+  "inputs": ["spec"],
+  "optionalInputs": ["document"],
   "outcomes": ["opened", "failed"],
+  "outputs": { "opened": "reference" },
   "failOutcomes": ["failed"],
   "changesFiles": false,
   "script": "github-pr.sh",
   "outcomeRules": [{ "exitCode": 0, "outcome": "opened" }, { "exitCode": "other", "outcome": "failed" }],
-  "outputRules": { "delivery": { "stdoutLastLine": "url" } },
+  "outputRules": { "opened": { "stdoutLastLine": "url" } },
   "probe": ["gh", "pr", "list", "--repo", "{project.repo.owner}/{project.repo.name}", "--head", "{job.branch}", "--base", "{job.target}", "--json", "url", "--jq", ".[0].url // empty"],
   "timeoutSec": 120
 }
@@ -388,9 +390,11 @@ A recipe is a graph. Shared recipes in `templates/recipes/` refer to nodes in `t
 
 At startup PeCore moves legacy project definitions to Templates. Equal copies become references to existing definitions. A different definition with the same name receives a name derived from the project ID. A job without a saved copy can use the definitions available at migration time. A project export includes the templates it uses. On import PeCore reuses matching local templates, adds missing ones and reports conflicts while keeping the local versions.
 
-Human Decision asks the user to choose an outcome. Human Review shows artifacts and offers `approve`, `changes` and `reject`. Only Human Review approval satisfies a human prerequisite. An approval for changed worktree content becomes stale. Both wait for the user's response without a timeout.
+A decision asks the user to choose an outcome. A code review or report review shows artifacts and offers `approve`, `changes` and `reject`. Only a review approval satisfies a human prerequisite. An approval for changed worktree content becomes stale. Both wait for the user's response without a timeout.
 
-A GitHub recipe can use `write-pr` to write a title and description and `github-pr` to publish them. With a `ci` configuration such as `{"after":"pr","on":"opened","checks":["tests"],"intervalSec":30,"timeoutSec":1800,"maxCorrections":2}`, the scheduler waits for the listed checks on the recorded commit. Connect `ci_failed` to a correction step and use `ci_passed`, `ci_exhausted` and `ci_timeout` to route the other outcomes. Persisted deadlines and correction counts survive restarts. If the PR head changes unexpectedly, the job waits for the user.
+Data passes between nodes only through `reads`. Each step lists the steps it reads. When it starts, it receives the latest artifact of each type that each read step produced, labelled with that step's id. Agents and people also always receive the job's ticket, its attachments and its current diff; no step reads them. For a command, each input type it declares must come from exactly one read step. Its required inputs must be produced on every path to it. For example, `github-pr` reads `spec`, and the spec writer gives a `spec` only with `accepted`.
+
+A GitHub recipe can use `write-pr` to write a title and description and `github-pr` to publish them. With a `ci` configuration such as `{"after":"pr","on":"opened","checks":["tests"],"intervalSec":30,"timeoutSec":1800,"maxCorrections":2}`, the scheduler waits for the listed checks on the recorded commit. Connect `ci_failed` to a correction step and use `ci_passed`, `ci_exhausted` and `ci_timeout` to route the other outcomes. The CI report of a failure is a `text` produced by the `ci.after` step, so the correction step reads that step. Persisted deadlines and correction counts survive restarts. If the PR head changes unexpectedly, the job waits for the user.
 
 ```json
 {
@@ -410,19 +414,19 @@ A GitHub recipe can use `write-pr` to write a title and description and `github-
   ],
   "nodes": {
     "spec":    { "use": "spec-writer" },
-    "tests":   { "use": "tests-writer" },
+    "tests":   { "use": "tests-writer", "reads": ["spec", "tests-check", "code"] },
     "tests-check": { "use": "typecheck" },
-    "code":    { "use": "builder" },
+    "code":    { "use": "builder", "reads": ["spec", "lint", "types", "test", "review", "human"] },
     "lint":    { "use": "eslint" },
     "types":   { "use": "typecheck" },
     "test":    { "use": "vitest", "params": { "suite": "unit" } },
-    "review":  { "use": "code-reviewer", "agent": { "providerNot": ["code"] } },
-    "approve": { "use": "approver" },
-    "human":   { "use": "human-review" },
+    "review":  { "use": "code-reviewer", "reads": ["spec", "lint", "types", "test"], "agent": { "providerNot": ["code"] } },
+    "approve": { "use": "approver", "reads": ["spec", "review"] },
+    "human":   { "use": "human-review", "reads": ["approve"] },
     "commit":  { "use": "git-commit", "requires": ["lint", "types", "test", "human"] },
     "rebase":  { "use": "git-rebase" },
     "push":    { "use": "git-push" },
-    "pr":      { "use": "github-pr" }
+    "pr":      { "use": "github-pr", "reads": ["spec"] }
   },
   "edges": [
     { "from": "spec",    "on": "accepted",  "to": "tests" },
@@ -465,6 +469,7 @@ Recipe fields:
 | `successOutcomes` | legacy list of successful `<node>:<outcome>` values for recipes saved without `ends` |
 | `nodes.<id>.use` | a node template name |
 | `nodes.<id>.params`, `nodes.<id>.agent` | step parameters and agent settings. Engine-user commands take their arguments from the node template |
+| `nodes.<id>.reads` | the steps whose latest outputs this step receives (see above) |
 | `nodes.<id>.requires` | nodes whose latest outcome must be `passed` on the current content state (4.4) |
 | `nodes.<id>.optional` | runs only if the `spec` names it (4.2) |
 | `nodes.<id>.session` | a session group name for agent nodes. Agent nodes of the same job with the same group and the same profile share one harness session: each run resumes the session of the previous run in the group, so the fixed prompt is paid once. A node with no group gets a new session (or its own, with `resume`). A profile change (for example a fallback on quota) starts a new session for the group. Reviewers should have no group, so they judge the code without the builder's history |
@@ -476,26 +481,27 @@ Notes on the example:
 *   `git-rebase` stashes uncommitted changes including untracked files, runs `git rebase --onto {job.base} {job.oldBase}` and restores the changes. `--onto` moves only the job's own commits, so after a squash merge of the parent its original commits are not replayed. A conflict at any step gives the outcome `conflict`.
 *   After a rebase the job runs again through `commit`, `push` and `pr`. `git-commit` with nothing new to commit ends with `done` on the current commit. `git-push` pushes `{job.commit}` with `--force-with-lease`; its probe compares the remote branch head with `{job.commit}`, so a rebased commit is always pushed. `github-pr` finds the existing PR through its probe and does not open a second one (4.8).
 *   The spec lists the interfaces (function names and signatures). The tests node writes the tests and stubs of those interfaces that throw "not implemented". `tests-check` runs the type checker: it passes when tests and stubs are valid, while the tests still fail when run. Failures go back to the tests node. The builder fills the stubs and never edits tests, so it never receives failures in test files it may not change (concepts brief, finding M2).
-*   `spec: rejected` means the spec writer found the ticket unclear or not feasible; the job ends and the reason is in the `spec` artifact. `code: tests_disputed` means the builder reports a test as wrong; the job goes back to the tests node with the builder's reason.
+*   `spec: rejected` means the spec writer found the ticket unclear or not feasible; the job ends and the reason is the `text` output of `rejected`. `code: tests_disputed` means the builder reports a test as wrong; the job goes back to the tests node, which reads `code` and so receives the builder's `text` with the reason.
 *   The connections to End give `human:reject` the result `not_delivered` and `pr:failed` the result `failed`.
 
 #### 3.3 Artifacts
 
 Nodes pass files, not conversations. An artifact has a type, a path under `artifacts/<job-id>/<run-id>/`, a SHA-256 hash and the content state it refers to.
 
-| Type | Written by (default templates) | Content |
-|---|---|---|
-| `ticket` | engine at job creation | the work item text and attachments, marked as untrusted data |
-| `spec` | spec writer | acceptance criteria, what tests must check, interfaces, optional nodes to run |
-| `findings` | reviewers | verdict, findings with file, line and severity |
-| `risk` | approver | each hunk classified `safe` or `risky`, with reason |
-| `check-log` | command nodes | stdout and stderr of the last run |
-| `diff` | engine after any node with `changesFiles: true` | diff of the workdir against the job base |
-| `user-note` | human nodes | text written by the user |
-| `commit` | commit node | commit SHA and the content state it was made from |
-| `delivery` | delivery nodes | URL or reference of the PR, MR or pushed branch |
+A type exists only for a distinct data structure, not for a different name. What the data means comes from the step that produced it. There are six types:
 
-A node receives the latest artifact of each type in its `inputs`. The recipe validator rejects a recipe in which a node needs an input type that is not produced on every path from `start` to that node (the engine's `ticket` artifact counts as produced at start).
+| Type | Structure | Examples in the default templates |
+|---|---|---|
+| `text` | plain text | the log of every command, the CI report, a rejection reason, a person's note |
+| `diff` | a patch | the job's changes, written by the engine after any node with `changesFiles: true` |
+| `document` | `title`, `body`, optional `source` and `id` | the ticket, written by the engine at job creation; the pull request description |
+| `spec` | `criteria[]`, `tests[]`, `interfaces[] {name, signature}`, `optionalNodes[]` | the spec writer's spec |
+| `findings` | optional `verdict`, `items[] {file, line?, hunk?, level, text}` | the reviewer's findings (`line`, level `blocker`, `major` or `minor`); the approver's risk (`hunk`, level `safe` or `risky`) |
+| `reference` | optional `sha`, `url`, `ref` | a commit (`sha`), a pushed branch (`ref`), a pull request or repository (`url`) |
+
+Ticket attachments are files of their own, given to agents next to the ticket.
+
+The engine adds two outputs by itself: a `diff` after a node that changes files, and a `text` log after every command. The job's commit is the latest `reference` with a `sha`; its delivery is the latest `reference` with a `url` or `ref` from a node with a merge check.
 
 #### 3.4 Accounts, profiles and tiers
 
@@ -610,7 +616,7 @@ A job waiting for a human, a quota or a login releases its pool units (4.7) and 
 *   Every node run records the content state before and after it. Every check result is bound to the content state it saw; a check whose before and after states differ binds to neither and counts as not `passed`. A human review is bound the same way to the content state of the diff it showed, and its `approve` counts as `passed` for `requires`.
 *   The engine also recomputes the content state right before it evaluates `requires` and right before a commit node, because another job of the same project runs as the same OS user and could have changed the workdir in between.
 *   `requires` on a recipe node is checked against the current content state. If one of the listed nodes has not `passed` on that exact state, the node does not run and produces the built-in outcome `stale`, which the recipe can route (for example back to the checks).
-*   A commit node must produce a commit whose tree equals the content state checked by `requires`; otherwise it fails with `READ_ONLY_VIOLATION`. The `commit` artifact records the SHA, and delivery pushes that exact SHA (`{job.commit}`), never whatever the branch ref points to.
+*   A commit node must produce a commit whose tree equals the content state checked by `requires`; otherwise it fails with `READ_ONLY_VIOLATION`. The commit node's `reference` records the SHA, and delivery pushes that exact SHA (`{job.commit}`), never whatever the branch ref points to.
 *   Files ignored by git (`node_modules/`, build caches, `.env`) are outside the content state, so a check can pass on ignored files the agent changed. A command node with `cleanCheckout: true` runs instead in a temporary worktree created from the current content state, with no ignored files, and removed afterwards. Final checks before commit should use it; it costs a fresh dependency install per run.
 *   After every node run, the engine deletes new files that match the node's `scratchPaths`, before computing the content state.
 *   A node with `changesFiles: false` must leave the content state unchanged. If it changed, the engine restores the previous state and fails the run with `READ_ONLY_VIOLATION`. Test output such as coverage reports therefore needs to be in `.gitignore` or in `scratchPaths`.
@@ -769,7 +775,7 @@ Each built-in connector ships with recorded ACP traffic of these cases, used by 
 
 #### 5.8 Prompt and output
 
-*   The engine sends the prompt as the text of `session/prompt` and saves it to `artifacts/.../prompt.md`. Selected knowledge files are copied into `.pecore/context/`, input artifacts into `.pecore/inputs/`, and the node's `outputSchema` into `.pecore/output.schema.json`. `.pecore/` is listed in `repo.git/info/exclude`, so it is never committed.
+*   The engine sends the prompt as the text of `session/prompt` and saves it to `artifacts/.../prompt.md`. Selected knowledge files are copied into `.pecore/context/`. The ticket and the current diff go to `.pecore/inputs/job/`, and each artifact of a read step goes to `.pecore/inputs/from/<step>/<type>`. The prompt lists each file with a label, for example "text from test". The JSON Schema built from the node's `outcomes` and `outputs` goes into `.pecore/output.schema.json`. `.pecore/` is listed in `repo.git/info/exclude`, so it is never committed.
 *   ACP has no structured output option. The prompt asks the agent to write its result to `.pecore/output.json`, valid against `.pecore/output.schema.json`. The engine deletes `.pecore/output.json` before every turn, correction messages included, so a result left by an earlier attempt or turn is never read. When the turn ends, the engine reads the file as the project user (section 8) and validates it (5.4).
 
 #### 5.9 Logins
@@ -1190,7 +1196,7 @@ Every file exports a Zod schema and the TypeScript type inferred from it. The en
 | `src/tiers.ts` | `tiers.json`, with the four tier names fixed |
 | `src/settings.ts` | global job and agent limits, services runtime, minimum free disk (10 GB), merge check interval (300 seconds), `projectsFolder` (user home), the user's name, Assistant and Project Manager profiles and compaction thresholds, the Assistant's personality traits with their incompatibilities, protected mode (off by default) and appearance |
 | `src/connector.ts` | connector file (Connector file above) |
-| `src/artifacts.ts` | artifact types of 3.3. `spec`: `criteria[]`, `tests[]`, `interfaces[] {name, signature}`, `optionalNodes[]`. `findings`: `verdict`, `items[] {file, line, severity, text}`. `risk`: `hunks[] {file, hunkIndex, level: safe \| risky, reason}` |
+| `src/artifacts.ts` | the six artifact types of 3.3, the structure of each, and the description agents read |
 | `src/events.ts` | the events of Data model |
 | `src/api.ts` | request and response bodies of the API table and the WebSocket union |
 | `src/errors.ts` | waiting reasons and failure reasons of 4.3 |
@@ -1235,7 +1241,7 @@ Everything that knows ACP or a harness lives here (section 5). It imports only `
 | **definitions/** | |
 | `src/definitions/load.ts` | reads and validates definition files; returns typed errors with file and field |
 | `src/definitions/knowledge.ts` | knowledge checks with `markdownlint` and a custom link rule, link renaming, and the files a node receives with the files they link to |
-| `src/definitions/recipe-check.ts` | recipe rules beyond the schema: `use` exists in the project, every edge outcome exists on its node, inputs producible before use (3.3), a parent recipe has a commit node (4.6), `providerNot` targets exist; in a project without a remote repo, no node that uses `project.account` (push, PR, MR, ticket comment), so saving or adding such a recipe fails |
+| `src/definitions/recipe-check.ts` | recipe rules beyond the schema: `use` exists in the project, every edge outcome exists on its node, every read step produces something, each command input comes from exactly one read step and, when required, on every path (3.2), a parent recipe has a commit node (4.6), `providerNot` targets exist; in a project without a remote repo, no node that uses `project.account` (push, PR, MR, ticket comment), so saving or adding such a recipe fails |
 | `src/definitions/instantiate.ts` | copies a template into a project; no link kept (D19). Instantiating a recipe also instantiates every node template it uses that the project lacks; a node instance with the same name is kept, and the GUI shows that the recipe uses the existing one |
 | **store/** | |
 | `src/store/project-db.ts` | opens `pecore.db` in WAL mode; one transaction per engine operation; applies migrations by `schema_version` |
@@ -1262,7 +1268,7 @@ Everything that knows ACP or a harness lives here (section 5). It imports only `
 | **runners/** | |
 | `src/runners/process.ts` | spawns a process as a given OS user and records its pgid (Fixed choices: Process groups); applies the timeout of command nodes; to stop, sends `TERM` to the group through `sudo -n -u <user> kill`, then `KILL` after 5 s; gives `runners/agent.ts`, `accounts/` and `chat/` a `Spawn` (5.1) bound to one OS user |
 | `src/runners/placeholders.ts` | substitutes placeholders into argument arrays; builds `PECORE_*` environment variables for `script` nodes and probes |
-| `src/runners/command.ts` | runs `command` nodes: probe, command, `outcomeRules`, `outputRules`, `check-log` artifact |
+| `src/runners/command.ts` | runs `command` nodes: probe, command, `outcomeRules`, the `outputRules` of the outcome reached, the `text` log |
 | `src/runners/probe.ts` | runs the probe and applies `probeRules`: `done`, `not_done`, `unknown`; on `unknown` the node run waits with reason `network` and retries (4.8) |
 | `src/runners/agent.ts` | runs `agent` nodes through `@pecore/agents`: writes `.pecore/` (context, inputs, `output.schema.json`) and the prompt artifact; looks up the session to resume (5.5); calls `startSession` with a `Spawn` from `process.ts`; sends the prompt; writes the raw log; applies the order of 5.4 to each `TurnResult`, reading `.pecore/output.json` through `fs-as.ts`; owns the attempt timeout (5.5); records tokens, cost and the end reason. It knows no connector-specific detail |
 | `src/runners/human.ts` | puts a human node in `human_queue` (kind `human-node`) and waits for the user's outcome |
@@ -1368,7 +1374,7 @@ Stored in the repository under `packages/app/resources/` and bundled with the ap
 | `templates/nodes/tests-writer.json` + `.md` | writes tests and stubs that throw "not implemented" |
 | `templates/nodes/builder.json` + `.md` | fills the stubs; never edits tests |
 | `templates/nodes/code-reviewer.json` + `.md` | writes `findings` |
-| `templates/nodes/approver.json` + `.md` | writes `risk` per hunk |
+| `templates/nodes/approver.json` + `.md` | writes `findings` with one item per hunk, level `safe` or `risky` |
 | `templates/nodes/human-review.json` | buttons `approve`, `changes`, `reject` |
 | `templates/nodes/git-commit.json` | commit; `done` also when there is nothing to commit |
 | `templates/nodes/git-rebase.json` + `.sh` | `git stash push --include-untracked`, `git rebase --onto {job.base} {job.oldBase}`, `git stash pop` |
@@ -1436,7 +1442,7 @@ Each line closes one entry gate of phase 4 and overrides the earlier text it con
 7.  **Technical approvals.** The engine saves and runs definitions without an approval store (section 8).
 8.  **Forge choices as data.** `templates/forges/<forge>.json` names, per forge, the clone credential helper, the delivery, comment, repo creation and source node templates. `projects/defaults.ts` reads it; the engine has no `if github`. A forge may have no credential helper, repo creation or source (`null`): `git`, a private Git server, uses the user's own Git credentials, delivers the pushed branch (`git-delivery`), skips the ticket comment (`git-no-comment`), and needs an existing repository.
 9.  **Slots while waiting.** A node run holds pool units only while its process runs. Waits for `network`, `auth`, `quota`, `rate_limit` and `human` hold none.
-10. **Stacked jobs.** A child's target while the parent is not merged is the parent's branch; after the merge, the parent's own target. A queued child gets its base when the parent ends `succeeded`: the SHA of the parent's latest `commit` artifact. Merge detection runs, while the app runs, for every job that has a `delivery` artifact not yet merged, whatever the state of the job and of its children, using the URL in that artifact; the API also runs it on demand for one job.
+10. **Stacked jobs.** A child's target while the parent is not merged is the parent's branch; after the merge, the parent's own target. A queued child gets its base when the parent ends `succeeded`: the parent's job commit (3.3). Merge detection runs, while the app runs, for every job that has a delivery (3.3) not yet merged, whatever the state of the job and of its children, using the URL in that `reference`; the API also runs it on demand for one job.
 11. **Bugfix proof.** `bugfix-to-pr` runs `tests-fail-check` after the tests node: a `vitest` variant whose outcome is `failed_as_expected` when the tests fail and `unexpected_pass` when they pass; `unexpected_pass` goes back to the tests node.
 12. **Prerequisites by feature.** First run checks git, and on Linux sudo and setfacl only when protected mode is turned on. `gh`, `glab` and `aws` are checked when an account uses them, Compose when a project has `services` or a services runtime is set.
 13. **Project creation across a restart.** `projects/<id>/creating.json` records the last finished step. At start, an unfinished creation is shown in Notifications with Retry (continue from the next step) and Cancel (undo the finished steps). The `createRepo` node run waits like any node run (`network`, `auth`).

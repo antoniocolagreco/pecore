@@ -4,9 +4,7 @@
   "tags": ["review"],
   "description": "The user reviews the diff, with risky hunks first, and approves, asks for changes or rejects",
   "kind": "human",
-  "mode": "review",
-  "reviewView": "code",
-  "answer": true,
-  "outputs": ["user-note"],
-  "outcomes": ["approve", "changes", "reject"]
+  "interface": "code-review",
+  "outcomes": ["approve", "changes", "reject"],
+  "outputs": { "changes": "text" }
 }

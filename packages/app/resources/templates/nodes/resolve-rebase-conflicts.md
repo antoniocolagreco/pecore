@@ -7,4 +7,4 @@ Resolve the rebase conflicts in the worktree of job branch `{job.branch}`. The o
 5. Restore any temporary checkpoint as uncommitted changes. Verify the job branch still points to the rebased work, `{job.base}` is an ancestor of HEAD, and `git diff --check` and `git diff --cached --check` pass.
 6. If you cannot resolve a conflict, abort the rebase, restore the original HEAD and pending changes, and report the blocking paths. Do not skip commits or push.
 
-Return `resolved` only after verification. Otherwise return `unresolved`. Summarize the result and any remaining conflicts.
+Return `resolved` only after verification. Otherwise return `unresolved` and list the remaining conflicts in `output`.

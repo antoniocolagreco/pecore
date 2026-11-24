@@ -5,7 +5,7 @@ import { useNavigate, useParams } from "react-router";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
-import { ArtifactView, Delivery, diffFiles, Findings, readArtifact } from "../components/ArtifactView";
+import { ArtifactView, diffFiles, Findings, latestFindings, readArtifact, Reference, useDelivery } from "../components/ArtifactView";
 import { isFinal, JobControls } from "../components/JobControls";
 import { JobGraph, latestRuns, useRecipe } from "../components/JobGraph";
 import { NodeRunDetail } from "../components/NodeRunDetail";
@@ -48,12 +48,11 @@ function Result({ detail, definitions }: { detail: JobDetail; definitions: Retur
   const [fileLimit, setFileLimit] = useState<number>(40);
   const { job, artifacts, nodeRuns } = detail;
   const diff: Artifact | undefined = artifacts.findLast((artifact) => artifact.type === "diff");
-  const risk: Artifact | undefined = artifacts.findLast((artifact) => artifact.type === "risk");
+  const risk: Artifact | undefined = latestFindings(artifacts, diff?.contentState ?? null);
   const findings: Artifact | undefined = artifacts.findLast((artifact) => artifact.type === "findings");
-  const delivery: Artifact | undefined = artifacts.findLast((artifact) => artifact.type === "delivery");
   const files = useData(async () => diff ? diffFiles((await readArtifact(diff)).content) : null, [diff?.path, diff?.sha256]);
   const report = useData(async () => findings ? FindingsArtifact.parse(JSON.parse((await readArtifact(findings)).content)) : null, [findings?.path, findings?.sha256]);
-  const delivered = useData(async () => delivery ? (await readArtifact(delivery)).content : null, [delivery?.path, delivery?.sha256]);
+  const delivered = useDelivery(artifacts);
   const last: NodeRunView | undefined = nodeRuns.at(-1);
   const outcome: string | null = job.failureReason ?? (job.state === "stopped" ? null : last?.outcome ?? last?.failureReason ?? null);
   const checks: NodeRunView[] = [...latestRuns(nodeRuns).values()].filter((run) => {
@@ -78,14 +77,15 @@ function Result({ detail, definitions }: { detail: JobDetail; definitions: Retur
               </>
             )}
             <Button disabled={!connected} onClick={() => setPatchOpen(!patchOpen)} aria-expanded={patchOpen}>Diff</Button>
-            {patchOpen && <ArtifactView artifact={diff} risk={risk} />}
+            {patchOpen && <ArtifactView artifact={diff} findings={risk} />}
           </section>
         )}
         {!!checks.length && (
           <section><h3>Checks</h3><ul>{checks.map((run) => <li key={run.node}>{run.node} · {run.outcome ?? run.failureReason ?? run.state}</li>)}</ul></section>
         )}
-        {findings && <section><h3>Open findings</h3><ErrorText error={report.error} />{report.data && <Findings findings={report.data} />}</section>}
-        {delivery && <section><h3>Delivery</h3><ErrorText error={delivered.error} />{delivered.data && <Delivery content={delivered.data} />}</section>}
+        {findings && <section><h3>Latest findings</h3><ErrorText error={report.error} />{report.data && <Findings findings={report.data} />}</section>}
+        {delivered.data && <section><h3>Delivery</h3><Reference content={delivered.data} /></section>}
+        <ErrorText error={delivered.error} />
       </section>
     </Card>
   );
@@ -149,8 +149,9 @@ function Loaded({ detail, error, reasons, whyError, reload }: { detail: JobDetai
   const baseChanged: boolean = (firstBase.current !== null && job.base !== null && job.base !== firstBase.current) || job.target !== firstTarget.current ||
     (job.parentJobId === null && job.target !== job.baseBranch);
   const recipe = useRecipe(job);
-  const ticket: Artifact | undefined = artifacts.find((artifact) => artifact.type === "ticket");
-  const canCheck: boolean = job.mergedAt === null && artifacts.some((artifact) => artifact.type === "delivery");
+  const ticket: Artifact | undefined = artifacts.find((artifact) => artifact.type === "document");
+  const delivery = useDelivery(artifacts);
+  const canCheck: boolean = job.mergedAt === null && Boolean(delivery.data);
   const merge = useAction(async (manual: boolean) => {
     setMergeStatus(null);
     const result = await call("checkMerge", { params: { id: job.id } });

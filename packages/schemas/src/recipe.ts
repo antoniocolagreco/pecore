@@ -15,6 +15,7 @@ export const RecipeNode = z
       })
       .strict()
       .optional(),
+    reads: z.array(NodeId).default([]),
     requires: z.array(NodeId).default([]),
     optional: z.boolean().default(false),
     session: z.string().min(1).optional(),
@@ -112,6 +113,8 @@ export const Recipe = z
     }
     for (const [id, n] of Object.entries(r.nodes)) {
       for (const [i, req] of n.requires.entries()) if (!ids.has(req)) issue(["nodes", id, "requires", i], `${req} is not a recipe node`);
+      for (const [i, read] of n.reads.entries()) if (!ids.has(read)) issue(["nodes", id, "reads", i], `${read} is not a recipe node`);
+      if (new Set(n.reads).size !== n.reads.length) issue(["nodes", id, "reads"], "a node is read twice");
       for (const [i, p] of (n.agent?.providerNot ?? []).entries()) if (!ids.has(p)) issue(["nodes", id, "agent", "providerNot", i], `${p} is not a recipe node`);
       if (n.agent && n.agent.tier !== undefined && n.agent.profiles !== undefined) issue(["nodes", id, "agent"], "at most one of tier and profiles");
     }

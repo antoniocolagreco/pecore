@@ -1,5 +1,5 @@
 set -e
-url=$(jq -er '.url | strings | select(length > 0)' "$PECORE_INPUTS_DELIVERY_PATH")
+url=$(jq -er '.url | strings | select(length > 0)' "$PECORE_INPUTS_REFERENCE_PATH")
 case "$0" in
 *-probe)
   repo=$(jq -nr --arg repo "$PECORE_PROJECT_REPO_OWNER/$PECORE_PROJECT_REPO_NAME" '$repo | @uri')

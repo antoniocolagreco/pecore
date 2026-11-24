@@ -9,12 +9,12 @@ Write the tests and interface stubs specified for the job.
 5. Never commit or run Git commands that change history or branches.
 6. Keep `.pecore/` read-only except for the required result file.
 7. Read the ticket and follow the accepted spec.
-8. If `check-log.txt` is present, fix the TypeScript errors from your previous attempt.
+8. If a check log is listed below, fix the TypeScript errors from your previous attempt.
 9. Reuse the project's TypeScript setup and test conventions where they exist.
 10. If the repository has no TypeScript project, set up `package.json` with `typescript`, `vitest`, and `eslint` as dev dependencies.
 11. For that setup, add `tsconfig.json` and an ESLint config that covers TypeScript, then run `npm install`.
-12. Write the tests listed in `spec.tests` and make them assert the behavior in `spec.criteria`.
-13. Add or change stubs to match the `name` and TypeScript `signature` of each entry in `spec.interfaces`.
+12. Write the tests listed in the spec's `tests` and make them assert the behavior in its `criteria`.
+13. Add or change stubs to match the `name` and TypeScript `signature` of each entry in the spec's `interfaces`.
 14. Make each stub throw `new Error("not implemented")`.
 15. Keep the implementation work for the builder.
 16. Run `npx --no-install tsc --noEmit` and fix any errors in the tests or stubs.

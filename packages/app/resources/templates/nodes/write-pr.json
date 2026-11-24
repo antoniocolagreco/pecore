@@ -6,26 +6,8 @@
   "kind": "agent",
   "prompt": "write-pr.md",
   "agent": { "tier": "standard" },
-  "inputs": ["ticket", "diff"],
-  "optionalInputs": ["spec", "check-log"],
-  "outputs": ["pull-request"],
   "outcomes": ["done"],
+  "outputs": { "done": "document" },
   "changesFiles": false,
-  "timeoutSec": 300,
-  "outputSchema": {
-    "type": "object",
-    "required": ["outcome", "pull-request"],
-    "properties": {
-      "outcome": { "const": "done" },
-      "pull-request": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["title", "body"],
-        "properties": {
-          "title": { "type": "string", "minLength": 1 },
-          "body": { "type": "string", "minLength": 1 }
-        }
-      }
-    }
-  }
+  "timeoutSec": 300
 }

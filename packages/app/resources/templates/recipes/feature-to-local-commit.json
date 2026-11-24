@@ -12,15 +12,15 @@
   ],
   "nodes": {
     "spec": { "use": "spec-writer" },
-    "tests": { "use": "tests-writer" },
+    "tests": { "use": "tests-writer", "reads": ["spec", "tests-check", "code"] },
     "tests-check": { "use": "typecheck" },
-    "code": { "use": "builder" },
+    "code": { "use": "builder", "reads": ["spec", "lint", "types", "test", "review", "human"] },
     "lint": { "use": "eslint" },
     "types": { "use": "typecheck" },
     "test": { "use": "vitest" },
-    "review": { "use": "code-reviewer" },
-    "approve": { "use": "approver" },
-    "human": { "use": "human-review" },
+    "review": { "use": "code-reviewer", "reads": ["spec", "lint", "types", "test"] },
+    "approve": { "use": "approver", "reads": ["spec", "review"] },
+    "human": { "use": "human-review", "reads": ["approve"] },
     "commit": { "use": "git-commit", "requires": ["lint", "types", "test", "human"] }
   },
   "edges": [

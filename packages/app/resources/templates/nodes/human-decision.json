@@ -4,7 +4,7 @@
   "tags": ["decision"],
   "description": "Ask the user a question and follow the branch they choose.",
   "kind": "human",
-  "mode": "decision",
+  "interface": "decision",
   "params": {
     "type": "object",
     "properties": {

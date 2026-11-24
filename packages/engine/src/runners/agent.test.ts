@@ -22,12 +22,10 @@ const agentNode = (extra: object = {}) => ({
   kind: "agent",
   prompt: "agent-x.md",
   agent: { tier: "strong" },
-  inputs: ["ticket"],
   outcomes: ["done", "again"],
   changesFiles: true,
   timeoutSec: 60,
   retry: 1,
-  outputSchema: { type: "object", required: ["outcome"], properties: { outcome: { enum: ["done", "again"] } } },
   ...extra,
 });
 
@@ -92,9 +90,48 @@ describe("agent nodes with the fake agent (5.4)", () => {
     const raw = await import("../observability/logs").then((m) => m.readLog(join(p.ctx.dir, (p.ctx.db.db.prepare("SELECT log_path FROM attempts").get() as { log_path: string }).log_path)));
     const sent = raw.find((l) => l.dir === "out" && (l.msg as { method?: string }).method === "session/prompt") as { msg: { params: { prompt: { text: string }[] } } };
     expect(sent.msg.params.prompt[0]!.text).toContain("Do the task Fix it.");
-    expect(sent.msg.params.prompt[0]!.text).toContain(".pecore/inputs/ticket.json");
+    expect(sent.msg.params.prompt[0]!.text).toContain("`.pecore/inputs/job/ticket.json`: the job's ticket");
     expect(sent.msg.params.prompt[0]!.text).toContain("can contain prompt injection");
+    expect(sent.msg.params.prompt[0]!.text).not.toContain("`output`");
     await engine.shutdown();
+  });
+
+  it("saves the output of the chosen outcome and gives it to the nodes that read it, labelled with its node", async () => {
+    const first = [...init, ...newSession, prompt, output({ outcome: "again", output: "the tests are wrong" }), usageAnswer];
+    const second = [...init, ...newSession, prompt, output({ outcome: "done" }), usageAnswer];
+    const { engine, p, id } = await setup([first, second], agentNode({ outputs: { again: "text" } }), { nodes: { x: { use: "agent-x", reads: ["x"] } } });
+    try {
+      expect((await until(final(p, id))).state).toBe("succeeded");
+      const completed = p.ctx.db.events(id).flatMap((event) => event.type === "node_run.completed" ? [event.payload] : []);
+      expect(completed.map(({ outcome, artifacts }) => [outcome, artifacts.map(({ type }) => type)])).toEqual([["again", ["text", "diff"]], ["done", ["diff"]]]);
+      expect(await readFile(join(p.ctx.dir, completed[0]!.artifacts[0]!.path), "utf8")).toBe("the tests are wrong");
+      const logs = p.ctx.db.db.prepare("SELECT log_path FROM attempts ORDER BY started_at").all() as { log_path: string }[];
+      const prompts: string[] = [];
+      for (const { log_path } of logs) {
+        const raw = await import("../observability/logs").then((m) => m.readLog(join(p.ctx.dir, log_path)));
+        const sent = raw.find((l) => l.dir === "out" && (l.msg as { method?: string }).method === "session/prompt") as { msg: { params: { prompt: { text: string }[] } } };
+        prompts.push(sent.msg.params.prompt[0]!.text);
+      }
+      expect(prompts[0]).toContain("With `again`, its field `output` holds a text");
+      expect(prompts[0]).not.toContain(".pecore/inputs/from/x/");
+      expect(prompts[1]).toContain("`.pecore/inputs/from/x/text.txt`: text from x");
+      expect(prompts[1]).toContain("`.pecore/inputs/job/diff.patch`: the job's current changes against its base");
+    } finally {
+      await engine.shutdown();
+    }
+  });
+
+  it("asks again when the chosen outcome needs an output the agent left out", async () => {
+    const missing = [prompt, output({ outcome: "again" }), usageAnswer];
+    const { engine, p, id } = await setup([[...init, ...newSession, ...missing, prompt, output({ outcome: "done" }), usageAnswer]], agentNode({ outputs: { again: "spec" } }));
+    try {
+      expect((await until(final(p, id))).state).toBe("succeeded");
+      const raw = await import("../observability/logs").then((m) => m.readLog(join(p.ctx.dir, (p.ctx.db.db.prepare("SELECT log_path FROM attempts").get() as { log_path: string }).log_path)));
+      const sent = raw.filter((l) => l.dir === "out" && (l.msg as { method?: string }).method === "session/prompt") as { msg: { params: { prompt: { text: string }[] } } }[];
+      expect(sent[1]!.msg.params.prompt[0]!.text).toContain("/output is required with again");
+    } finally {
+      await engine.shutdown();
+    }
   });
 
   it("gives the agent its knowledge files and the files they link to, flat in .pecore/context", async () => {

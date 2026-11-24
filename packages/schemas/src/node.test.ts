@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Node, placeholderEnvName, StoredNode, unknownPlaceholders } from "./node";
+import { automaticOutputs, Node, placeholderEnvName, unknownPlaceholders } from "./node";
 
 const githubPr = {
   $schema: "../../../schemas/node.json",
@@ -8,9 +8,10 @@ const githubPr = {
   kind: "command",
   runsAs: "engine",
   credentials: ["project.account"],
-  inputs: ["commit", "spec"],
-  outputs: ["delivery"],
+  inputs: ["spec"],
+  optionalInputs: ["document"],
   outcomes: ["opened", "failed"],
+  outputs: { opened: "reference" },
   failOutcomes: ["failed"],
   changesFiles: false,
   script: "github-pr.sh",
@@ -18,35 +19,10 @@ const githubPr = {
     { exitCode: 0, outcome: "opened" },
     { exitCode: "other", outcome: "failed" },
   ],
-  outputRules: { delivery: { stdoutLastLine: "url" } },
+  outputRules: { opened: { stdoutLastLine: "url" } },
   probe: ["gh", "pr", "list", "--repo", "{project.repo.owner}/{project.repo.name}", "--head", "{job.branch}", "--base", "{job.target}", "--json", "url", "--jq", ".[0].url // empty"],
   timeoutSec: 120,
 };
-
-it("reads a legacy human decision without carrying unused fields forward", () => {
-  const legacy = {
-    name: "pick", description: "Choose a branch", kind: "human", mode: "decision",
-    outcomes: ["approve", "cancel"], show: ["diff"], changesFiles: false, timeoutSec: 2592000,
-  };
-  const loaded: Node = StoredNode.parse(legacy);
-  expect(loaded).toMatchObject({ kind: "human", mode: "decision", outcomes: ["approve", "cancel"], show: ["diff"] });
-  expect(loaded).not.toHaveProperty("changesFiles");
-  expect(loaded).not.toHaveProperty("timeoutSec");
-  expect(Node.safeParse(legacy).success).toBe(false);
-});
-
-it("preserves the outcomes of stored split human definitions", () => {
-  const decision: Node = StoredNode.parse({ name: "pick", description: "Choose a branch", kind: "human-decision", outcomes: ["accept", "decline"] });
-  const review: Node = StoredNode.parse({ name: "custom-review", description: "Review a report", kind: "human-review", show: ["diff"], outcomes: ["accept", "reject"] });
-  expect(decision).toMatchObject({ kind: "human", mode: "decision", outcomes: ["accept", "decline"] });
-  expect(review).toMatchObject({ kind: "human", mode: "review", outcomes: ["accept", "reject"] });
-});
-
-it("requires a mode on new human definitions and removes kind tags", () => {
-  expect(Node.safeParse({ name: "pick", description: "Choose a branch", kind: "human", outcomes: ["yes", "no"] }).success).toBe(false);
-  const decision: Node = Node.parse({ name: "pick", description: "Choose a branch", kind: "human", mode: "decision", outcomes: ["yes", "no"], tags: ["Human", "decision", "Run command"] });
-  expect(decision).toMatchObject({ kind: "human", mode: "decision", tags: ["decision"] });
-});
 
 const builder = {
   name: "builder",
@@ -54,13 +30,13 @@ const builder = {
   kind: "agent",
   prompt: "builder.md",
   agent: { tier: "strong" },
-  inputs: ["spec"],
-  outputs: [],
   outcomes: ["done", "tests_disputed"],
+  outputs: { tests_disputed: "text" },
   changesFiles: true,
   timeoutSec: 3600,
-  outputSchema: { type: "object", properties: { outcome: { enum: ["done", "tests_disputed"] } }, required: ["outcome"] },
 };
+
+const review = { name: "review", description: "Review the job", kind: "human", interface: "code-review", outcomes: ["approve", "changes", "reject"], outputs: { changes: "text" } };
 
 const issues = (value: unknown) => {
   const r = Node.safeParse(value);
@@ -68,17 +44,6 @@ const issues = (value: unknown) => {
 };
 
 describe("node schema", () => {
-  it("accepts only Report and Code as new review views", () => {
-    const review: Record<string, unknown> = { name: "review", description: "Review the job", kind: "human", mode: "review",
-      outcomes: ["approve", "changes", "reject"] };
-    expect(issues({ ...review, reviewView: "report" })).toEqual([]);
-    expect(issues({ ...review, reviewView: "code" })).toEqual([]);
-    expect(issues({ ...review, reviewView: "diff" })).not.toEqual([]);
-    expect(issues({ ...review, reviewView: "report", inputs: ["ticket"] })).toEqual(["inputs: the review view selects its input automatically"]);
-    expect(StoredNode.parse({ ...review, reviewView: "text", inputs: ["ticket"] })).toMatchObject({ reviewView: "report", inputs: [] });
-    expect(StoredNode.parse({ ...review, reviewView: "diff", inputs: ["diff"] })).toMatchObject({ reviewView: "code", inputs: [] });
-  });
-
   it("accepts the delivery node of design 3.1", () => {
     expect(issues(githubPr)).toEqual([]);
     const n = Node.parse(githubPr);
@@ -88,6 +53,25 @@ describe("node schema", () => {
   it("accepts an agent node and fills defaults", () => {
     const n = Node.parse(builder);
     expect(n.kind === "agent" && n.resume).toBe(false);
+    const empty: Node = Node.parse({ ...builder, outputs: undefined });
+    expect(empty.kind === "agent" && empty.outputs).toEqual({});
+  });
+
+  it("gives each outcome at most one output, of a known type, on a known outcome", () => {
+    expect(issues({ ...builder, outputs: { done: "text", tests_disputed: "findings" } })).toEqual([]);
+    expect(issues({ ...builder, outputs: { merged: "text" } })).toContain("outputs.merged: merged is not in outcomes");
+    expect(issues({ ...builder, outputs: { done: "risk" } }).length).toBeGreaterThan(0);
+    expect(issues({ ...builder, outputs: { done: ["text", "spec"] } }).length).toBeGreaterThan(0);
+  });
+
+  it("declares inputs only on commands", () => {
+    expect(issues({ ...builder, inputs: ["spec"] }).length).toBeGreaterThan(0);
+    expect(issues({ ...review, inputs: ["diff"] }).length).toBeGreaterThan(0);
+    expect(issues({ ...githubPr, optionalInputs: ["spec"] })).toContain("optionalInputs.0: spec is already a required input");
+  });
+
+  it("drops the agent output schema", () => {
+    expect(issues({ ...builder, outputSchema: { type: "object" } }).length).toBeGreaterThan(0);
   });
 
   it("requires a probe on runsAs: engine", () => {
@@ -108,16 +92,12 @@ describe("node schema", () => {
     expect(issues({ ...githubPr, outcomeRules: [{ exitCode: 0, outcome: "merged" }] })).toContain("outcomeRules.0.outcome: merged is not in outcomes");
   });
 
-  it("rejects output rules for types not in outputs", () => {
-    expect(issues({ ...githubPr, outputRules: { spec: { file: "x" } } })).toContain("outputRules.spec: spec is not in outputs");
+  it("pairs each command output with an output rule on the same outcome", () => {
+    expect(issues({ ...githubPr, outputRules: { failed: { file: "x" } } })).toEqual(expect.arrayContaining(["outputRules.failed: failed has no output", "outputs.opened: opened needs an output rule"]));
   });
 
   it("rejects unknown placeholders in argument arrays", () => {
     expect(issues({ ...githubPr, probe: ["gh", "{job.secret}"] })).toContain("probe.1: unknown placeholder {job.secret}");
-  });
-
-  it("requires an outcome property in the agent output schema", () => {
-    expect(issues({ ...builder, outputSchema: { type: "object" } })).toContain("outputSchema: outputSchema needs a property outcome");
   });
 
   it("requires exactly one of tier and profiles on agent nodes", () => {
@@ -127,16 +107,47 @@ describe("node schema", () => {
   it("rejects unknown fields", () => {
     expect(issues({ ...builder, colour: "red" }).length).toBeGreaterThan(0);
   });
+
+  it("lists the outputs the engine adds", () => {
+    expect(automaticOutputs(Node.parse(builder))).toEqual(["diff"]);
+    expect(automaticOutputs(Node.parse(githubPr))).toEqual(["text"]);
+    expect(automaticOutputs(Node.parse(review))).toEqual([]);
+  });
+});
+
+describe("human node", () => {
+  it("chooses an interface and removes kind tags", () => {
+    expect(issues({ ...review, interface: undefined }).length).toBeGreaterThan(0);
+    expect(issues({ ...review, interface: "video-call" }).length).toBeGreaterThan(0);
+    const decision: Node = Node.parse({ name: "pick", description: "Choose a branch", kind: "human", interface: "decision", outcomes: ["yes", "no"], tags: ["Human", "decision", "Run command"] });
+    expect(decision).toMatchObject({ kind: "human", interface: "decision", tags: ["decision"] });
+  });
+
+  it("gives the review interfaces approve, changes and reject", () => {
+    expect(issues(review)).toEqual([]);
+    expect(issues({ ...review, interface: "report-review" })).toEqual([]);
+    expect(issues({ ...review, outcomes: ["approve", "reject"], outputs: {} })).toEqual(["outcomes: Code review needs approve, changes, reject"]);
+  });
+
+  it("lets a person write only text", () => {
+    expect(issues({ ...review, outputs: { changes: "findings" } })).toEqual(["outputs.changes: a person can only write text"]);
+  });
+
+  it("rejects the old mode, view and answer fields", () => {
+    expect(issues({ ...review, mode: "review" }).length).toBeGreaterThan(0);
+    expect(issues({ ...review, reviewView: "code" }).length).toBeGreaterThan(0);
+    expect(issues({ ...review, answer: true }).length).toBeGreaterThan(0);
+  });
 });
 
 describe("placeholders", () => {
   it("knows every placeholder of design 3.1", () => {
-    const all = "{params.suite} {job.id} {job.title} {job.branch} {job.base} {job.oldBase} {job.target} {job.commit} {ticket.id} {workdir} {project.repoDir} {project.repo.url} {project.repo.owner} {project.repo.name} {inputs.spec.path} {inputs.check-log.path}";
+    const all = "{params.suite} {job.id} {job.title} {job.branch} {job.base} {job.oldBase} {job.target} {job.commit} {ticket.id} {workdir} {project.repoDir} {project.repo.url} {project.repo.owner} {project.repo.name} {inputs.spec.path} {inputs.reference.path}";
     expect(unknownPlaceholders(all)).toEqual([]);
   });
 
   it("rejects inputs of unknown artifact types and source placeholders outside sources", () => {
-    expect(unknownPlaceholders("{inputs.secret.path} {comment.path}")).toEqual(["{inputs.secret.path}", "{comment.path}"]);
+    expect(unknownPlaceholders("{inputs.secret.path} {inputs.check-log.path} {comment.path}")).toEqual(["{inputs.secret.path}", "{inputs.check-log.path}", "{comment.path}"]);
     expect(unknownPlaceholders("{comment.path}", { source: true })).toEqual([]);
   });
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Artifact, AttemptView, JobDetail, NodeRunView } from "@pecore/schemas";
 import { useConnected } from "../api/live";
-import { ArtifactView } from "./ArtifactView";
+import { ArtifactView, latestFindings } from "./ArtifactView";
 import { DefinitionIcon, useDefinitionIcons } from "./DefinitionIcon";
 import { LogView } from "./LogView";
 import { duration, ui } from "./ui";
@@ -46,7 +46,7 @@ export function NodeRunDetail({ detail, run, nodeName, icon, onSelect }: {
   const runDir: string | undefined = run.id.split("/")[1]?.replace("#", "-");
   const artifacts: Artifact[] = detail.artifacts.filter((artifact) => artifact.path.split("/")[2] === runDir);
   const artifact: Artifact | undefined = artifacts.find((entry) => entry.path === selected);
-  const risk: Artifact | undefined = detail.artifacts.findLast((entry) => entry.type === "risk");
+  const risk: Artifact | undefined = artifact?.type === "diff" ? latestFindings(detail.artifacts, artifact.contentState) : undefined;
   return (
     <Card padded>
       <section className={ui.stack} aria-label="Node run detail">
@@ -92,7 +92,7 @@ export function NodeRunDetail({ detail, run, nodeName, icon, onSelect }: {
               {artifacts.slice(artifactPage * pageSize, (artifactPage + 1) * pageSize).map((entry) => <Button key={entry.path} disabled={!connected} aria-pressed={entry.path === selected} onClick={() => setSelected(entry.path === selected ? null : entry.path)}>{entry.type}</Button>)}
             </div>
             <Pages page={artifactPage} count={artifacts.length} onChange={setArtifactPage} />
-            {artifact && <ArtifactView key={artifact.path} artifact={artifact} risk={risk} />}
+            {artifact && <ArtifactView key={artifact.path} artifact={artifact} findings={risk} />}
           </section>
         )}
         {latest && <LogView key={latest.id} attemptId={latest.id} running={run.state === "running" && latest.endedAt === null} />}

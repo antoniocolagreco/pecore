@@ -5,14 +5,14 @@
   "description": "Commit every change in the workdir to the job branch; done also when there is nothing new to commit",
   "kind": "command",
   "script": "git-commit.sh",
-  "outputs": ["commit"],
   "outcomes": ["done", "failed"],
+  "outputs": { "done": "reference" },
   "failOutcomes": ["failed"],
   "changesFiles": false,
   "outcomeRules": [
     { "exitCode": 0, "outcome": "done" },
     { "exitCode": "other", "outcome": "failed" }
   ],
-  "outputRules": { "commit": { "stdoutLastLine": "sha" } },
+  "outputRules": { "done": { "stdoutLastLine": "sha" } },
   "timeoutSec": 120
 }

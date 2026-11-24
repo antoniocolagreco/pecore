@@ -6,8 +6,8 @@
   "kind": "command",
   "runsAs": "engine",
   "credentials": ["project.account"],
-  "outputs": ["delivery"],
   "outcomes": ["created", "failed"],
+  "outputs": { "created": "reference" },
   "failOutcomes": ["failed"],
   "changesFiles": false,
   "script": "github-create-repo.sh",
@@ -16,6 +16,6 @@
     { "exitCode": 0, "outcome": "created" },
     { "exitCode": "other", "outcome": "failed" }
   ],
-  "outputRules": { "delivery": { "stdoutLastLine": "url" } },
+  "outputRules": { "created": { "stdoutLastLine": "url" } },
   "timeoutSec": 120
 }

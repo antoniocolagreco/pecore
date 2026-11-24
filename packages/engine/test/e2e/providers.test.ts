@@ -47,11 +47,9 @@ describe.skipIf(!real)("phase 6 gate: Codex and opencode connectors with the use
         kind: "agent",
         prompt: "agent-x.md",
         agent: { profiles: ["p"] },
-        inputs: ["ticket"],
         outcomes: ["done"],
         changesFiles: true,
         timeoutSec: 600,
-        outputSchema: { type: "object", required: ["outcome"], properties: { outcome: { enum: ["done"] } } },
       }));
       await writeFile(join(templates, "nodes", "agent-x.md"), "Create the file done.txt containing the single word ok. Do nothing else.\n");
       await writeFile(join(templates, "recipes", "one-agent.json"), JSON.stringify({ name: "one-agent", description: "one agent", start: "x", successOutcomes: ["x:done"], nodes: { x: { use: "agent-x" } }, edges: [] }));

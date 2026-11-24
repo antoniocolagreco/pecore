@@ -140,7 +140,7 @@ describe("phase 2 gate: command-only recipe on a local-only project, app user as
       { node: "commit", state: "completed", outcome: "done" },
     ]);
     const types = project.executor.artifacts(id).map((a) => a.type);
-    expect(types).toEqual(expect.arrayContaining(["ticket", "diff", "check-log", "user-note", "commit"]));
+    expect(types).toEqual(expect.arrayContaining(["document", "diff", "text", "reference"]));
     await engine.shutdown();
   });
 

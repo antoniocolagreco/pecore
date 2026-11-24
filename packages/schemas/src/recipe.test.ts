@@ -80,6 +80,12 @@ describe("recipe schema", () => {
     expect(issues({ ...feature, nodes: { ...feature.nodes, commit: { use: "git-commit", requires: ["nope"] } } })).toContain("nodes.commit.requires.0: nope is not a recipe node");
   });
 
+  it("reads only recipe nodes, each once", () => {
+    expect(issues({ ...feature, nodes: { ...feature.nodes, code: { use: "builder", reads: ["spec", "review"] } } })).toEqual([]);
+    expect(issues({ ...feature, nodes: { ...feature.nodes, code: { use: "builder", reads: ["nope"] } } })).toContain("nodes.code.reads.0: nope is not a recipe node");
+    expect(issues({ ...feature, nodes: { ...feature.nodes, code: { use: "builder", reads: ["spec", "spec"] } } })).toContain("nodes.code.reads: a node is read twice");
+  });
+
   it("requires a success outcome with no edge", () => {
     expect(issues({ ...feature, successOutcomes: [] })).toContain("successOutcomes: at least one success outcome");
     expect(issues({ ...feature, successOutcomes: ["commit:done"] })).toContain("successOutcomes.0: commit:done has an edge");

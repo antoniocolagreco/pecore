@@ -8,7 +8,7 @@ if [ "$0" = gitlab-mr-probe ]; then
 fi
 
 if [ "$0" != gitlab-mr ]; then
-  url=$(jq -er '.url | strings | select(length > 0)' "$PECORE_INPUTS_DELIVERY_PATH")
+  url=$(jq -er '.url | strings | select(length > 0)' "$PECORE_INPUTS_REFERENCE_PATH")
   exec glab mr view "$url" -R "$repo" --output json
 fi
 

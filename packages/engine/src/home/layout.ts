@@ -113,13 +113,17 @@ async function removeRetiredTemplateFiles(templates: string): Promise<string[]> 
   return removed;
 }
 
+export const templatesFormat: string = "2";
+
 async function addShippedTemplateFiles(shipped: string, templates: string): Promise<string[]> {
   const added: string[] = [];
+  const marker: string = join(templates, ".format");
+  const current: boolean = (await readFile(marker, "utf8").catch(() => "")).trim() === templatesFormat;
   for (const entry of await readdir(shipped, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const path: string = relative(shipped, join(entry.parentPath, entry.name));
     const target: string = join(templates, path);
-    if (await exists(target)) {
+    if (current && await exists(target)) {
       const previous: readonly string[] | undefined = previousShippedHashes.get(path);
       if (!previous?.includes(createHash("sha256").update(await readFile(target)).digest("hex"))) continue;
       if (previous.includes(createHash("sha256").update(await readFile(join(shipped, path))).digest("hex"))) continue;
@@ -128,6 +132,7 @@ async function addShippedTemplateFiles(shipped: string, templates: string): Prom
     await cp(join(shipped, path), target);
     added.push(target);
   }
+  if (!current) await writeFile(marker, templatesFormat + "\n");
   return added;
 }
 
@@ -151,6 +156,7 @@ export async function initHome(home: string, opts: { templates: string }): Promi
     return { created };
   }
   await cp(`${opts.templates}/`, p.templates, { recursive: true, force: false, errorOnExist: false, dereference: true });
+  await writeFile(join(p.templates, ".format"), templatesFormat + "\n");
   return { created };
 }
 

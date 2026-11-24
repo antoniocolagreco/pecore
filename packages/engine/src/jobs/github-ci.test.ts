@@ -21,7 +21,7 @@ it("restarts a pending CI wait and runs a correction on the same pull request", 
       name: "with-ci", description: "Publish and wait for tests", start: "write",
       ci: { after: "pr", on: "opened", checks: ["tests"], intervalSec: 1, timeoutSec: 30, maxCorrections: 1 },
       nodes: {
-        write: { use: "write-spec" }, fix: { use: "fix-tests" }, commit: { use: "git-commit" }, push: { use: "git-push" }, pr: { use: "github-pr" },
+        write: { use: "write-spec" }, fix: { use: "fix-tests", reads: ["pr"] }, commit: { use: "git-commit" }, push: { use: "git-push" }, pr: { use: "github-pr", reads: ["write"] },
       },
       edges: [
         { from: "write", on: "done", to: "commit" }, { from: "commit", on: "done", to: "push" },
@@ -32,7 +32,7 @@ it("restarts a pending CI wait and runs a correction on the same pull request", 
     await writeFile(join(ctx.templates, "recipes", "with-ci.json"), JSON.stringify(recipe));
     await writeFile(join(ctx.defs.nodeDir, "fix-tests.json"), JSON.stringify({
       name: "fix-tests", description: "Make a new commit", kind: "command",
-      command: ["/bin/sh", "-c", "echo fixed >> hello.txt"], inputs: ["check-log"],
+      command: ["/bin/sh", "-c", "cp \"$PECORE_INPUTS_TEXT_PATH\" ci-log.txt && echo fixed >> hello.txt"], inputs: ["text"],
       changesFiles: true, outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }], timeoutSec: 10,
     }));
     await writeFile(join(ctx.dir, "project.json"), JSON.stringify({ ...ctx.project, recipes: ["with-ci"] }));
@@ -70,6 +70,7 @@ it("restarts a pending CI wait and runs a correction on the same pull request", 
     expect(checks.at(-1)).toMatchObject({ commit: second, corrections: 1, result: "ci_passed" });
     const failure = checks.find(({ result }) => result === "ci_failed");
     expect(await readFile(join(project.ctx.dir, failure!.log!.path), "utf8")).toContain("unit tests failed");
+    expect(execFileSync("git", ["--git-dir", fixture.forge.remote("acme/shop"), "show", `${second}:ci-log.txt`], { encoding: "utf8" })).toContain("unit tests failed");
   } finally {
     await engine.shutdown();
   }

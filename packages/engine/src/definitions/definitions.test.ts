@@ -27,12 +27,10 @@ const writer = Node.parse({
   kind: "agent",
   prompt: "spec-writer.md",
   agent: { tier: "strong" },
-  inputs: ["ticket"],
-  outputs: ["spec"],
   outcomes: ["accepted", "rejected"],
+  outputs: { accepted: "spec", rejected: "text" },
   changesFiles: false,
   timeoutSec: 600,
-  outputSchema: { type: "object", properties: { outcome: {} } },
 });
 
 const builder = Node.parse({
@@ -41,18 +39,17 @@ const builder = Node.parse({
   kind: "agent",
   prompt: "builder.md",
   agent: { tier: "strong" },
-  inputs: ["spec"],
   outcomes: ["done"],
   changesFiles: true,
   timeoutSec: 600,
-  outputSchema: { type: "object", properties: { outcome: {} } },
 });
 
 const nodes = new Map<string, Node>([
   ["spec-writer", writer],
   ["builder", builder],
   ["lint", check("lint", ["passed", "failed"])],
-  ["git-commit", check("git-commit", ["done", "failed"], { outputs: ["commit"] })],
+  ["git-commit", check("git-commit", ["done", "failed"], { outputs: { done: "reference" }, outputRules: { done: { stdoutLastLine: "sha" } } })],
+  ["publish", check("publish", ["done"], { inputs: ["spec"], optionalInputs: ["text"] })],
 ]);
 
 const recipe = (r: object) => Recipe.parse({ name: "r", description: "r", ...r });
@@ -98,14 +95,38 @@ describe("recipe check", () => {
     expect(checkRecipe(recipe({ ...local, edges }), nodes, true)).toContainEqual({ path: "edges.5.on", message: "stale is not an outcome of code" });
   });
 
-  it("rejects an input that is not produced on every path", () => {
-    const r = recipe({
-      ...local,
-      start: "code",
-      nodes: { ...local.nodes },
-      edges: [{ from: "code", on: "done", to: "lint" }, { from: "lint", on: "passed", to: "commit" }, { from: "lint", on: "failed", to: "spec" }, { from: "spec", on: "accepted", to: "code" }, { from: "commit", on: "stale", to: "lint" }],
-    });
-    expect(checkRecipe(r, nodes, true)).toContainEqual({ path: "nodes.code", message: "input spec is not produced on every path to code" });
+  const publishing = (publish: object, edges: object[]) => recipe({
+    start: "spec",
+    successOutcomes: ["publish:done"],
+    nodes: { spec: { use: "spec-writer" }, lint: { use: "lint" }, code: { use: "builder" }, publish: { use: "publish", ...publish } },
+    edges,
+  });
+  const throughSpec = [
+    { from: "spec", on: "accepted", to: "lint" },
+    { from: "spec", on: "rejected", to: "code" },
+    { from: "code", on: "done", to: "lint" },
+    { from: "lint", on: "passed", to: "publish" },
+    { from: "lint", on: "failed", to: "code" },
+  ];
+  const onlyAccepted = throughSpec.filter((edge) => edge.on !== "rejected");
+
+  it("gives a command its required input from the node it reads, on every path", () => {
+    expect(checkRecipe(publishing({ reads: ["spec"] }, throughSpec), nodes, true)).toContainEqual({ path: "nodes.publish.reads", message: "spec from spec is not produced on every path to publish" });
+    expect(checkRecipe(publishing({ reads: ["spec"] }, onlyAccepted), nodes, true)).toEqual([]);
+  });
+
+  it("asks a command to read a node that produces each required input", () => {
+    expect(checkRecipe(publishing({}, throughSpec), nodes, true)).toContainEqual({ path: "nodes.publish.reads", message: "read a node that produces spec" });
+  });
+
+  it("rejects two read nodes that produce the same input of a command", () => {
+    expect(checkRecipe(publishing({ reads: ["spec", "lint"] }, onlyAccepted), nodes, true)).toContainEqual({ path: "nodes.publish.reads", message: "spec and lint both produce text; read only one" });
+  });
+
+  it("rejects reading a node that produces nothing", () => {
+    const silent = new Map<string, Node>([...nodes, ["lint", check("lint", ["passed", "failed"], { command: ["true"] })], ["quiet", Node.parse({ ...writer, name: "quiet", outputs: {} })]]);
+    const r = recipe({ ...local, nodes: { ...local.nodes, code: { use: "builder", reads: ["spec"] }, spec: { use: "quiet" } } });
+    expect(checkRecipe(r, silent, true)).toContainEqual({ path: "nodes.code.reads", message: "spec produces nothing to read" });
   });
 
   it("rejects a success outcome that is a fail outcome", () => {

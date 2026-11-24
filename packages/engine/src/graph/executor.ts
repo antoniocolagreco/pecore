@@ -3,8 +3,8 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 import { monotonicFactory } from "ulid";
 import type { RawLine, Usage } from "@pecore/agents";
-import type { AgentNode, Artifact, ArtifactType, DeliveryArtifact, FailureReason, ForgeAccount, JobDefinitions, JobState, Node, Profiles, Project, Settings, Tiers, WaitingReason } from "@pecore/schemas";
-import { isHumanNode, Recipe, SpecArtifact } from "@pecore/schemas";
+import type { AgentNode, Artifact, ArtifactType, FailureReason, ForgeAccount, JobDefinitions, JobState, Node, Profiles, Project, Settings, Tiers, WaitingReason } from "@pecore/schemas";
+import { artifactTypes, DocumentArtifact, isHumanNode, Recipe, ReferenceArtifact, SpecArtifact } from "@pecore/schemas";
 import { spawnFor } from "../accounts/agents";
 import type { AgentServices } from "../accounts/agents";
 import { knowledgeClosure } from "../definitions/knowledge";
@@ -15,14 +15,15 @@ import { checkGithubCi, githubHead } from "../jobs/github-ci";
 import type { JobAttachment } from "../jobs/create";
 import { LogWriter } from "../observability/logs";
 import { runAgentNode } from "../runners/agent";
-import type { AgentContinuation, AgentQuestion } from "../runners/agent";
-import { commitSha, fetchBase, latestArtifact, reentryPending } from "../jobs/stacked";
-import { runCommandNode, runMergedCheck } from "../runners/command";
+import type { AgentContinuation, AgentInput, AgentQuestion } from "../runners/agent";
+import { fetchBase, jobArtifacts, jobCommit, latestReference, reentryPending } from "../jobs/stacked";
+import type { JobArtifact } from "../jobs/stacked";
+import { outcomeOutputs, runCommandNode, runMergedCheck } from "../runners/command";
 import type { CommandRun } from "../runners/command";
 import { forgeEnv, identityOk, toolAccounts, ToolAuthError } from "../runners/forge-env";
 import { candidateProfiles, pickProfile } from "../scheduler/tiers";
 import type { ProfileChoice } from "../scheduler/tiers";
-import { humanItem, humanResult, subjectHash } from "../runners/human";
+import { humanArtifacts, humanItem, humanResult, subjectHash } from "../runners/human";
 import { paramsWithDefaults } from "../runners/placeholders";
 import { appUser, killJobProcesses, signalGroup, stopGroup } from "../runners/process";
 import { enoughDisk } from "../scheduler/disk";
@@ -129,6 +130,17 @@ const backoffMs = [60_000, 120_000, 240_000, 480_000];
 
 function sha256(data: string | Buffer): string {
   return createHash("sha256").update(data).digest("hex");
+}
+
+function outputProblem(type: ArtifactType, content: string): string | null {
+  const schema = artifactTypes[type].schema;
+  if (type === "text" || type === "diff" || !schema) return null;
+  try {
+    const checked = schema.safeParse(JSON.parse(content));
+    return checked.success ? null : checked.error.issues.map((issue) => `${issue.path.join(".") || "/"} ${issue.message}`).join("; ");
+  } catch (e) {
+    return (e as Error).message;
+  }
 }
 
 function runDirName(nodeRunId: string): string {
@@ -253,27 +265,28 @@ export class JobExecutor {
   }
 
   artifacts(jobId: string): Artifact[] {
-    const out: Artifact[] = [];
-    for (const e of this.ctx.db.events(jobId)) {
-      if (e.type === "job.created") {
-        if (e.payload.ticket) out.push(e.payload.ticket);
-        out.push(...(e.payload.attachments ?? []));
-      }
-      if (e.type === "node_run.completed") out.push(...e.payload.artifacts);
-      if (e.type === "job.ci_check" && e.payload.log) out.push(e.payload.log);
+    return jobArtifacts(this.ctx.db.events(jobId)).map(({ artifact }) => artifact);
+  }
+
+  private ticket(jobId: string): Artifact | undefined {
+    return jobArtifacts(this.ctx.db.events(jobId)).find(({ artifact, node }) => node === null && artifact.type === "document")?.artifact;
+  }
+
+  private latestDiff(jobId: string): Artifact | undefined {
+    return this.artifacts(jobId).findLast(({ type }) => type === "diff");
+  }
+
+  private readArtifacts(jobId: string, reads: string[]): JobArtifact[] {
+    const latest = new Map<string, JobArtifact>();
+    for (const found of jobArtifacts(this.ctx.db.events(jobId))) {
+      if (found.node !== null && reads.includes(found.node) && found.artifact.type !== "attachment") latest.set(`${found.node}:${found.artifact.type}`, found);
     }
-    return out;
+    return reads.flatMap((read) => [...latest.values()].filter(({ node }) => node === read));
   }
 
-  private latest(jobId: string): Map<ArtifactType, Artifact> {
-    const m = new Map<ArtifactType, Artifact>();
-    for (const a of this.artifacts(jobId)) if (a.type !== "attachment") m.set(a.type, a);
-    return m;
-  }
-
-  private async saveArtifact(jobId: string, runDir: string, type: ArtifactType, content: string, state: string | null): Promise<Artifact> {
-    const ext = type === "diff" ? "patch" : type === "check-log" || type === "user-note" ? "txt" : "json";
-    const path = join(this.ctx.dir, "artifacts", jobId, runDir, `${type}.${ext}`);
+  private async saveArtifact(jobId: string, runDir: string, type: ArtifactType, content: string, state: string | null, name: string = type): Promise<Artifact> {
+    const ext = type === "diff" ? "patch" : type === "text" ? "txt" : "json";
+    const path = join(this.ctx.dir, "artifacts", jobId, runDir, `${name}.${ext}`);
     await mkdir(join(this.ctx.dir, "artifacts", jobId, runDir), { recursive: true });
     await writeFile(path, content);
     return { type, path: relative(this.ctx.dir, path), sha256: sha256(content), contentState: state };
@@ -342,7 +355,7 @@ export class JobExecutor {
     if (job.waiting_reason === "parent_job" || job.waiting_reason === "parent_failed") return false;
     if (job.waiting_reason === "confirmation" && job.parent_job_id) {
       const parent: JobRow = this.job(job.parent_job_id);
-      if (parent.merged_at === null && (parent.state !== "succeeded" || !(await commitSha(this.ctx.dir, latestArtifact(this.ctx.db.events(parent.id), "commit"))))) {
+      if (parent.merged_at === null && (parent.state !== "succeeded" || !(await jobCommit(this.ctx.dir, this.ctx.db.events(parent.id))))) {
         this.setState(job.id, "queued", isFinal(parent.state) && parent.state !== "succeeded" ? "parent_failed" : "parent_job");
         return false;
       }
@@ -453,7 +466,7 @@ export class JobExecutor {
   }
 
   private async startChild(parentId: string, childId: string): Promise<void> {
-    const sha = await commitSha(this.ctx.dir, latestArtifact(this.ctx.db.events(parentId), "commit"));
+    const sha = await jobCommit(this.ctx.dir, this.ctx.db.events(parentId));
     if (!sha) return;
     await this.exclusive(childId, async () => {
       const child = this.job(childId);
@@ -560,9 +573,9 @@ export class JobExecutor {
     const previous: CiCheck | null = this.ciCheck(job.id);
     if (previous?.runId === runId && previous.result !== "pending") return previous;
     if (previous?.runId !== runId) {
-      const commit = await commitSha(this.ctx.dir, this.latest(job.id).get("commit"));
-      const delivery: Artifact | undefined = this.latest(job.id).get("delivery");
-      const link: string | undefined = delivery ? (JSON.parse(await readFile(join(this.ctx.dir, delivery.path), "utf8")) as DeliveryArtifact).url : undefined;
+      const events = this.ctx.db.events(job.id);
+      const commit = await jobCommit(this.ctx.dir, events);
+      const link: string | undefined = (await latestReference(this.ctx.dir, jobArtifacts(events), (reference, node) => node === ci.after && reference.url !== undefined))?.reference.url;
       const pullRequest: number = Number(link ? /\/pull\/(\d+)\/?$/.exec(link)?.[1] : undefined);
       const account: ForgeAccount | undefined = this.ctx.project.repo ? this.ctx.forgeAccount(this.ctx.project.repo.account) : undefined;
       if (!commit || !Number.isSafeInteger(pullRequest) || pullRequest < 1 || account?.forge !== "github") {
@@ -609,7 +622,7 @@ export class JobExecutor {
       else if (result.state === "failed") {
         next.result = check.corrections >= config.maxCorrections ? "ci_exhausted" : "ci_failed";
         if (next.result === "ci_failed") next.corrections += 1;
-        next.log = await this.saveArtifact(jobId, `${runDirName(check.runId)}-ci`, "check-log", result.report, null);
+        next.log = await this.saveArtifact(jobId, `${runDirName(check.runId)}-ci`, "text", result.report, null);
       }
       this.ctx.db.append([{ jobId, type: "job.ci_check", payload: next }]);
       if (next.result !== "pending") {
@@ -641,15 +654,17 @@ export class JobExecutor {
   }
 
   private async mergedDelivery(parent: JobRow): Promise<string | null> {
-    const events = this.ctx.db.events(parent.id);
-    const delivery = latestArtifact(events, "delivery");
-    if (!delivery) return null;
-    const producer = events.find((e) => e.type === "node_run.completed" && e.payload.artifacts.some((a) => a.path === delivery.path));
-    if (producer?.type !== "node_run.completed") return null;
-    const nodeId = producer.payload.nodeRunId.split("/")[1]!.split("#")[0]!;
     const recipe: Recipe = this.recipe(parent);
     const definitions: JobDefinitions | null = jobDefinitions(this.ctx.db, parent.id);
-    const node = this.nodeFor(recipe, nodeId, jobNodes(definitions, this.ctx.defs.nodes));
+    const nodes: Map<string, Node> = jobNodes(definitions, this.ctx.defs.nodes);
+    const delivered = await latestReference(this.ctx.dir, jobArtifacts(this.ctx.db.events(parent.id)), (reference, id) => {
+      if (id === null || !recipe.nodes[id] || (reference.url === undefined && reference.ref === undefined)) return false;
+      const node: Node = this.nodeFor(recipe, id, nodes);
+      return node.kind === "command" && node.mergedCheck !== undefined;
+    });
+    if (!delivered) return null;
+    const nodeId: string = delivered.node!;
+    const node = this.nodeFor(recipe, nodeId, nodes);
     if (node.kind !== "command" || !node.mergedCheck) return null;
     const env: Record<string, string> = {};
     for (const a of toolAccounts(node.credentials, this.ctx.project.repo?.account, this.ctx.forgeAccount, this.ctx.project.credentials)) Object.assign(env, await forgeEnv(a));
@@ -659,12 +674,11 @@ export class JobExecutor {
       sidecars: definitions?.nodes[node.name]?.sidecars,
       params: paramsWithDefaults(node.params, recipe.nodes[nodeId]?.params),
       context: await this.placeholderContext(parent),
-      inputs: [{ type: "delivery", path: join(this.ctx.dir, delivery.path) }],
+      inputs: [{ type: "reference", path: join(this.ctx.dir, delivered.artifact.path) }],
       extraEnv: env,
     });
     if (result !== "done") return null;
-    const artifact: DeliveryArtifact = JSON.parse(await readFile(join(this.ctx.dir, delivery.path), "utf8")) as DeliveryArtifact;
-    return artifact.url ?? artifact.ref ?? null;
+    return delivered.reference.url ?? delivered.reference.ref ?? null;
   }
 
   private async deliveryMerged(parent: JobRow, delivery: string): Promise<void> {
@@ -682,7 +696,7 @@ export class JobExecutor {
       const last = runs.filter((r) => r.node === req).at(-1);
       if (!last) return false;
       const node = this.nodeFor(recipe, req, nodes);
-      const ok: boolean = isHumanNode(node) ? node.mode === "review" && last.outcome === "approve" : last.outcome === "passed";
+      const ok: boolean = isHumanNode(node) ? node.interface !== "decision" && last.outcome === "approve" : last.outcome === "passed";
       if (!ok || last.content_before !== current || last.content_after !== current) return false;
     }
     return true;
@@ -723,7 +737,7 @@ export class JobExecutor {
     if (run.state === "waiting" && (run.waiting_reason === "human" || run.waiting_reason === "network")) return false;
 
     if (recipeNode.optional) {
-      const spec = this.latest(job.id).get("spec");
+      const spec: Artifact | undefined = this.artifacts(job.id).findLast(({ type }) => type === "spec");
       const named = spec ? SpecArtifact.safeParse(JSON.parse(await readFile(join(this.ctx.dir, spec.path), "utf8"))).data?.optionalNodes ?? [] : [];
       if (!named.includes(run.node)) {
         this.ctx.db.append([{ jobId: job.id, type: "node_run.completed", payload: { nodeRunId: run.id, outcome: "skipped", contentBefore: null, contentAfter: null, artifacts: [] } }]);
@@ -741,8 +755,9 @@ export class JobExecutor {
 
     if (isHumanNode(node)) {
       const { question } = paramsWithDefaults(node.params, recipeNode.params);
-      const item = humanItem(run.id, run.node, node, this.artifacts(job.id), before, question);
-      this.waitForHuman(job, run, item, `${run.node} waits for your ${item.subject.mode}`);
+      const show: Artifact[] = humanArtifacts(node, this.latestDiff(job.id), this.readArtifacts(job.id, recipeNode.reads).map(({ artifact }) => artifact));
+      const item = humanItem(run.id, run.node, node, show, before, question);
+      this.waitForHuman(job, run, item, `${run.node} waits for your ${node.interface === "decision" ? "decision" : "review"}`);
       return false;
     }
     if (node.kind === "source") throw new Error("source nodes cannot run in a recipe");
@@ -750,7 +765,7 @@ export class JobExecutor {
     const repo: Project["repo"] = this.ctx.project.repo;
     const account: ForgeAccount | undefined = previousCi && repo ? this.ctx.forgeAccount(repo.account) : undefined;
     if (previousCi && repo && account?.forge === "github") {
-      const updated: string | null = await commitSha(this.ctx.dir, this.latest(job.id).get("commit"));
+      const updated: string | null = await jobCommit(this.ctx.dir, this.ctx.db.events(job.id));
       const actual: string | null = await githubHead({ account, url: repo.url, dir: this.ctx.dir, pullRequest: previousCi.pullRequest, timeoutMs: 15_000 }).catch(() => null);
       if (actual && actual !== updated && actual !== previousCi.commit) {
         this.holdCiHead(job, previousCi, actual);
@@ -792,7 +807,7 @@ export class JobExecutor {
         cooling: (acc) => agents.cooling(acc),
       });
       if (choice.kind === "none") {
-        await this.saveArtifact(job.id, runDir, "check-log", choice.why, before);
+        await this.saveArtifact(job.id, runDir, "text", choice.why, before, "log");
         this.fail(job, run.id, "HARNESS_ERROR");
         return false;
       }
@@ -828,12 +843,19 @@ export class JobExecutor {
           },
         ]);
         const log = await LogWriter.open(join(this.ctx.dir, logPath));
-        const latest = this.latest(job.id);
         const context = await this.placeholderContext(this.job(job.id));
-        const inputs = [...node.inputs, ...node.optionalInputs].flatMap((t) => {
-          const a = latest.get(t);
-          return a ? [{ type: t, path: join(this.ctx.dir, a.path) }] : [];
+        const read: JobArtifact[] = this.readArtifacts(job.id, recipeNode.reads);
+        const commandInputs = node.kind !== "command" ? [] : [...node.inputs, ...node.optionalInputs].flatMap((type) => {
+          const found: JobArtifact | undefined = read.find(({ artifact }) => artifact.type === type);
+          return found ? [{ type, path: join(this.ctx.dir, found.artifact.path) }] : [];
         });
+        const ticket: Artifact | undefined = this.ticket(job.id);
+        const diff: Artifact | undefined = this.latestDiff(job.id);
+        const agentInputs: AgentInput[] = [
+          ...(ticket ? [{ type: ticket.type as ArtifactType, path: join(this.ctx.dir, ticket.path), from: null }] : []),
+          ...(diff ? [{ type: "diff" as const, path: join(this.ctx.dir, diff.path), from: null }] : []),
+          ...read.map(({ artifact, node: from }) => ({ type: artifact.type as ArtifactType, path: join(this.ctx.dir, artifact.path), from })),
+        ];
         const onStart = (pgid: number, user: string) => {
           this.running.set(job.id, { pgid, user });
           if (this.stopRequested.has(job.id) || this.closing) void stopGroup(user, pgid);
@@ -844,19 +866,20 @@ export class JobExecutor {
           node.kind === "command"
             ? await runCommandNode({
                 node,
+                outputs: outcomeOutputs(node),
                 nodeDir: this.ctx.defs.nodeDir,
                 sidecars,
                 params: paramsWithDefaults(node.params, recipeNode.params),
                 user: this.ctx.user,
                 workdir: wd,
                 context,
-                inputs,
+                inputs: commandInputs,
                 cleanTree: node.cleanCheckout ? before : null,
                 extraEnv: { ...servicesEnv, ...toolEnv, ...(previousCi ? { PECORE_CI_EXPECTED_HEAD: previousCi.commit } : {}) },
                 onStart,
                 effect: effectRecorder(this.ctx.db, job.id, run.id, run.node),
               })
-            : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, sessionGroup, { wd, context, inputs, log, onStart, env: servicesEnv, continuation: resumed, sidecars, knowledge: definitions?.knowledgeByStep });
+            : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, sessionGroup, { wd, context, inputs: agentInputs, log, onStart, env: servicesEnv, continuation: resumed, sidecars, knowledge: definitions?.knowledgeByStep });
         this.running.delete(job.id);
         if (result.log) log.write({ dir: "cmd", text: result.log, at: Date.now() });
         await log.close();
@@ -919,7 +942,7 @@ export class JobExecutor {
           end(result.reason);
           await undoInterrupted(this.ctx.user, wd, job.id, git, before);
           if (attempt + 1 < attempts && result.reason !== "INVALID_OUTPUT" && !("retry" in result && result.retry === false)) continue;
-          await this.saveArtifact(job.id, runDir, "check-log", result.log, before);
+          await this.saveArtifact(job.id, runDir, "text", result.log, before, "log");
           this.fail(job, run.id, result.reason);
           return false;
         }
@@ -932,17 +955,27 @@ export class JobExecutor {
           this.fail(job, run.id, "READ_ONLY_VIOLATION");
           return false;
         }
-        const artifacts: Artifact[] = node.kind === "command" ? [await this.saveArtifact(job.id, runDir, "check-log", result.log, after)] : [];
+        const artifacts: Artifact[] = node.kind === "command" ? [await this.saveArtifact(job.id, runDir, "text", result.log, after, "log")] : [];
+        let committed: string | null = null;
         for (const o of result.outputs) {
           let content = o.content;
-          if (o.type === "commit") {
-            const sha = (JSON.parse(content) as { sha?: string }).sha ?? "";
-            const tree = (await gitWork(this.ctx.user, wd, ["rev-parse", `${sha}^{tree}`])).trim();
-            if (tree !== before) {
-              this.fail(job, run.id, "READ_ONLY_VIOLATION");
-              return false;
+          const invalid: string | null = outputProblem(o.type, content);
+          if (invalid) {
+            await this.saveArtifact(job.id, runDir, "text", `${result.log ?? ""}\nthe ${o.type} output is not valid: ${invalid}\n`, before, "log");
+            this.fail(job, run.id, "INVALID_OUTPUT");
+            return false;
+          }
+          if (o.type === "reference") {
+            const reference = ReferenceArtifact.parse(JSON.parse(content));
+            if (reference.sha !== undefined) {
+              const tree = (await gitWork(this.ctx.user, wd, ["rev-parse", `${reference.sha}^{tree}`])).trim();
+              if (tree !== before) {
+                this.fail(job, run.id, "READ_ONLY_VIOLATION");
+                return false;
+              }
+              committed = reference.sha;
+              content = JSON.stringify({ ...reference, contentState: before });
             }
-            content = JSON.stringify({ sha, contentState: before });
           }
           artifacts.push(await this.saveArtifact(job.id, runDir, o.type, content, after));
         }
@@ -951,7 +984,6 @@ export class JobExecutor {
           artifacts.push(await this.saveArtifact(job.id, runDir, "diff", diff, after));
         }
         this.complete(job.id, run.id, result.outcome, before, after, artifacts);
-        const committed = await commitSha(this.ctx.dir, artifacts.find((a) => a.type === "commit"));
         if (committed) this.parentCommitted(job.id, committed);
         return true;
       }
@@ -963,11 +995,10 @@ export class JobExecutor {
   }
 
   private async placeholderContext(job: JobRow): Promise<CommandRun["context"]> {
-    const latest = this.latest(job.id);
-    const read = async <T>(a: Artifact | undefined) => (a ? (JSON.parse(await readFile(join(this.ctx.dir, a.path), "utf8")) as T) : null);
+    const ticket: Artifact | undefined = this.ticket(job.id);
     return {
-      job: { id: job.id, title: job.title, branch: job.branch, base: job.base, oldBase: job.old_base, target: job.target, commit: (await read<{ sha: string }>(latest.get("commit")))?.sha ?? null },
-      ticketId: (await read<{ id: string | null }>(latest.get("ticket")))?.id ?? null,
+      job: { id: job.id, title: job.title, branch: job.branch, base: job.base, oldBase: job.old_base, target: job.target, commit: await jobCommit(this.ctx.dir, this.ctx.db.events(job.id)) },
+      ticketId: ticket ? DocumentArtifact.parse(JSON.parse(await readFile(join(this.ctx.dir, ticket.path), "utf8"))).id ?? null : null,
       project: { repoDir: join(this.ctx.dir, "repo.git"), repoUrl: this.ctx.project.repo?.url ?? null, baseBranch: this.ctx.project.baseBranch },
     };
   }
@@ -1062,7 +1093,7 @@ export class JobExecutor {
     profile: AgentProfile,
     attemptId: string,
     sessionGroup: string | null,
-    x: { wd: string; context: CommandRun["context"]; inputs: CommandRun["inputs"]; log: LogWriter; onStart: (pgid: number, user: string) => void; env: Record<string, string>; continuation: (QuestionSubject & AgentContinuation) | null; sidecars: CommandRun["sidecars"]; knowledge: JobDefinitions["knowledgeByStep"] },
+    x: { wd: string; context: CommandRun["context"]; inputs: AgentInput[]; log: LogWriter; onStart: (pgid: number, user: string) => void; env: Record<string, string>; continuation: (QuestionSubject & AgentContinuation) | null; sidecars: CommandRun["sidecars"]; knowledge: JobDefinitions["knowledgeByStep"] },
   ): Promise<Attempt> {
     const agents = this.ctx.agents!;
     const account = agents.account(profile.account);
@@ -1207,7 +1238,7 @@ export class JobExecutor {
       if (!isHumanNode(node)) return;
       const pending: boolean = this.runs(jobId).some((run) => run.id === subject.nodeRunId && run.state === "waiting" && run.queue_item_id === itemId);
       if (!pending) throw new Error("the item changed or was resolved");
-      if (node.mode === "review" && choice === "approve") {
+      if (node.interface !== "decision" && choice === "approve") {
         const current: string = await contentState(this.ctx.user, workdirOf(this.ctx.dir, jobId));
         if (current !== subject.contentState) {
           this.ctx.db.append([{ jobId, type: "queue.resolved", payload: { itemId, state: "cancelled", choice: null, note: "The reviewed content changed." } }]);
@@ -1217,7 +1248,7 @@ export class JobExecutor {
         }
       }
       const r = humanResult(node, choice, note);
-      const artifacts = r.userNote ? [await this.saveArtifact(jobId, runDirName(subject.nodeRunId), "user-note", r.userNote, subject.contentState)] : [];
+      const artifacts = r.userNote ? [await this.saveArtifact(jobId, runDirName(subject.nodeRunId), "text", r.userNote, subject.contentState)] : [];
       this.ctx.db.append([{ jobId, type: "queue.resolved", payload: { itemId, state: "resolved", choice, note } }]);
       this.complete(jobId, subject.nodeRunId, r.outcome, subject.contentState, subject.contentState, artifacts);
       if (job.state === "waiting") this.setState(jobId, "running", null);

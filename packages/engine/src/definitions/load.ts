@@ -1,8 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { z } from "zod";
-import { Accounts, AgentDefinitions, Profiles, Project, Recipe, Settings, StoredNode, Tiers, unknownPlaceholders } from "@pecore/schemas";
-import type { Node } from "@pecore/schemas";
+import { Accounts, AgentDefinitions, Node, Profiles, Project, Recipe, Settings, Tiers, unknownPlaceholders } from "@pecore/schemas";
 import { checkRecipe } from "./recipe-check";
 
 export type DefinitionError = { file: string; path: string; message: string; line?: number; column?: number; length?: number };
@@ -61,7 +60,7 @@ export function nodeSidecars(node: Node): [string, string][] {
 }
 
 export async function loadNodeFile(file: string): Promise<Loaded<Node>> {
-  const loaded = await parseFile(file, StoredNode);
+  const loaded = await parseFile(file, Node);
   const node = loaded.value;
   if (!node) return loaded;
   const errors: DefinitionError[] = [];

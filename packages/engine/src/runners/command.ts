@@ -15,9 +15,8 @@ import type { ProbeResult } from "./probe";
 export type CommandInput = { type: ArtifactType; path: string };
 
 export type CommandRun<Output extends string = ArtifactType> = {
-  node: Pick<CommandNode, "name" | "runsAs" | "cleanCheckout" | "timeoutSec" | "command" | "script" | "probe" | "probeRules" | "mergedCheck" | "mergedCheckRules" | "outcomeRules"> & {
-    outputRules: Partial<Record<Output, OutputRule>>;
-  };
+  node: Pick<CommandNode, "name" | "runsAs" | "cleanCheckout" | "timeoutSec" | "command" | "script" | "probe" | "probeRules" | "mergedCheck" | "mergedCheckRules" | "outcomeRules">;
+  outputs: (outcome: string) => [Output, OutputRule][];
   nodeDir: string;
   sidecars?: Readonly<Record<string, string>> | undefined;
   params: Record<string, unknown>;
@@ -36,6 +35,15 @@ export type CommandOutcome<Output extends string = ArtifactType> =
   | { kind: "completed"; outcome: string; outputs: { type: Output; content: string }[]; log: string; fromProbe: boolean }
   | { kind: "failed"; reason: FailureReason; log: string }
   | { kind: "waiting"; reason: "network"; log: string };
+
+export function outcomeOutputs(node: Pick<CommandNode, "outputs" | "outputRules">): (outcome: string) => [ArtifactType, OutputRule][] {
+  return (outcome) => {
+    const type: ArtifactType | undefined = node.outputs[outcome];
+    const rule: OutputRule | undefined = node.outputRules[outcome];
+    return type && rule ? [[type, rule]] : [];
+  };
+}
+
 
 export function pickOutcome(rules: OutcomeRule[], r: Pick<RunResult, "code" | "stdout">): string | null {
   for (const rule of rules) {
@@ -140,7 +148,7 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
         const outcome = pickOutcome(c.node.outcomeRules, { code: 0, stdout: p.stdout });
         if (outcome === null) return { kind: "failed", reason: "HARNESS_ERROR", log: log + "no outcome rule matched the probe output\n" };
         const outputs = [];
-        for (const [type, rule] of Object.entries(c.node.outputRules) as [Output, OutputRule][]) {
+        for (const [type, rule] of c.outputs(outcome)) {
           if ("file" in rule) continue;
           outputs.push({ type, content: await readOutput(rule, p.stdout, async () => "") });
         }
@@ -168,7 +176,7 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
     if (outcome === null && engine) return { kind: "waiting", reason: "network", log: log + "no outcome rule matched\n" };
     if (outcome === null) return { kind: "failed", reason: "HARNESS_ERROR", log: log + "no outcome rule matched\n" };
     const outputs = [];
-    for (const [type, rule] of Object.entries(c.node.outputRules) as [Output, OutputRule][]) {
+    for (const [type, rule] of c.outputs(outcome)) {
       try {
         outputs.push({ type, content: await readOutput(rule, r.stdout, (rel) => (engine ? readFile(join(cwd, rel), "utf8") : readFileAs(c.user, cwd, rel))) });
       } catch (e) {

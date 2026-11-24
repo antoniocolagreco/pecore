@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { RiskArtifact } from "@pecore/schemas";
+import type { FindingsArtifact } from "@pecore/schemas";
 import { ui } from "./ui";
 import { Button } from "../ds/button";
 import { ChevronDownIcon } from "../ds/icons";
@@ -155,10 +155,10 @@ function FileBlock({ file, hunks }: { file: PatchFile; hunks: { hunk: Hunk; risk
   );
 }
 
-export function DiffView({ content, risk }: { content: string; risk?: RiskArtifact | undefined }) {
+export function DiffView({ content, risk }: { content: string; risk?: FindingsArtifact | undefined }) {
   const [limit, setLimit] = useState(30);
   const files = useMemo(() => parsePatch(content), [content]);
-  const risky = new Map((risk?.hunks ?? []).filter((h) => h.level === "risky").map((h) => [`${h.file}\0${h.hunkIndex}`, h.reason]));
+  const risky = new Map((risk?.items ?? []).filter((h) => h.level === "risky" && h.hunk !== undefined).map((h) => [`${h.file}\0${h.hunk}`, h.text]));
   const blocks = files
     .map((file) => {
       const hunks = file.hunks.map((hunk, i) => ({ hunk, risk: risky.get(`${file.name}\0${i}`) }));

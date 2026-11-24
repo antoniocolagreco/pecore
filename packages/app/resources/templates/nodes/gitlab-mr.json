@@ -6,9 +6,9 @@
   "kind": "command",
   "runsAs": "engine",
   "credentials": ["project.account"],
-  "inputs": ["commit", "spec"],
-  "outputs": ["delivery"],
+  "inputs": ["spec"],
   "outcomes": ["opened", "failed"],
+  "outputs": { "opened": "reference" },
   "failOutcomes": ["failed"],
   "changesFiles": false,
   "script": "gitlab-mr.sh",
@@ -19,6 +19,6 @@
     { "exitCode": 0, "outcome": "opened" },
     { "exitCode": "other", "outcome": "failed" }
   ],
-  "outputRules": { "delivery": { "stdoutLastLine": "url" } },
+  "outputRules": { "opened": { "stdoutLastLine": "url" } },
   "timeoutSec": 120
 }

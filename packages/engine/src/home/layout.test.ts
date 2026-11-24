@@ -1,8 +1,8 @@
-import { chmod, mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { shippedTemplates, tempDir } from "../../test/tmp";
-import { homePaths, initHome, syncAdapters } from "./layout";
+import { homePaths, initHome, syncAdapters, templatesFormat } from "./layout";
 
 describe("PECORE_HOME layout", () => {
   it("initialises a new home without git: run/ 0700, schemas, templates", async () => {
@@ -41,6 +41,25 @@ describe("PECORE_HOME layout", () => {
     expect(await readFile(join(homePaths(home).templates, "nodes", "a.json"), "utf8")).toBe("edited a\n");
     expect(await readFile(join(homePaths(home).templates, "nodes", "b.sh"), "utf8")).toBe("echo b\n");
     expect(await readFile(join(homePaths(home).templates, "forges", "git.json"), "utf8")).toBe("{}\n");
+  });
+
+  it("rewrites every shipped node and recipe of a home with the old template format, keeping the user's own templates", async () => {
+    const home = join(await tempDir(), "home");
+    await initHome(home, { templates: shippedTemplates });
+    const templates: string = homePaths(home).templates;
+    expect(await readFile(join(templates, ".format"), "utf8")).toBe(`${templatesFormat}\n`);
+    await rm(join(templates, ".format"));
+    await writeFile(join(templates, "nodes", "builder.json"), '{ "name": "builder", "inputs": ["ticket"] }\n');
+    await writeFile(join(templates, "recipes", "feature-to-pr.json"), "old recipe\n");
+    await writeFile(join(templates, "nodes", "mine.json"), "my node\n");
+    await initHome(home, { templates: shippedTemplates });
+    expect(await readFile(join(templates, "nodes", "builder.json"), "utf8")).toBe(await readFile(join(shippedTemplates, "nodes", "builder.json"), "utf8"));
+    expect(await readFile(join(templates, "recipes", "feature-to-pr.json"), "utf8")).toBe(await readFile(join(shippedTemplates, "recipes", "feature-to-pr.json"), "utf8"));
+    expect(await readFile(join(templates, "nodes", "mine.json"), "utf8")).toBe("my node\n");
+    expect(await readFile(join(templates, ".format"), "utf8")).toBe(`${templatesFormat}\n`);
+    await writeFile(join(templates, "nodes", "builder.json"), "edited\n");
+    await initHome(home, { templates: shippedTemplates });
+    expect(await readFile(join(templates, "nodes", "builder.json"), "utf8")).toBe("edited\n");
   });
 
   it("removes template files the app no longer ships when the user did not change them", async () => {

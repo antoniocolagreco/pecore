@@ -154,7 +154,7 @@ describe("engine nodes", () => {
     const { root, engine, p } = await setup();
     try {
       await writeFile(join(p.ctx.defs.nodeDir, "pick.json"), JSON.stringify({
-        name: "pick", description: "Choose a branch", kind: "human-decision",
+        name: "pick", description: "Choose a branch", kind: "human", interface: "decision",
         outcomes: ["approve", "b", "c"],
       }));
       await writeFile(join(p.ctx.templates, "recipes", "pick.json"), JSON.stringify({
@@ -169,7 +169,7 @@ describe("engine nodes", () => {
       const decide = async (choice: string): Promise<string> => {
         const id: string = await engine.createJob("demo", { title: choice, recipe: "pick", ticket: { text: "x" } });
         const item = await until(() => p.ctx.db.db.prepare("SELECT id, subject_hash, subject FROM human_queue WHERE job_id = ? AND state = 'open'").get(id) as { id: string; subject_hash: string; subject: string } | undefined);
-        expect(JSON.parse(item.subject)).toMatchObject({ mode: "decision", description: "Which branch should run?" });
+        expect(JSON.parse(item.subject)).toMatchObject({ interface: "decision", description: "Which branch should run?" });
         await p.executor.answer(item.id, choice, null, item.subject_hash);
         return id;
       };

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
-import { KnowledgeFileName, Name, Node, normalizeLegacyHumanNode, Project, projectManagerClash, Recipe, StoredNode } from "@pecore/schemas";
+import { KnowledgeFileName, Name, Node, Project, projectManagerClash, Recipe } from "@pecore/schemas";
 import type { DefinitionEntry, InstantiateBody, RouteOutput } from "@pecore/schemas";
 import { validIcon } from "../../definitions/icon";
 import { instantiateNode, instantiateRecipe } from "../../definitions/instantiate";
@@ -149,7 +149,7 @@ export function definitionOperations(engine: Engine) {
     return { id, projectDir, root, absPath, directory, kind, file };
   }
 
-  function inspect(path: string, kind: DefinitionKind | undefined, id: string | undefined, content: string, reading = false): Pick<DefinitionEntry, "value" | "errors"> {
+  function inspect(path: string, kind: DefinitionKind | undefined, id: string | undefined, content: string): Pick<DefinitionEntry, "value" | "errors"> {
     const errors: DefinitionError[] = [];
     if (kind === "knowledge") return { value: { links: knowledgeLinks(content) }, errors };
     if (kind === "prompt" || kind === "script") return { value: null, errors };
@@ -172,10 +172,8 @@ export function definitionOperations(engine: Engine) {
       }
       return { value, errors };
     }
-    const schema = kind === "node" ? (reading ? StoredNode : Node) : Project;
-    const definition: unknown = kind === "node" && value && typeof value === "object" && !Array.isArray(value)
-      ? normalizeLegacyHumanNode(value as Record<string, unknown>) : value;
-    const result = schema.safeParse(reading ? value : definition);
+    const schema = kind === "node" ? Node : Project;
+    const result = schema.safeParse(value);
     if (!result.success) return { value, errors: zodErrors(path, result.error) };
     const name: string = basename(path, ".json");
     if (kind === "node" && "name" in result.data && result.data.name !== name) {
@@ -185,7 +183,7 @@ export function definitionOperations(engine: Engine) {
       errors.push({ file: path, path: "id", message: `id must match the directory name ${id}` });
     }
     if (kind === "node" && "tags" in result.data) {
-      const fields = definition as Record<string, unknown>;
+      const fields = value as Record<string, unknown>;
       return { value: Array.isArray(fields.tags) ? { ...fields, tags: result.data.tags } : fields, errors };
     }
     return { value, errors };
@@ -270,7 +268,7 @@ export function definitionOperations(engine: Engine) {
         const bytes: Buffer | null = await optionalBytes(join(target.absPath, file));
         if (!bytes) continue;
         const path: string = `${dir}/${file}`;
-        entries.push({ path, sha256: sha256(bytes), ...inspect(path, fileKind(target.directory, basename(file)), target.id, bytes.toString("utf8"), true) });
+        entries.push({ path, sha256: sha256(bytes), ...inspect(path, fileKind(target.directory, basename(file)), target.id, bytes.toString("utf8")) });
       }
       return entries;
     },

@@ -6,31 +6,8 @@
   "kind": "agent",
   "prompt": "approver.md",
   "agent": { "tier": "standard" },
-  "inputs": ["diff"],
-  "optionalInputs": ["spec", "findings"],
-  "outputs": ["risk"],
   "outcomes": ["done"],
+  "outputs": { "done": "findings" },
   "changesFiles": false,
-  "timeoutSec": 1200,
-  "outputSchema": {
-    "type": "object",
-    "required": ["outcome", "risk"],
-    "properties": {
-      "outcome": { "enum": ["done"] },
-      "risk": {
-        "type": "object",
-        "required": ["hunks"],
-        "properties": {
-          "hunks": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": ["file", "hunkIndex", "level", "reason"],
-              "properties": { "file": { "type": "string" }, "hunkIndex": { "type": "integer", "minimum": 0 }, "level": { "enum": ["safe", "risky"] }, "reason": { "type": "string" } }
-            }
-          }
-        }
-      }
-    }
-  }
+  "timeoutSec": 1200
 }

@@ -1,8 +1,7 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { forgeProject, until } from "../../test/forge-project";
 import { Engine } from "../main";
+import { jobCommit } from "./stacked";
 
 const deliveryNodes = [
   { node: "push", hang: "git push" },
@@ -19,8 +18,8 @@ describe("crash during delivery (G12, 4.8)", () => {
     const s = await forge.state();
     expect(s.prs).toMatchObject([{ head: `factory/${id}`, base: "main", state: "OPEN" }]);
     expect(s.comments).toEqual([{ issue: "7", body: s.prs[0]!.url }]);
-    const commit = p.executor.artifacts(id).find((a) => a.type === "commit")!;
-    const sha = (JSON.parse(await readFile(join(p.ctx.dir, commit.path), "utf8")) as { sha: string }).sha;
+    const sha: string | null = await jobCommit(p.ctx.dir, p.ctx.db.events(id));
+    expect(sha).toMatch(/^[0-9a-f]{40}$/);
     expect(forge.remoteHead("acme/shop", `factory/${id}`)).toBe(sha);
     await engine.shutdown();
   });

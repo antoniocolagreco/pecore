@@ -6,10 +6,10 @@
   "kind": "command",
   "runsAs": "engine",
   "credentials": ["project.account"],
-  "inputs": ["commit", "spec"],
-  "optionalInputs": ["pull-request"],
-  "outputs": ["delivery"],
+  "inputs": ["spec"],
+  "optionalInputs": ["document"],
   "outcomes": ["opened", "failed"],
+  "outputs": { "opened": "reference" },
   "failOutcomes": ["failed"],
   "changesFiles": false,
   "script": "github-pr.sh",
@@ -17,7 +17,7 @@
     { "exitCode": 0, "outcome": "opened" },
     { "exitCode": "other", "outcome": "failed" }
   ],
-  "outputRules": { "delivery": { "stdoutLastLine": "url" } },
+  "outputRules": { "opened": { "stdoutLastLine": "url" } },
   "probe": { "script": "github-pr-probe.sh" },
   "mergedCheck": ["gh", "pr", "view", "--repo", "{project.repo.owner}/{project.repo.name}", "{job.branch}", "--json", "state", "--jq", "select(.state==\"MERGED\") | .state"],
   "timeoutSec": 120

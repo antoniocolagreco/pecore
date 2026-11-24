@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { chmod, cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { jobCommit } from "../../src/jobs/stacked";
 import { Engine } from "../../src/main";
 import { until } from "../forge-project";
 import { createProjectWithRecipes } from "../project";
@@ -51,12 +52,12 @@ const writeFileNode = {
   name: "write-job-file",
   description: "writes a file named after the job and a spec",
   kind: "command",
-  command: ["/bin/sh", "-c", 'echo "$PECORE_JOB_ID" > "e2e-$PECORE_JOB_ID.txt" && mkdir -p .pecore && printf \'{"title":"PeCore e2e"}\' > .pecore/spec.json'],
-  outputs: ["spec"],
+  command: ["/bin/sh", "-c", 'echo "$PECORE_JOB_ID" > "e2e-$PECORE_JOB_ID.txt" && mkdir -p .pecore && printf \'{"criteria":["PeCore e2e"],"tests":[],"interfaces":[]}\' > .pecore/spec.json'],
   outcomes: ["done"],
+  outputs: { done: "spec" },
   changesFiles: true,
   outcomeRules: [{ exitCode: 0, outcome: "done" }],
-  outputRules: { spec: { file: ".pecore/spec.json" } },
+  outputRules: { done: { file: ".pecore/spec.json" } },
   timeoutSec: 30,
 };
 
@@ -65,7 +66,7 @@ const recipe = {
   description: "write, commit, push, pull or merge request",
   start: "write",
   successOutcomes: ["pr:opened"],
-  nodes: { write: { use: "write-job-file" }, commit: { use: "git-commit" }, push: { use: "git-push" }, pr: { use: "github-pr" } },
+  nodes: { write: { use: "write-job-file" }, commit: { use: "git-commit" }, push: { use: "git-push" }, pr: { use: "github-pr", reads: ["write"] } },
   edges: [
     { from: "write", on: "done", to: "commit" },
     { from: "commit", on: "done", to: "push" },
@@ -139,9 +140,7 @@ for (const c of cases) {
       await p.executor.play(second);
       await until(() => ended(p.executor.job(second).state), 300_000);
       expect(p.executor.job(second)).toMatchObject({ state: "succeeded" });
-      const commit = p.executor.artifacts(second).find((a) => a.type === "commit")!;
-      const sha = (JSON.parse(await readFile(join(p.ctx.dir, commit.path), "utf8")) as { sha: string }).sha;
-      expect(remoteHead(`factory/${second}`)).toBe(sha);
+      expect(remoteHead(`factory/${second}`)).toBe(await jobCommit(p.ctx.dir, p.ctx.db.events(second)));
       expect(c.requests(repo, `factory/${second}`)).toHaveLength(1);
       expect(p.ctx.db.events(second).filter((e) => e.type === "effect.requested" && e.payload.node === "push")).toHaveLength(1);
       console.log(`${c.forge}: ${c.requests(repo, `factory/${first}`)[0]!.url} ${c.requests(repo, `factory/${second}`)[0]!.url}`);

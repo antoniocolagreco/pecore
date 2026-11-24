@@ -6,15 +6,7 @@
   "kind": "agent",
   "prompt": "tests-writer.md",
   "agent": { "tier": "strong" },
-  "inputs": ["ticket", "spec"],
-  "optionalInputs": ["check-log"],
-  "outputs": [],
   "outcomes": ["done"],
   "changesFiles": true,
-  "timeoutSec": 2700,
-  "outputSchema": {
-    "type": "object",
-    "required": ["outcome"],
-    "properties": { "outcome": { "enum": ["done"] }, "summary": { "type": "string" } }
-  }
+  "timeoutSec": 2700
 }

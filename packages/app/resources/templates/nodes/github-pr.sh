@@ -1,10 +1,10 @@
 set -e
 repo="$PECORE_PROJECT_REPO_OWNER/$PECORE_PROJECT_REPO_NAME"
 url=$(gh pr list --repo "$repo" --head "$PECORE_JOB_BRANCH" --json url --jq '.[0].url // empty')
-if [ -n "${PECORE_INPUTS_PULL_REQUEST_PATH:-}" ]; then
-  title=$(jq -er '.title' "$PECORE_INPUTS_PULL_REQUEST_PATH")
+if [ -n "${PECORE_INPUTS_DOCUMENT_PATH:-}" ]; then
+  title=$(jq -er '.title' "$PECORE_INPUTS_DOCUMENT_PATH")
   body="$PECORE_WORKDIR/pr-body.md"
-  jq -ej '.body' "$PECORE_INPUTS_PULL_REQUEST_PATH" > "$body"
+  jq -ej '.body' "$PECORE_INPUTS_DOCUMENT_PATH" > "$body"
   if [ -n "$url" ]; then
     gh pr edit "$url" --base "$PECORE_JOB_TARGET" --title "$title" --body-file "$body" >/dev/null
     printf '%s\n' "$url"

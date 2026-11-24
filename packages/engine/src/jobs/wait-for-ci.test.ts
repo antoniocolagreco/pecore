@@ -20,13 +20,12 @@ async function runCi(forge: "github" | "gitlab", cli: string) {
     PECORE_PROJECT_REPO_OWNER: "team",
     PECORE_PROJECT_REPO_NAME: "app",
     PECORE_PROJECT_REPO_URL: `https://${forge}.com/team/app.git`,
-    PECORE_INPUTS_COMMIT_PATH: join(dir, "commit.json"),
-    PECORE_INPUTS_DELIVERY_PATH: join(dir, "delivery.json"),
+    PECORE_JOB_COMMIT: commit,
+    PECORE_INPUTS_REFERENCE_PATH: join(dir, "reference.json"),
     COMMIT: commit,
   };
   await Promise.all([
-    writeFile(env.PECORE_INPUTS_COMMIT_PATH!, JSON.stringify({ sha: commit })),
-    writeFile(env.PECORE_INPUTS_DELIVERY_PATH!, JSON.stringify({ url })),
+    writeFile(env.PECORE_INPUTS_REFERENCE_PATH!, JSON.stringify({ url })),
     writeFile(join(dir, forge === "github" ? "gh" : "glab"), `#!/bin/sh\n${cli}\n`, { mode: 0o700 }),
     writeFile(join(dir, "time"), "0"),
     writeFile(join(dir, "date"), "#!/bin/sh\ncat time\n", { mode: 0o700 }),

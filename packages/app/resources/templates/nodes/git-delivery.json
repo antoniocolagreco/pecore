@@ -6,9 +6,8 @@
   "kind": "command",
   "runsAs": "engine",
   "credentials": ["project.account"],
-  "inputs": ["commit", "spec"],
-  "outputs": ["delivery"],
   "outcomes": ["opened", "failed"],
+  "outputs": { "opened": "reference" },
   "failOutcomes": ["failed"],
   "changesFiles": false,
   "script": "git-delivery.sh",
@@ -19,6 +18,6 @@
     { "exitCode": 0, "outcome": "opened" },
     { "exitCode": "other", "outcome": "failed" }
   ],
-  "outputRules": { "delivery": { "stdoutLastLine": "ref" } },
+  "outputRules": { "opened": { "stdoutLastLine": "ref" } },
   "timeoutSec": 120
 }

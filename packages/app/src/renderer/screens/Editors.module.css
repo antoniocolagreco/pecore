@@ -20,6 +20,19 @@
   margin-top: var(--gap);
 }
 
+.outputs {
+  display: grid;
+  gap: var(--gap);
+  margin-top: 8px;
+}
+
+.outputRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--gap);
+  align-items: start;
+}
+
 .prompt {
   height: clamp(16rem, 50vh, 34rem);
 }

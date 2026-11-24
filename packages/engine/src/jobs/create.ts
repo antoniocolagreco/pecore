@@ -8,7 +8,7 @@ import { definitionHash, jobDefinitions, jobNodes, snapshotDefinitions } from ".
 import type { JobRow, ProjectContext } from "../graph/executor";
 import { ProjectLocationConflict, withProjectLocation } from "../projects/location";
 import { jobBranch } from "../workdir/repo";
-import { commitSha, fetchBase, latestArtifact } from "./stacked";
+import { fetchBase, jobCommit } from "./stacked";
 
 const ulid = monotonicFactory();
 
@@ -84,7 +84,7 @@ async function createJobInProject(ctx: ProjectContext, req: CreateJob): Promise<
     if (!hasCommitNode(JSON.parse(parent.recipe) as Recipe, jobNodes(jobDefinitions(ctx.db, parent.id), ctx.defs.nodes))) throw new JobCreateError(`the recipe of parent job ${parent.id} has no commit node`);
     baseBranch = parent.base_branch;
     target = parent.merged_at === null ? parent.branch : parent.target;
-    const sha = await commitSha(ctx.dir, latestArtifact(ctx.db.events(parent.id), "commit"));
+    const sha = await jobCommit(ctx.dir, ctx.db.events(parent.id));
     if (parent.merged_at !== null) base = await fetchBase(ctx, target).catch((e: unknown) => fail(e));
     else if (parent.state === "succeeded" && sha) base = sha;
     else {
@@ -95,10 +95,10 @@ async function createJobInProject(ctx: ProjectContext, req: CreateJob): Promise<
   const id = ulid();
   const dir = join(ctx.dir, "artifacts", id, "ticket");
   await mkdir(dir, { recursive: true });
-  const content = JSON.stringify({ untrusted: true, title: req.title, text: req.ticket.text, source: req.ticket.source ?? null, id: req.ticket.id ?? null }, null, 2);
+  const content = JSON.stringify({ title: req.title, body: req.ticket.text, source: req.ticket.source ?? null, id: req.ticket.id ?? null }, null, 2);
   const path = join(dir, "ticket.json");
   await writeFile(path, content);
-  const ticket: Artifact = { type: "ticket", path: relative(ctx.dir, path), sha256: createHash("sha256").update(content).digest("hex"), contentState: null };
+  const ticket: Artifact = { type: "document", path: relative(ctx.dir, path), sha256: createHash("sha256").update(content).digest("hex"), contentState: null };
   const attachments: Artifact[] = [];
   if (req.attachments?.length) {
     const attachmentDir: string = join(ctx.dir, "artifacts", id, "attachments");

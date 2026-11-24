@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CommandNode } from "@pecore/schemas";
 import { tempDir } from "../../test/tmp";
-import { runCommandNode } from "../runners/command";
+import { outcomeOutputs, runCommandNode } from "../runners/command";
 import { appUser } from "../runners/process";
 import { contentState, deleteScratch } from "./content-state";
 import { FsAsError, readFileAs, removeFilesAs, writeFileAs } from "./fs-as";
@@ -44,6 +44,7 @@ describe("fs-as: symlinks at every engine file path", () => {
     await expect(
       runCommandNode({
         node,
+        outputs: outcomeOutputs(node),
         nodeDir: project,
         params: {},
         user: u,
@@ -59,9 +60,10 @@ describe("fs-as: symlinks at every engine file path", () => {
   it("output read: outputRules.file through a symlink fails the node", async () => {
     const { wd, base, project, secret } = await setup();
     await symlink(secret, join(wd, "result.json"));
-    const node = CommandNode.parse({ name: "c", description: "c", kind: "command", command: ["true"], outputs: ["findings"], outputRules: { findings: { file: "result.json" } }, outcomes: ["passed"], changesFiles: false, outcomeRules: [{ exitCode: 0, outcome: "passed" }], timeoutSec: 10 });
+    const node = CommandNode.parse({ name: "c", description: "c", kind: "command", command: ["true"], outputs: { passed: "findings" }, outputRules: { passed: { file: "result.json" } }, outcomes: ["passed"], changesFiles: false, outcomeRules: [{ exitCode: 0, outcome: "passed" }], timeoutSec: 10 });
     const r = await runCommandNode({
       node,
+      outputs: outcomeOutputs(node),
       nodeDir: project,
       params: {},
       user: u,

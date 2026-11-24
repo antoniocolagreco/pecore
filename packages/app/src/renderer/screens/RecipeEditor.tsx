@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import type { Connection, XYPosition } from "@xyflow/react";
-import { EdgePort, KnowledgeFileName, Name, Outcome, ProjectId, RecipeEnd, RecipeEndResult } from "@pecore/schemas";
+import { EdgePort, HumanInterface, humanInterfaces, KnowledgeFileName, Name, Outcome, ProjectId, RecipeEnd, RecipeEndResult } from "@pecore/schemas";
 import type { DefinitionEntry } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
@@ -238,8 +238,9 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
       const node = object(value);
       const agent = object(node.agent);
       const requires: unknown = Array.isArray(node.requires) ? node.requires.filter((ref) => ref !== selected) : node.requires;
+      const reads: unknown = Array.isArray(node.reads) ? node.reads.filter((ref) => ref !== selected) : node.reads;
       const providerNot: unknown = Array.isArray(agent.providerNot) ? agent.providerNot.filter((ref) => ref !== selected) : agent.providerNot;
-      return [id, { ...node, requires, agent: node.agent && { ...agent, providerNot } }];
+      return [id, { ...node, requires, reads, agent: node.agent && { ...agent, providerNot } }];
     }));
     updateGraph({
       nodes: remaining,
@@ -287,6 +288,9 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
   const outcomes: Option[] = connection ? outcomesFor(connection.from).map((outcome) => ({ value: outcome, label: outcome })) : [];
   const inspectorOutcomes: string[] = selected ? outcomesFor(selected) : [];
   const required: string[] = Array.isArray(selectedNode.requires) ? selectedNode.requires.map(string) : [];
+  const reads: string[] = Array.isArray(selectedNode.reads) ? selectedNode.reads.map(string) : [];
+  const nodeInputs: string[] = [...(Array.isArray(nodeValue.inputs) ? nodeValue.inputs : []), ...(Array.isArray(nodeValue.optionalInputs) ? nodeValue.optionalInputs : [])].map(string);
+  const humanInterface: HumanInterface | undefined = nodeValue.kind === "human" ? HumanInterface.safeParse(nodeValue.interface).data : undefined;
 
   const recipeOptions = templateOptions(recipeTemplates.data);
   const nodeOptions = templateOptions(nodeTemplates.data).filter(({ value }) => !palette.some((item) => object(item.value).name === value));
@@ -343,15 +347,19 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
                 <div className={s.inspectorMeta}>
                   <DefinitionIcon icons={icons.data} type="node" name={string(selectedNode.use)} selected={string(nodeValue.icon)} size="sm" />
                   {selectedKind && <RecipeNodeKindBadge kind={selectedKind} />}
-                  {nodeValue.kind === "human" && nodeValue.mode === "decision" && <span>Decision</span>}
-                  {nodeValue.kind === "human" && nodeValue.mode === "review" && <span>Review</span>}
+                  {humanInterface && <span>{humanInterfaces[humanInterface].label}</span>}
                   {definition && file.editable && <Link to={definitionUrl("node", definition.path)}>Edit definition</Link>}
                 </div>
                 {!!inspectorOutcomes.length && <div className={s.inspectorOutcomes}>
                   <strong>Outcomes</strong>
                   <span>{inspectorOutcomes.join(", ")}</span>
                 </div>}
-                {nodeValue.kind === "human" && nodeValue.mode === "decision" && questionParameter.type === "string" && <TextField label="Question"
+                <MultiCombobox label="Reads from" placeholder="Choose nodes" value={reads} disabled={!editable}
+                  labelAction={<FieldHelp title="Reads from">The nodes whose latest output this step receives, for example the spec writer's spec or a check's log. Agents and people also always receive the ticket and the job's current changes.</FieldHelp>}
+                  description={nodeValue.kind === "command" && nodeInputs.length ? `This command takes ${nodeInputs.join(", ")}. Read one node for each.` : undefined}
+                  options={stepOptions.filter(({ value }) => value !== selected || reads.includes(value))}
+                  onValueChange={(next) => updateNode("reads", next.length ? next : undefined)} />
+                {humanInterface === "decision" && questionParameter.type === "string" && <TextField label="Question"
                   value={string(object(selectedNode.params).question)} placeholder={string(questionParameter.default)} disabled={!editable}
                   onValueChange={(question) => updateNode("params", { ...object(selectedNode.params), question: question.trim() ? question : undefined })} />}
                 <MultiCombobox label="Requires" placeholder="Choose nodes" value={required} disabled={!editable}

@@ -6,17 +6,9 @@
   "kind": "agent",
   "prompt": "resolve-rebase-conflicts.md",
   "agent": { "tier": "strong" },
-  "optionalInputs": ["ticket", "spec", "check-log"],
   "outcomes": ["resolved", "unresolved"],
+  "outputs": { "unresolved": "text" },
   "failOutcomes": ["unresolved"],
   "changesFiles": true,
-  "timeoutSec": 1800,
-  "outputSchema": {
-    "type": "object",
-    "required": ["outcome", "summary"],
-    "properties": {
-      "outcome": { "enum": ["resolved", "unresolved"] },
-      "summary": { "type": "string" }
-    }
-  }
+  "timeoutSec": 1800
 }

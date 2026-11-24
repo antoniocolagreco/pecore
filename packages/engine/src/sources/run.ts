@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { SourceNode } from "@pecore/schemas";
+import type { OutputRule, SourceNode } from "@pecore/schemas";
 import type { ProjectContext } from "../graph/executor";
 import { withProjectLocation } from "../projects/location";
 import { runCommandNode } from "../runners/command";
@@ -38,10 +38,11 @@ async function runSourceAtLocation(ctx: ProjectContext, request: SourceRequest):
     cleanCheckout: false,
     timeoutSec: node.timeoutSec,
     outcomeRules: [{ exitCode: 0, outcome: "ok" }],
-    outputRules: request.command !== "comment" && Object.keys(command.outputRules).length === 0 ? { result: { stdoutJson: "" } } : command.outputRules,
   };
+  const rules: Record<string, OutputRule> = request.command !== "comment" && Object.keys(command.outputRules).length === 0 ? { result: { stdoutJson: "" } } : command.outputRules;
   const result = await runCommandNode({
     node: spec,
+    outputs: () => Object.entries(rules),
     nodeDir,
     params,
     user: appUser,

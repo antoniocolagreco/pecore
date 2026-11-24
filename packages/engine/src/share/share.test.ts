@@ -333,7 +333,7 @@ describe("project import (share/, CUJ 7)", () => {
     const dir = f.engine.projectDir("shop");
     const { ctx } = f.engine.project("shop");
     const pr = JSON.parse(await readFile(join(ctx.defs.nodeDir, "github-pr.json"), "utf8")) as Record<string, unknown>;
-    await writeFile(join(ctx.defs.nodeDir, "pr-explicit.json"), JSON.stringify({ ...pr, name: "pr-explicit", credentials: [forgeAccount.id], inputs: ["commit"] }));
+    await writeFile(join(ctx.defs.nodeDir, "pr-explicit.json"), JSON.stringify({ ...pr, name: "pr-explicit", credentials: [forgeAccount.id], inputs: [], optionalInputs: [] }));
     const projectFile = join(dir, "project.json");
     await writeFile(join(ctx.templates, "recipes", "explicit.json"), JSON.stringify({
       name: "explicit", description: "PR with an explicit account", start: "commit", successOutcomes: ["finish:opened"],

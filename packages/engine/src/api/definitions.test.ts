@@ -12,7 +12,7 @@ describe("definition routes", () => {
     const live: LiveMessage[] = [];
     engine.on("live", (m: LiveMessage) => live.push(m));
     const nodes = await call("listDefinitions", { query: { dir: "templates/nodes" } });
-    expect(nodes.find((n) => n.path === "templates/nodes/human-review.json")).toMatchObject({ value: { kind: "human", mode: "review" }, errors: [] });
+    expect(nodes.find((n) => n.path === "templates/nodes/human-review.json")).toMatchObject({ value: { kind: "human", interface: "code-review" }, errors: [] });
     expect(nodes.some((n) => n.path === "templates/nodes/git-commit.sh")).toBe(true);
     expect((await call("listDefinitions", { query: { dir: "projects/demo/recipes" } })).map((r) => r.path)).toEqual(["templates/recipes/reviewed.json"]);
 
@@ -28,7 +28,7 @@ describe("definition routes", () => {
 
   it("validates names and paths", async () => {
     const { call, close } = await apiProject();
-    const node = JSON.stringify({ name: "other", description: "x", kind: "human-decision", outcomes: ["ok"] });
+    const node = JSON.stringify({ name: "other", description: "x", kind: "human", interface: "decision", outcomes: ["ok"] });
     expect((await call("validateDefinition", { body: { path: "templates/nodes/mine.json", content: node } })).errors).toContainEqual(expect.objectContaining({ path: "name" }));
     await expect(call("getDefinition", { params: { path: "templates/../settings.json" } })).rejects.toMatchObject({ status: 400 });
     await expect(call("getDefinition", { params: { path: "templates/other/x.json" } })).rejects.toMatchObject({ status: 400 });
@@ -45,7 +45,7 @@ describe("definition routes", () => {
       const node: string = "templates/nodes/delete-me.json";
       const recipe: string = "templates/recipes/delete-me.json";
       const { sha256: nodeHash } = await call("saveDefinition", { params: { path: node }, body: {
-        content: JSON.stringify({ name: "delete-me", description: "Decide", kind: "human", mode: "decision", outcomes: ["yes"] }),
+        content: JSON.stringify({ name: "delete-me", description: "Decide", kind: "human", interface: "decision", outcomes: ["yes"] }),
         baseSha256: null,
       } });
       const usage = () => call("getNodeTemplateUsage", { params: { name: "delete-me" } });
@@ -82,11 +82,11 @@ describe("definition routes", () => {
     try {
       const path: string = "templates/nodes/tagged.json";
       const content: string = JSON.stringify({
-        name: "tagged", description: "Tagged node", kind: "human-decision", outcomes: ["yes"],
+        name: "tagged", description: "Tagged node", kind: "human", interface: "decision", outcomes: ["yes"],
         tags: ["github", "Human", "pull request"],
       });
       await call("saveDefinition", { params: { path }, body: { content, baseSha256: null } });
-      expect(JSON.parse(await readFile(join(home, path), "utf8"))).toMatchObject({ kind: "human", mode: "decision", tags: ["github", "pull request"] });
+      expect(JSON.parse(await readFile(join(home, path), "utf8"))).toMatchObject({ kind: "human", interface: "decision", tags: ["github", "pull request"] });
       const nodes: DefinitionEntry[] = await call("listDefinitions", { query: { dir: "templates/nodes" } });
       expect(nodes.find((entry) => entry.path === path)).toMatchObject({ value: { tags: ["github", "pull request"] } });
     } finally {
@@ -133,7 +133,7 @@ describe("definition routes", () => {
       const invalid: string = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><script/></svg>';
       await expect(call("saveDefinition", { params: { path: "templates/icons/invalid.svg" }, body: { content: invalid, baseSha256: null } }))
         .rejects.toMatchObject({ status: 400 });
-      const node: string = JSON.stringify({ name: "mine", description: "Decide", icon: "compass", kind: "human-decision", outcomes: ["ok"] });
+      const node: string = JSON.stringify({ name: "mine", description: "Decide", icon: "compass", kind: "human", interface: "decision", outcomes: ["ok"] });
       await call("saveDefinition", { params: { path: "templates/nodes/mine.json" }, body: { content: node, baseSha256: null } });
       expect(JSON.parse((await call("getDefinition", { params: { path: "templates/nodes/mine.json" } })).content)).toMatchObject({ icon: "compass" });
     } finally {

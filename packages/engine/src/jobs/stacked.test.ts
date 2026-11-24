@@ -1,4 +1,4 @@
-import { cp, readFile, writeFile } from "node:fs/promises";
+import { cp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createProjectWithRecipes } from "../../test/project";
@@ -6,6 +6,7 @@ import { shippedTemplates, tempDir } from "../../test/tmp";
 import { Engine } from "../main";
 import { gitApp } from "../workdir/git-as";
 import { branchHead } from "../workdir/repo";
+import { jobCommit } from "./stacked";
 
 const nodes = (marker: string): Record<string, object> => ({
   "write-own": {
@@ -26,12 +27,11 @@ const nodes = (marker: string): Record<string, object> => ({
     command: ["/bin/sh", "-c", 'echo "https://forge.example.com/pr/$PECORE_JOB_ID"'],
     probe: ["/bin/sh", "-c", "exit 0"],
     mergedCheck: ["/bin/sh", "-c", `test -f ${marker} && echo MERGED || true`],
-    inputs: ["commit"],
-    outputs: ["delivery"],
     outcomes: ["opened"],
+    outputs: { opened: "reference" },
     changesFiles: false,
     outcomeRules: [{ exitCode: 0, outcome: "opened" }],
-    outputRules: { delivery: { stdoutLastLine: "url" } },
+    outputRules: { opened: { stdoutLastLine: "url" } },
     timeoutSec: 30,
   },
 });
@@ -105,7 +105,7 @@ async function setup() {
   const repo = join(p.ctx.dir, "repo.git");
   const job = (id: string) => p.executor.job(id);
   const files = async (id: string) => (await gitApp(repo, ["ls-tree", "--name-only", `refs/heads/factory/${id}`])).trim().split("\n").sort();
-  const sha = async (id: string) => (JSON.parse(await readFile(join(p.ctx.dir, p.executor.artifacts(id).filter((a) => a.type === "commit").at(-1)!.path), "utf8")) as { sha: string }).sha;
+  const sha = async (id: string) => (await jobCommit(p.ctx.dir, p.ctx.db.events(id)))!;
   const openItem = (jobId: string | null, kind = "human-node") =>
     p.ctx.db.db.prepare("SELECT id, subject_hash FROM human_queue WHERE (? IS NULL OR job_id = ?) AND kind = ? AND state = 'open'").get(jobId, jobId, kind) as { id: string; subject_hash: string } | undefined;
   return { root, marker, engine, p, repo, job, files, sha, openItem };

@@ -6,7 +6,7 @@
   "kind": "command",
   "runsAs": "engine",
   "credentials": ["project.account"],
-  "inputs": ["commit", "delivery"],
+  "inputs": ["reference"],
   "outcomes": ["success", "failure"],
   "failOutcomes": ["failure"],
   "changesFiles": false,

@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { ReferenceArtifact } from "@pecore/schemas";
 import type { Artifact, ForgeAccount, Project, StoredEvent } from "@pecore/schemas";
 import { loadForgeDefaults } from "../projects/defaults";
 import { forgeEnv } from "../runners/forge-env";
@@ -19,15 +20,40 @@ export function reentryPending(events: StoredEvent[], onBaseChanged: string | un
   return pending;
 }
 
-export function latestArtifact(events: StoredEvent[], type: Artifact["type"]): Artifact | undefined {
-  let found: Artifact | undefined;
-  for (const e of events) if (e.type === "node_run.completed") for (const a of e.payload.artifacts) if (a.type === type) found = a;
-  return found;
+export type JobArtifact = { artifact: Artifact; node: string | null };
+
+export function nodeOfRun(nodeRunId: string): string {
+  return nodeRunId.slice(nodeRunId.indexOf("/") + 1, nodeRunId.lastIndexOf("#"));
 }
 
-export async function commitSha(projectDir: string, artifact: Artifact | undefined): Promise<string | null> {
-  if (!artifact) return null;
-  return (JSON.parse(await readFile(join(projectDir, artifact.path), "utf8")) as { sha: string }).sha;
+export function jobArtifacts(events: StoredEvent[]): JobArtifact[] {
+  const out: JobArtifact[] = [];
+  for (const e of events) {
+    if (e.type === "job.created") {
+      if (e.payload.ticket) out.push({ artifact: e.payload.ticket, node: null });
+      for (const artifact of e.payload.attachments ?? []) out.push({ artifact, node: null });
+    }
+    if (e.type === "node_run.completed") for (const artifact of e.payload.artifacts) out.push({ artifact, node: nodeOfRun(e.payload.nodeRunId) });
+    if (e.type === "job.ci_check" && e.payload.log) out.push({ artifact: e.payload.log, node: nodeOfRun(e.payload.runId) });
+  }
+  return out;
+}
+
+export async function readReference(projectDir: string, artifact: Artifact): Promise<ReferenceArtifact> {
+  return ReferenceArtifact.parse(JSON.parse(await readFile(join(projectDir, artifact.path), "utf8")));
+}
+
+export async function latestReference(projectDir: string, artifacts: JobArtifact[], has: (reference: ReferenceArtifact, node: string | null) => boolean): Promise<(JobArtifact & { reference: ReferenceArtifact }) | undefined> {
+  for (const found of artifacts.toReversed()) {
+    if (found.artifact.type !== "reference") continue;
+    const reference: ReferenceArtifact = await readReference(projectDir, found.artifact);
+    if (has(reference, found.node)) return { ...found, reference };
+  }
+  return undefined;
+}
+
+export async function jobCommit(projectDir: string, events: StoredEvent[]): Promise<string | null> {
+  return (await latestReference(projectDir, jobArtifacts(events), (reference) => reference.sha !== undefined))?.reference.sha ?? null;
 }
 
 export async function fetchBase(

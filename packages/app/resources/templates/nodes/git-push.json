@@ -6,9 +6,8 @@
   "kind": "command",
   "runsAs": "engine",
   "credentials": ["project.account"],
-  "inputs": ["commit"],
-  "outputs": ["delivery"],
   "outcomes": ["pushed", "failed"],
+  "outputs": { "pushed": "reference" },
   "failOutcomes": ["failed"],
   "changesFiles": false,
   "script": "git-push.sh",
@@ -18,6 +17,6 @@
     { "exitCode": 0, "outcome": "pushed" },
     { "exitCode": "other", "outcome": "failed" }
   ],
-  "outputRules": { "delivery": { "stdoutLastLine": "ref" } },
+  "outputRules": { "pushed": { "stdoutLastLine": "ref" } },
   "timeoutSec": 120
 }
