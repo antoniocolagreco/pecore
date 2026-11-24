@@ -53,6 +53,10 @@ async function exists(path: string): Promise<boolean> {
 }
 
 const previousShippedHashes: ReadonlyMap<string, readonly string[]> = new Map([
+  ["nodes/github-issues-comment.sh", ["fc00dd16b9f2f8acf8a5229d85e35f62fededbb23eaf573310b148ac6b1087cb"]],
+  ["nodes/gitlab-issues-comment.sh", ["093a69585c5363072981eafeece2b7aaea440aa639a68401668aa22f38b6f189"]],
+  ["nodes/jira-comment.sh", ["77898c3ff62f54b513705bf5ad9eb31d1e050e35cff483168b9f1d89c6b5ab18"]],
+  ["nodes/markdown-folder-comment.sh", ["52a276e35cb4a49f4756fb68eff3d2de34276c7ba4ef61c074b864f79d7609d6"]],
   ["nodes/resolve-rebase-conflicts.json", ["d2df5213056e6207eec0e5b12fc5a8891cf9f516efd591e033c1f93b813de6f1"]],
   ["nodes/wait-for-ci.json", ["6b7461d4217479fde94a33b4587e79a099f961380104db99c52c6e8b1b3dba7f"]],
   ["nodes/github-pr.json", ["94beb5e3871cb7fdf71878a21b64a870f52be1bc8f607e6f30e3344e862ba39d", "95fd4ddcc1ae4556677e93981a2f1de440116e1b586458f5a385f3ef9129e353", "e2daf41b7d33f470fb7d78a21844353f167d88d570f96fdeeccb7ea8804349f3", "6ef3a09d0f245df703749aba6d0b669408be9fce6b869a370707d4ef2e8fb75a"]],

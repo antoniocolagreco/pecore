@@ -49,7 +49,7 @@ describe("ACP session with the fake agent", () => {
     ]);
     const streamed: string[] = [];
     const reading: Promise<void> = (async () => { for await (const event of s.events) if (event.type === "text") streamed.push(event.text); })();
-    expect((await s.prompt("x")).text).toBe("I check the agents.\n\nI see them.");
+    expect(await s.prompt("x")).toMatchObject({ text: "I check the agents.\n\nI see them.", finalText: "I see them." });
     await s.close();
     await reading;
     expect(streamed.join("")).toBe("I check the agents.\n\nI see them.");

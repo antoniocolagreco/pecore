@@ -10,6 +10,7 @@
           "cacheWrite": 16171
         },
         "text": "The command's exact output was:\n\n```\ncat: /home/ac/.claude.json: Permission denied\n```\n\n`whoami.txt` was still written, since the `id -un` redirect ran before the `cat` failed. `note.txt` now contains `alfa`.",
+        "finalText": "The command's exact output was:\n\n```\ncat: /home/ac/.claude.json: Permission denied\n```\n\n`whoami.txt` was still written, since the `id -un` redirect ran before the `cat` failed. `note.txt` now contains `alfa`.",
         "stopReason": "end_turn",
         "model": "claude-haiku-5-5",
         "quota": {

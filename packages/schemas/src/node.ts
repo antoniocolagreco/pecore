@@ -5,16 +5,14 @@ import { Argv, DefinitionName, JsonSchemaObject, Name, Outcome, SchemaRef, TierN
 const jobPlaceholders = ["job.id", "job.title", "job.branch", "job.base", "job.oldBase", "job.target", "job.commit"];
 const projectPlaceholders = ["project.repoDir", "project.repo.url", "project.repo.owner", "project.repo.name"];
 const fixedPlaceholders = new Set([...jobPlaceholders, ...projectPlaceholders, "ticket.id", "workdir"]);
-const sourcePlaceholders = new Set([...fixedPlaceholders, "comment.path"]);
 
 const placeholderToken = /\{([A-Za-z][A-Za-z0-9_.-]*)\}/g;
 
-export function unknownPlaceholders(text: string, opts: { source?: boolean } = {}): string[] {
-  const allowed = opts.source ? sourcePlaceholders : fixedPlaceholders;
+export function unknownPlaceholders(text: string): string[] {
   const bad: string[] = [];
   for (const m of text.matchAll(placeholderToken)) {
     const name = m[1] as string;
-    if (allowed.has(name)) continue;
+    if (fixedPlaceholders.has(name)) continue;
     if (/^params\.[A-Za-z_][A-Za-z0-9_]*$/.test(name)) continue;
     bad.push(`{${name}}`);
   }
@@ -151,9 +149,9 @@ export const SourceNode = z
 
 type Issue = { path: (string | number)[]; message: string };
 
-function argvPlaceholders(argv: string[] | undefined, path: (string | number)[], source = false): Issue[] {
+function argvPlaceholders(argv: string[] | undefined, path: (string | number)[]): Issue[] {
   if (!argv) return [];
-  return argv.flatMap((arg, i) => unknownPlaceholders(arg, { source }).map((p) => ({ path: [...path, i], message: `unknown placeholder ${p}` })));
+  return argv.flatMap((arg, i) => unknownPlaceholders(arg).map((p) => ({ path: [...path, i], message: `unknown placeholder ${p}` })));
 }
 
 function checkNode(node: z.infer<typeof CommandNode> | z.infer<typeof AgentNode> | HumanNode | z.infer<typeof SourceNode>): Issue[] {
@@ -162,7 +160,7 @@ function checkNode(node: z.infer<typeof CommandNode> | z.infer<typeof AgentNode>
     for (const key of ["list", "read", "comment", "replies"] as const) {
       const c = node[key];
       if ((c.command === undefined) === (c.script === undefined)) issues.push({ path: [key], message: "exactly one of command and script" });
-      issues.push(...argvPlaceholders(c.command, [key, "command"], true));
+      issues.push(...argvPlaceholders(c.command, [key, "command"]));
     }
     return issues;
   }

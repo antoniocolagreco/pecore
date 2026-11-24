@@ -10,6 +10,7 @@
           "cacheWrite": 0
         },
         "text": "",
+        "finalText": "",
         "error": {
           "kind": "auth",
           "raw": "{\"code\":-32000,\"message\":\"Authentication required\"}"

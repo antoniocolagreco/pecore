@@ -148,7 +148,6 @@ describe("placeholders", () => {
 
   it("rejects input path placeholders and source placeholders outside sources", () => {
     expect(unknownPlaceholders("{inputs.spec.path} {comment.path}")).toEqual(["{inputs.spec.path}", "{comment.path}"]);
-    expect(unknownPlaceholders("{comment.path}", { source: true })).toEqual([]);
   });
 
   it("ignores jq expressions", () => {

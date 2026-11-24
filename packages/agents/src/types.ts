@@ -47,6 +47,7 @@ export type TurnResult = {
   quota?: Quota;
   context?: { used: number; size: number };
   text: string;
+  finalText: string;
 };
 
 type AcpMetadata = { _meta?: Record<string, unknown> | null };

@@ -26,7 +26,7 @@ describe("pecore CLI over the local API", () => {
   });
 
   it("lists projects and jobs, explains why a job waits, stops it, and validates files", async () => {
-    const { home, call, close } = await apiProject();
+    const { home, call, close } = await apiProject(0);
     const env = { PECORE_HOME: home };
     const { id } = await call("createJob", { body: { project: "demo", title: "Add hello", ticket: { text: "x" } } });
     await until(async () => (await call("getJob", { params: { id } })).job.state === "waiting");
@@ -66,7 +66,7 @@ describe("pecore CLI over the local API", () => {
   });
 
   it("exports a project, lists secret findings until accepted, and imports an archive under a new id", async () => {
-    const { home, engine, call, close } = await apiProject();
+    const { home, engine, call, close } = await apiProject(0);
     const env = { PECORE_HOME: home };
     const out = join(await tempDir(), "demo.tar.zst");
 

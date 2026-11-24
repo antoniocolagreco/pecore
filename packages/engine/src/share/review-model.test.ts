@@ -28,7 +28,7 @@ async function* stream<T>(events: T[]): AsyncIterable<T> {
 function fakeSession(text: string, events: AgentEvent[] = []): Session {
   return {
     sessionId: "review", resumed: false, supportsImages: false, events: stream(events), raw: stream([]),
-    prompt: vi.fn(async () => ({ text, stopReason: "end_turn" as const, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } })),
+    prompt: vi.fn(async () => ({ text, finalText: text, stopReason: "end_turn" as const, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } })),
     cancel: vi.fn(async () => undefined), close: vi.fn(async () => undefined),
   };
 }

@@ -10,6 +10,7 @@
           "cacheWrite": 23537
         },
         "text": "fatto",
+        "finalText": "fatto",
         "stopReason": "end_turn",
         "model": "claude-opus-5-5",
         "quota": {
@@ -141,6 +142,7 @@
           "cacheWrite": 36
         },
         "text": "ciao pecora",
+        "finalText": "ciao pecora",
         "stopReason": "end_turn",
         "model": "claude-opus-5-5",
         "context": {

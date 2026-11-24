@@ -289,7 +289,7 @@ $PECORE_HOME/                         default ~/.pecore; its path is stored in E
 *   Clone and fetch are engine operations: the engine runs them as the app user with `--git-dir=repo.git`, with the project's account selected by `forge-env.ts` as for `credentials` (3.1). It clones at project creation, fetches the job's base branch before every job starts, and fetches on merge detection (4.6).
 *   `knowledge/` holds Markdown documents about the project: architecture, conventions, domain terms. Knowledge exists only inside a project; there is no global knowledge. The directory is flat: `.md` files only, all at the same level, no subfolders. A file links to another by its bare name, for example `[naming](naming.md)`, never by an absolute or nested path.
 *   Files come from four places: the user writes a new file in the GUI, uploads a `.md` file, asks the Project Manager or the Assistant to write or improve one, or a project bootstrap or wizard writes them. Job agents never write there.
-*   An agent node receives the files named in its `knowledge` list and every knowledge file they link to, directly or through other files, copied flat into `.pecore/context/` so the links between them still resolve.
+*   An agent node receives each selected knowledge document and every document it links to, including indirect links. The prompt includes each document under a heading with its file name.
 *   The engine checks a knowledge file on every save, from the GUI, an upload, `write_knowledge` or a bootstrap. Links: a link that is not a web address must be the bare name of an existing file of the same project (no `/`, no `..`); otherwise the save is refused with the line and the link. Formatting: `markdownlint` with a small rule set (headings, lists, code fences, no line-length rule); its findings are returned as warnings and do not block the save. Deleting or renaming a file that other files link to lists those files; a rename updates their links.
 
 ### 3. Definitions
@@ -333,7 +333,7 @@ Fields by kind:
 *   **`agent`**
     *   `prompt`: path of the Markdown prompt template.
     *   `agent`: `tier` (for example `strong`) or an ordered list of `profiles`; optional `providerNot`, a list of recipe node ids whose provider this node must not use.
-    *   The agent writes `.pecore/output.json` as `{ "outcome": "<outcome>", "output": <value> }`; `output` is required when the outcome has an output and holds a value of that type. The engine writes the matching JSON Schema to `.pecore/output.schema.json` (5.8).
+    *   The agent returns `{ "outcome": "<outcome>", "output": <value> }` in its final message. The prompt includes the schema. The outcome determines whether `output` is required and which type it holds (5.8).
     *   `knowledge`: names of the project's knowledge files the node receives, for example `["architecture.md", "naming.md"]`. Node templates are shared, so the node editor offers the knowledge file names found in all projects; each project gives its own file with that name, and a project without it gives nothing. An older entry with a glob (for example `*.md`) still matches the file names.
     *   `resume`: `true` to resume the harness session when the node runs again in the same job.
 *   **`human`**
@@ -714,6 +714,7 @@ type TurnResult = {
   costUsd?: number;                        // only for a new session (5.3)
   quota?: { status: string; resetAt?: number; windows?: Record<string, { utilization: number; resetAt: number }> };
   text: string;                            // the agent's text in this turn
+  finalText: string;
 };
 ```
 
@@ -744,7 +745,7 @@ The engine decides in this order:
 
 1.  The engine itself cancelled the turn: `TIMEOUT` after a timeout, interrupted after a stop or quit.
 2.  JSON-RPC error `-32000` whose message starts with "Authentication required" (seen with Claude Code and opencode): `auth`. Other `-32000` errors go on to step 4.
-3.  `stopReason: end_turn` and a valid `.pecore/output.json` (Prompt and output below): the node run completes. A `rejected` quota seen during the turn still starts the account's cooldown for later attempts.
+3.  With `stopReason: end_turn`, a valid result in the final message completes the run. A valid question opens a human queue item. A `rejected` quota during the turn still starts the account's cooldown for later attempts.
 4.  A turn error with `data.errorKind` (5.3), or a `rejected` quota during the turn: the kind and reset time of 5.3.
 5.  The connector's `errors` rules, applied to the JSON-RPC error message or to the turn's `text`: their kind, with the reset time if the rule reads one.
 6.  `end_turn` with a missing or invalid output: the validation errors are sent as a new message in the same session, at most twice, each answer decided again from step 1; then `INVALID_OUTPUT`.
@@ -776,8 +777,8 @@ Each built-in connector ships with recorded ACP traffic of these cases, used by 
 
 #### 5.8 Prompt and output
 
-*   The engine sends the prompt as the text of `session/prompt` and records it in the attempt log. The prompt includes the ticket, current diff and each read artifact inline under a label such as "text from test". Selected knowledge files go in `.pecore/context/`. The JSON Schema built from the node's `outcomes` and `outputs` goes in `.pecore/output.schema.json`. The worktree excludes `.pecore/` from commits.
-*   ACP has no structured output option. The prompt asks the agent to write its result to `.pecore/output.json`, valid against `.pecore/output.schema.json`. The engine deletes `.pecore/output.json` before every turn, correction messages included, so a result left by an earlier attempt or turn is never read. When the turn ends, the engine reads the file as the project user (section 8) and validates it (5.4).
+*   The engine sends the prompt as the text of `session/prompt` and records it in the attempt log. The prompt includes the ticket, current diff, read artifacts and knowledge documents under their own headings. Attachment paths point to copies in the worktree. The prompt includes the JSON Schema built from the node's `outcomes` and `outputs`.
+*   The agent ends its turn with a final message containing only its result or question. The engine reads the last ACP message, accepts a plain JSON object or one JSON code fence, and validates it with Zod. Missing or invalid JSON follows the correction flow in 5.4. Each correction includes the expected shape again.
 
 #### 5.9 Logins
 
@@ -825,7 +826,7 @@ Recipes can perform the external actions they define. Outside a recipe, an exter
 ### 7. Sources
 
 *   A ticket source is a template of kind `source`. The project selects it and supplies parameters in `project.json`.
-*   A source node declares four commands, each with `command` or `script`, `outputRules` and `credentials` like a `command` node: `list` (open tickets that match its params, JSON array of ids and titles on stdout), `read` (one ticket as JSON: title, body, attachment URLs), `comment` (post text), `replies` (comments after a given time). Placeholders add `{ticket.id}` and `{comment.path}`.
+*   A source node declares four commands, each with `command` or `script`, `outputRules` and `credentials` like a `command` node: `list` (open tickets that match its params, JSON array of ids and titles on stdout), `read` (one ticket as JSON: title, body, attachment URLs), `comment` (post text), `replies` (comments after a given time). The comment body goes on stdin as plain text, or under `comment` in the stdin JSON when the command also receives other inputs.
 *   Its `params` are set per project: for example `label` (default `factory`, any label the user wants), repo, `pollSec` (default 300) and `trusted` (list of tracker user names; default the project account's user).
 *   `read` returns the ticket's author and, where the tracker exposes it, who applied the label. Trust rule: a new ticket starts automatically only if the author or the user who applied the label is in `trusted`. Any other ticket goes into the confirmation queue (section 8) and is not shown to the Project Manager until confirmed.
 *   Source nodes run as the app user and use configured forge accounts.
@@ -842,7 +843,7 @@ Recipes can perform the external actions they define. Outside a recipe, an exter
 *   The app user owns the project directory. The project user writes to `work/` and `repo.git/` through a shared group. Knowledge, databases and logs are private to the app user.
 *   Inside `repo.git/`, only `objects/`, `refs/`, `logs/`, `worktrees/` and `packed-refs` are group-writable. `config`, `hooks/` and `info/` belong to the app user and are read-only for the group. Otherwise an agent could add a hook or a config key such as `core.fsmonitor` or `core.sshCommand`, and the next git command run as the app user (for example in `git-push`) would execute it. As a second barrier, every git command the engine or a `runsAs: engine` node runs gets `-c core.hooksPath=/dev/null`. `extensions.worktreeConfig` stays off, so per-worktree config files are ignored.
 *   The agent controls the worktree's `.git` file and `repo.git/worktrees/<id>/`, so it can point git at a config file it wrote. Therefore the app user never runs git with a work tree under `work/`. Git work in a workdir runs as the project user and returns plain values (a tree hash, a commit SHA). The app user runs git only with `--git-dir=<project>/repo.git` and no work tree (for example `git push` in `git-push`). `runsAs: engine` nodes start in an empty temporary directory, never in a workdir.
-*   The engine uses the project user for workdir file operations so an agent cannot use a symlink to reach files private to the app user. These operations include copying knowledge and attachments, writing the output schema, reading `outputRules.file` and deleting `scratchPaths`. They use `cat` and `find -P ... -type f -delete` through `runners/process.ts` and reject symlinks with `test -L`. The engine stores artifact content in `pecore.db` as the app user.
+*   The engine uses the project user for workdir file operations so an agent cannot use a symlink to reach files private to the app user. These operations include copying attachments, reading `outputRules.file` and deleting `scratchPaths`. They use `cat` and `find -P ... -type f -delete` through `runners/process.ts` and reject symlinks with `test -L`. The engine stores artifact content in `pecore.db` as the app user.
 *   The project user gets traverse-only access (execute, no read) on the directories on the path to `work/`, through ACLs (`setfacl` on Linux, `chmod +a` on macOS). It can reach `work/` but cannot list the app user's home.
 *   At project creation and at every app start, <PE/CORE> checks that the app user's home and the tools' login files are not readable by others, and offers to fix the permissions.
 *   In protected mode, harness logins (subscriptions and API keys) live in `pecore-agent`'s home, stored by each harness. All of them belong to the same OS user, so an agent can read every protected login, not only the one of the harness it runs in: a prompt-injected agent in one project can take the logins of every account used in protected mode. Protected mode protects the app user's files and logins, not the protected logins from each other.
@@ -1147,6 +1148,8 @@ With no harness found and logged in, nothing changes and the GUI shows the banne
 
 Run typecheck, lint and engine tests for every code change. Defer GUI tests until the redesign is stable. `pnpm dev` runs the app with live reload and needs no prior build.
 
+V8 measures statements, branches, functions and lines under `packages/*/src` with an 80% threshold for each. Test files, the renderer design system and the component gallery are excluded.
+
 | File | Scenario | Runs |
 |---|---|---|
 | `graph/rules.test.ts` | property tests of 4.2 | CI |
@@ -1273,7 +1276,7 @@ Everything that knows ACP or a harness lives here (section 5). It imports only `
 | `src/runners/placeholders.ts` | substitutes placeholders into argument arrays; builds `PECORE_*` environment variables for `script` nodes and probes |
 | `src/runners/command.ts` | gives JSON inputs on stdin to commands and probes, applies the outcome and output rules, and returns the text log |
 | `src/runners/probe.ts` | runs the probe and applies `probeRules`: `done`, `not_done`, `unknown`; on `unknown` the node run waits with reason `network` and retries (4.8) |
-| `src/runners/agent.ts` | runs agents through `@pecore/agents`, prepares knowledge and the output schema, sends a prompt with inline inputs and reads `.pecore/output.json` through `fs-as.ts`. Handles session resume, timeouts and attempt metrics |
+| `src/runners/agent.ts` | runs agents through `@pecore/agents`, includes inputs, knowledge and the result schema in the prompt, and validates the final message. Handles session resume, timeouts and attempt metrics |
 | `src/runners/human.ts` | puts a human node in `human_queue` (kind `human-node`) and waits for the user's outcome |
 | `src/runners/forge-env.ts` | environment and git credential helper for an account (Fixed choices: `GH_TOKEN`, `GITLAB_TOKEN`, `AWS_PROFILE`) |
 | **accounts/** | |
@@ -1467,7 +1470,7 @@ Each line closes one entry gate of phase 5 and overrides the earlier text it con
 Each line closes one entry gate of phase 6 and overrides the earlier text it contradicts.
 
 1.  **Orders.** A ticket seen by intake, or a chat message, is an order with a stable id: the `ticket.seen` event for a ticket, the message id for a chat. `tickets_seen` gains `state` (`received`, `confirming`, `handed`, `asking`, `planned`, `done`, `dropped`), set by the events `order.read`, `order.handed`, `order.asked`, `order.planned`, `order.done`, `order.dropped`. The Project Manager calls `create_jobs` once per order with the whole plan: each job has a `key`, and `dependsOn` names keys. The engine stores the plan in `order.planned`, then creates the jobs one by one; `jobs` gains `order_id` and `order_key`, with a unique index on both. A second `create_jobs` for the same order is refused and returns the plan and its jobs. At start the engine resumes every ticket order not `done` or `dropped`: `received` runs `read` again, `handed` runs the Project Manager turn again with the actions already recorded, `planned` creates the missing jobs from the stored plan without the model. A comment posted just before a crash can be posted twice. A chat turn cut by a crash is not rerun: the message shows Retry, which reuses the same order. A project without `source` takes orders only from chat; `read_ticket` needs a source.
-2.  **Agent questions.** The prompt tells an agent node that, when it needs the user, it writes `.pecore/question.json` (`{"question": "..."}`) instead of `.pecore/output.json` and ends the turn. The engine deletes the file before every turn, like `output.json`. On `end_turn` with a valid question file, the engine adds an `agent-question` item to `human_queue` and the node run waits with reason `human`, holding no execution slot. The project's Project Manager answers it with `answer_question` when the project already decides the answer (section 6); otherwise the user answers in Notifications. The answer is sent as the next prompt of the same session (5.5), so the agent keeps its context; the session group and the attempt timeout work as for a correction message. Agents get no tool or token to reach <PE/CORE>.
+2.  **Agent questions.** An agent that needs an answer ends its turn with just `{"question": "..."}` in its final message. The engine adds an `agent-question` item to `human_queue` and the run waits with reason `human`, freeing its execution slot. The Project Manager answers with `answer_question` when project data provides the answer. Otherwise the user answers in Notifications. The engine sends the answer as the next prompt of the same session (5.5), with the remaining attempt time.
 3.  **Files in orders.** Chat attachments are any file, at most 10 MB each, stored next to `chats.db` as `<id>-<file name>`. Images (png, jpeg, gif or webp) go to the agent as ACP image content blocks in `session/prompt`; when the profile's connector does not report `promptCapabilities.image` in `initialize`, images are refused and the GUI says why. Any other file is copied as the chat's OS user into `files/` of the chat folder, and the prompt lists each name and path as untrusted, so the agent opens it with its own tools and never reads the app user's files, also in protected mode. Clearing the chat removes both copies. `create_jobs` takes attachment ids per job; the engine stores them as job artifacts and copies them as the project user into `.pecore/attachments/` of the workdir, and the prompt lists their paths.
 4.  **Project Manager MCP token.** The MCP server of the Assistant and Project Manager is a stdio server, not HTTP: a small shim shipped in `PECORE_HOME/adapters/`, run with the shipped Node, whose only argument is the path of a token file, `PECORE_HOME/chats/<chat-id>/mcp-token`, mode 0600, written by the engine as the project user (`fs-as.ts`) at every app start and at chat creation. The shim reads the token and forwards MCP messages to the engine's MCP endpoint on `127.0.0.1`. The command line, which `--mcp-config` exposes in `/proc` to every local user, carries no token, and the `mcpServers` entry never changes, so a chat resumed after a restart uses the new token with no other step. In protected mode job agents run as the same `pecore-agent` and can read the file; this is the shared-user limit of section 8, and the Project Manager's external comments still require a user decision.
 5.  **Import warning.** The GUI and Assistant show the security review and account mappings before the user proceeds (section 8).

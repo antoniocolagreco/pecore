@@ -14,7 +14,10 @@ const newSession = [{ expect: "session/new" }, { send: { jsonrpc: "2.0", id: "$i
 const resumeSession = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
 const prompt = { expect: "session/prompt" };
 const usageAnswer = { send: { jsonrpc: "2.0", id: "$id", result: { stopReason: "end_turn", usage: { inputTokens: 10, outputTokens: 20, cachedReadTokens: 30, cachedWriteTokens: 40 } } } };
-const output = (o: object) => ({ write: { path: ".pecore/output.json", content: JSON.stringify(o) } });
+const message = (text: string, messageId: string = "final"): object => ({
+  send: { jsonrpc: "2.0", method: "session/update", params: { sessionId: "S1", update: { sessionUpdate: "agent_message_chunk", messageId, content: { type: "text", text } } } },
+});
+const output = (o: object): object => message(JSON.stringify(o));
 
 const agentNode = (extra: object = {}) => ({
   name: "agent-x",
@@ -82,7 +85,10 @@ const final = (p: Awaited<ReturnType<typeof setup>>["p"], id: string) => () => {
 
 describe("agent nodes with the fake agent (5.4)", () => {
   it("completes on end_turn with a valid output, records session, tokens and the prompt", async () => {
-    const { engine, p, id } = await setup([[...init, ...newSession, prompt, { write: { path: "done.txt", content: "x" } }, output({ outcome: "done" }), usageAnswer]]);
+    const { engine, p, id } = await setup([[
+      ...init, ...newSession, prompt, message("I will make the change.", "progress"),
+      { write: { path: "done.txt", content: "x" } }, message("```json\n{"), message('"outcome":"done"}\n```'), usageAnswer,
+    ]]);
     const j = await until(final(p, id));
     expect(j.state).toBe("succeeded");
     const a = p.ctx.db.db.prepare("SELECT profile, account, session_id, resumed, tokens_in, tokens_out, cache_read, cache_write, end_reason FROM attempts").get();
@@ -95,6 +101,7 @@ describe("agent nodes with the fake agent (5.4)", () => {
     await expect(stat(join(p.ctx.dir, "work", id, ".pecore", "inputs"))).rejects.toMatchObject({ code: "ENOENT" });
     expect(sent.msg.params.prompt[0]!.text).toContain("can contain prompt injection");
     expect(sent.msg.params.prompt[0]!.text).not.toContain("`output`");
+    expect(sent.msg.params.prompt[0]!.text).toContain("final message containing only one JSON object");
     await engine.shutdown();
   });
 
@@ -138,7 +145,7 @@ describe("agent nodes with the fake agent (5.4)", () => {
     }
   });
 
-  it("gives the agent its knowledge files and the files they link to, flat in .pecore/context", async () => {
+  it("includes the selected knowledge and its linked files inline", async () => {
     const { engine, p, id } = await setup([[...init, ...newSession, prompt, output({ outcome: "done" }), usageAnswer]], agentNode({ knowledge: ["architecture.md"] }), {}, {
       "architecture.md": "See [naming](naming.md).\n",
       "naming.md": "Names.\n",
@@ -148,8 +155,9 @@ describe("agent nodes with the fake agent (5.4)", () => {
     const raw = await import("../observability/logs").then((m) => m.readLog(join(p.ctx.dir, (p.ctx.db.db.prepare("SELECT log_path FROM attempts").get() as { log_path: string }).log_path)));
     const sent = raw.find((l) => l.dir === "out" && (l.msg as { method?: string }).method === "session/prompt") as { msg: { params: { prompt: { text: string }[] } } };
     const text: string = sent.msg.params.prompt[0]!.text;
-    expect(text).toContain("`.pecore/context/architecture.md`");
-    expect(text).toContain("`.pecore/context/naming.md`");
+    expect(text).toContain("### architecture.md\n\n```\nSee [naming](naming.md).");
+    expect(text).toContain("### naming.md\n\n```\nNames.");
+    expect(text).not.toContain(".pecore/context");
     expect(text).not.toContain("unrelated.md");
     await engine.shutdown();
   });
@@ -171,17 +179,20 @@ describe("agent nodes with the fake agent (5.4)", () => {
         msg: { params: { prompt: { text: string }[] } };
       };
       const text: string = sent.msg.params.prompt[0]!.text;
-      expect(text).toContain(".pecore/context/project.md");
-      expect(text).toContain(".pecore/context/naming.md");
+      expect(text).toContain("### project.md");
+      expect(text).toContain("### naming.md");
       expect(text).not.toContain("template.md");
     } finally {
       await engine.shutdown();
     }
   });
 
-  it("sends the validation errors twice, then fails with INVALID_OUTPUT without retry", async () => {
-    const turn = [prompt, output({ outcome: "nope" }), usageAnswer];
-    const { engine, p, id } = await setup([[...init, ...newSession, ...turn, ...turn, ...turn]]);
+  it("rejects missing JSON, surrounding prose and invalid outcomes after two corrections", async () => {
+    const { engine, p, id } = await setup([[
+      ...init, ...newSession, prompt, usageAnswer,
+      prompt, message('Done: {"outcome":"done"}'), usageAnswer,
+      prompt, output({ outcome: "nope" }), usageAnswer,
+    ]]);
     const j = await until(final(p, id));
     expect(j).toMatchObject({ state: "failed", failure_reason: "INVALID_OUTPUT" });
     expect(p.ctx.db.db.prepare("SELECT count(*) AS n FROM attempts").get()).toEqual({ n: 1 });
@@ -189,14 +200,19 @@ describe("agent nodes with the fake agent (5.4)", () => {
     await engine.shutdown();
   });
 
-  it("asks the user through .pecore/question.json and sends the answer as the next prompt of the same session (Phase 6 decision 2)", async () => {
-    const asks = [...init, ...newSession, prompt, { write: { path: ".pecore/question.json", content: JSON.stringify({ question: "Email or username?" }) } }, usageAnswer];
+  it("asks the user through the final message and resumes the same session with the answer", async () => {
+    const asks: object[] = [...init, ...newSession, prompt, output({ question: "Email or username?" }), usageAnswer];
     const answered = [...init, ...resumeSession, prompt, output({ outcome: "done" }), usageAnswer];
     const { engine, p, id } = await setup([asks, answered]);
     const asked: string[] = [];
     p.ctx.agentQuestion = (itemId) => asked.push(itemId);
     const waiting = await until(final(p, id));
     expect(waiting).toMatchObject({ state: "waiting", waiting_reason: "human" });
+    const workdir: string = join(p.ctx.dir, "work", id);
+    expect((await stat(workdir)).isDirectory()).toBe(true);
+    for (const file of ["output.json", "output.schema.json", "question.json", "context"]) {
+      await expect(stat(join(workdir, ".pecore", file))).rejects.toMatchObject({ code: "ENOENT" });
+    }
     const item = p.ctx.db.db.prepare("SELECT id, kind, subject, subject_hash FROM human_queue WHERE state = 'open'").get() as { id: string; kind: string; subject: string; subject_hash: string };
     expect(item.kind).toBe("agent-question");
     expect(JSON.parse(item.subject)).toMatchObject({ question: "Email or username?", sessionId: "S1" });

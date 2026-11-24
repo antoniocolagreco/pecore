@@ -10,6 +10,7 @@
           "cacheWrite": 23307
         },
         "text": "fatto",
+        "finalText": "fatto",
         "stopReason": "end_turn",
         "model": "claude-sonnet-5-5",
         "quota": {

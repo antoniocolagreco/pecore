@@ -163,6 +163,22 @@ describe("command nodes", () => {
     expect(await runCommandNode(ctx(n, { params: { code: "1" } }))).toMatchObject({ outcome: "failed", outputs: [] });
   });
 
+  it("streams a ticket comment as text, or as a field with other inputs", async () => {
+    const { ctx } = await setup();
+    const comment: string = 'line one\n"line two"\n';
+    const n: CommandNode = node({
+      runsAs: "engine",
+      command: ["/bin/sh", "-c", 'test ! -e comment.txt && test -z "${PECORE_COMMENT_PATH:-}" && cat'],
+      probe: ["true"],
+    });
+    const plain: Awaited<ReturnType<typeof runCommandNode>> = await runCommandNode(ctx(n, { comment }));
+    expect(plain).toMatchObject({ kind: "completed", outcome: "passed" });
+    expect(plain.log).toContain(comment);
+    const withInputs: Awaited<ReturnType<typeof runCommandNode>> = await runCommandNode(ctx(n, { comment, inputs: [{ type: "text", content: "input" }] }));
+    expect(withInputs).toMatchObject({ kind: "completed", outcome: "passed" });
+    expect(withInputs.log).toContain(JSON.stringify({ text: "input", comment }));
+  });
+
   it("reports timeout and a missing command", async () => {
     const { ctx } = await setup();
     expect(await runCommandNode(ctx(node({ command: ["sleep", "5"], timeoutSec: 1 })))).toMatchObject({ kind: "failed", reason: "TIMEOUT" });

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ArtifactType, CommandNode, FailureReason, OutcomeRule, OutputRule } from "@pecore/schemas";
@@ -81,11 +81,14 @@ async function argvOf(spec: string[] | { script: string } | undefined, inline: s
   return ["/bin/sh", "-c", body, label];
 }
 
-function commandInput(inputs: CommandInput[]): string {
-  return JSON.stringify(Object.fromEntries(inputs.map(({ type, content }) => {
+function commandInput(inputs: CommandInput[], comment?: string): string {
+  if (comment !== undefined && inputs.length === 0) return comment;
+  const values: Record<string, unknown> = Object.fromEntries(inputs.map(({ type, content }) => {
     const value: unknown = type === "text" || type === "diff" ? content : JSON.parse(content);
     return [type, value];
-  })));
+  }));
+  if (comment !== undefined) values.comment = comment;
+  return JSON.stringify(values);
 }
 
 export function commandHash(argv: string[]): string {
@@ -109,24 +112,19 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
   const user = engine ? appUser : c.user;
   const temp: string[] = [];
   let cleanDir: string | null = null;
-  let commentPath: string | undefined;
   let cwd = c.workdir;
   try {
     if (engine) {
       cwd = await mkdtemp(join(tmpdir(), "pecore-engine-"));
       temp.push(cwd);
-      if (c.comment !== undefined) {
-        commentPath = join(cwd, "comment.txt");
-        await writeFile(commentPath, c.comment, { mode: 0o600 });
-      }
     } else if (c.node.cleanCheckout && c.cleanTree) {
       cleanDir = join(c.workdir, "..", `.clean-${c.context.job!.id}`);
       await removeCleanCheckout(c.user, c.workdir, cleanDir);
       await createCleanCheckout(c.user, c.workdir, c.cleanTree, cleanDir);
       cwd = cleanDir;
     }
-    const input: string = commandInput(c.inputs);
-    const values = placeholderValues({ ...c.context, params: c.params, workdir: cwd, commentPath });
+    const input: string = commandInput(c.inputs, c.comment);
+    const values = placeholderValues({ ...c.context, params: c.params, workdir: cwd });
     const env = { ...(await baseEnv(user)), ...(await gitIdentityEnv()), ...placeholderEnv(values), ...c.extraEnv };
     const timeoutMs = c.node.timeoutSec * 1000;
     let log = "";

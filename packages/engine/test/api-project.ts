@@ -1,4 +1,4 @@
-import { cp, writeFile } from "node:fs/promises";
+import { cp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { apiClient } from "@pecore/schemas";
 import { handlers } from "../src/api/handlers";
@@ -30,13 +30,17 @@ const reviewed = {
   ],
 };
 
-export async function apiProject() {
+export async function apiProject(minFreeDiskGb?: number) {
   const root = await tempDir();
   const home = join(root, "home");
   const templates = join(root, "templates");
   await cp(shippedTemplates, templates, { recursive: true });
   await writeFile(join(templates, "nodes", "write-hello.json"), JSON.stringify(writeHello));
   await writeFile(join(templates, "recipes", "reviewed.json"), JSON.stringify(reviewed));
+  if (minFreeDiskGb !== undefined) {
+    await mkdir(home);
+    await writeFile(join(home, "settings.json"), JSON.stringify({ minFreeDiskGb }));
+  }
   const engine = await Engine.start({ home, templates });
   await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["reviewed"]);
   const api = await startApi(engine, { handlers: handlers("0.0.0-test"), validateResponses: true });

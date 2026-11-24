@@ -10,6 +10,7 @@
           "cacheWrite": 56
         },
         "text": "Alfa.",
+        "finalText": "Alfa.",
         "stopReason": "end_turn",
         "model": "claude-haiku-5-5",
         "quota": {

@@ -101,7 +101,7 @@ export async function startSession(p: StartParams): Promise<Session> {
   const { client, init } = await openConnection({ connector, login: p.login, spawn: p.spawn, cwd: p.cwd, secrets, ...(p.requestTimeoutMs !== undefined ? { requestTimeoutMs: p.requestTimeoutMs } : {}) });
   const reader = readerFor(c.reader);
   const events = new AsyncQueue<AgentEvent>();
-  const turn = { text: "", afterTool: false, quota: undefined as Quota | undefined, model: undefined as string | undefined, cost: undefined as { amount: number; currency: string } | undefined, context: undefined as TurnResult["context"] };
+  const turn = { text: "", finalText: "", messageId: undefined as string | undefined, afterTool: false, quota: undefined as Quota | undefined, model: undefined as string | undefined, cost: undefined as { amount: number; currency: string } | undefined, context: undefined as TurnResult["context"] };
   let dropReplay = false;
   let prompting: boolean = false;
 
@@ -120,7 +120,13 @@ export async function startSession(p: StartParams): Promise<Session> {
       if (!prompting) return;
       const chunk = (u.content as { text?: string } | undefined)?.text ?? "";
       const text = turn.afterTool && chunk && turn.text && !turn.text.endsWith("\n\n") ? `${turn.text.endsWith("\n") ? "\n" : "\n\n"}${chunk}` : chunk;
-      if (chunk) turn.afterTool = false;
+      if (chunk) {
+        const messageId: string | undefined = typeof u.messageId === "string" ? u.messageId : undefined;
+        if (messageId === undefined ? turn.afterTool : turn.messageId !== messageId) turn.finalText = "";
+        turn.messageId = messageId;
+        turn.finalText += chunk;
+        turn.afterTool = false;
+      }
       turn.text += text;
       events.push({ type: "text", text });
     } else if (u.sessionUpdate === "tool_call" || u.sessionUpdate === "tool_call_update") {
@@ -198,6 +204,8 @@ export async function startSession(p: StartParams): Promise<Session> {
     raw: client.raw,
     async prompt(content: string | readonly PromptContent[]): Promise<TurnResult> {
       turn.text = "";
+      turn.finalText = "";
+      turn.messageId = undefined;
       turn.afterTool = false;
       turn.quota = undefined;
       const at = Date.now();
@@ -217,7 +225,7 @@ export async function startSession(p: StartParams): Promise<Session> {
       const usage = result ? reader.usage(result) : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
       events.push({ type: "usage", usage });
       const err = classify({ ...(error ? { error } : {}), ...(result?.stopReason ? { stopReason: result.stopReason } : {}), ...(turn.quota ? { quota: turn.quota } : {}), text: turn.text, rules: c.errors, at });
-      const out: TurnResult = { usage, text: turn.text };
+      const out: TurnResult = { usage, text: turn.text, finalText: turn.finalText };
       if (result?.stopReason) out.stopReason = result.stopReason;
       if (err) out.error = err;
       const model: string | undefined = reader.model?.(result) ?? turn.model;

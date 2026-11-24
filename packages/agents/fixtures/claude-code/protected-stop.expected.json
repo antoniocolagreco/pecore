@@ -10,6 +10,7 @@
           "cacheWrite": 13896
         },
         "text": "The harness blocked a standalone `sleep 120`. It suggests running a started command in the background instead, so I'll do that once.\n\nThe first `sleep 120` was blocked by the harness, so I ran it in the background instead. It will finish in about two minutes, and I'll report when it completes.",
+        "finalText": "The first `sleep 120` was blocked by the harness, so I ran it in the background instead. It will finish in about two minutes, and I'll report when it completes.",
         "stopReason": "end_turn",
         "model": "claude-haiku-5-5",
         "quota": {
