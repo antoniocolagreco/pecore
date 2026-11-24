@@ -136,7 +136,7 @@ function AccountRow({ name, detail, state, checking, actions, color, muted, chil
   </li>;
 }
 
-function LoginControls({ accounts, protectedOnly = false, kind = "model", harnessColors }: { accounts: Account[]; protectedOnly?: boolean; kind?: "model" | "tool"; harnessColors?: HarnessColors }) {
+function LoginControls({ accounts, protectedOnly = false, kind = "model", harnessColors, hideMissing = false }: { accounts: Account[]; protectedOnly?: boolean; kind?: "model" | "tool"; harnessColors?: HarnessColors; hideMissing?: boolean }) {
   const connected: boolean = useConnected();
   const logins = useData(() => call("listLogins"), [], (message) => (message.type === "login.progress" && message.done) || (message.type === "definition.changed" && ["settings.json", "accounts.json"].includes(message.path)));
   const [progress, setProgress] = useState<Record<string, Progress>>({});
@@ -217,6 +217,7 @@ function LoginControls({ accounts, protectedOnly = false, kind = "model", harnes
           const color: string | undefined = harnessColors && harnessColor(harness.id, harnessColors.colors);
           const colorButton: ReactNode = harnessColors && <HarnessColorButton harness={harness} {...harnessColors} />;
           const items = logins.data?.filter((login) => login.account === account.id && (protectedOnly ? login.osUser === "pecore-agent" : login.osUser !== "pecore-agent")) ?? [];
+          if (!items.length && !logins.loading && hideMissing) return null;
           if (!items.length) return <AccountRow key={account.id} name={name} color={color} detail={logins.loading ? "Loading…" : "No login found."} state="unknown" checking={logins.loading} actions={colorButton} />;
           return items.map((login) => {
             const current: Progress | undefined = progress[login.id];
@@ -318,6 +319,7 @@ export function Settings() {
   const [checks, setChecks] = useState<RouteResult<"checkPrerequisites">>();
   const [disableDialog, setDisableDialog] = useState(false);
   const [addForge, setAddForge] = useState(false);
+  const [showUnavailable, setShowUnavailable] = useState(false);
   const [active, setActive] = useState<string>(sections[0]!.id);
   const actualProtected: boolean = settings.current?.protectedMode ?? false;
   const check = useAction(async () => setChecks(await call("checkPrerequisites")));
@@ -359,11 +361,11 @@ export function Settings() {
           {accounts.feedback}
           <ErrorText error={accounts.error} />
           <div className={s.groups}>
-            <Card title="AI tools">
+            <Card title="AI tools" actions={<Button size="sm" variant="ghost" aria-pressed={showUnavailable} onClick={() => setShowUnavailable(!showUnavailable)}>{showUnavailable ? "Hide unavailable" : "Show unavailable"}</Button>}>
               {(accounts.current?.accounts ?? []).some(({ kind }) => kind === "model")
-                ? <LoginControls accounts={accounts.current?.accounts ?? []} harnessColors={harnessColors} />
+                ? <LoginControls accounts={accounts.current?.accounts ?? []} harnessColors={harnessColors} hideMissing={!showUnavailable} />
                 : <p className={s.groupText}>No AI tools yet. The ones you log in to on this computer show up here on their own.</p>}
-              {harnessColors && <ComingSoonTools {...harnessColors} />}
+              {harnessColors && showUnavailable && <ComingSoonTools {...harnessColors} />}
             </Card>
             <Card title="Git hosting" actions={<Button size="sm" icon={<PlusIcon />} disabled={!connected || !accounts.value || accounts.saving} onClick={() => setAddForge(true)}>Add account</Button>}>
               {(accounts.current?.accounts ?? []).some(({ kind }) => kind !== "model")

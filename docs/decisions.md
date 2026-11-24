@@ -326,3 +326,9 @@
 - Decision: Claude Code terracotta `#D97757` (its brand colour, outside the 24), Codex slate, Antigravity CLI (Google) green, Muse azure, Qwen gold (amber), Grok purple, DeepSeek cobalt (dark blue). To keep colours distinct, OpenCode moves to ice and GitHub Copilot CLI to indigo; Cursor CLI teal and Kimi aqua stay.
 - Why: the author's choice, closer to each tool's brand.
 - Replaces: Claude Code orange, Codex indigo, OpenCode slate, Antigravity azure, Copilot purple, Qwen lavender, Grok crimson, Muse magenta.
+
+## 2026-11-24: Unavailable AI tools hidden by default
+
+- Decision: in Settings, AI tools, the tools with no login found and the "Coming soon" tools are hidden when the page opens; a "Show unavailable" button in the card header shows them, and "Hide unavailable" hides them again.
+- Why: the list stays short with only the tools that work.
+- Replaces: every AI tool row always shown.
