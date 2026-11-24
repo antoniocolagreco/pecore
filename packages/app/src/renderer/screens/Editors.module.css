@@ -22,10 +22,17 @@
 
 .prompt {
   --paper-ink: var(--text);
+  --paper-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 2px 4px rgb(0 0 0 / 0.06), 0 12px 28px -12px rgb(0 0 0 / 0.14);
   height: clamp(16rem, 50vh, 34rem);
   border-radius: 3px;
   background: linear-gradient(var(--control-bg), var(--control-bg)) var(--surface);
-  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 2px 4px rgb(0 0 0 / 0.06), 0 12px 28px -12px rgb(0 0 0 / 0.14);
+  box-shadow: var(--paper-shadow), 0 0 0 0 transparent;
+  transition: box-shadow var(--medium) var(--ease-out);
+}
+
+.prompt:focus-within {
+  outline: 1px solid var(--accent);
+  box-shadow: var(--paper-shadow), 0 0 0 3.5px var(--ring);
 }
 
 .smallJson {
