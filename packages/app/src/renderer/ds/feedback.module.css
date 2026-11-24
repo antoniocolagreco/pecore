@@ -133,6 +133,18 @@
   color: var(--tone);
 }
 
+.alert[data-dismissible] {
+  position: relative;
+  padding-inline-end: calc(14px + var(--icon-button-size-sm));
+}
+
+.alert > .alertClose {
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-end: 8px;
+  color: var(--tone);
+}
+
 .alertBody {
   display: flex;
   flex-direction: column;

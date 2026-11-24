@@ -179,7 +179,7 @@ export function KnowledgeBase({ id }: { id: string }) {
         if (chosen.length) void upload.run(chosen);
       }} />
       <ErrorText error={entries.error} />
-      {!pendingDrop && upload.error && <Alert tone="danger" title="Upload failed">{upload.error}</Alert>}
+      {!pendingDrop && upload.error && <Alert tone="danger" title="Upload failed" onClose={upload.clear}>{upload.error}</Alert>}
       {entries.loading && !entries.data && <Spinner />}
       {entries.data && !files.length && !selected?.creating && <p className={ui.muted}>No knowledge files yet.</p>}
       <List label="Knowledge files">
@@ -208,7 +208,10 @@ export function KnowledgeBase({ id }: { id: string }) {
         <Button disabled={!connected || busy} onClick={() => void confirmDrop.run(false)}>Discard and open</Button>
         <Button variant="primary" disabled={!connected || busy || (dirty && !canSave)} onClick={() => void confirmDrop.run(true)}>Save and open</Button>
       </>}>
-      {(confirmDrop.error || upload.error) && <Alert tone="danger" title="Could not open dropped files">
+      {(confirmDrop.error || upload.error) && <Alert tone="danger" title="Could not open dropped files" onClose={() => {
+        confirmDrop.clear();
+        upload.clear();
+      }}>
         {confirmDrop.error ?? upload.error}
       </Alert>}
     </Dialog>

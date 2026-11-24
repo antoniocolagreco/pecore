@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
+import { IconButton } from "./button";
 import s from "./feedback.module.css";
-import { AlertIcon, CheckCircleIcon, InfoIcon } from "./icons";
+import { AlertIcon, CheckCircleIcon, InfoIcon, XIcon } from "./icons";
 import type { IconSize } from "./icons";
 
 export type Tone = "neutral" | "accent" | "success" | "warning" | "danger";
@@ -36,15 +37,18 @@ const alertIcons: Record<Tone, ReactNode> = {
   danger: <AlertIcon />,
 };
 
-export function Alert({ tone = "accent", title, children, actions }: { tone?: Tone; title?: ReactNode; children?: ReactNode; actions?: ReactNode }) {
+export function Alert({ tone = "accent", title, children, actions, onClose }: {
+  tone?: Tone; title?: ReactNode; children?: ReactNode; actions?: ReactNode; onClose?(): void;
+}) {
   return (
-    <div className={`${s.alert} ${s[tone]}`} role={tone === "danger" ? "alert" : "status"}>
+    <div className={`${s.alert} ${s[tone]}`} data-dismissible={onClose ? "" : undefined} role={tone === "danger" ? "alert" : "status"}>
       {alertIcons[tone]}
       <div className={s.alertBody}>
         {title && <span className={s.alertTitle}>{title}</span>}
         {children && <span className={title ? s.alertText : undefined}>{children}</span>}
       </div>
       {actions && <div className={s.alertActions}>{actions}</div>}
+      {onClose && <IconButton className={s.alertClose} size="sm" label="Dismiss alert" icon={<XIcon size="xs" />} onClick={onClose} />}
     </div>
   );
 }
