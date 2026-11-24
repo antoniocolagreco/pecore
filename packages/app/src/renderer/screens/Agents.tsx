@@ -191,7 +191,7 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, harnessCol
     <Card title={scope ? title : "Configuration"} actions={scope && !onAutoChange && <PageActions>{submit}</PageActions>}>
       <div className={s.fields}>
         {(agent.kind !== "pm" || scope?.project) && <div className={s.pair}>
-          <TextField label={agent.kind === "agent" ? "Title" : "Name"} value={agent.name} disabled={!editable}
+          <TextField label="Name" value={agent.name} disabled={!editable}
             error={duplicate ? "This name is already in use." : tooLong ? "This name is too long." : onAutoChange && !agent.name.trim() ? "Enter a name." : undefined}
             onValueChange={(name) => changeAgent((entry) => ({ ...entry, name }))} />
           {agent.kind === "pm" && scope?.project && <ColorPicker label="Colour" value={agent.color} disabled={!editable}
@@ -221,11 +221,11 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, harnessCol
         </div>}
         {(agent.kind === "assistant" || (agent.kind === "pm" && scope?.project)) && <Traits value={agent.traits} disabled={!editable}
           onChange={(traits: AssistantTraitId[]) => changeAgent((entry) => entry.kind === "agent" ? entry : { ...entry, traits })} />}
-        {scope?.project && <TextArea label="Initial context" rows={5} value={content} onValueChange={changeContent}
+        {scope?.project && <TextArea label="Custom context" rows={10} value={content} onValueChange={changeContent}
           disabled={!contextEditable} error={contextError} />}
         {!scope && <div className={s.context} role="group" aria-labelledby={contextLabelId}>
           <div className={s.contextHeader}>
-            <span id={contextLabelId}>Initial context</span>
+            <span id={contextLabelId}>Custom context</span>
             <Button disabled={!contextEditable || readContext.busy} onClick={() => upload.current?.click()}>Upload Markdown</Button>
           </div>
           <input type="file" ref={upload} accept=".md,text/markdown" hidden onChange={(event) => {
