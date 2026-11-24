@@ -37,7 +37,7 @@
 }
 
 a.entry,
-a.entry > section {
+a.entry > .card {
   transition: background-color var(--fast) ease;
 }
 
@@ -47,7 +47,7 @@ a.entry:is(:hover, :focus-visible) {
   text-decoration: none;
 }
 
-a.entry:is(:hover, :focus-visible) > section {
+a.entry:is(:hover, :focus-visible) > .card {
   background-color: color-mix(in srgb, var(--surface), var(--fill-strong));
 }
 
