@@ -9,7 +9,7 @@ import { PageActions } from "../components/PageActions";
 import { ErrorText, ui } from "../components/ui";
 import { Button } from "../ds/button";
 import { List, ListItem } from "../ds/data";
-import { Card, Spinner } from "../ds/feedback";
+import { Alert, Card, Spinner } from "../ds/feedback";
 import { TextField } from "../ds/field";
 import { Dialog } from "../ds/overlay";
 import { DefinitionErrors, object, Sidecar, useDefinitionDraft } from "./NodeEditor";
@@ -178,7 +178,8 @@ export function KnowledgeBase({ id }: { id: string }) {
         event.target.value = "";
         if (chosen.length) void upload.run(chosen);
       }} />
-      <ErrorText error={entries.error ?? upload.error} />
+      <ErrorText error={entries.error} />
+      {!pendingDrop && upload.error && <Alert tone="danger" title="Upload failed">{upload.error}</Alert>}
       {entries.loading && !entries.data && <Spinner />}
       {entries.data && !files.length && !selected?.creating && <p className={ui.muted}>No knowledge files yet.</p>}
       <List label="Knowledge files">
@@ -207,7 +208,9 @@ export function KnowledgeBase({ id }: { id: string }) {
         <Button disabled={!connected || busy} onClick={() => void confirmDrop.run(false)}>Discard and open</Button>
         <Button variant="primary" disabled={!connected || busy || (dirty && !canSave)} onClick={() => void confirmDrop.run(true)}>Save and open</Button>
       </>}>
-      <ErrorText error={confirmDrop.error ?? upload.error} />
+      {(confirmDrop.error || upload.error) && <Alert tone="danger" title="Could not open dropped files">
+        {confirmDrop.error ?? upload.error}
+      </Alert>}
     </Dialog>
     <Dialog open={dialog === "new" || dialog === "rename"} onOpenChange={(value) => { if (!value) setDialog(null); }}
       title={dialog === "rename" ? `Rename ${selected?.name ?? ""}` : "New knowledge file"}
