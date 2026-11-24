@@ -38,6 +38,23 @@ describe("ACP session with the fake agent", () => {
     await s.close();
   });
 
+  it("starts a new paragraph when the text resumes after a tool call", async () => {
+    const chunk = (text: string) => ({ send: { jsonrpc: "2.0", method: "session/update", params: { sessionId: "S1", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } } } });
+    const tool = { send: { jsonrpc: "2.0", method: "session/update", params: { sessionId: "S1", update: { sessionUpdate: "tool_call", toolCallId: "T1", title: "Read", kind: "read", status: "pending" } } } };
+    const s = await start([
+      ...init, ...newSession, ...option("mode", "bypassPermissions"), ...option("model", "opus"), ...option("effort", "high"),
+      { expect: "session/prompt" },
+      chunk("I check the "), chunk("agents."), tool, chunk("I see "), chunk("them."),
+      { send: { jsonrpc: "2.0", id: "$id", result: { stopReason: "end_turn" } } },
+    ]);
+    const streamed: string[] = [];
+    const reading: Promise<void> = (async () => { for await (const event of s.events) if (event.type === "text") streamed.push(event.text); })();
+    expect((await s.prompt("x")).text).toBe("I check the agents.\n\nI see them.");
+    await s.close();
+    await reading;
+    expect(streamed.join("")).toBe("I check the agents.\n\nI see them.");
+  });
+
   it("skips an option with an empty value", async () => {
     const s = await start([...init, ...newSession, ...option("mode", "bypassPermissions"), ...option("model", "opus"), ...endTurn("ok")], { effort: null });
     expect((await s.prompt("x")).text).toBe("ok");

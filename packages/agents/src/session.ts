@@ -101,7 +101,7 @@ export async function startSession(p: StartParams): Promise<Session> {
   const { client, init } = await openConnection({ connector, login: p.login, spawn: p.spawn, cwd: p.cwd, secrets, ...(p.requestTimeoutMs !== undefined ? { requestTimeoutMs: p.requestTimeoutMs } : {}) });
   const reader = readerFor(c.reader);
   const events = new AsyncQueue<AgentEvent>();
-  const turn = { text: "", quota: undefined as Quota | undefined, model: undefined as string | undefined, cost: undefined as { amount: number; currency: string } | undefined, context: undefined as TurnResult["context"] };
+  const turn = { text: "", afterTool: false, quota: undefined as Quota | undefined, model: undefined as string | undefined, cost: undefined as { amount: number; currency: string } | undefined, context: undefined as TurnResult["context"] };
   let dropReplay = false;
   let prompting: boolean = false;
 
@@ -118,10 +118,13 @@ export async function startSession(p: StartParams): Promise<Session> {
     const u = (params as { update?: Record<string, unknown> }).update ?? {};
     if (u.sessionUpdate === "agent_message_chunk") {
       if (!prompting) return;
-      const text = (u.content as { text?: string } | undefined)?.text ?? "";
+      const chunk = (u.content as { text?: string } | undefined)?.text ?? "";
+      const text = turn.afterTool && chunk && turn.text && !turn.text.endsWith("\n\n") ? `${turn.text.endsWith("\n") ? "\n" : "\n\n"}${chunk}` : chunk;
+      if (chunk) turn.afterTool = false;
       turn.text += text;
       events.push({ type: "text", text });
     } else if (u.sessionUpdate === "tool_call" || u.sessionUpdate === "tool_call_update") {
+      turn.afterTool = true;
       events.push({ type: "tool_call", toolCallId: String(u.toolCallId ?? ""), title: String(u.title ?? ""), kind: String(u.kind ?? ""), status: String(u.status ?? "") });
     } else if (u.sessionUpdate === "usage_update" && typeof u.used === "number" && typeof u.size === "number") {
       turn.context = { used: u.used, size: u.size };
@@ -195,6 +198,7 @@ export async function startSession(p: StartParams): Promise<Session> {
     raw: client.raw,
     async prompt(content: string | readonly PromptContent[]): Promise<TurnResult> {
       turn.text = "";
+      turn.afterTool = false;
       turn.quota = undefined;
       const at = Date.now();
       let result: { stopReason?: TurnResult["stopReason"] } | undefined;
