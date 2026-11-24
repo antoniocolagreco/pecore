@@ -1,5 +1,5 @@
 import { appName } from "@pecore/schemas";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { NavLink, Outlet } from "react-router";
 import { call } from "../api/client";
@@ -15,17 +15,6 @@ import { SidebarSlot } from "./sidebar";
 import s from "./Layout.module.css";
 
 type Badge = "notifications";
-
-const menuKey = "pecore.menu";
-
-function storedMenu(): boolean {
-  try {
-    const value: string | null = localStorage.getItem(menuKey);
-    return value === null ? window.innerWidth >= 1280 : value === "open";
-  } catch {
-    return true;
-  }
-}
 
 const nav: { group: string | null; items: { to: string; label: string; icon: ReactNode; badge?: Badge }[] }[] = [
   {
@@ -45,17 +34,17 @@ const nav: { group: string | null; items: { to: string; label: string; icon: Rea
 
 export function Layout() {
   const connected = useConnected();
-  const [menu, setMenu] = useState<boolean>(storedMenu);
+  const [menu, setMenu] = useState<boolean>(false);
   const [chatWidth, setChatWidth] = useState<number>();
   const chatDragOffset = useRef<number>(0);
-  const toggleMenu = (): void => {
-    setMenu(!menu);
-    try {
-      localStorage.setItem(menuKey, menu ? "closed" : "open");
-    } catch {
-      return;
-    }
-  };
+  useEffect(() => {
+    const narrow: MediaQueryList = window.matchMedia("(width < 1024px)");
+    const collapse = (event: MediaQueryListEvent): void => {
+      if (event.matches) setMenu(false);
+    };
+    narrow.addEventListener("change", collapse);
+    return () => narrow.removeEventListener("change", collapse);
+  }, []);
   const status = useData(() => call("getStatus"), [], (m) => m.type === "queue.updated" || m.type === "job.updated" || m.type === "notify");
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
   const pause = useAction(() => (status.data?.globalPause ? call("playAll") : call("pauseAll")).then(status.reload));
@@ -68,7 +57,7 @@ export function Layout() {
     <div className={s.shell} data-menu-collapsed={menu ? undefined : ""} style={chatWidth === undefined ? undefined : { "--chat-width": `${chatWidth}px` } as CSSProperties}>
       <nav className={s.sidebar} aria-label="Main" data-collapsed={menu ? undefined : ""}>
         <div className={s.brand}>
-          <IconButton label={menu ? "Hide menu" : "Show menu"} aria-expanded={menu} icon={<SidebarIcon />} onClick={toggleMenu} />
+          <IconButton label={menu ? "Hide menu" : "Show menu"} aria-expanded={menu} icon={<SidebarIcon />} onClick={() => setMenu((open) => !open)} />
           <span className={s.brandName}>{appName}</span>
         </div>
         {nav.map((g) => (
