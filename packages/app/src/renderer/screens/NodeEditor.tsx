@@ -400,15 +400,15 @@ const typeLabels: Record<ArtifactType, string> = {
   text: "Text", diff: "Diff", document: "Document", spec: "Spec", findings: "Findings", reference: "Reference",
 };
 const typeExamples: Record<ArtifactType, string> = {
-  text: "free text, for example why the Spec Writer rejected a ticket, or the log of a check",
-  diff: "code changes. PeCore adds it by itself after a node that changes files",
-  document: "a title and a body, for example the ticket or a pull request description",
-  spec: "acceptance criteria, tests to write and functions to add, as the Spec Writer produces",
-  findings: "problems in specific files, each with a level and a comment, as a code review produces",
-  reference: "something outside the files, for example a commit, a pushed branch or a pull request link",
+  text: "words written freely. For example, the Spec Writer rejects a ticket and explains why, or a check writes what went wrong.",
+  diff: "the changes made to the code, line by line, as you see them in a pull request. You never choose it: PeCore creates it by itself after a node with Changes files on.",
+  document: "a text with a title, such as the ticket you sent or the description of a pull request.",
+  spec: "the plan of the work: what must work at the end, which tests to write and which functions to add. The Spec Writer writes it and the Builder follows it.",
+  findings: "a list of problems found in the code. Each one points to a file and a line, says how serious it is and explains it. A code review writes it and the Builder fixes the problems.",
+  reference: "the address of something outside the code: a commit, a branch pushed to GitHub or the link of a pull request. The nodes that publish the work write it.",
 };
 const typesHelp: ReactNode = <>
-  {ArtifactType.options.map((type) => <span key={type}><br /><strong>{typeLabels[type]}</strong>: {typeExamples[type]}.</span>)}
+  {ArtifactType.options.map((type) => <span key={type}><br /><br /><strong>{typeLabels[type]}</strong>: {typeExamples[type]}</span>)}
 </>;
 const typeOptions: { value: string; label: string }[] = [{ value: "", label: "Nothing" }, ...ArtifactType.options.map((type) => ({ value: type, label: typeLabels[type] }))];
 const ruleKinds: { value: string; label: string }[] = [
@@ -481,7 +481,7 @@ function CommandInputs({ inputs, optional, disabled, onChange }: { inputs: unkno
   const extra: ArtifactType[] = list(optional);
   const group = (label: string, selected: ArtifactType[], other: ArtifactType[], set: (next: ArtifactType[], rest: ArtifactType[]) => void): ReactNode => <div>
     <div className={s.fieldHeading}><span>{label}</span><FieldHelp title={label}>
-      The kinds of data this command needs. The recipe chooses which node each one comes from. Required inputs must exist; optional ones are used when they exist.<br />{typesHelp}
+      The data this command works on, produced by earlier nodes of the job. For example, a command that opens a pull request needs the spec to write its description. Pick the kinds of data it needs: a required one must exist or the recipe cannot be saved; an optional one is used only if it exists. In the recipe you then choose which node it comes from, with Reads from.{typesHelp}
     </FieldHelp></div>
     <Chips label={label}>
       {ArtifactType.options.map((type) => <Chip key={type} pressed={selected.includes(type)} disabled={disabled}
@@ -638,7 +638,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
             <div>
               <div className={s.fieldHeading}><span>{human ? "Notes" : "Outputs"}</span>{help(human ? "Notes" : "Outputs", human
                 ? "Choose the answers that come with a note. The note is text that the nodes reading this one receive."
-                : <>Each outcome can pass data to the nodes that read this one. For each outcome, choose the kind of data this node produces, or Nothing. For example the Spec Writer produces a Spec when it accepts a ticket and a Text with the reason when it rejects it.<br />{typesHelp}</>)}</div>
+                : <>A job is a chain of nodes. Each node does its work and ends with one of its outcomes, for example accepted or rejected. With each outcome it can hand a result to the nodes that come later, which use it to do their own work.<br /><br />For each outcome, choose what this node hands on, or Nothing. For example, the Spec Writer hands on a Spec when it accepts a ticket, so the Builder knows what to build, and a Text with the reason when it rejects it, so you know why.<br /><br />The later nodes receive it only if, in the recipe, they read this node (Reads from).{typesHelp}</>)}</div>
               <OutcomeOutputs kind={kind} outcomes={outcomes} outputs={object(draft.outputs)} rules={object(draft.outputRules)} disabled={!file.editable}
                 onChange={(outputs, outputRules) => updateFields({
                   outputs: Object.keys(outputs).length ? outputs : undefined,
