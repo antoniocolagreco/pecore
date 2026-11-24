@@ -1,7 +1,7 @@
 import { cloneElement, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { ReactElement, ReactNode, Ref } from "react";
 import { Link, useBlocker, useNavigate, useParams } from "react-router";
-import { ApiError, ArtifactType, artifactTypes, HumanInterface, humanInterfaces, isNodeKindTag, Name } from "@pecore/schemas";
+import { ApiError, ArtifactType, HumanInterface, humanInterfaces, isNodeKindTag, Name } from "@pecore/schemas";
 import type { DefinitionFile, Node, RouteResult } from "@pecore/schemas";
 import { basicSetup, EditorView, minimalSetup } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
@@ -399,11 +399,22 @@ const humanFields: Record<HumanInterface, Record<string, unknown>> = {
 const typeLabels: Record<ArtifactType, string> = {
   text: "Text", diff: "Diff", document: "Document", spec: "Spec", findings: "Findings", reference: "Reference",
 };
-const typeOptions: { value: string; label: string }[] = [{ value: "", label: "Nothing" }, ...ArtifactType.options.map((type) => ({ value: type, label: typeLabels[type] }))];
-const ruleKinds: { value: string; label: string }[] = [
-  { value: "stdoutLastLine", label: "Last line of the output" },
-  { value: "stdoutJson", label: "Field of JSON output" },
-  { value: "file", label: "File in the workdir" },
+const typeDetails: Record<ArtifactType, string> = {
+  text: "Free text, such as a reason, a log or a note",
+  diff: "Code changes, shown like a pull request",
+  document: "A title and a body, such as a pull request description",
+  spec: "Acceptance criteria, tests to write and interfaces",
+  findings: "Problems found in files, each with a level and a comment",
+  reference: "A link to something outside the files: commit, branch or URL",
+};
+const typeOptions: { value: string; label: string; detail: string }[] = [
+  { value: "", label: "Nothing", detail: "This outcome passes no data to the next nodes" },
+  ...ArtifactType.options.map((type) => ({ value: type, label: typeLabels[type], detail: typeDetails[type] })),
+];
+const ruleKinds: { value: string; label: string; detail: string }[] = [
+  { value: "stdoutLastLine", label: "Last line of the output", detail: "For example the URL a command prints at the end" },
+  { value: "stdoutJson", label: "Field of JSON output", detail: "The command prints JSON and you name the field" },
+  { value: "file", label: "File in the workdir", detail: "The command writes a file and you give its path" },
 ];
 const ruleHints: Record<string, string> = {
   stdoutLastLine: "Name of the field that stores the line, for example url",
@@ -452,7 +463,7 @@ function OutcomeOutputs({ kind, outcomes, outputs, rules, disabled, onChange }: 
         {human
           ? <Checkbox label={`${outcome}: the person can write a note`} checked={type === "text"} disabled={disabled} onCheckedChange={(checked) => setType(outcome, checked ? "text" : undefined)} />
           : <Select label={`Output of ${outcome}`} options={typeOptions} value={type ?? ""} disabled={disabled}
-            description={type ? artifactTypes[type].description : undefined}
+            description={type ? typeDetails[type] : undefined}
             onValueChange={(value) => setType(outcome, ArtifactType.safeParse(value).data)} />}
         {kind === "command" && type && <>
           <Select label="Read it from" options={ruleKinds} value={ruleKind || null} disabled={disabled}
@@ -472,7 +483,7 @@ function CommandInputs({ inputs, optional, disabled, onChange }: { inputs: unkno
   const group = (label: string, selected: ArtifactType[], other: ArtifactType[], set: (next: ArtifactType[], rest: ArtifactType[]) => void): ReactNode => <div>
     <div className={s.fieldHeading}><span>{label}</span></div>
     <Chips label={label}>
-      {ArtifactType.options.map((type) => <Chip key={type} pressed={selected.includes(type)} disabled={disabled} title={artifactTypes[type].description}
+      {ArtifactType.options.map((type) => <Chip key={type} pressed={selected.includes(type)} disabled={disabled} title={typeDetails[type]}
         onClick={() => set(selected.includes(type) ? selected.filter((t) => t !== type) : [...selected, type], other.filter((t) => t !== type))}>{typeLabels[type]}</Chip>)}
     </Chips>
   </div>;
