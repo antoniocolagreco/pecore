@@ -17,7 +17,7 @@ import { ErrorText, dateTime, time } from "../components/ui";
 import { Button, IconButton } from "../ds/button";
 import { Checkbox, RadioGroup } from "../ds/choice";
 import { TextTable } from "../ds/data";
-import { Alert, Badge, Spinner } from "../ds/feedback";
+import { Alert, Badge, EmptyState, Spinner } from "../ds/feedback";
 import { TextField } from "../ds/field";
 import { ArrowUpIcon, ClipIcon, CompactIcon, SparkIcon, TrashIcon, XIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
@@ -697,6 +697,7 @@ function Chat({ project }: { project: string | null }) {
   const followHistory = useRef<boolean>(true);
   const marked = useRef<string | null>(null);
   const chat: ChatDetail | undefined = detail.data;
+  const empty: boolean = chat?.messages.length === 0 && !chat.streamingReply && !detail.error;
   const lastReply: string = chat?.messages.findLast((message) => message.role === "assistant")?.id ?? "";
   const markRead = useAction(async () => {
     await api.read();
@@ -776,7 +777,11 @@ function Chat({ project }: { project: string | null }) {
         const pane: HTMLDivElement = event.currentTarget;
         followHistory.current = pane.scrollHeight - pane.clientHeight - pane.scrollTop <= 48;
       }}>
-        <div className={s.thread}>
+        {empty ? <div className={s.welcome}>
+          <EmptyState title="Welcome">
+            {projectName === null ? "What can I help you with?" : `What would you like to work on in ${projectName}?`}
+          </EmptyState>
+        </div> : <div className={s.thread}>
           {detail.loading && !chat && <Spinner />}
           {chat?.messages.map((message) => {
             if (isCompaction(message)) return <Compaction key={message.id} message={message} />;
@@ -792,7 +797,7 @@ function Chat({ project }: { project: string | null }) {
                   reload={detail.reload} working={working} />}
             </Fragment>;
           })}
-        </div>
+        </div>}
       </div>
       {ready === false && connected && (
         <div className={s.footnote}>

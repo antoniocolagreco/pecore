@@ -43,6 +43,13 @@
   mask-image: linear-gradient(to bottom, transparent, black 16px);
 }
 
+.welcome {
+  display: grid;
+  min-height: 100%;
+  place-items: center;
+  overflow-wrap: anywhere;
+}
+
 .thread {
   display: flex;
   flex-direction: column;
