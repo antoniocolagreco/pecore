@@ -22,7 +22,6 @@ import { TextField } from "../ds/field";
 import { ArrowUpIcon, ClipIcon, CompactIcon, SparkIcon, TrashIcon, XIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { definitionUrl, object, string } from "./NodeEditor";
-import { harnessName } from "../components/AgentFields";
 import s from "./AssistantChat.module.css";
 
 type SelectedFile = { key: number; file: File; image: boolean; attachmentId?: string };
@@ -680,20 +679,15 @@ function Chat({ project }: { project: string | null }) {
   const connected: boolean = useConnected();
   const settings = useData(() => call("getChatAgentSettings", { query: project === null ? { role: "assistant" } : { role: "pm", project } }), [project],
     (event) => event.type === "project.updated" || (event.type === "definition.changed" && ["agents.json", "settings.json", "profiles.json"].includes(event.path)));
-  const accounts = useData(() => call("getAccounts"), [], (event) => event.type === "definition.changed" && event.path === "accounts.json");
   const projectList = useData(() => call("listProjects"), [], (event) => event.type === "project.updated" || (event.type === "definition.changed" && event.path === "agents.json"));
   const projects: Map<string, ProjectEntry> = new Map((projectList.data ?? []).map(({ id, project: loaded }) => [id, { name: loaded?.name ?? id, pm: loaded?.pm ?? null }]));
   const own: ProjectEntry | undefined = project === null ? undefined : projects.get(project);
   const configured = settings.data?.value;
   const pm: ProjectManagerIdentity | null = configured?.kind === "pm" ? configured : own?.pm ?? null;
   const title: string = configured?.name ?? pm?.name ?? agent;
-  const profile = settings.data?.effectiveModel;
-  const ready: boolean | null = settings.data ? !!profile : null;
-  const allAccounts = accounts.data?.value.accounts ?? [];
-  const account = allAccounts.find(({ id }) => id === profile?.account);
+  const ready: boolean | null = settings.data ? !!settings.data.effectiveModel : null;
   const projectName: string | null = project === null ? null : own?.name ?? project;
-  const subtitle: string | null = projectName !== null ? `Project Manager of ${projectName}`
-    : profile && account ? [harnessName(account, allAccounts), profile.model, profile.effort ?? "default effort"].join(" · ") : null;
+  const subtitle: string | null = projectName !== null ? `Project Manager of ${projectName}` : null;
   const people: ChatTarget & ChatPeople = { ...target, title, pm, projects, projectName };
   const detail = useData(() => api.get(), [], (event) => event.type === "chat.changed" && event.project === project);
   const [query, setQuery] = useSearchParams();
@@ -769,7 +763,7 @@ function Chat({ project }: { project: string | null }) {
     <ChatContext.Provider value={people}>
     <aside className={s.panel} aria-label={agent}><section ref={pane} className={s.pane}>
       <div className={s.toolbar} role="group" aria-label="Conversation controls">
-        {pm && <ProjectManagerAvatar pm={pm} />}
+        {pm ? <ProjectManagerAvatar pm={pm} /> : project === null && <span className={s.avatar} aria-hidden><SparkIcon /></span>}
         <div className={s.heading}>
           <h2 className={s.title}>{title}</h2>
           {subtitle && <span className={s.subtitle} title={subtitle}>{subtitle}</span>}
