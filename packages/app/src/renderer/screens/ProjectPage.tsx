@@ -392,7 +392,7 @@ function ProjectDetails({ id }: { id: string }) {
   return (
     <Page title={project?.name ?? id} fillHeight={activeTab === "knowledge"} actions={project && !view?.creating && <>
       <span ref={setActionSlot} className={ui.row} />
-      <Button variant={activeTab === "jobs" ? "primary" : "secondary"} icon={<PlusIcon />} disabled={!connected} onClick={() => setCreatingJob(true)}>New job</Button>
+      {activeTab === "jobs" && <Button variant="primary" icon={<PlusIcon />} disabled={!connected} onClick={() => setCreatingJob(true)}>New job</Button>}
     </>}>
       {creatingJob && <NewJobDialog id={id} onClose={() => setCreatingJob(false)} />}
       {exporting && <ProjectExportDialog id={id} onClose={() => setExporting(false)} />}
