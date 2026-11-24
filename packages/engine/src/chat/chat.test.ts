@@ -615,6 +615,10 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect(created).toMatchObject({ kind: "agent", name: "Reviewer", model, compaction: { auto: 131_072, max: 262_144 } });
       expect((await run("create_agent", { name: "reviewer", model })).result?.isError).toBe(true);
       const params = { id: created!.id };
+      expect(created?.color).toBeUndefined();
+      expect((await run("update_agent", { ...params, color: "red" })).result?.isError).toBe(true);
+      expect((await run("update_agent", { ...params, color: "#D97757" })).result?.isError).toBeUndefined();
+      expect((await catalog())[0]?.color).toBe("#D97757");
       const { sha256 } = await t.call("getAgentContext", { params });
       expect((await run("get_agent", params)).result?.content?.[0]?.text).toContain(sha256);
       expect((await run("get_agent", { id: "assistant" })).result?.isError).toBe(true);
@@ -633,10 +637,10 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       await answer(cancelled, "cancel");
       await expect(answer(cancelled, "approve")).rejects.toThrow("no longer pending");
       const stale: string = await propose("Reviewer");
-      expect((await run("update_agent", { ...params, name: "Code Reviewer", compaction: { auto: 262_144, max: 524_288 } })).result?.isError).toBeUndefined();
+      expect((await run("update_agent", { ...params, name: "Code Reviewer", color: null, compaction: { auto: 262_144, max: 524_288 } })).result?.isError).toBeUndefined();
       await answer(stale, "approve");
       expect((await t.call("getChat")).actions.find(({ id }) => id === stale)?.target).toMatchObject({ state: "failed" });
-      expect(await catalog()).toEqual([{ ...created, name: "Code Reviewer", compaction: { auto: 262_144, max: 524_288 } }]);
+      expect(await catalog()).toEqual([{ ...created, name: "Code Reviewer", color: null, compaction: { auto: 262_144, max: 524_288 } }]);
       const approved: string = await propose("Code Reviewer");
       expect(await catalog()).toHaveLength(1);
       await answer(approved, "approve");

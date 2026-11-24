@@ -332,3 +332,7 @@
 - Decision: in Settings, AI tools, the tools with no login found and the "Coming soon" tools are hidden when the page opens; a "Show unavailable" button in the card header shows them, and "Hide unavailable" hides them again.
 - Why: the list stays short with only the tools that work.
 - Replaces: every AI tool row always shown.
+
+## Agent card colours
+
+- Agent cards follow the harness colour from Settings. The agent editor uses `ColorPicker` to set an override in `agents.json`. “Use harness colour” clears the override.

@@ -37,7 +37,7 @@ const project = ProjectSelection;
 const ticket = project.extend({ ticketId: id });
 const definition = z.strictObject({ path: id, content: z.string() });
 const catalogAgentId = z.strictObject({ id: Name });
-const catalogAgentFields = NodeAgent.pick({ name: true, compaction: true }).extend({ model: NodeAgent.shape.model.unwrap() });
+const catalogAgentFields = NodeAgent.pick({ name: true, compaction: true, color: true }).extend({ model: NodeAgent.shape.model.unwrap() });
 const agentContext = z.strictObject({ content: z.string().max(1_000_000), baseSha256: z.string().regex(/^[0-9a-f]{64}$/) });
 const artifactLimit = 200_000;
 const artifactInput = z.discriminatedUnion("view", [
@@ -240,13 +240,13 @@ export function chatTools(engine: Engine): {
       if (!engine.global().accounts.accounts.some((entry) => entry.id === account && entry.kind === "model")) throw new NotFoundError(`Model account ${account} not found.`);
       return { value: await engine.accountOptions(account, model, refresh) };
     }),
-    create_agent: tool("Create a reusable agent in Agents. Use a model account from list_agents. Omit compaction to use the default thresholds. To add initial Markdown, use get_agent then write_agent_context with its hash.", catalogAgentFields.partial({ compaction: true }), async (fields) => {
+    create_agent: tool("Create a reusable agent in Agents. Use a model account from list_agents. Omit compaction for default thresholds and color for the harness colour. To add initial Markdown, use get_agent then write_agent_context with its hash.", catalogAgentFields.partial({ compaction: true }), async (fields) => {
       const file = await settings.getAgents();
       const agent: NodeAgent = { ...fields, id: `agent-${randomUUID()}`, kind: "agent", compaction: fields.compaction ?? Compaction.parse({}) };
       await saveAgents({ ...file.value, agents: [...file.value.agents, agent] }, file.sha256);
       return { value: agent, target: { agentId: agent.id, agentName: agent.name } };
     }),
-    update_agent: tool("Edit an existing agent by catalog ID. Omit unchanged fields. When changing the model or effort, supply the complete model selection. When changing compaction, supply both token thresholds.", catalogAgentFields.partial().extend(catalogAgentId.shape), async ({ id, ...fields }) => {
+    update_agent: tool("Edit an existing agent by catalog ID. Omit unchanged fields. Supply the full model selection or both compaction thresholds when changing them. Set color to null to use the harness colour.", catalogAgentFields.partial().extend(catalogAgentId.shape), async ({ id, ...fields }) => {
       const file = await settings.getAgents();
       const agent: NodeAgent = { ...findAgent(file.value, id), ...fields };
       await saveAgents({ ...file.value, agents: file.value.agents.map((entry) => entry.id === id ? agent : entry) }, file.sha256);

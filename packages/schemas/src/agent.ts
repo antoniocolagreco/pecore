@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { SchemaRef, Name } from "./common";
+import { HexColor } from "./harnesses";
 import { Profile } from "./profiles";
 import { ProjectManagerIdentity } from "./project";
 import { AgentTraits, Compaction } from "./settings";
@@ -11,7 +12,7 @@ const agentFields = {
   compaction: Compaction,
 };
 
-export const NodeAgent = z.strictObject({ ...agentFields, kind: z.literal("agent") });
+export const NodeAgent = z.strictObject({ ...agentFields, kind: z.literal("agent"), color: HexColor.nullish() });
 export type NodeAgent = z.infer<typeof NodeAgent>;
 export const ChatAgent = z.discriminatedUnion("kind", [
   z.strictObject({ ...agentFields, kind: z.literal("assistant"), traits: AgentTraits }),

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { ChatAgent, NodeAgentCatalog, Compaction, compactionSizes } from "@pecore/schemas";
+import { ChatAgent, NodeAgentCatalog, Compaction, compactionSizes, harnessColor } from "@pecore/schemas";
 import type { Account, AgentDefinition, AssistantTraitId, ModelAccount, NodeAgent, Role } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useAutoSave, useData } from "../api/hooks";
@@ -27,20 +27,21 @@ function sizeOptions(sizes: readonly number[]): { value: string; label: string }
 function useAgentCatalog() {
   const catalog = useData(() => call("getAgents"), [], (event) => event.type === "definition.changed" && event.path === "agents.json");
   const accounts = useData(() => call("getAccounts"), [], (event) => event.type === "definition.changed" && event.path === "accounts.json");
+  const settings = useData(() => call("getSettings"), [], (event) => event.type === "definition.changed" && event.path === "settings.json");
   const modelAccounts: ModelAccount[] = accounts.data?.value.accounts.filter((account) => account.kind === "model") ?? [];
-  return { catalog, modelAccounts, accountsError: accounts.error };
+  return { catalog, modelAccounts, harnessColors: settings.data?.value.harnessColors, configurationError: accounts.error ?? settings.error };
 }
 
 export function Agents() {
   const navigate = useNavigate();
-  const { catalog, modelAccounts, accountsError } = useAgentCatalog();
+  const { catalog, modelAccounts, harnessColors, configurationError } = useAgentCatalog();
   const connected: boolean = useConnected();
   const agents: NodeAgent[] = catalog.data?.value.agents ?? [];
   const newAgent = <Button variant="primary" icon={<PlusIcon />} disabled={!connected || !catalog.data}
     onClick={() => void navigate("/agents/edit")}>New agent</Button>;
 
   return <Page title="Agents" actions={catalog.data && agents.length === 0 ? undefined : newAgent}>
-    <ErrorText error={catalog.error ?? accountsError} />
+    <ErrorText error={catalog.error ?? configurationError} />
     {catalog.loading && !catalog.data && <ul className={s.list} aria-hidden="true">
       {[0, 1, 2].map((index) => <li key={index}><Skeleton height={338} /></li>)}
     </ul>}
@@ -49,7 +50,7 @@ export function Agents() {
         ? <Card padded><EmptyState icon={<SparkIcon size="md" />} title="No agents yet" action={newAgent} /></Card>
         : <ul className={s.list} aria-label="Agents">
           {agents.map((agent) => <li key={agent.id}>
-            <AgentCard agent={agent} account={modelAccounts.find(({ id }) => id === agent.model?.account)}
+            <AgentCard agent={agent} account={modelAccounts.find(({ id }) => id === agent.model?.account)} harnessColors={harnessColors}
               to={connected ? `/agents/edit/${encodeURIComponent(agent.id)}` : undefined} />
           </li>)}
         </ul>
@@ -59,7 +60,7 @@ export function Agents() {
 
 export function AgentCatalogEditor() {
   const { id } = useParams();
-  const { catalog, modelAccounts, accountsError } = useAgentCatalog();
+  const { catalog, modelAccounts, harnessColors, configurationError } = useAgentCatalog();
   const connected: boolean = useConnected();
   const [draft] = useState<NodeAgent>(() => ({ id: `agent-${crypto.randomUUID()}`, kind: "agent", name: "", model: null, compaction: Compaction.parse({}) }));
   const agent: NodeAgent | undefined = id ? catalog.data?.value.agents.find((entry) => entry.id === id) : draft;
@@ -69,7 +70,7 @@ export function AgentCatalogEditor() {
     {catalog.loading && <Spinner />}
   </Page>;
   return <AgentEditor key={agent.id} initial={agent} title={id ? agent.name : "New agent"} baseSha256={catalog.data.sha256}
-    catalog={catalog.data.value} accounts={modelAccounts} accountsError={accountsError} creating={!id} disabled={!connected} />;
+    catalog={catalog.data.value} accounts={modelAccounts} harnessColors={harnessColors} configurationError={configurationError} creating={!id} disabled={!connected} />;
 }
 
 function CatalogNavigation({ dirty, completed }: { dirty: boolean; completed: boolean }) {
@@ -103,13 +104,14 @@ export function ChatAgentSettings({ role, project }: { role: Role; project?: str
   </>;
 }
 
-function AgentEditor({ initial, baseSha256, catalog, title, accounts, accountsError, scope, effectiveModel, creating, disabled, onSaved, onAutoChange }: {
+function AgentEditor({ initial, baseSha256, catalog, title, accounts, harnessColors = {}, configurationError, scope, effectiveModel, creating, disabled, onSaved, onAutoChange }: {
   initial: AgentDefinition;
   baseSha256: string;
   catalog?: NodeAgentCatalog;
   title: string;
   accounts: Account[];
-  accountsError?: Error | null;
+  harnessColors?: Readonly<Record<string, string>>;
+  configurationError?: Error | null;
   scope?: { role: Role; project?: string };
   effectiveModel?: AgentDefinition["model"];
   creating: boolean;
@@ -182,6 +184,8 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, accountsEr
   const tooLong: boolean = agent.name.trim().length > (agent.kind === "pm" ? 24 : 80);
   const valid: boolean = !!agent.name.trim() && !duplicate && !tooLong && (agent.model === null ? !!scope : !!agent.model.model) && content.length <= 1_000_000;
   const inheritance: string | undefined = scope?.project ? "Project Manager Default" : scope?.role === "pm" ? "Default model" : scope ? "Auto-configured model" : undefined;
+  const modelAccount: Account | undefined = accounts.find(({ id }) => id === agent.model?.account);
+  const connector: string = modelAccount?.kind === "model" ? modelAccount.connector : "";
   const submit = <Button type="submit" form={formId} variant="primary" disabled={!editable || !valid || (!dirty && !contextDirty)}>{saved ? "Save" : "Create"}</Button>;
   const form = <form id={formId} onSubmit={(event) => { event.preventDefault(); if (!onAutoChange && editable && valid && (dirty || contextDirty)) void save.run(); }}>
     <Card title={scope ? title : "Configuration"} actions={scope && !onAutoChange && <PageActions>{submit}</PageActions>}>
@@ -208,6 +212,13 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, accountsEr
               if (max) changeAgent((entry) => ({ ...entry, compaction: { ...entry.compaction, max } }));
             }} />
         </div>
+        {agent.kind === "agent" && <div className={s.colour}>
+          <ColorPicker label="Card colour" description={agent.color ? undefined : "Using the harness colour."}
+            value={agent.color ?? harnessColor(connector, harnessColors)} disabled={!editable}
+            onValueChange={(color) => changeAgent((entry) => entry.kind === "agent" ? { ...entry, color } : entry)} />
+          {agent.color && <Button variant="link" disabled={!editable}
+            onClick={() => changeAgent((entry) => entry.kind === "agent" ? { ...entry, color: null } : entry)}>Use harness colour</Button>}
+        </div>}
         {(agent.kind === "assistant" || (agent.kind === "pm" && scope?.project)) && <Traits value={agent.traits} disabled={!editable}
           onChange={(traits: AssistantTraitId[]) => changeAgent((entry) => entry.kind === "agent" ? entry : { ...entry, traits })} />}
         {scope?.project && <TextArea label="Initial context" rows={5} value={content} onValueChange={changeContent}
@@ -236,7 +247,7 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, accountsEr
   </>}>
     <CatalogNavigation dirty={contextDirty || (dirty && (!creating || edit !== null))} completed={completed} />
     {busy ? <span className={s.hint}>Back to agents</span> : <Link to="/agents" state={restorePageScroll}>Back to agents</Link>}
-    <ErrorText error={accountsError} />
+    <ErrorText error={configurationError} />
     {form}
     {removing && <Dialog open onOpenChange={(open) => { if (!open && !destroy.busy) setRemoving(false); }} title={`Delete ${initial.name}?`} footer={<>
       <Button disabled={destroy.busy} onClick={() => setRemoving(false)}>Cancel</Button>

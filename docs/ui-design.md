@@ -342,7 +342,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 ### Agents
 
-*   Vertical cards in a responsive grid. The title reserves two lines and truncates longer names. Each card contains a harness-coloured emblem and badge, the provider, model, effort and both context thresholds. Click anywhere on the card to open the editor.
+*   Vertical cards in a responsive grid. The title reserves two lines and truncates longer names. Each card shows the harness badge, provider, model, effort and both context thresholds. It uses the harness colour from Settings by default. Click the card to open the editor, choose a custom colour or restore the harness colour.
 
 ### Settings
 

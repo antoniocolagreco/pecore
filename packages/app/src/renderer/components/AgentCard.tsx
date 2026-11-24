@@ -1,14 +1,19 @@
-import { BuiltInHarness } from "@pecore/schemas";
+import { harnessColor, harnesses } from "@pecore/schemas";
 import type { ModelAccount, NodeAgent } from "@pecore/schemas";
+import type { CSSProperties } from "react";
 import { Link } from "react-router";
 import { Badge, Card } from "../ds/feedback";
 import { SparkIcon } from "../ds/icons";
-import { install } from "../shell/SetupBanner";
 import s from "./AgentCard.module.css";
 
-export function AgentCard({ agent, account, to }: { agent: NodeAgent; account?: ModelAccount; to?: string }) {
-  const builtIn: BuiltInHarness | undefined = BuiltInHarness.safeParse(account?.connector).data;
-  const harness: string = builtIn ? install[builtIn].name : account?.connector ?? "No harness";
+export function AgentCard({ agent, account, harnessColors = {}, to }: {
+  agent: NodeAgent;
+  account?: ModelAccount;
+  harnessColors?: Readonly<Record<string, string>>;
+  to?: string;
+}) {
+  const harness: string = harnesses.find(({ id }) => id === account?.connector)?.name ?? account?.connector ?? "No harness";
+  const style: CSSProperties = { "--agent-color": agent.color ?? harnessColor(account?.connector ?? "", harnessColors) } as CSSProperties;
   const contents = <Card className={s.card}>
     <header className={s.header}>
       <h2 title={agent.name}>{agent.name}</h2>
@@ -29,6 +34,6 @@ export function AgentCard({ agent, account, to }: { agent: NodeAgent; account?: 
   </Card>;
 
   return to
-    ? <Link className={s.entry} data-harness={builtIn} to={to} aria-label={agent.name}>{contents}</Link>
-    : <div className={s.entry} data-harness={builtIn}>{contents}</div>;
+    ? <Link className={s.entry} style={style} to={to} aria-label={agent.name}>{contents}</Link>
+    : <div className={s.entry} style={style}>{contents}</div>;
 }
