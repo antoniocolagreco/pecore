@@ -54,7 +54,7 @@ export function Select({
           </BaseSelect.Icon>
         </BaseSelect.Trigger>
         <BaseSelect.Portal>
-          <BaseSelect.Positioner className={s.positioner} sideOffset={6}>
+          <BaseSelect.Positioner className={s.positioner} sideOffset={6} alignItemWithTrigger={false}>
             <BaseSelect.Popup className={s.popup}>
               <BaseSelect.ScrollUpArrow className={s.scrollArrow}><ChevronUpIcon /></BaseSelect.ScrollUpArrow>
               <BaseSelect.List className={s.list}>
