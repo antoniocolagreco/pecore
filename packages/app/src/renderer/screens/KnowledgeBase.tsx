@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent, ReactNode } from "react";
+import type { DragEvent } from "react";
 import { KnowledgeFileName } from "@pecore/schemas";
 import type { DefinitionEntry } from "@pecore/schemas";
 import { call } from "../api/client";
@@ -29,8 +29,8 @@ function links(entry: DefinitionEntry): string[] {
   return Array.isArray(value) ? value.filter((link): link is string => typeof link === "string") : [];
 }
 
-function KnowledgeFile({ path, name, creating, names, actions, onCreated, onDirty }: {
-  path: string; name: string; creating: boolean; names: string; actions: ReactNode; onCreated(): void; onDirty(dirty: boolean): void;
+function KnowledgeFile({ path, name, creating, names, onCreated, onDirty }: {
+  path: string; name: string; creating: boolean; names: string; onCreated(): void; onDirty(dirty: boolean): void;
 }) {
   const creation: NewDefinition | undefined = useMemo(
     () => creating ? { content: `# ${name.slice(0, -3)}\n`, path: () => path } : undefined,
@@ -42,7 +42,6 @@ function KnowledgeFile({ path, name, creating, names, actions, onCreated, onDirt
   return <div className={s.editor}>
     <header className={s.editorHeader}>
       <h2>{name}</h2>
-      {actions && <span className={s.headerActions}>{actions}</span>}
     </header>
     <PageActions>{file.saveButton()}</PageActions>
     {file.feedback}
@@ -144,7 +143,10 @@ export function KnowledgeBase({ id }: { id: string }) {
       <PageActions>
         <Button disabled={!connected} onClick={() => open("new")}>New file</Button>
         <Button disabled={!connected || upload.busy} onClick={() => input.current?.click()}>{upload.busy ? "Uploading…" : "Upload"}</Button>
-        {selected && !selected.creating && <Button variant="danger" disabled={!connected || remove.busy} onClick={() => open("delete")}>Delete file</Button>}
+        {selected && !selected.creating && <>
+          <Button disabled={!connected} onClick={() => open("rename")}>Rename</Button>
+          <Button variant="danger" disabled={!connected || remove.busy} onClick={() => open("delete")}>Delete file</Button>
+        </>}
       </PageActions>
       <input ref={input} type="file" accept=".md,text/markdown" multiple hidden onChange={(event) => {
         const chosen: File[] = [...(event.target.files ?? [])];
@@ -162,8 +164,7 @@ export function KnowledgeBase({ id }: { id: string }) {
     <Card className={s.content} padded>
       {selected
         ? <KnowledgeFile key={`${selected.name}:${selected.creating}`} path={`${dir}/${selected.name}`} name={selected.name} creating={selected.creating}
-          names={names.join("\n")} onCreated={created} onDirty={setDirty}
-          actions={!selected.creating && <Button disabled={!connected} onClick={() => open("rename")}>Rename</Button>} />
+          names={names.join("\n")} onCreated={created} onDirty={setDirty} />
         : <div className={s.editor}>
           <div className={s.editorHeader} aria-hidden />
           <div className={s.desk}>
