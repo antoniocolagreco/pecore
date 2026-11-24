@@ -162,8 +162,8 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 *   Window: menu on the left, the page in the centre, the Assistant chat on the right. By default the chat takes 30% of the width, between 300 and 380 px.
 *   The menu collapses and expands with a button at the top left. The choice is remembered; the first time, the menu starts collapsed below 1280 px of width. Collapsed, it is a column of icons, each showing its name on pointing.
 *   The chat panel's width changes by dragging its left edge or with the arrow keys on it.
-*   One list, without group titles. Order: Factory, Projects, Jobs, Notifications (IA2), Templates, Agents, Settings.
-*   Under the list, the open page's own sub-navigation: Settings sections.
+*   One list, without group titles. Order: Factory, Projects, Jobs, Notifications (IA2), Templates, Agents, Settings, Showcase.
+*   Under the list, the open page's own sub-navigation: Settings sections, Showcase sections.
 *   Note: a project's recipes, nodes and settings are reached through Projects; the node editor and the job view are detail pages, not menu items.
 *   Page width follows the content: pages with tables, lists or graphs (Factory, Jobs, Projects, Notifications, a project page, a job) use the full width; pages that are only a form or text to read (Settings, the wizards) are centred with a maximum width. Inside a full-width page, a form keeps its maximum width and stays aligned to the left with the tabs.
 
@@ -388,7 +388,7 @@ Every page follows these rules; an exception is written in that page's section.
 
 ### Controls
 
-*   Every control comes from the design system in `packages/app/src/renderer/ds/`. The showcase (`pnpm showcase`, a browser page from `src/renderer/gallery/`) shows every component; a new or changed component is added there too.
+*   Every control comes from the design system in `packages/app/src/renderer/ds/`. The Showcase page (menu item Showcase; also `pnpm showcase` in a browser, without the engine) is the design system's reference for people and coding agents: its rules, every colour, text and size token with its use, the icons, cards and panels, and every component, with a theme preview (App, Light, Dark and each built-in theme) that is restored on leaving the page. Its source is `src/renderer/gallery/`. Read it before any UI change; a new or changed component or token is added there in the same commit.
 *   A select and a combobox look the same: same arrow, no clear button. A focused field shows one focus ring.
 *   Engine or WebSocket disconnected: a banner "Disconnected, reconnecting", every control disabled, data marked stale. On reconnect the GUI refetches every open view.
 
@@ -475,7 +475,7 @@ Every size lives in `ds/tokens.css`; components use only these variables, never 
 
 | Token | Value | Use |
 |---|---|---|
-| `--text-size-sm`, base `--text-size`, `-md`, `-lg`, `-xl` | 14, 15, 16, 18, 26 px | captions, badges, table headers, secondary text, logs and code; body and controls; chat messages and emphasis; section and dialog titles; page titles. No text is smaller than 14 px: no `xs` size, no text shrunk with `scale`, and third-party defaults (graph nodes and labels, `<small>`) are set to `--text-size-sm` |
+| `--text-size-sm`, base `--text-size`, `-md`, `-lg`, `-xl` | 14, 15, 16, 18, 26 px | captions, badges, table headers, secondary text, chat messages and the chat input, logs and code; body and controls; emphasis; section and dialog titles; page titles. No text is smaller than 14 px: no `xs` size, no text shrunk with `scale`, and third-party defaults (graph nodes and labels, `<small>`) are set to `--text-size-sm` |
 | `--line-height` | 1.5 | body text |
 | `--control-h-lg`, `--control-h`, `--control-h-sm` | 42, 36, 30 px | buttons, fields, selects |
 | `--row-h-lg`, `--row-h`, `--row-h-sm` | 44, 34, 30 px | table rows, menu and list rows, popup and menu items |

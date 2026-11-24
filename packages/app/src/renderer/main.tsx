@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { createHashRouter, Navigate, RouterProvider } from "react-router";
 import { startLive } from "./api/live";
+import { Showcase } from "./gallery/Showcase";
 import { Layout } from "./shell/Layout";
 import { ThemeLoader } from "./theme/ThemeLoader";
 import * as screens from "./screens";
@@ -29,6 +30,7 @@ const router = createHashRouter([
       { path: "/agents", element: <screens.Agents /> },
       { path: "/agents/edit/:id?", element: <screens.AgentCatalogEditor /> },
       { path: "/settings", element: <screens.Settings /> },
+      { path: "/showcase", element: <Showcase /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],
   },

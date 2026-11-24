@@ -278,3 +278,15 @@
 - Decision: chat replies and job reports render GitHub Markdown (`remark-gfm`), so tables show as tables, with the design system table.
 - Why: agents often write tables; without it a table showed as one run-on line of pipes.
 - Replaces: plain Markdown without tables, strikethrough or task lists.
+
+## 2026-11-24: Chat text at 14 px
+
+- Decision: chat messages and the chat input use `--text-size-sm` (14 px).
+- Why: the author found 16 px too large in the side panel.
+- Replaces: `--text-size-md` (16 px) for chat messages and input.
+
+## 2026-11-24: Showcase page as the design system reference
+
+- Decision: the component gallery becomes the Showcase page, a menu item in the app (and still `pnpm showcase` in a browser). It shows the rules, every colour, text and size token with its use, the icons, cards and panels and every component, with a theme preview restored on leaving the page. People and coding agents read it before UI work; a new or changed component or token is added there in the same commit.
+- Why: one visible reference stops screens from drifting into their own colours, sizes and controls.
+- Replaces: the browser-only gallery with components only.
