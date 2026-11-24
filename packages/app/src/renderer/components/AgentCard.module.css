@@ -39,25 +39,20 @@ a.entry:is(:hover, :focus-visible) .card {
 }
 
 .header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
   padding: 1px 2px;
 }
 
 .header h2 {
+  display: -webkit-box;
+  height: 2lh;
   margin: 0;
+  overflow: hidden;
   font-size: var(--text-size-lg);
   font-weight: 650;
   line-height: 1.25;
   overflow-wrap: anywhere;
-}
-
-.header > svg {
-  flex: none;
-  color: var(--text-2);
-  margin-top: 3px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .art {

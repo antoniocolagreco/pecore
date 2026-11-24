@@ -2,7 +2,7 @@ import { BuiltInHarness } from "@pecore/schemas";
 import type { ModelAccount, NodeAgent } from "@pecore/schemas";
 import { Link } from "react-router";
 import { Badge, Card } from "../ds/feedback";
-import { ArrowRightIcon, SparkIcon } from "../ds/icons";
+import { SparkIcon } from "../ds/icons";
 import { install } from "../shell/SetupBanner";
 import s from "./AgentCard.module.css";
 
@@ -11,8 +11,7 @@ export function AgentCard({ agent, account, to }: { agent: NodeAgent; account?: 
   const harness: string = builtIn ? install[builtIn].name : account?.connector ?? "No harness";
   const contents = <Card className={s.card}>
     <header className={s.header}>
-      <h2>{agent.name}</h2>
-      {to && <ArrowRightIcon />}
+      <h2 title={agent.name}>{agent.name}</h2>
     </header>
     <div className={s.art}>
       <div className={s.emblem} aria-hidden="true"><SparkIcon size="md" /></div>
