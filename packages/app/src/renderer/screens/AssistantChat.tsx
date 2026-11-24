@@ -2,7 +2,7 @@ import { ChatConfirmationRow, ChatForm, ChatImageMime, ExportFinding, ImportProj
 import type { ChatActionView, ChatAttachmentView, ChatDetail, ChatFormAnswer, ChatFormAnswers, ChatFormQuestion, ChatMessageView, ChatSender, ProjectManagerIdentity } from "@pecore/schemas";
 import { ProjectManagerAvatar } from "../components/ProjectManager";
 import { Fragment, createContext, useContext, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties, ReactNode, RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import ReactMarkdown from "react-markdown";
 import { Link, useLocation, useSearchParams } from "react-router";
 import remarkGfm from "remark-gfm";
@@ -462,8 +462,7 @@ function Message({ message, attachments, actions, connected, reload, working = f
     }}>{shown}</ReactMarkdown>
   </div>;
   return (
-    <article className={`${s.message} ${user ? s.user : s.assistant} ${sender ? s.forwarded : ""} ${!user && speaker ? s.tinted : ""}`}
-      style={!user && speaker ? { "--pm": speaker.color } as CSSProperties : undefined}>
+    <article className={`${s.message} ${user ? s.user : s.assistant} ${sender && sender !== "pm" ? s.forwarded : ""}`}>
       {!user && (speaker ? <ProjectManagerAvatar pm={speaker} /> : <span className={s.avatar} aria-hidden><SparkIcon /></span>)}
       <div className={s.body}>
         <div className={s.meta}>
@@ -685,16 +684,16 @@ function Chat({ project }: { project: string | null }) {
   const projectList = useData(() => call("listProjects"), [], (event) => event.type === "project.updated" || (event.type === "definition.changed" && event.path === "agents.json"));
   const projects: Map<string, ProjectEntry> = new Map((projectList.data ?? []).map(({ id, project: loaded }) => [id, { name: loaded?.name ?? id, pm: loaded?.pm ?? null }]));
   const own: ProjectEntry | undefined = project === null ? undefined : projects.get(project);
-  const pm: ProjectManagerIdentity | null = own?.pm ?? null;
   const configured = settings.data?.value;
+  const pm: ProjectManagerIdentity | null = configured?.kind === "pm" ? configured : own?.pm ?? null;
   const title: string = configured?.name ?? pm?.name ?? agent;
   const profile = settings.data?.effectiveModel;
   const ready: boolean | null = settings.data ? !!profile : null;
   const allAccounts = accounts.data?.value.accounts ?? [];
   const account = allAccounts.find(({ id }) => id === profile?.account);
   const projectName: string | null = project === null ? null : own?.name ?? project;
-  const modelParts: string[] = profile && account ? [harnessName(account, allAccounts), profile.model, profile.effort ?? "default effort"] : [];
-  const model: string | null = [...projectName === null ? [] : [pm ? `${agent} · ${projectName}` : projectName], ...modelParts].join(" · ") || null;
+  const subtitle: string | null = projectName !== null ? `Project Manager of ${projectName}`
+    : profile && account ? [harnessName(account, allAccounts), profile.model, profile.effort ?? "default effort"].join(" · ") : null;
   const people: ChatTarget & ChatPeople = { ...target, title, pm, projects, projectName };
   const detail = useData(() => api.get(), [], (event) => event.type === "chat.changed" && event.project === project);
   const [query, setQuery] = useSearchParams();
@@ -773,7 +772,7 @@ function Chat({ project }: { project: string | null }) {
         {pm && <ProjectManagerAvatar pm={pm} />}
         <div className={s.heading}>
           <h2 className={s.title}>{title}</h2>
-          {model && <span className={s.model}>{model}</span>}
+          {subtitle && <span className={s.subtitle} title={subtitle}>{subtitle}</span>}
         </div>
         <IconButton label="Compact conversation" icon={<CompactIcon />} disabled={!canCompact} loading={compact.busy} onClick={() => void compact.run()} />
         <IconButton label="Clear conversation" icon={<TrashIcon />} disabled={!canManage || !chat?.messages.length} loading={clear.busy} onClick={() => {

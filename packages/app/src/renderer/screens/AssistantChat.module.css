@@ -40,7 +40,7 @@
   color: var(--text);
 }
 
-.model {
+.subtitle {
   overflow: hidden;
   font-size: var(--text-size-sm);
   color: var(--text-3);
@@ -219,14 +219,6 @@
 .forwarded .bubble {
   padding: 2px 0 2px 12px;
   box-shadow: inset 2px 0 0 var(--separator);
-}
-
-.tinted .bubble {
-  padding: 9px 13px;
-  border-radius: 16px;
-  border-bottom-left-radius: 6px;
-  background: color-mix(in srgb, var(--pm) 14%, var(--surface));
-  box-shadow: 0 0 0 0.5px var(--separator), 0 1px 3px rgb(0 0 0 / 0.05);
 }
 
 .more {
