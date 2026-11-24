@@ -10,9 +10,10 @@ function light(color: string): boolean {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.45;
 }
 
-export function ProjectManagerAvatar({ pm }: { pm: ProjectManagerIdentity }) {
+export function ProjectManagerAvatar({ pm, compact = false }: { pm: ProjectManagerIdentity; compact?: boolean }) {
   return (
-    <span className={`${s.avatar} ${light(pm.color) ? s.light : ""}`} style={{ "--pm": pm.color } as CSSProperties} aria-hidden>
+    <span className={[s.avatar, compact && s.compact, light(pm.color) && s.light].filter(Boolean).join(" ")}
+      style={{ "--pm": pm.color } as CSSProperties} aria-hidden>
       {pm.name.slice(0, 1).toUpperCase()}
     </span>
   );

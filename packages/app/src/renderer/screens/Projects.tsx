@@ -22,7 +22,7 @@ export function ProjectsSidebar({ active }: { active?: string }) {
   return <SidebarSection title="Projects" label="Projects list">
     {projects.data.map(({ id, project, creating }) => <SidebarItem key={id} to={creating ? `/projects/new?resume=${id}` : `/projects/${id}`} active={id === active}>
       <span className={s.sidebarProject}>
-        {project?.pm && <ProjectManagerAvatar pm={project.pm} />}
+        {project?.pm && <ProjectManagerAvatar pm={project.pm} compact />}
         <span>{project?.name ?? id}</span>
       </span>
     </SidebarItem>)}

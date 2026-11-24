@@ -13,6 +13,13 @@
   line-height: 1;
 }
 
+.compact {
+  width: var(--icon-size);
+  height: var(--icon-size);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-size-sm);
+}
+
 .light {
   color: color-mix(in srgb, var(--pm) 30%, black);
 }
