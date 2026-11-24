@@ -24,14 +24,18 @@
   height: clamp(16rem, 50vh, 34rem);
 }
 
-.paperEditor {
-  --paper-ink: var(--text);
+.paperSurface {
   --paper-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 2px 4px rgb(0 0 0 / 0.06), 0 12px 28px -12px rgb(0 0 0 / 0.14);
   overflow: hidden;
   border: 1px solid var(--control-border);
   border-radius: var(--radius);
   background: linear-gradient(var(--control-bg), var(--control-bg)) var(--surface);
   box-shadow: var(--paper-shadow), 0 0 0 0 transparent;
+}
+
+.paperEditor {
+  composes: paperSurface;
+  --paper-ink: var(--text);
   transition: border-color var(--fast) ease, box-shadow var(--medium) var(--ease-out);
 }
 

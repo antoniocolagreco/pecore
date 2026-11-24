@@ -14,6 +14,7 @@ import { TextField } from "../ds/field";
 import { Dialog } from "../ds/overlay";
 import { DefinitionErrors, object, Sidecar, useDefinitionDraft } from "./NodeEditor";
 import type { NewDefinition } from "./NodeEditor";
+import editorStyles from "./Editors.module.css";
 import s from "./KnowledgeBase.module.css";
 
 type Selection = { name: string; creating: boolean };
@@ -164,7 +165,7 @@ export function KnowledgeBase({ id }: { id: string }) {
           names={names.join("\n")} onCreated={created} onDirty={setDirty}
           actions={!selected.creating && <Button disabled={!connected} onClick={() => open("rename")}>Rename</Button>} />
         : <div className={s.desk}>
-          <div className={`${s.sheet} ${s.blank}`}>
+          <div className={`${editorStyles.paperSurface} ${s.sheet} ${s.blank}`}>
             <p>Select a file, create one, or upload or drop Markdown files here.</p>
             <p>A node gives its agent the files assigned to it and the files they link to. Link another file by its name, for example [naming](naming.md).</p>
           </div>
