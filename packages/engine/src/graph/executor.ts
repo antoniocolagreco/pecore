@@ -856,7 +856,7 @@ export class JobExecutor {
                 onStart,
                 effect: effectRecorder(this.ctx.db, job.id, run.id, run.node),
               })
-            : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, sessionGroup, { wd, context, inputs, log, onStart, env: servicesEnv, continuation: resumed, sidecars });
+            : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, sessionGroup, { wd, context, inputs, log, onStart, env: servicesEnv, continuation: resumed, sidecars, knowledge: definitions?.knowledgeByStep });
         this.running.delete(job.id);
         if (result.log) log.write({ dir: "cmd", text: result.log, at: Date.now() });
         await log.close();
@@ -1062,7 +1062,7 @@ export class JobExecutor {
     profile: AgentProfile,
     attemptId: string,
     sessionGroup: string | null,
-    x: { wd: string; context: CommandRun["context"]; inputs: CommandRun["inputs"]; log: LogWriter; onStart: (pgid: number, user: string) => void; env: Record<string, string>; continuation: (QuestionSubject & AgentContinuation) | null; sidecars: CommandRun["sidecars"] },
+    x: { wd: string; context: CommandRun["context"]; inputs: CommandRun["inputs"]; log: LogWriter; onStart: (pgid: number, user: string) => void; env: Record<string, string>; continuation: (QuestionSubject & AgentContinuation) | null; sidecars: CommandRun["sidecars"]; knowledge: JobDefinitions["knowledgeByStep"] },
   ): Promise<Attempt> {
     const agents = this.ctx.agents!;
     const account = agents.account(profile.account);
@@ -1090,7 +1090,7 @@ export class JobExecutor {
       context: x.context,
       inputs: x.inputs,
       attachments,
-      knowledge: await this.knowledgeFiles(node.knowledge),
+      knowledge: await this.knowledgeFiles(x.knowledge && Object.hasOwn(x.knowledge, run.node) ? x.knowledge[run.node]! : node.knowledge),
       development: this.ctx.development ?? false,
       connector,
       login,

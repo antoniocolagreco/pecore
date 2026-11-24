@@ -306,6 +306,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 ### Recipe editor
 
 *   Edit a shared recipe in Templates. Duplicate opens a new copy with the same graph. In a project's Recipes tab, Add to project selects a template and Remove clears the selection.
+*   Open a recipe from the project's Recipes tab and select an agent node to attach files from that project's Knowledge. Save applies the selection to that project and step.
 *   Drag nodes from the horizontal palette into the graph. Grab the palette and drag sideways to scroll. The field in its title bar filters names and tags. A node looks the same everywhere: the palette, the card dragged into the graph, the graph itself and the job graph use the Templates node card (large icon, two-line title, kind badge, kind-coloured left stripe). In the graph, the step name sits under the card when it differs from the template's. Start and End keep their green or red fill, border and centred label, in the card's size and rounded corners, with a left stripe in the same colour. Agent, Command and Human use distinct labels and colours in the palette, graph and inspector.
 *   Hover over a node to reveal the free connection point on each side. Drop an arrow on the target card to let it choose the entry side, or on a specific point to fix that side. Each arrow has its own attachment at both ends and routes as its nodes move.
 *   The background shows small square grid lines. Drag freely and release to snap to a larger, invisible cell. A drop on an occupied cell returns the node to its previous position.
@@ -324,11 +325,10 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 ### Node editor
 
 *   Opened from a recipe or from Templates. New Node offers Command, Agent, Human Decision and Human Review. The Human Decision template offers Yes and No by default. Set the question on the recipe step.
-*   Form with the fields of the node's kind (agent, command, human, source); prompt in Markdown and script in shell with CodeMirror; a JSON tab for the whole file.
+*   The node fields and its prompt or script are in one card. Node Context uses the Knowledge Markdown editor. The app manages the file name. Scripts use the code editor.
 *   Creating and editing show the same fields, each with an info icon that explains it. A command is one line written as in a terminal (`npx --no-install eslint .`, quotes around an argument with spaces); a command node shows Command or Script file, whichever it uses, and a source node shows the command or script of each action. Runs as is a checkbox, "Use source control credentials", off by default: on only for commands that act on GitHub or GitLab with the user's account, such as push, pull request or issue comment (`runsAs: engine`).
-*   An agent node has a Knowledge field: a multi-select of the knowledge file names found in the projects. Each project gives the agent its own file with that name and the files it links to.
 *   Validation errors next to the field. Save is disabled while the draft is invalid. The draft lives in memory until saved or discarded; leaving the page with an unsaved draft asks first.
-*   No autosave: Save writes the file.
+*   Save in the page header writes the changed node fields and prompt or script.
 *   Saved changes affect new jobs. Existing jobs keep their saved definitions.
 
 ### Templates

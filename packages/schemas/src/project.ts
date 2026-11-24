@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { agentColors } from "./colors";
-import { JsonSchemaObject, Name, SchemaRef } from "./common";
+import { JsonSchemaObject, KnowledgeFileName, Name, SchemaRef } from "./common";
 
 export const ProjectId = z.string().regex(/^[a-z][a-z0-9-]{0,23}$/, "lower case letters, digits and dashes, starting with a letter, at most 24");
 
@@ -45,6 +45,7 @@ const ProjectDefinition = z
     baseBranch: z.string().min(1).default("main"),
     createRepo: Name.nullable().default(null),
     recipes: z.array(Name).optional(),
+    recipeKnowledge: z.record(Name, z.record(Name, z.array(KnowledgeFileName))).optional(),
     variables: JsonSchemaObject.optional(),
     credentials: z.record(z.string(), z.string().min(1)).optional(),
     services: z.string().min(1).nullable().default(null),

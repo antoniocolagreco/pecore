@@ -1,5 +1,5 @@
-import { cloneElement, useEffect, useRef, useState } from "react";
-import type { ReactElement, ReactNode } from "react";
+import { cloneElement, useEffect, useImperativeHandle, useRef, useState } from "react";
+import type { ReactElement, ReactNode, Ref } from "react";
 import { Link, useBlocker, useNavigate, useParams } from "react-router";
 import { ApiError, HumanMode, isNodeKindTag, Name, normalizeLegacyHumanNode, ReviewView } from "@pecore/schemas";
 import type { DefinitionFile, Node, RouteResult } from "@pecore/schemas";
@@ -25,7 +25,7 @@ import { Checkbox } from "../ds/choice";
 import { TextArea, TextField } from "../ds/field";
 import { NumberField } from "../ds/values";
 import { Dialog, FieldHelp } from "../ds/overlay";
-import { MultiCombobox, Select } from "../ds/select";
+import { Select } from "../ds/select";
 import { nodeKindLabels } from "../components/NodeCard";
 import s from "./Editors.module.css";
 
@@ -61,7 +61,7 @@ export type NewDefinition = { content: string; path(content: string): string };
 export function useDefinitionDraft(existingPath: string, sidecar = false, creation?: NewDefinition, revalidate = "") {
   const connected: boolean = useConnected();
   const remote = useData(async (): Promise<Snapshot> => {
-    if (creation) return { content: creation.content, sha256: null };
+    if (creation || !existingPath) return { content: creation?.content ?? "", sha256: null };
     try {
       return await call("getDefinition", { params: { path: existingPath } });
     } catch (error) {
@@ -140,6 +140,7 @@ export function useDefinitionDraft(existingPath: string, sidecar = false, creati
       setBase(baseline);
       setChanged(true);
       setCompared(undefined);
+      throw error;
     } finally {
       saving.current = false;
       const notice = pending.current;
@@ -170,10 +171,12 @@ export function useDefinitionDraft(existingPath: string, sidecar = false, creati
   const errors = validation?.content === content ? validation.result?.errors : undefined;
   const warnings = validation?.content === content ? validation.result?.warnings : undefined;
   const canSave: boolean = connected && !!path && !save.busy && !compare.busy && !reload.busy && (sidecar || errors?.length === 0);
+  const canCommit: boolean = canSave && dirty && !changed;
 
   return {
     content, dirty, ready: !!baseline && (!!creation || sidecar || baseline.sha256 !== null || dirty), errors, warnings, savedPath,
     sha256: baseline?.sha256 ?? null,
+    canCommit, canWrite: canSave && !changed, commit: save.run,
     editable: connected && !save.busy && !reload.busy,
     update(value: string): void { if (!base && baseline) setBase(baseline); setDraft(value); },
     feedback: <>
@@ -190,7 +193,7 @@ export function useDefinitionDraft(existingPath: string, sidecar = false, creati
         {compared && <div className={s.compare}><div>On disk<pre>{compared.sha256 === null ? "File removed" : compared.content}</pre></div><div>Mine<pre>{content}</pre></div></div>}
       </Card>}
     </>,
-    saveButton: (disabled = false): ReactNode => <Button variant="primary" disabled={disabled || !canSave || !dirty || changed} onClick={() => void save.run()}>Save{sidecar ? " file" : ""}</Button>,
+    saveButton: (disabled = false): ReactNode => <Button variant="primary" disabled={disabled || !canCommit} onClick={() => void save.run()}>Save</Button>,
   };
 }
 
@@ -341,14 +344,23 @@ export function Sidecar({ content, disabled, change, isMarkdown, errors = noIssu
   return <div ref={parent} className={className} />;
 }
 
-function SidecarFile({ path, name, isMarkdown, onDirty }: { path: string; name: string; isMarkdown: boolean; onDirty(dirty: boolean): void }) {
+type SidecarStatus = { path: string; ready: boolean; dirty: boolean; missing: boolean; canCommit: boolean };
+type SidecarHandle = { commit(): Promise<boolean> };
+
+function SidecarFile({ path, name, isMarkdown, disabled, onStatus, ref }: {
+  path: string; name: string; isMarkdown: boolean; disabled: boolean;
+  onStatus(status: SidecarStatus): void; ref: Ref<SidecarHandle>;
+}) {
   const file = useDefinitionDraft(path, true);
-  useEffect(() => { onDirty(file.dirty); return () => onDirty(false); }, [file.dirty, onDirty]);
-  return <Card padded>
-    <h2>{isMarkdown ? "Prompt" : "Script"} <code>{name}</code></h2>
+  useImperativeHandle(ref, () => ({ commit: file.commit }), [file.commit]);
+  useEffect(() => onStatus({ path, ready: file.ready, dirty: file.dirty, missing: file.sha256 === null, canCommit: file.canWrite }),
+    [path, file.ready, file.dirty, file.sha256, file.canWrite, onStatus]);
+  return <section className={s.sidecar}>
+    <h2>{isMarkdown ? "Node Context" : <>Script <code>{name}</code></>}</h2>
     {file.feedback}
-    {file.ready && <><Sidecar content={file.content} change={file.update} disabled={!file.editable} isMarkdown={isMarkdown} />{file.saveButton()}</>}
-  </Card>;
+    {file.ready && <Sidecar content={file.content} change={file.update} disabled={disabled || !file.editable}
+      isMarkdown={isMarkdown} paper={isMarkdown} className={isMarkdown ? s.prompt : undefined} />}
+  </section>;
 }
 
 function parseCommand(text: string): string[] {
@@ -420,8 +432,11 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   const creation: NewDefinition | undefined = newTemplate ? newNodeTemplate : undefined;
   const file = useDefinitionDraft(path, false, creation);
   const icons = useDefinitionIcons();
-  const [sidecarDirty, setSidecarDirty] = useState(false);
+  const [sidecarStatus, setSidecarStatus] = useState<SidecarStatus>();
   const [sidecarName, setSidecarName] = useState("");
+  const [newContextFile] = useState(() => newTemplate ? `node-context-${crypto.randomUUID()}.md` : "");
+  const sidecar = useRef<SidecarHandle>(null);
+  const sidecarDirty: boolean = sidecarStatus?.dirty ?? false;
   const warn = useUnsaved(file.dirty || sidecarDirty);
   useEffect(() => {
     if (file.savedPath) void navigate(definitionUrl("node", file.savedPath), { replace: true });
@@ -434,16 +449,21 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   const reviewView: ReviewView | undefined = ReviewView.safeParse(draft?.reviewView).data;
   const tags: string[] = Array.isArray(draft?.tags) ? draft.tags.map(string) : [];
   const descriptiveTags: string[] = tags.filter((tag) => !isNodeKindTag(tag));
-  const knowledge: string[] = Array.isArray(draft?.knowledge) ? draft.knowledge.map(string).filter(Boolean) : [];
-  const knowledgeNames = useData(async () => {
-    const projects = await call("listProjects");
-    const lists = await Promise.all(projects.map(({ id }) => call("listDefinitions", { query: { dir: `projects/${id}/knowledge` } }).catch(() => [])));
-    return [...new Set(lists.flat().map(({ path }) => path.slice(path.lastIndexOf("/") + 1)))].sort();
-  }, []);
   const definitionPath: string = creation ? creation.path(file.content) : path;
   const reference: string = string(draft?.[kind === "agent" ? "prompt" : "script"]);
   const validSidecar: string = (kind === "agent" && /^[\w.-]+\.md$/.test(reference)) || (kind === "command" && /^[\w.-]+\.sh$/.test(reference)) ? reference : "";
   useEffect(() => { if (!sidecarDirty) setSidecarName(validSidecar); }, [validSidecar, sidecarDirty]);
+  const sidecarPath: string = definitionPath && sidecarName ? definitionPath.slice(0, definitionPath.lastIndexOf("/") + 1) + sidecarName : "";
+  const needsContext: boolean = newTemplate && kind === "agent";
+  const saveSidecar: boolean = sidecarDirty || (needsContext && sidecarStatus?.missing === true);
+  const saveDefinition: boolean = file.dirty && (!sidecarDirty || sidecarName === validSidecar);
+  const save = useAction(async () => {
+    if (saveSidecar && !await sidecar.current?.commit()) return;
+    if (saveDefinition) await file.commit();
+  });
+  const editable: boolean = file.editable && !save.busy;
+  const canSave: boolean = editable && (saveDefinition || sidecarDirty) && (!saveDefinition || file.canCommit) &&
+    (!needsContext || (sidecarStatus?.path === sidecarPath && sidecarStatus.ready)) && (!saveSidecar || sidecarStatus?.canCommit === true);
   const update = (key: string, value: unknown): void => file.update(JSON.stringify({
     ...draft, ...(descriptiveTags.length !== tags.length ? { tags: descriptiveTags } : {}), [key]: value,
   }, null, 2) + "\n");
@@ -461,7 +481,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
     {fieldErrors(key)}
   </div>;
   const textField = (key: string, label: string, text: string): ReactNode => field(key, label,
-    <TextField label={label} value={string(draft?.[key])} onValueChange={(value) => update(key, value || undefined)} />, text);
+    <TextField label={label} value={string(draft?.[key])} disabled={sidecarDirty} onValueChange={(value) => update(key, value || undefined)} />, text);
   const check = (key: string, label: string, text: string, checked: boolean, onChange: (checked: boolean) => void): ReactNode => <div>
     <div className={s.fieldHeading}>
       <Checkbox label={label} checked={checked} disabled={!file.editable} onCheckedChange={onChange} />
@@ -477,14 +497,14 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   const title: string = templateTitle(string(draft?.name) || path.split("/").at(-1)?.replace(/\.json$/, "") || "");
   return <Page title={creation ? "New Node" : title || "Node editor"} actions={<>
     {!creation && path.startsWith("templates/nodes/") && <DeleteTemplateButton path={path} sha256={file.sha256} title={title}
-      disabled={!file.editable || file.dirty || sidecarDirty} />}
-    {file.saveButton(newTemplate && sidecarDirty)}
+      disabled={!editable || file.dirty || sidecarDirty} />}
+    <Button variant="primary" loading={save.busy} disabled={!canSave} onClick={() => void save.run()}>Save</Button>
   </>}>
     {(newTemplate || path.startsWith("templates/")) && <Link to="/templates" state={restorePageScroll}>Back to templates</Link>}
     {file.feedback}
     {file.ready && <Card padded>
       {draft ? (
-        <fieldset className={s.fields} disabled={!file.editable}>
+        <fieldset className={s.fields} disabled={!editable}>
           {creation ? <>
             <TextField label="Name" required value={string(draft.name)} disabled={sidecarDirty}
               labelAction={help("Name", "Recipes use this name to refer to the node template.")}
@@ -494,7 +514,10 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
               const next: Node["kind"] | undefined = nodeKinds.find((option) => option.value === value)?.value;
               if (!next) return;
               const { $schema, name, description, icon, params } = draft;
-              file.update(JSON.stringify({ $schema, name, description, icon, tags: descriptiveTags, params, kind: next, ...initialNodeFields[next] }, null, 2) + "\n");
+              file.update(JSON.stringify({
+                $schema, name, description, icon, tags: descriptiveTags, params, kind: next, ...initialNodeFields[next],
+                ...(next === "agent" ? { prompt: newContextFile } : {}),
+              }, null, 2) + "\n");
             }} />
           </> : <TextField label="Kind" readOnly description="Chosen when the node was created."
             value={kind === "source" ? nodeKindLabels.source : nodeKinds.find((option) => option.value === kind)?.label ?? kind} />}
@@ -532,15 +555,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
                   : "Give each possible result a name so the recipe can decide where to go next. The command's exit rules or the agent's output must return one of these names.")}
             {!human && flag("changesFiles", "Changes files", "Enable this if the node writes to the job's files. PeCore fails the step if a read-only node changes them.")}
           </>}
-          {kind === "agent" && <>{textField("prompt", "Prompt file", "Enter the name of the Markdown file containing instructions for the AI model.")}
-            <div>
-              <MultiCombobox label="Knowledge" placeholder="Choose knowledge files" value={knowledge} disabled={!file.editable}
-                labelAction={help("Knowledge", "The project knowledge files this node gives its agent, and the files they link to. Each project gives its own file with that name; a project without it gives nothing. Write them in the project's Knowledge tab.")}
-                options={[...new Set([...(knowledgeNames.data ?? []), ...knowledge])].map((name) => ({ value: name, label: name }))}
-                onValueChange={(next) => update("knowledge", next.length ? next : undefined)} />
-              {fieldErrors("knowledge")}
-            </div>
-            {flag("resume", "Resume session", "Continue the previous conversation if this step runs again in the same job.")}</>}
+          {kind === "agent" && flag("resume", "Resume session", "Continue the previous conversation if this step runs again in the same job.")}
           {kind === "command" && <>
             {!draft.script && <>{commandField("Command", draft.command, (command) => update("command", command))}{fieldErrors("command")}</>}
             {!draft.command && textField("script", "Script file", "Enter the name of the .sh file to run. Choose either a command or a script file.")}
@@ -563,9 +578,10 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
         </fieldset>
       ) : <ErrorText error="Unable to read the node definition." />}
       <DefinitionErrors errors={draft ? file.errors?.filter(({ path }) => !inlineKeys.includes(path.split(".")[0] ?? "")) : file.errors} />
+      {sidecarDirty && sidecarName !== validSidecar && <Alert tone="warning">Save the open file before switching.</Alert>}
+      {sidecarPath && <SidecarFile key={sidecarPath} ref={sidecar} path={sidecarPath} name={sidecarName} isMarkdown={sidecarName.endsWith(".md")}
+        disabled={!editable} onStatus={setSidecarStatus} />}
     </Card>}
-    {sidecarDirty && sidecarName !== validSidecar && <Alert tone="warning">Save the open sidecar before switching files.</Alert>}
-    {sidecarName && definitionPath && <SidecarFile key={sidecarName} path={definitionPath.slice(0, definitionPath.lastIndexOf("/") + 1) + sidecarName} name={sidecarName} isMarkdown={sidecarName.endsWith(".md")} onDirty={setSidecarDirty} />}
     {warn}
   </Page>;
 }

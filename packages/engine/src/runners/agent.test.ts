@@ -1,6 +1,7 @@
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { Project } from "@pecore/schemas";
 import { describe, expect, it } from "vitest";
 import { createProjectWithRecipes } from "../../test/project";
 import { shippedTemplates, tempDir } from "../../test/tmp";
@@ -30,7 +31,8 @@ const agentNode = (extra: object = {}) => ({
   ...extra,
 });
 
-async function setup(scripts: object[][], node: object = agentNode(), recipeExtra: object = {}, knowledge: Record<string, string> = {}) {
+async function setup(scripts: object[][], node: object = agentNode(), recipeExtra: object = {}, knowledge: Record<string, string> = {},
+  recipeKnowledge?: Project["recipeKnowledge"]) {
   const root = await tempDir();
   const home = join(root, "home");
   const lib = join(root, "templates");
@@ -58,7 +60,7 @@ async function setup(scripts: object[][], node: object = agentNode(), recipeExtr
   await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p1", account: "fake", model: "m1" }] }));
   await writeFile(join(home, "tiers.json"), JSON.stringify({ tiers: { strong: ["p1"] } }));
   const engine = await Engine.start({ home, templates: lib, agents: { connectorsDir: connectors, adaptersDir: join(root, "adapters"), adapters: {} }, checkLogins: false });
-  await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["one-agent"]);
+  await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, recipeKnowledge }, ["one-agent"]);
   const p = engine.project("demo");
   for (const [name, content] of Object.entries(knowledge)) await writeFile(join(p.ctx.dir, "knowledge", name), content);
   const id = await engine.createJob("demo", { title: "Fix it", ticket: { text: "x" } });
@@ -109,6 +111,31 @@ describe("agent nodes with the fake agent (5.4)", () => {
     expect(text).toContain("`.pecore/context/naming.md`");
     expect(text).not.toContain("unrelated.md");
     await engine.shutdown();
+  });
+
+  it("uses the project recipe step's knowledge instead of the node template list", async () => {
+    const { engine, p, id } = await setup([[...init, ...newSession, prompt, output({ outcome: "done" }), usageAnswer]],
+      agentNode({ knowledge: ["template.md"] }), {}, {
+        "project.md": "See [naming](naming.md).\n",
+        "naming.md": "Names.\n",
+        "template.md": "Old template selection.\n",
+      }, { "one-agent": { x: ["project.md"] } });
+    try {
+      expect((await until(final(p, id))).state).toBe("succeeded");
+      expect(p.ctx.db.events(id).find(({ type }) => type === "job.created")?.payload)
+        .toMatchObject({ definitions: { knowledgeByStep: { x: ["project.md"] } } });
+      const attempt = p.ctx.db.db.prepare("SELECT log_path FROM attempts").get() as { log_path: string };
+      const raw = await import("../observability/logs").then((m) => m.readLog(join(p.ctx.dir, attempt.log_path)));
+      const sent = raw.find((line) => line.dir === "out" && (line.msg as { method?: string }).method === "session/prompt") as {
+        msg: { params: { prompt: { text: string }[] } };
+      };
+      const text: string = sent.msg.params.prompt[0]!.text;
+      expect(text).toContain(".pecore/context/project.md");
+      expect(text).toContain(".pecore/context/naming.md");
+      expect(text).not.toContain("template.md");
+    } finally {
+      await engine.shutdown();
+    }
   });
 
   it("sends the validation errors twice, then fails with INVALID_OUTPUT without retry", async () => {

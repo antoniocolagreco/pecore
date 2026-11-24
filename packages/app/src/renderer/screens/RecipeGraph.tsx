@@ -45,7 +45,7 @@ function startViewport(layout: RecipeLayout, start: string): Viewport {
   return { x: 32 - position.x * zoom, y: 220 - position.y * zoom, zoom };
 }
 
-export function RecipeGraph({ ref, steps, links, layout, automatic, start, editable, selected, onSelect, onConnect, onLayout }: {
+export function RecipeGraph({ ref, steps, links, layout, automatic, start, editable, inspectable = false, selected, onSelect, onConnect, onLayout }: {
   ref?: Ref<RecipeCanvas>;
   steps: RecipeGraphNode[];
   links: RecipeGraphLink[];
@@ -53,6 +53,7 @@ export function RecipeGraph({ ref, steps, links, layout, automatic, start, edita
   automatic: RecipeLayout;
   start: string;
   editable: boolean;
+  inspectable?: boolean;
   selected: string;
   onSelect(id: string): void;
   onConnect(connection: Connection): void;
@@ -163,7 +164,7 @@ export function RecipeGraph({ ref, steps, links, layout, automatic, start, edita
   };
 
   return (
-    <div ref={canvas} className={s.graph} inert={!editable} onKeyDownCapture={moveByKeyboard}>
+    <div ref={canvas} className={s.graph} inert={!editable && !inspectable} onKeyDownCapture={moveByKeyboard}>
       <ReactFlow
         defaultNodes={nodes}
         edges={edges}
@@ -197,9 +198,9 @@ export function RecipeGraph({ ref, steps, links, layout, automatic, start, edita
           <IconButton label="Fit view" size="sm" icon={<MonitorIcon />} disabled={!flow || !steps.length}
             onClick={() => void flow?.fitView({ maxZoom: 1 })} />
         </Panel>
-        <Panel position="top-right">
+        {!inspectable && <Panel position="top-right">
           <Button size="sm" disabled={!editable || !steps.length} onClick={align}>Arrange</Button>
-        </Panel>
+        </Panel>}
       </ReactFlow>
     </div>
   );

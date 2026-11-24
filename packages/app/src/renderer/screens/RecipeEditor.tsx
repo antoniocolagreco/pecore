@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import type { Connection, XYPosition } from "@xyflow/react";
-import { EdgePort, Name, Outcome, RecipeEnd, RecipeEndResult } from "@pecore/schemas";
+import { EdgePort, KnowledgeFileName, Name, Outcome, ProjectId, RecipeEnd, RecipeEndResult } from "@pecore/schemas";
 import type { DefinitionEntry } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
@@ -42,7 +42,7 @@ function graphTitle(id: string): string {
   return templateTitle(id);
 }
 
-function RecipeFile({ path, project, newTemplate }: { path: string; project?: string; newTemplate: boolean }) {
+function RecipeFile({ path, project, projectContext, newTemplate }: { path: string; project?: string; projectContext?: string; newTemplate: boolean }) {
   const navigate = useNavigate();
   const scope: string = newTemplate ? "templates" : project ? `projects/${project}` : path.slice(0, path.lastIndexOf("/recipes/"));
   const creation = useMemo<NewDefinition | undefined>(() => newTemplate || project ? {
@@ -53,6 +53,13 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
     },
   } : undefined, [newTemplate, project, scope]);
   const file = useDefinitionDraft(path, false, creation);
+  const knowledgeMode: boolean = !!projectContext;
+  const projectFile = useDefinitionDraft(projectContext ? `projects/${projectContext}/project.json` : "");
+  const projectConfig = parseDraft(projectFile.content);
+  const knowledgeDir: string = projectContext ? `projects/${projectContext}/knowledge` : "";
+  const knowledgeFiles = useData((): Promise<DefinitionEntry[]> => knowledgeDir
+    ? call("listDefinitions", { query: { dir: knowledgeDir } }) : Promise.resolve([]),
+  [knowledgeDir], (event) => event.type === "definition.changed" && event.path.startsWith(knowledgeDir + "/"));
   const icons = useDefinitionIcons();
   const duplicate = useAction(async () => {
     const source = parseDraft(file.content);
@@ -69,7 +76,7 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
     await navigate(definitionUrl("recipe", target));
   });
   const [destination, setDestination] = useState<string>();
-  const warn = useUnsaved(file.dirty && !destination);
+  const warn = useUnsaved((file.dirty && !destination) || projectFile.dirty);
   useEffect(() => {
     const saved: string | undefined = destination ?? file.savedPath;
     if (saved) void navigate(definitionUrl("recipe", saved), { replace: true });
@@ -77,7 +84,7 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
   const [selected, setSelected] = useState("");
   const [connection, setConnection] = useState<DraftConnection>();
   const canvas = useRef<RecipeCanvas>(null);
-  const projectId: string | undefined = project ?? /^projects\/([^/]+)$/.exec(scope)?.[1];
+  const projectId: string | undefined = projectContext ?? project ?? /^projects\/([^/]+)$/.exec(scope)?.[1];
   const directory: string = scope + "/nodes";
   const definitions = useData(() => call("listDefinitions", { query: { dir: directory } }), [directory], (event) => event.type === "definition.changed" && event.path.startsWith(directory + "/"));
   const [recipeTemplate, setRecipeTemplate] = useState<string | null>(null);
@@ -96,7 +103,7 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
     setTemplateNode(null);
   });
   const importing: boolean = importRecipe.busy || importNode.busy;
-  const editable: boolean = file.editable && !importing;
+  const editable: boolean = file.editable && !importing && !knowledgeMode;
   const draft = parseDraft(file.content);
   const nodes = object(draft?.nodes);
   const ci = object(draft?.ci);
@@ -108,6 +115,16 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
   const definition: DefinitionEntry | undefined = nodeDefinitions.get(string(selectedNode.use));
   const nodeValue = object(definition?.value);
   const selectedKind = recipeNodeKind(nodeValue.kind);
+  const recipeName: string = string(draft?.name);
+  const projectRecipes: unknown = projectConfig?.recipes;
+  const knowledgeEditable: boolean = projectFile.editable && !!projectConfig &&
+    (scope === "templates" ? Array.isArray(projectRecipes) && projectRecipes.includes(recipeName) : scope === `projects/${projectContext}`);
+  const allKnowledge = object(projectConfig?.recipeKnowledge);
+  const recipeKnowledge = Object.hasOwn(allKnowledge, recipeName) ? object(allKnowledge[recipeName]) : {};
+  const stepKnowledge: unknown = Object.hasOwn(recipeKnowledge, selected) ? recipeKnowledge[selected] : nodeValue.knowledge;
+  const knowledge: string[] = Array.isArray(stepKnowledge) ? stepKnowledge.map(string).filter(Boolean) : [];
+  const knowledgeOptions: string[] = (knowledgeFiles.data ?? []).map(({ path }) => path.slice(knowledgeDir.length + 1))
+    .filter((name) => KnowledgeFileName.safeParse(name).success);
   const paletteNodes: PaletteNode[] = palette.flatMap(({ value }) => {
     const node = object(value);
     const kind = recipeNodeKind(node.kind);
@@ -275,15 +292,16 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
   const nodeOptions = templateOptions(nodeTemplates.data).filter(({ value }) => !palette.some((item) => object(item.value).name === value));
   const title: string = templateTitle(string(draft?.name) || path.split("/").at(-1)?.replace(/\.json$/, "") || "");
   return <Page fillHeight title={creation ? "New Recipe" : title || "Recipe editor"} actions={<>
-    {!creation && scope === "templates" && <DeleteTemplateButton path={path} sha256={file.sha256} title={title}
+    {!knowledgeMode && !creation && scope === "templates" && <DeleteTemplateButton path={path} sha256={file.sha256} title={title}
       disabled={!editable || duplicate.busy || file.dirty} />}
-    {!creation && scope === "templates" && <Button loading={duplicate.busy} disabled={!editable || !file.ready || !draft || file.dirty}
+    {!knowledgeMode && !creation && scope === "templates" && <Button loading={duplicate.busy} disabled={!editable || !file.ready || !draft || file.dirty}
       onClick={() => void duplicate.run()}>Duplicate</Button>}
-    {file.saveButton(importing)}
+    {knowledgeMode ? projectFile.saveButton(!knowledgeEditable) : file.saveButton(importing)}
   </>}>
     {projectId && <Link to={`/projects/${encodeURIComponent(projectId)}?tab=recipes`} state={restorePageScroll}>Back to recipes</Link>}
-    {scope === "templates" && <Link to="/templates?tab=recipes" state={restorePageScroll}>Back to templates</Link>}
+    {!knowledgeMode && scope === "templates" && <Link to="/templates?tab=recipes" state={restorePageScroll}>Back to templates</Link>}
     {file.feedback}
+    {knowledgeMode && <>{projectFile.feedback}<ErrorText error={knowledgeFiles.error} /></>}
     <ErrorText error={duplicate.error} />
     {project && <Card padded><div className={s.importRow}>
       <Select label="Recipe template" value={recipeTemplate} onValueChange={setRecipeTemplate} options={recipeOptions} disabled={!editable || !recipeOptions.length} placeholder="Choose a template" />
@@ -291,7 +309,7 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
     </div><ErrorText error={recipeTemplates.error ?? importRecipe.error} /></Card>}
     {file.ready && <div className={s.recipePanel}>
       {draft ? <>
-        <RecipePalette nodes={paletteNodes} disabled={!editable} loading={definitions.loading} onAdd={add}>
+        {!knowledgeMode && <RecipePalette nodes={paletteNodes} disabled={!editable} loading={definitions.loading} onAdd={add}>
           <ErrorText error={definitions.error} />
           {project && <div className={s.projectPalette}>
             <div className={s.importRow}>
@@ -301,18 +319,26 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
             </div>
             <ErrorText error={nodeTemplates.error ?? importNode.error} />
           </div>}
-        </RecipePalette>
+        </RecipePalette>}
         <div className={s.workspace}>
           <RecipeGraph ref={canvas} steps={[...graphNodes, ...boundaryNodes]} links={[...graphEdges, ...boundaryLinks]}
             layout={graphLayout} automatic={withRecipeBoundaries(automatic, start)}
-            start={recipeStart} editable={editable} selected={selected} onSelect={setSelected}
+            start={recipeStart} editable={editable} inspectable={knowledgeMode} selected={selected} onSelect={setSelected}
             onConnect={connect} onLayout={(next) => update({ layout: next })} />
-          <Card title={selected ? templateTitle(string(selectedNode.use) || selected) : "Recipe settings"}
-            actions={selected ? <div className={s.inspectorActions}>
+          <Card title={selected ? templateTitle(string(selectedNode.use) || selected) : knowledgeMode ? "Knowledge" : "Recipe settings"}
+            actions={selected && !knowledgeMode ? <div className={s.inspectorActions}>
               <IconButton label="Remove node" icon={<TrashIcon />} disabled={!editable} onClick={removeSelected} />
             </div> : undefined}
             className={s.inspector}>
-            <fieldset className={s.inspectorFields} disabled={!editable}>
+            {knowledgeMode ? <div className={s.inspectorFields}>
+              {selectedKind === "agent" ? <MultiCombobox label="Knowledge" placeholder="Choose knowledge files"
+                disabled={!knowledgeEditable || !knowledgeFiles.data || !!knowledgeFiles.error} value={knowledge}
+                options={[...new Set([...knowledgeOptions, ...knowledge])].map((name) => ({ value: name, label: name }))}
+                onValueChange={(next) => projectFile.update(JSON.stringify({ ...projectConfig, recipeKnowledge: {
+                  ...allKnowledge, [recipeName]: { ...recipeKnowledge, [selected]: next },
+                } }, null, 2) + "\n")} />
+                : <p>Select an agent node to attach project knowledge.</p>}
+            </div> : <fieldset className={s.inspectorFields} disabled={!editable}>
               {selected ? <>
                 <div className={s.inspectorMeta}>
                   <DefinitionIcon icons={icons.data} type="node" name={string(selectedNode.use)} selected={string(nodeValue.icon)} size="sm" />
@@ -378,7 +404,7 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
                   labelAction={<FieldHelp title="Max node runs">The most steps one job can run, repeated steps included. When a job reaches it, the job pauses and asks you whether to allow more steps or end it. It stops a loop, for example between review and code, from running forever.</FieldHelp>}
                   disabled={!editable} onValueChange={(next) => update({ maxNodeRuns: next ?? undefined })} />
               </>}
-            </fieldset>
+            </fieldset>}
           </Card>
         </div>
       </> : <ErrorText error="Unable to read the recipe definition." />}
@@ -432,5 +458,7 @@ function templateOptions(entries: DefinitionEntry[] | undefined): { value: strin
 
 export function RecipeEditor({ newTemplate = false }: { newTemplate?: boolean }) {
   const { id, "*": path = "" } = useParams();
-  return <RecipeFile key={newTemplate ? "new-template" : id ?? path} path={path} project={id} newTemplate={newTemplate} />;
+  const [query] = useSearchParams();
+  const projectContext: string | undefined = !newTemplate ? ProjectId.safeParse(query.get("project")).data : undefined;
+  return <RecipeFile key={newTemplate ? "new-template" : `${id ?? path}:${projectContext ?? ""}`} path={path} project={id} projectContext={projectContext} newTemplate={newTemplate} />;
 }

@@ -63,7 +63,7 @@ function Recipes({ id }: { id: string }) {
             const label = <><DefinitionIcon icons={icons.data} type="recipe" name={name} selected={string(object(value).icon)} size="sm" /> {name}</>;
             return <li key={path}>
               {connected
-                ? <Link className={s.file} to={`/edit/recipe/${path.split("/").map(encodeURIComponent).join("/")}`}>{label}</Link>
+                ? <Link className={s.file} to={`/edit/recipe/${path.split("/").map(encodeURIComponent).join("/")}?project=${encodeURIComponent(id)}`}>{label}</Link>
                 : <span className={s.file}>{label}</span>}
               {errors.length > 0 && <span className={ui.error}> · Definition errors</span>}
               {path.startsWith("templates/") && <Button disabled={!connected || remove.busy} onClick={() => void remove.run(name)}>Remove</Button>}

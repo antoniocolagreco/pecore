@@ -15,6 +15,19 @@
   font-weight: 500;
 }
 
+.sidecar {
+  min-width: 0;
+  margin-top: var(--gap);
+}
+
+.prompt {
+  --paper-ink: var(--text);
+  height: clamp(16rem, 50vh, 34rem);
+  border-radius: 3px;
+  background: linear-gradient(var(--control-bg), var(--control-bg)) var(--surface);
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 2px 4px rgb(0 0 0 / 0.06), 0 12px 28px -12px rgb(0 0 0 / 0.14);
+}
+
 .smallJson {
   min-height: 7rem;
   resize: vertical;
