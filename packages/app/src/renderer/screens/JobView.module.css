@@ -37,23 +37,6 @@
   min-height: 320px;
 }
 
-.link {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--accent);
-  text-align: left;
-  cursor: default;
-}
-
-.link:hover:not(:disabled) {
-  text-decoration: underline;
-}
-
-.link:disabled {
-  color: var(--text-2);
-}
-
 @media (max-width: 1050px) {
   .split {
     grid-template-columns: minmax(0, 1fr);

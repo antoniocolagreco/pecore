@@ -296,3 +296,9 @@
 - Decision: the app has one component per kind, all in `ds/`: `Button`, `Card` (also for padded panels), `Dialog`, `EmptyState`, `Alert` for notices, `Table` or `TextTable` for tables, `Details` for label and value lists, `PasswordField` for secrets. The old wrappers in `components/ui` (`Button`, `Panel`, `Empty`, `Field`, `Modal`) and their CSS (`.panel`, `.table`, `.banner`, `.kv` and unused classes) are removed; `components/ui` keeps only the page shell (`Page`, `ErrorText`) and formatting helpers.
 - Why: two components for the same thing drift apart in look and behaviour.
 - Replaces: the `components/ui` wrappers, hand-made tables, banners and key and value lists.
+
+## 2026-11-24: Link buttons, pick lists and chips in the design system
+
+- Decision: a link inside text or a table is `Button variant="link"` (accent colour, underline on hover); a list to pick one item from is `List` with `ListItem` (sidebar sub-items and Knowledge files); an on/off tag is `Chip` inside `Chips` (agent personality). Job titles in the Jobs table become accent links; the stacked-jobs toggle is an `IconButton`; long Knowledge file names are cut with an ellipsis.
+- Why: these were hand-made buttons, each with its own look.
+- Replaces: the Jobs title and toggle buttons, the JobView link class, the Knowledge file buttons, the sidebar item styles and the trait buttons in Settings.

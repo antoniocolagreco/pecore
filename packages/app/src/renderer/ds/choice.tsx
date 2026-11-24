@@ -2,8 +2,8 @@ import { Checkbox as BaseCheckbox } from "@base-ui/react/checkbox";
 import { Radio } from "@base-ui/react/radio";
 import { RadioGroup as BaseRadioGroup } from "@base-ui/react/radio-group";
 import { Switch as BaseSwitch } from "@base-ui/react/switch";
-import { useId } from "react";
-import type { ReactNode } from "react";
+import { forwardRef, useId } from "react";
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 import s from "./choice.module.css";
 
 type Toggle = {
@@ -82,3 +82,11 @@ export function Switch({ label, detail, ...props }: Toggle) {
     </label>
   );
 }
+
+export function Chips({ label, children }: { label: string; children: ReactNode }) {
+  return <div className={s.chips} role="group" aria-label={label}>{children}</div>;
+}
+
+export const Chip = forwardRef<HTMLButtonElement, Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className"> & { pressed: boolean }>(function Chip({ pressed, ...rest }, ref) {
+  return <button ref={ref} type="button" className={s.chip} aria-pressed={pressed} {...rest} />;
+});

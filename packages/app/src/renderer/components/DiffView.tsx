@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { RiskArtifact } from "@pecore/schemas";
 import { ui } from "./ui";
 import { Button } from "../ds/button";
+import { ChevronDownIcon } from "../ds/icons";
 import s from "./DiffView.module.css";
 
 type Hunk = { header: string; lines: string[]; oldStart: number; newStart: number };
@@ -143,7 +144,7 @@ function FileBlock({ file, hunks }: { file: PatchFile; hunks: { hunk: Hunk; risk
   return (
     <section className={s.file}>
       <button type="button" className={s.fileHeader} aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span aria-hidden>{open ? "▾" : "▸"}</span>
+        <ChevronDownIcon style={open ? undefined : { rotate: "-90deg" }} />
         <span className={s.fileName}>{file.name || "patch"}</span>
         <span className={s.adds}>+{adds}</span>
         <span className={s.dels}>−{dels}</span>

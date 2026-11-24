@@ -7,7 +7,7 @@ import { useConnected } from "../api/live";
 import { isFinal, JobControls } from "../components/JobControls";
 import { jobState, needsYou, reasonLabel, StateLabel } from "../components/states";
 import { dateTime, duration, ErrorText, Page } from "../components/ui";
-import { Button } from "../ds/button";
+import { Button, IconButton } from "../ds/button";
 import { TextTable } from "../ds/data";
 import { Card, EmptyState } from "../ds/feedback";
 import { SearchField } from "../ds/field";
@@ -86,11 +86,9 @@ function Row({ row, factory, project, collapsed, toggle, now }: { row: JobRow; f
     <tr className={connected ? s.clickable : undefined} onClick={openRow}>
       <td style={{ paddingInlineStart: 8 + depth * 16 }}>
         {!factory && hasChildren && (
-          <button type="button" className={s.disclosure} aria-label={collapsed ? "Expand stacked jobs" : "Collapse stacked jobs"} aria-expanded={!collapsed} disabled={!connected} onClick={(event) => { event.stopPropagation(); toggle(); }}>
-            {collapsed ? <ChevronDownIcon style={{ rotate: "-90deg" }} /> : <ChevronDownIcon />}
-          </button>
+          <IconButton className={s.disclosure} size="sm" label={collapsed ? "Expand stacked jobs" : "Collapse stacked jobs"} aria-expanded={!collapsed} disabled={!connected} icon={<ChevronDownIcon style={collapsed ? { rotate: "-90deg" } : undefined} />} onClick={(event) => { event.stopPropagation(); toggle(); }} />
         )}
-        <button type="button" className={s.titleLink} disabled={!connected || open.busy} onClick={(event) => { event.stopPropagation(); openRow(); }}>{job.title}</button>
+        <Button variant="link" disabled={!connected || open.busy} onClick={(event) => { event.stopPropagation(); openRow(); }}>{job.title}</Button>
         <ErrorText error={open.error ?? detail.error} />
       </td>
       {project && <td>{job.projectId}</td>}

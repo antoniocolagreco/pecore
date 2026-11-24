@@ -4,8 +4,8 @@ import { SidebarItem, SidebarSection } from "../shell/sidebar";
 import { applyTheme, builtInThemes, defaultTheme } from "../theme/themes";
 import type { Mode } from "../theme/themes";
 import { Button, IconButton } from "../ds/button";
-import { Checkbox, RadioGroup, Switch } from "../ds/choice";
-import { Details, Stat, Stats, Table, Tabs, TextTable } from "../ds/data";
+import { Checkbox, Chip, Chips, RadioGroup, Switch } from "../ds/choice";
+import { Details, List, ListItem, Stat, Stats, Table, Tabs, TextTable } from "../ds/data";
 import { Alert, Badge, Card, Count, EmptyState, Kbd, Progress, Skeleton, Spinner } from "../ds/feedback";
 import { PasswordField, SearchField, TextArea, TextField } from "../ds/field";
 import { ArrowUpIcon, BellIcon, ChatIcon, FolderIcon, InboxIcon, LinkIcon, MonitorIcon, MoonIcon, MoreIcon, PauseIcon, PlayIcon, PlusIcon, RefreshIcon, StopIcon, SunIcon, TrashIcon } from "../ds/icons";
@@ -135,6 +135,7 @@ export function Showcase() {
   const [freeDisk, setFreeDisk] = useState<number | null>(10);
   const [mode, setMode] = useState("ask");
   const [all, setAll] = useState<boolean[]>([true, false, true]);
+  const [traits, setTraits] = useState<string[]>(["Concise"]);
   const someChecked = all.some(Boolean);
   const allChecked = all.every(Boolean);
 
@@ -253,6 +254,14 @@ export function Showcase() {
             <Switch label="Disabled" disabled />
           </div>
         </Example>
+        <Example caption="Chips">
+          <Chips label="Personality">
+            {["Concise", "Formal", "Playful"].map((trait) => (
+              <Chip key={trait} pressed={traits.includes(trait)} onClick={() => setTraits(traits.includes(trait) ? traits.filter((t) => t !== trait) : [...traits, trait])}>{trait}</Chip>
+            ))}
+            <Chip pressed={false} aria-disabled>Blocked</Chip>
+          </Chips>
+        </Example>
       </Section>
 
       <Section title="Numbers and ranges" note="Drag the number field label left or right to change the value.">
@@ -304,6 +313,7 @@ function MoreComponents() {
   const [dialog, setDialog] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [file, setFile] = useState("brand.md");
   return (
     <>
       <Section title="Buttons" note="Press any button: it gives a little under the finger. Hover the icon buttons for tooltips.">
@@ -313,6 +323,7 @@ function MoreComponents() {
             <Button>Cancel</Button>
             <Button variant="ghost">Skip</Button>
             <Button variant="danger" icon={<TrashIcon />}>Delete</Button>
+            <Button variant="link">Open parent job</Button>
           </div>
         </Example>
         <Example caption="Sizes and states">
@@ -440,6 +451,12 @@ function MoreComponents() {
             <dt>Tokens</dt><dd>12,400 in · 1,830 out</dd>
             <dt>Cost</dt><dd>$0.21</dd>
           </Details>
+        </Example>
+        <Example caption="List">
+          <List label="Knowledge files">
+            {["brand.md", "glossary.md", "release-notes.md"].map((name) => <ListItem key={name} mono active={file === name} onClick={() => setFile(name)}>{name}</ListItem>)}
+            <ListItem disabled>Disabled</ListItem>
+          </List>
         </Example>
         <div className={g.wide}>
           <Tabs

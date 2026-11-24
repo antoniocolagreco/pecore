@@ -87,6 +87,29 @@ export function Details({ className, label, children }: { className?: string; la
   return <dl className={[s.details, className ?? ""].join(" ")} aria-label={label}>{children}</dl>;
 }
 
+export function List({ label, children }: { label?: string; children: ReactNode }) {
+  return <ul className={s.list} aria-label={label}>{children}</ul>;
+}
+
+export function listItemClass(active?: boolean, mono?: boolean): string {
+  return [s.listItem, active ? s.listItemActive : "", mono ? s.listItemMono : ""].join(" ");
+}
+
+export function ListItem({ active, mono, trailing, disabled, onClick, children }: { active?: boolean; mono?: boolean; trailing?: ReactNode; disabled?: boolean; onClick?(): void; children: ReactNode }) {
+  return (
+    <li>
+      <button type="button" className={listItemClass(active, mono)} aria-current={active ? "true" : undefined} disabled={disabled} onClick={onClick}>
+        <span className={s.listLabel}>{children}</span>
+        {trailing}
+      </button>
+    </li>
+  );
+}
+
+export function ListLabel({ children }: { children: ReactNode }) {
+  return <span className={s.listLabel}>{children}</span>;
+}
+
 export function Stats({ children }: { children: ReactNode }) {
   return <div className={s.stats}>{children}</div>;
 }

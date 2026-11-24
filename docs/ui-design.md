@@ -389,6 +389,7 @@ Every page follows these rules; an exception is written in that page's section.
 ### Controls
 
 *   Every control comes from the design system in `packages/app/src/renderer/ds/`. The Showcase page (menu item Showcase; also `pnpm showcase` in a browser, without the engine) is the design system's reference for people and coding agents: its rules, every colour, text and size token with its use, the icons, cards and panels, and every component, with a theme preview (App, Light, Dark and each built-in theme) that is restored on leaving the page. Its source is `src/renderer/gallery/`. Read it before any UI change; a new or changed component or token is added there in the same commit.
+*   One component per kind: `Button` (with `variant="link"` for a link in text or a table), `List` and `ListItem` for a list to pick from, `Chip` for an on/off tag, `Card`, `Dialog`, `EmptyState`, `Alert`, `Table` or `TextTable`, `Details`. Screens have no native buttons or inputs.
 *   A select and a combobox look the same: same arrow, no clear button. A focused field shows one focus ring.
 *   Engine or WebSocket disconnected: a banner "Disconnected, reconnecting", every control disabled, data marked stale. On reconnect the GUI refetches every open view.
 

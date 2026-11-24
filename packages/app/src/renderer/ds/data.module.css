@@ -243,3 +243,68 @@ button.stat:active {
 .statDanger .statValue {
   color: var(--danger);
 }
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.listItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: var(--row-h);
+  padding: 0 8px 0 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-weight: 450;
+  text-align: left;
+  text-decoration: none;
+  cursor: default;
+  user-select: none;
+  outline: 0;
+  transition:
+    background-color var(--fast) ease,
+    color var(--fast) ease;
+}
+
+.listItem:hover:not(:disabled) {
+  background: var(--fill);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.listItem.listItemActive,
+.listItem.listItemActive:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent-ink, var(--accent));
+}
+
+.listItem:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.listItem:disabled {
+  opacity: 0.45;
+}
+
+.listItemMono {
+  font-family: var(--mono);
+  font-size: var(--text-size-sm);
+}
+
+.listLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -5,7 +5,7 @@ import { Spinner } from "./feedback";
 import { Tooltip } from "./overlay";
 
 export type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & {
-  variant?: "primary" | "secondary" | "ghost" | "danger" | "dangerSolid";
+  variant?: "primary" | "secondary" | "ghost" | "danger" | "dangerSolid" | "link";
   size?: "sm" | "md" | "lg";
   icon?: ReactNode;
   loading?: boolean;

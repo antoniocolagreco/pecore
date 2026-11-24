@@ -8,6 +8,7 @@ import { useConnected } from "../api/live";
 import { PageActions } from "../components/PageActions";
 import { ErrorText, ui } from "../components/ui";
 import { Button } from "../ds/button";
+import { List, ListItem } from "../ds/data";
 import { Card, Spinner } from "../ds/feedback";
 import { TextField } from "../ds/field";
 import { Dialog } from "../ds/overlay";
@@ -150,12 +151,10 @@ export function KnowledgeBase({ id }: { id: string }) {
       <ErrorText error={entries.error ?? upload.error} />
       {entries.loading && !entries.data && <Spinner />}
       {entries.data && !files.length && !selected?.creating && <p className={ui.muted}>No knowledge files yet.</p>}
-      <ul className={s.files} aria-label="Knowledge files">
-        {files.map(({ name }) => <li key={name}>
-          <button type="button" className={s.file} aria-pressed={selected?.name === name} disabled={!connected} onClick={() => choose({ name, creating: false })}>{name}</button>
-        </li>)}
-        {selected?.creating && <li><button type="button" className={s.file} aria-pressed>{selected.name}</button></li>}
-      </ul>
+      <List label="Knowledge files">
+        {files.map(({ name }) => <ListItem key={name} mono active={selected?.name === name} disabled={!connected} onClick={() => choose({ name, creating: false })}>{name}</ListItem>)}
+        {selected?.creating && <ListItem mono active>{selected.name}</ListItem>}
+      </List>
     </Card>
     <Card className={s.content} padded>
       {selected

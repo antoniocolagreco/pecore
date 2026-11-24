@@ -39,7 +39,7 @@ function WhyLine({ reason, detail }: { reason: WhyReason; detail: JobDetail }) {
   const navigate: ReturnType<typeof useNavigate> = useNavigate();
   const target: string | null = reasonTarget(reason, detail);
   const text: string = reason.until === null ? reason.text : `${reason.text} until ${time(reason.until)}`;
-  return <div>{target ? <button type="button" className={s.link} disabled={!connected} onClick={() => void navigate(target)}>{text}</button> : text}</div>;
+  return <div>{target ? <Button variant="link" disabled={!connected} onClick={() => void navigate(target)}>{text}</Button> : text}</div>;
 }
 
 function Result({ detail, definitions }: { detail: JobDetail; definitions: ReturnType<typeof useRecipe>["data"] }) {
@@ -115,7 +115,7 @@ function History({ detail, selected, onSelect }: { detail: JobDetail; selected: 
           const end: number | null = attempt ? attempt.endedAt : run.endedAt;
           return (
             <tr key={attempt?.id ?? run.id}>
-              <td><button type="button" className={s.link} disabled={!connected} aria-pressed={run.id === selected} onClick={() => onSelect(run.id)}>{run.node} · Round {run.round}</button></td>
+              <td><Button variant="link" disabled={!connected} aria-pressed={run.id === selected} onClick={() => onSelect(run.id)}>{run.node} · Round {run.round}</Button></td>
               <td>{attempt ? index + 1 : "—"}</td>
               <td>{run.outcome ?? run.state}{attempt?.endReason && ` · ${attempt.endReason}`}</td>
               <td>{start === null ? "—" : duration((end ?? now) - start)}</td>

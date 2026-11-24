@@ -3,6 +3,7 @@ import type { Account, AssistantTraitId, BuiltInHarness } from "@pecore/schemas"
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { IconButton } from "../ds/button";
+import { Chip, Chips } from "../ds/choice";
 import { Spinner } from "../ds/feedback";
 import { TextField } from "../ds/field";
 import { RefreshIcon } from "../ds/icons";
@@ -62,19 +63,21 @@ export function Traits({ value, disabled, onChange }: { value: AssistantTraitId[
   return (
     <div>
       <span className={s.label}>Personality</span>
-      <div className={s.traits} role="group" aria-label="Personality">
-        {assistantTraits.map(({ id, label, description }) => {
-          const on: boolean = value.includes(id);
-          const blocked: string[] = on ? [] : incompatibleTraits[id].filter((other) => value.includes(other)).map((other) => assistantTraits.find((trait) => trait.id === other)!.label);
-          return (
-            <Tooltip key={id} delay={0} side="top" content={blocked.length ? `${description} Does not go with ${blocked.join(" or ")}.` : description}>
-              <button type="button" className={s.trait} aria-pressed={on} aria-disabled={disabled || blocked.length > 0}
-                onClick={() => { if (!disabled && !blocked.length) onChange(on ? value.filter((trait) => trait !== id) : [...value, id]); }}>
-                {label}
-              </button>
-            </Tooltip>
-          );
-        })}
+      <div className={s.traits}>
+        <Chips label="Personality">
+          {assistantTraits.map(({ id, label, description }) => {
+            const on: boolean = value.includes(id);
+            const blocked: string[] = on ? [] : incompatibleTraits[id].filter((other) => value.includes(other)).map((other) => assistantTraits.find((trait) => trait.id === other)!.label);
+            return (
+              <Tooltip key={id} delay={0} side="top" content={blocked.length ? `${description} Does not go with ${blocked.join(" or ")}.` : description}>
+                <Chip pressed={on} aria-disabled={disabled || blocked.length > 0}
+                  onClick={() => { if (!disabled && !blocked.length) onChange(on ? value.filter((trait) => trait !== id) : [...value, id]); }}>
+                  {label}
+                </Chip>
+              </Tooltip>
+            );
+          })}
+        </Chips>
       </div>
     </div>
   );

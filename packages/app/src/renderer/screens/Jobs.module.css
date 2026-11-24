@@ -6,38 +6,9 @@
   cursor: default;
 }
 
-.titleLink,
 .disclosure {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  cursor: default;
-}
-
-.titleLink {
-  font-weight: 550;
-  text-align: left;
-  overflow-wrap: anywhere;
-}
-
-.clickable:hover .titleLink:not(:disabled) {
-  color: var(--accent);
-}
-
-.disclosure {
-  display: inline-grid;
-  place-items: center;
-  width: var(--mini-h);
-  height: var(--mini-h);
   margin-inline-end: 4px;
-  border-radius: 4px;
-  vertical-align: -3px;
-  color: var(--text-2);
-}
-
-.disclosure:hover {
-  background: var(--fill);
+  vertical-align: middle;
 }
 
 .disclosure svg {
