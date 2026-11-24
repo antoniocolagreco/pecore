@@ -127,8 +127,12 @@
 }
 
 @media (hover: hover) {
+  .paletteRail > [data-node-template] > section {
+    transition: background-color var(--fast) ease;
+  }
+
   .paletteRail:not([data-gesture], [aria-disabled="true"]) > [data-node-template]:hover > section {
-    background: linear-gradient(var(--fill), var(--fill)) var(--surface);
+    background-color: color-mix(in srgb, var(--surface), var(--fill-strong));
   }
 }
 
