@@ -253,7 +253,7 @@ Rule: files describe what exists; SQLite records what happened.
 
 ```text
 $PECORE_HOME/                         default ~/.pecore; its path is stored in Electron's userData (home.json), so a custom location is found at the next start; plain files, no git
-  settings.json                       limits, services runtime, UI prefs
+  settings.json                       limits, services runtime, UI prefs, AI tool colours
   accounts.json                       model, forge and service accounts (references, no secrets)
   profiles.json                       agent profiles: connector + model + effort + account
   tiers.json                          tiers: ordered lists of profiles
@@ -537,7 +537,7 @@ A node receives the latest artifact of each type in its `inputs`. The recipe val
 | `recipes` | recipe template names selected by the project |
 | `variables` | project values that steps can reference |
 | `credentials` | account IDs bound to credential names used by templates |
-| `pm` | the Project Manager's `agentId`, `name` and `color` (`#RRGGBB`). New projects receive the first free entry of the 24 agent colours (`agentColors` in `schemas/src/colors.ts`: colour name, hex and agent name, for example Crimson `#DC2626` Chris) and use Project Manager Default. The Project Manager tab can override its settings |
+| `pm` | the Project Manager's `agentId`, `name` and `color` (`#RRGGBB`). AI tools (harnesses) are listed in `harnesses` in `schemas/src/harnesses.ts` with a name, a default colour from the 24 agent colours and whether they work yet; `settings.json` `harnessColors` keeps the user's colour per AI tool (`harnessColor()` reads it with the default as fallback). New projects receive the first free entry of the 24 agent colours (`agentColors` in `schemas/src/colors.ts`: colour name, hex and agent name, for example Crimson `#DC2626` Chris) and use Project Manager Default. The Project Manager tab can override its settings |
 | `services` | path of a compose file for job services, relative to the repo (4.9); `null` (the default) means automatic: the first of `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml` found at the root of the job's base commit, and none when the services runtime is not set |
 | `source` | ticket source template and its parameters, with an optional separate forge account |
 

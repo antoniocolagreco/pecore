@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { appName, forgeHost, Settings as SettingsSchema } from "@pecore/schemas";
-import type { Account, ForgeAccount, LiveMessage, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
+import { appName, forgeHost, harnessColor, harnesses, Settings as SettingsSchema } from "@pecore/schemas";
+import type { Account, ForgeAccount, HarnessInfo, LiveMessage, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useAutoSave, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
@@ -15,7 +15,7 @@ import { PasswordField, TextField } from "../ds/field";
 import { CheckCircleIcon, AlertIcon, PlusIcon, RefreshIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
-import { NumberField, Segmented } from "../ds/values";
+import { ColorPicker, NumberField, Segmented } from "../ds/values";
 import { SidebarItem, SidebarSection } from "../shell/sidebar";
 import { builtInThemes, themePrefs } from "../theme/themes";
 import type { ThemePrefs } from "../theme/themes";
@@ -83,7 +83,7 @@ function LoginOutput({ id, progress, running }: { id: string; progress?: Progres
   </>;
 }
 
-const stateText: Record<string, string> = { logged_in: "Logged in", logged_out: "Logged out", no_models: "No models", error: "Error", unknown: "Unknown", unchecked: "Checking…" };
+const stateText: Record<string, string> = { logged_in: "Logged in", logged_out: "Logged out", no_models: "No models", error: "Error", unknown: "Unknown", unchecked: "Checking…", coming_soon: "Coming soon" };
 
 function stateBadge(state: string, checking: boolean): ReactNode {
   if (checking || state === "unchecked") return <Badge>Checking…</Badge>;
@@ -97,10 +97,34 @@ function initials(name: string): string {
   return name.split(/[\s·-]+/).filter(Boolean).slice(0, 2).map((word) => word[0]!.toUpperCase()).join("");
 }
 
-function AccountRow({ name, detail, state, checking, actions, children }: { name: string; detail?: ReactNode; state: string; checking: boolean; actions: ReactNode; children?: ReactNode }) {
-  return <li className={s.row}>
+type HarnessColors = { colors: Record<string, string>; onColor(harness: string, color: string): void };
+
+function HarnessColorButton({ harness, colors, onColor }: HarnessColors & { harness: HarnessInfo }) {
+  const connected: boolean = useConnected();
+  const [open, setOpen] = useState(false);
+  const color: string = harnessColor(harness.id, colors);
+  return <>
+    <Button size="sm" icon={<span className={s.dot} style={{ "--harness": color } as CSSProperties} />} disabled={!connected} onClick={() => setOpen(true)}>Colour</Button>
+    <Dialog open={open} onOpenChange={setOpen} title={`${harness.name} colour`} description="Used on agent cards and wherever this AI tool is shown." width={400}
+      footer={<Button variant="primary" onClick={() => setOpen(false)}>Done</Button>}>
+      <ColorPicker label="Colour" value={color} disabled={!connected} onValueChange={(next) => onColor(harness.id, next)} />
+    </Dialog>
+  </>;
+}
+
+function ComingSoonTools(props: HarnessColors) {
+  return <ul className={s.rows} aria-label="Coming soon">
+    {harnesses.filter(({ supported }) => !supported).map((harness) => (
+      <AccountRow key={harness.id} name={harness.name} detail="Not supported yet." state="coming_soon" checking={false} color={harnessColor(harness.id, props.colors)} muted
+        actions={<HarnessColorButton harness={harness} {...props} />} />
+    ))}
+  </ul>;
+}
+
+function AccountRow({ name, detail, state, checking, actions, color, muted, children }: { name: string; detail?: ReactNode; state: string; checking: boolean; actions: ReactNode; color?: string; muted?: boolean; children?: ReactNode }) {
+  return <li className={[s.row, muted ? s.rowMuted : ""].join(" ")}>
     <div className={s.rowMain}>
-      <span className={s.avatar} aria-hidden>{initials(name)}</span>
+      <span className={[s.avatar, color ? s.harnessAvatar : ""].join(" ")} style={color ? { "--harness": color } as CSSProperties : undefined} aria-hidden>{initials(name)}</span>
       <div className={s.rowText}>
         <span className={s.rowTitle}>{name}</span>
         {detail && <span className={s.rowDetail}>{detail}</span>}
@@ -112,7 +136,7 @@ function AccountRow({ name, detail, state, checking, actions, children }: { name
   </li>;
 }
 
-function LoginControls({ accounts, protectedOnly = false, kind = "model" }: { accounts: Account[]; protectedOnly?: boolean; kind?: "model" | "tool" }) {
+function LoginControls({ accounts, protectedOnly = false, kind = "model", harnessColors }: { accounts: Account[]; protectedOnly?: boolean; kind?: "model" | "tool"; harnessColors?: HarnessColors }) {
   const connected: boolean = useConnected();
   const logins = useData(() => call("listLogins"), [], (message) => (message.type === "login.progress" && message.done) || (message.type === "definition.changed" && ["settings.json", "accounts.json"].includes(message.path)));
   const [progress, setProgress] = useState<Record<string, Progress>>({});
@@ -189,8 +213,11 @@ function LoginControls({ accounts, protectedOnly = false, kind = "model" }: { ac
       {visible.map((account) => {
         if (account.kind === "model") {
           const name: string = harnessName(account, accounts);
+          const harness: HarnessInfo = harnesses.find(({ id }) => id === account.connector) ?? { id: account.connector, name, color: harnessColor(account.connector, {}), supported: true };
+          const color: string | undefined = harnessColors && harnessColor(harness.id, harnessColors.colors);
+          const colorButton: ReactNode = harnessColors && <HarnessColorButton harness={harness} {...harnessColors} />;
           const items = logins.data?.filter((login) => login.account === account.id && (protectedOnly ? login.osUser === "pecore-agent" : login.osUser !== "pecore-agent")) ?? [];
-          if (!items.length) return <AccountRow key={account.id} name={name} detail={logins.loading ? "Loading…" : "No login found."} state="unknown" checking={logins.loading} actions={null} />;
+          if (!items.length) return <AccountRow key={account.id} name={name} color={color} detail={logins.loading ? "Loading…" : "No login found."} state="unknown" checking={logins.loading} actions={colorButton} />;
           return items.map((login) => {
             const current: Progress | undefined = progress[login.id];
             const running: boolean = current ? !current.done : login.running;
@@ -200,9 +227,10 @@ function LoginControls({ accounts, protectedOnly = false, kind = "model" }: { ac
               ? login.email + (login.plan ? " · " + login.plan : "")
               : state === "no_models" ? `Open ${name} and set up a model provider, then check again.`
               : state === "logged_out" && login.defaultDir ? `Log in with ${name} on this computer, then check again.` : protectedOnly ? "As pecore-agent" : "";
-            return <AccountRow key={login.id} name={name} detail={detail} state={state} checking={checking.has(login.id)} actions={<>
+            return <AccountRow key={login.id} name={name} color={color} detail={detail} state={state} checking={checking.has(login.id)} actions={<>
               {!login.defaultDir && login.state !== "logged_in" && <Button size="sm" variant="primary" disabled={locked || running} onClick={() => void start.run(account, login.osUser, login.id)}>Log in</Button>}
               {checkButton(login.id, true, running)}
+              {colorButton}
             </>}>
               {(current || running) && <LoginOutput id={login.id} progress={current} running={running} />}
             </AccountRow>;
@@ -303,6 +331,10 @@ export function Settings() {
   const problems = value ? SettingsSchema.safeParse(value).error?.issues : undefined;
   const update = settings.update;
   const prefs: ThemePrefs = themePrefs(value?.ui);
+  const harnessColors: HarnessColors | undefined = value && {
+    colors: value.harnessColors,
+    onColor: (harness, color) => update({ ...value, harnessColors: { ...value.harnessColors, [harness]: color } }),
+  };
 
   useEffect(() => {
     const id: string | null = new URLSearchParams(search).get("section");
@@ -329,8 +361,9 @@ export function Settings() {
           <div className={s.groups}>
             <Card title="AI tools">
               {(accounts.current?.accounts ?? []).some(({ kind }) => kind === "model")
-                ? <LoginControls accounts={accounts.current?.accounts ?? []} />
+                ? <LoginControls accounts={accounts.current?.accounts ?? []} harnessColors={harnessColors} />
                 : <p className={s.groupText}>No AI tools yet. The ones you log in to on this computer show up here on their own.</p>}
+              {harnessColors && <ComingSoonTools {...harnessColors} />}
             </Card>
             <Card title="Git hosting" actions={<Button size="sm" icon={<PlusIcon />} disabled={!connected || !accounts.value || accounts.saving} onClick={() => setAddForge(true)}>Add account</Button>}>
               {(accounts.current?.accounts ?? []).some(({ kind }) => kind !== "model")

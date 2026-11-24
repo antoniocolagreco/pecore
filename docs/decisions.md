@@ -314,3 +314,9 @@
 - Decision: one internal list of 24 colours, each with a colour name, a hex and an agent name (Crimson Chris, Orange Amber, Gold Aura, Lime Liam, Green Greta, Teal Talia, Azure Azra, Cobalt Cole, Coral Coral, Peach Penny, Lemon Lena, Mint Mina, Aqua Aki, Ice Elsa, Lavender Lavinia, Blush Rosie, Burgundy Bree, Copper Cora, Olive Olive, Forest Forrest, Slate Sloane, Indigo Indra, Purple Violet, Magenta Magda). New Project Managers take the first free name and colour in this order. Colours are chosen with the design system's `ColorPicker`: the 24 colours, named on hover, plus a custom colour from the system picker. Every agent will have a colour; the field for agents other than Project Managers comes with the agent cards.
 - Why: one palette keeps agent colours uniform across cards, avatars and the sidebar.
 - Replaces: the 20 Project Manager names and colours (Eva, Viola, Mara…) and the bare system colour picker for the Project Manager. Existing projects keep their saved name and colour.
+
+## 2026-11-24: A colour per AI tool, and AI tools coming soon
+
+- Decision: each AI tool has a colour from the 24 agent colours (Claude Code orange, Codex indigo, OpenCode slate, Antigravity CLI azure, GitHub Copilot CLI purple, Cursor CLI teal, DeepSeek cobalt, Qwen lavender, Kimi aqua, Grok crimson, Muse magenta). In Settings, Accounts, AI tools, each row shows it on its initials and a Colour button changes it with the colour picker; the choice is saved in `settings.json`. The eight tools not supported yet appear as greyed "Coming soon" rows with only the Colour button. Agent cards will use these colours.
+- Why: one colour per AI tool, chosen by the user, keeps cards and lists consistent; the coming soon rows show what is planned.
+- Replaces: colours hard-coded in the agent card CSS for Claude Code, Codex and OpenCode.
