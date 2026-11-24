@@ -114,10 +114,11 @@
 }
 
 .alert {
+  --alert-gap: 10px;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--alert-gap);
   padding: 12px 14px;
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--tone) 10%, var(--surface));
@@ -136,8 +137,9 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  flex: 1 1 200px;
+  flex: 1 1 min(200px, calc(100% - var(--icon-size-sm) - var(--alert-gap)));
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .alertTitle {
