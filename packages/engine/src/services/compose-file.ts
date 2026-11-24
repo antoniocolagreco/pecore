@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
-import { writeFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute } from "node:path";
 import type { Settings } from "@pecore/schemas";
 import { parseAllDocuments } from "yaml";
 import { gitApp } from "../workdir/git-as";
@@ -145,10 +144,8 @@ export async function readComposeFile(
   }
   const source = await gitApp(repoGit, ["show", `${base}:${path}`]);
   rejectFileReferences(source);
-  return withComposeDirectory(runtime, async (directory, compose) => {
-    const copy = join(directory, "compose.yaml");
-    await writeFile(copy, source, { mode: 0o600 });
-    const output = await compose(["--all-resources", "--profile", "*", "-p", validationProject, "-f", copy, "config", "--format", "json", "--no-normalize"]);
+  return withComposeDirectory(runtime, async (_directory, compose) => {
+    const output = await compose(["--all-resources", "--profile", "*", "-p", validationProject, "-f", "-", "config", "--format", "json", "--no-normalize"], undefined, source);
     let resolved: unknown;
     try {
       resolved = JSON.parse(output);

@@ -649,7 +649,7 @@ A job waiting for a human, a quota or a login releases its pool units (4.7) and 
 #### 4.9 Job services
 
 *   If `project.json` has `services`, or it is `null` and the job's base commit has a standard compose file at its root while a services runtime is set, the engine starts them when the job starts. Pause stops the containers and keeps their data (`compose stop`); play starts them again (`compose start`). A final state removes them with their data (`compose down -v`); a job that re-enters `running` starts them from scratch. Until they are healthy, node runs wait with reason `services`.
-*   The container runtime runs as the app user, but the compose file lives in the repo, where agents can edit it. So the engine never reads it from the workdir. It reads it from the job's base commit (`git --git-dir=repo.git show <base>:<path>`), rejects `build:`, bind mounts of host paths, `privileged`, `cap_add`, `devices`, `network_mode: host` and `pid: host`. It runs the validated copy with `-f <copy> --project-directory <empty temp dir>`.
+*   The container runtime runs as the app user, but the compose file lives in the repo, where agents can edit it. So the engine never reads it from the workdir. It reads it from the job's base commit (`git --git-dir=repo.git show <base>:<path>`), rejects `build:`, bind mounts of host paths, `privileged`, `cap_add`, `devices`, `network_mode: host` and `pid: host`. It passes the validated copy on stdin with `-f - --project-directory <empty temp dir>`; no compose file is written.
 *   Each job gets its own compose project, `pecore-<job id in lower case>`. The compose file must publish ports as `"127.0.0.1::<container port>"`, so the runtime picks free host ports on the loopback address and parallel jobs never clash.
 *   The engine reads the chosen ports with `compose port` and passes them to every node as environment variables `PECORE_SERVICE_<SERVICE>_<PORT>`, with the service name in upper case and `-` replaced by `_` (for example `PECORE_SERVICE_POSTGRES_5432=127.0.0.1:49153`). The project user can reach the loopback address.
 *   When the app quits (Electron `before-quit`), the main process runs `compose down -v` for every `pecore-*` compose project before exiting. As a backup after a crash, at app start the engine removes compose projects named `pecore-*` that belong to no job.
@@ -1283,7 +1283,7 @@ Everything that knows ACP or a harness lives here (section 5). It imports only `
 | `src/osuser/acl.ts` | traverse-only ACLs on the path to `work/` (`setfacl` on Linux, `chmod +a` on macOS) |
 | `src/osuser/home-check.ts` | checks that the app user's home and tool login files are not readable by others; returns the fix commands |
 | **services/** | |
-| `src/services/compose-file.ts` | reads the compose file from the base commit with `git show`, rejects forbidden keys (4.9), provides a validated copy for execution |
+| `src/services/compose-file.ts` | reads the compose file from the base commit with `git show`, rejects forbidden keys (4.9), provides a validated copy that runs are given on stdin |
 | `src/services/runtime.ts` | lifecycle of 4.9 with the runtime command map (Fixed choices): starts, stops and cleans up `pecore-<job id>` compose projects; reads ports into `PECORE_SERVICE_*` variables; waits with reason `services` until healthy |
 | **api/** | |
 | `src/api/server.ts` | Fastify on `127.0.0.1` port 0; writes `run/api.json`; token, `Origin` and `Host` checks |

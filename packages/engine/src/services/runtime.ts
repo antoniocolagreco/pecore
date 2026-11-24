@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -9,7 +9,7 @@ import { appUser, baseEnv, run } from "../runners/process";
 import type { ComposeFile } from "./compose-file";
 
 type ServicesRuntime = Settings["servicesRuntime"];
-type ComposeCommand = (args: string[], timeoutMs?: number) => Promise<string>;
+type ComposeCommand = (args: string[], timeoutMs?: number, input?: string | Buffer) => Promise<string>;
 
 const projectPrefix = "pecore-";
 const healthTimeoutMs = 120_000;
@@ -58,8 +58,8 @@ export async function withComposeDirectory<T>(
   try {
     const cwd = join(directory, "project");
     await mkdir(cwd);
-    return await action(directory, async (args, timeoutMs = healthTimeoutMs) => {
-      const result = await run({ user: appUser, cwd, env, argv: [binary, "compose", "--project-directory", cwd, ...args], timeoutMs });
+    return await action(directory, async (args, timeoutMs = healthTimeoutMs, input) => {
+      const result = await run({ user: appUser, cwd, env, argv: [binary, "compose", "--project-directory", cwd, ...args], timeoutMs, ...(input === undefined ? {} : { input }) });
       if (result.timedOut) throw new Error(`${binary} compose timed out`);
       if (result.code !== 0) throw new Error(`${binary} compose ${args.join(" ")} failed: ${result.stderr.trim() || result.code}`);
       return result.stdout;
@@ -106,11 +106,8 @@ export class ServicesRuntimeController {
     const project = composeProjectName(jobId);
     const bytes: Buffer = Buffer.from(file.bytes);
     if (createHash("sha256").update(bytes).digest("hex") !== file.sha256) throw new Error("Compose copy does not match its confirmed SHA-256");
-    return withComposeDirectory(this.runtime, async (directory, compose) => {
-      const copy = join(directory, "compose.json");
-      await writeFile(copy, bytes, { mode: 0o600 });
-      return action((args, timeoutMs) => compose(["-p", project, "-f", copy, ...args], timeoutMs));
-    });
+    return withComposeDirectory(this.runtime, (_directory, compose) =>
+      action((args, timeoutMs) => compose(["-p", project, "-f", "-", ...args], timeoutMs, bytes)));
   }
 
   private async activate(jobId: string, file: ComposeFile, command: "up" | "start"): Promise<void> {
