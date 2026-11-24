@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import { join } from "node:path";
+import type { Artifact } from "@pecore/schemas";
 import { describe, expect, it } from "vitest";
 import { tempDir } from "../../test/tmp";
 import { ChatsDb, assistantChat, notificationsKept } from "./chats-db";
@@ -15,14 +17,35 @@ describe("pecore.db", () => {
   it("applies the migrations once, in WAL mode", async () => {
     const path = join(await tempDir(), "pecore.db");
     const db = new ProjectDb(path);
-    expect(db.version()).toBe(4);
+    expect(db.version()).toBe(5);
     expect(db.db.pragma("journal_mode", { simple: true })).toBe("wal");
     db.close();
     const again = new ProjectDb(path);
-    expect(again.version()).toBe(4);
+    expect(again.version()).toBe(5);
     const tables = (again.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as { name: string }[]).map((r) => r.name);
-    expect(tables).toEqual(["attempts", "events", "human_queue", "jobs", "node_runs", "schema_version", "tickets_seen"]);
+    expect(tables).toEqual(["artifacts", "attempts", "events", "human_queue", "jobs", "node_runs", "schema_version", "tickets_seen"]);
     again.close();
+  });
+
+  it("persists artifact bytes and metadata by job, run, name and type", async () => {
+    const path: string = join(await tempDir(), "pecore.db");
+    const db: ProjectDb = new ProjectDb(path);
+    db.append([created]);
+    const content: string = "a change\n";
+    const ref: Artifact = db.saveArtifact(job, "lint-0", "output", "text", content, "tree");
+    const patch: Artifact = db.saveArtifact(job, "lint-0", "output", "diff", "+change\n", "tree");
+    db.close();
+
+    const reopened: ProjectDb = new ProjectDb(path);
+    try {
+      expect(ref).toEqual({ jobId: job, run: "lint-0", name: "output", type: "text", sha256: createHash("sha256").update(content).digest("hex"), contentState: "tree" });
+      expect(reopened.db.prepare("SELECT sha256, content_state FROM artifacts WHERE type = 'text'").get()).toEqual({ sha256: ref.sha256, content_state: "tree" });
+      expect(reopened.requireArtifact(ref)).toEqual(Buffer.from(content));
+      expect(reopened.requireArtifact(ref, 2)).toEqual(Buffer.from("a "));
+      expect(reopened.requireArtifact(patch)).toEqual(Buffer.from("+change\n"));
+    } finally {
+      reopened.close();
+    }
   });
 
   it("updates the job and node run views with each event", async () => {

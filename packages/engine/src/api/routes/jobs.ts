@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import type { AttemptView, JobView, NodeRunView } from "@pecore/schemas";
 import { JobCreateError } from "../../jobs/create";
 import type { JobRow } from "../../graph/executor";
@@ -132,13 +130,11 @@ export function jobHandlers(engine: Engine) {
     whyJob: async ({ params }) => engine.why(params.id),
     getArtifact: async ({ params }) => {
       const { ctx, executor } = job(params.job);
-      const path = `artifacts/${params.job}/${params.run}/${params.name}`;
-      const artifact = executor.artifacts(params.job).find((a) => a.path === path);
-      if (!artifact) throw new NotFoundError(`artifact ${path} not found`);
-      const bytes = await readFile(join(ctx.dir, artifact.path)).catch((e: NodeJS.ErrnoException) => {
-        if (e.code === "ENOENT") throw new HttpError("gone", `artifact ${path} was removed`);
-        throw e;
-      });
+      const artifact = executor.artifacts(params.job).find((a) => a.jobId === params.job && a.run === params.run && a.name === params.name);
+      const label: string = `${params.job}/${params.run}/${params.name}`;
+      if (!artifact) throw new NotFoundError(`artifact ${label} not found`);
+      const bytes: Buffer | undefined = ctx.db.artifactContent(artifact);
+      if (bytes === undefined) throw new HttpError("gone", `artifact ${label} was removed`);
       return artifact.type === "attachment"
         ? { artifact, content: bytes.toString("base64"), encoding: "base64" }
         : { artifact, content: bytes.toString("utf8") };

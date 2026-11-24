@@ -1,9 +1,9 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { extname, join } from "node:path";
+import { join } from "node:path";
 import type { ArtifactType, CommandNode, FailureReason, OutcomeRule, OutputRule } from "@pecore/schemas";
 import { createCleanCheckout, removeCleanCheckout } from "../workdir/content-state";
-import { FsAsError, readFileAs, writeFileAs } from "../workdir/fs-as";
+import { FsAsError, readFileAs } from "../workdir/fs-as";
 import { gitIdentityEnv } from "../workdir/git-as";
 import { placeholderEnv, placeholderValues, substituteArgv } from "./placeholders";
 import type { PlaceholderContext } from "./placeholders";
@@ -12,7 +12,7 @@ import type { RunResult } from "./process";
 import { readJsonField, runProbe } from "./probe";
 import type { ProbeResult } from "./probe";
 
-export type CommandInput = { type: ArtifactType; path: string };
+export type CommandInput = { type: ArtifactType; content: string };
 
 export type CommandRun<Output extends string = ArtifactType> = {
   node: Pick<CommandNode, "name" | "runsAs" | "cleanCheckout" | "timeoutSec" | "command" | "script" | "probe" | "probeRules" | "mergedCheck" | "mergedCheckRules" | "outcomeRules">;
@@ -22,7 +22,7 @@ export type CommandRun<Output extends string = ArtifactType> = {
   params: Record<string, unknown>;
   user: string;
   workdir: string;
-  context: Omit<PlaceholderContext, "inputs" | "params" | "workdir">;
+  context: Omit<PlaceholderContext, "params" | "workdir">;
   inputs: CommandInput[];
   cleanTree: string | null;
   comment?: string;
@@ -81,8 +81,11 @@ async function argvOf(spec: string[] | { script: string } | undefined, inline: s
   return ["/bin/sh", "-c", body, label];
 }
 
-function inputFile(type: ArtifactType, source: string): string {
-  return `.pecore/inputs/${type}${extname(source) || ".txt"}`;
+function commandInput(inputs: CommandInput[]): string {
+  return JSON.stringify(Object.fromEntries(inputs.map(({ type, content }) => {
+    const value: unknown = type === "text" || type === "diff" ? content : JSON.parse(content);
+    return [type, value];
+  })));
 }
 
 export function commandHash(argv: string[]): string {
@@ -92,11 +95,10 @@ export function commandHash(argv: string[]): string {
 export async function runMergedCheck(c: Pick<CommandRun, "node" | "nodeDir" | "sidecars" | "params" | "context" | "inputs" | "extraEnv">): Promise<ProbeResult> {
   const cwd = await mkdtemp(join(tmpdir(), "pecore-engine-"));
   try {
-    const inputs = Object.fromEntries(c.inputs.map((i) => [i.type, i.path]));
-    const values = placeholderValues({ ...c.context, params: c.params, workdir: cwd, inputs });
+    const values = placeholderValues({ ...c.context, params: c.params, workdir: cwd });
     const env = { ...(await baseEnv(appUser)), ...placeholderEnv(values), ...c.extraEnv };
     const argv = await argvOf(c.node.mergedCheck, undefined, c, `${c.node.name}-merged`, values);
-    return (await runProbe({ argv, user: appUser, cwd, env, timeoutMs: c.node.timeoutSec * 1000 }, c.node.mergedCheckRules)).result;
+    return (await runProbe({ argv, user: appUser, cwd, env, input: commandInput(c.inputs), timeoutMs: c.node.timeoutSec * 1000 }, c.node.mergedCheckRules)).result;
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
@@ -123,24 +125,15 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
       await createCleanCheckout(c.user, c.workdir, c.cleanTree, cleanDir);
       cwd = cleanDir;
     }
-    const inputs: Record<string, string> = {};
-    for (const i of c.inputs) {
-      if (engine) {
-        inputs[i.type] = i.path;
-        continue;
-      }
-      const rel = inputFile(i.type, i.path);
-      await writeFileAs(c.user, cwd, rel, await readFile(i.path));
-      inputs[i.type] = join(cwd, rel);
-    }
-    const values = placeholderValues({ ...c.context, params: c.params, workdir: cwd, inputs, commentPath });
+    const input: string = commandInput(c.inputs);
+    const values = placeholderValues({ ...c.context, params: c.params, workdir: cwd, commentPath });
     const env = { ...(await baseEnv(user)), ...(await gitIdentityEnv()), ...placeholderEnv(values), ...c.extraEnv };
     const timeoutMs = c.node.timeoutSec * 1000;
     let log = "";
 
     if (c.node.probe) {
       const argv = await argvOf(c.node.probe, undefined, c, `${c.node.name}-probe`, values);
-      const p = await runProbe({ argv, user, cwd, env, timeoutMs }, c.node.probeRules);
+      const p = await runProbe({ argv, user, cwd, env, input, timeoutMs }, c.node.probeRules);
       env.PECORE_PROBE_STDOUT = p.stdout;
       log += `$ probe\n${p.stdout}${p.stderr}probe: ${p.result}\n`;
       if (p.result === "unknown") return { kind: "waiting", reason: "network", log };
@@ -161,7 +154,7 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
     if (engine) c.effect?.requested(hash);
     let r: RunResult;
     try {
-      r = await run({ user, argv, cwd, env, timeoutMs, onStart: (pgid) => c.onStart?.(pgid, user) });
+      r = await run({ user, argv, cwd, env, input, timeoutMs, onStart: (pgid) => c.onStart?.(pgid, user) });
     } catch (e) {
       if (engine) c.effect?.done(false, { error: String(e) });
       if (e instanceof SpawnError && e.code === "not_found") return { kind: "failed", reason: "COMMAND_NOT_FOUND", log: log + `${argv[0]}: not found\n` };

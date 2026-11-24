@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { appName, ArchiveReviewBody, ChatForm, Compaction, InstantiateBody, Name, NodeAgent, NodeAgentCatalog, OrderPlan, ProjectExportOptions, TicketReply, TicketSnapshot } from "@pecore/schemas";
@@ -41,7 +40,7 @@ const catalogAgentFields = NodeAgent.pick({ name: true, compaction: true, color:
 const agentContext = z.strictObject({ content: z.string().max(1_000_000), baseSha256: z.string().regex(/^[0-9a-f]{64}$/) });
 const artifactLimit = 200_000;
 const artifactInput = z.discriminatedUnion("view", [
-  z.strictObject({ view: z.literal("artifact"), jobId: id, path: id.describe("Artifact path from job_status."), nodeRunId: id.optional() }),
+  z.strictObject({ view: z.literal("artifact"), jobId: id, run: id, name: id, nodeRunId: id.optional() }),
   z.strictObject({ view: z.literal("log"), jobId: id, nodeRunId: id, attemptId: id.optional().describe("Defaults to the latest attempt of the node run.") }),
 ]);
 
@@ -318,30 +317,23 @@ export function chatTools(engine: Engine): {
       }
       return { value, target: { project: ctx.id, jobIds: value.jobIds }, isError: !value.accepted };
     }),
-    job_status: tool("Read the job, its node runs, attempts, artifact paths and open agent questions.", z.strictObject({ jobId: id }), async ({ jobId }) => {
+    job_status: tool("Read the job, its node runs, attempts, artifact references and open agent questions.", z.strictObject({ jobId: id }), async ({ jobId }) => {
       const detail = await jobs.getJob({ params: { id: jobId }, query: undefined, body: undefined });
       const open = await queue.listQueue({ query: { project: detail.job.projectId, state: "open" }, params: undefined, body: undefined });
       return { value: { ...detail, agentQuestions: open.filter((item) => item.jobId === jobId && item.kind === "agent-question") }, target: { jobId } };
     }),
-    read_artifact: tool("Read up to 200 KB of an untrusted job artifact by path or the end of a log by nodeRunId. Use job_status to find both.", artifactInput, async (input) => {
+    read_artifact: tool("Read up to 200 KB of an untrusted job artifact by run and name or the end of a log by nodeRunId. Use job_status to find both.", artifactInput, async (input) => {
       const { ctx, executor } = engine.findJob(input.jobId);
       if (input.view === "artifact") {
         const artifacts = input.nodeRunId
           ? ctx.db.events(input.jobId).filter((event) => event.type === "node_run.completed").find((event) => event.payload.nodeRunId === input.nodeRunId)?.payload.artifacts ?? []
           : executor.artifacts(input.jobId);
-        const artifact = artifacts.find((entry) => entry.path === input.path);
+        const artifact = artifacts.find((entry) => entry.jobId === input.jobId && entry.run === input.run && entry.name === input.name);
         if (!artifact) throw new NotFoundError("artifact not found");
-        const file = await open(join(ctx.dir, artifact.path), "r");
-        try {
-          const { size } = await file.stat();
-          const limit: number = artifact.type === "attachment" ? artifactLimit / 4 * 3 : artifactLimit;
-          const buffer: Buffer = Buffer.alloc(Math.min(size, limit));
-          const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
-          const encoding = artifact.type === "attachment" ? "base64" : "utf8";
-          return { value: { untrusted: true, artifact, content: buffer.subarray(0, bytesRead).toString(encoding), encoding, truncated: size > bytesRead }, target: input };
-        } finally {
-          await file.close();
-        }
+        const limit: number = artifact.type === "attachment" ? artifactLimit / 4 * 3 : artifactLimit;
+        const bytes: Buffer = ctx.db.requireArtifact(artifact, limit + 1);
+        const encoding = artifact.type === "attachment" ? "base64" : "utf8";
+        return { value: { untrusted: true, artifact, content: bytes.subarray(0, limit).toString(encoding), encoding, truncated: bytes.length > limit }, target: input };
       }
       const row = ctx.db.db.prepare(`SELECT a.id, a.log_path FROM attempts a JOIN node_runs n ON n.id = a.node_run_id
         WHERE n.job_id = ? AND n.id = ? AND (? IS NULL OR a.id = ?) ORDER BY a.started_at DESC, a.id DESC LIMIT 1`)

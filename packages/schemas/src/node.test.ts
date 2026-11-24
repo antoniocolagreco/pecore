@@ -142,12 +142,12 @@ describe("human node", () => {
 
 describe("placeholders", () => {
   it("knows every placeholder of design 3.1", () => {
-    const all = "{params.suite} {job.id} {job.title} {job.branch} {job.base} {job.oldBase} {job.target} {job.commit} {ticket.id} {workdir} {project.repoDir} {project.repo.url} {project.repo.owner} {project.repo.name} {inputs.spec.path} {inputs.reference.path}";
+    const all = "{params.suite} {job.id} {job.title} {job.branch} {job.base} {job.oldBase} {job.target} {job.commit} {ticket.id} {workdir} {project.repoDir} {project.repo.url} {project.repo.owner} {project.repo.name}";
     expect(unknownPlaceholders(all)).toEqual([]);
   });
 
-  it("rejects inputs of unknown artifact types and source placeholders outside sources", () => {
-    expect(unknownPlaceholders("{inputs.secret.path} {inputs.check-log.path} {comment.path}")).toEqual(["{inputs.secret.path}", "{inputs.check-log.path}", "{comment.path}"]);
+  it("rejects input path placeholders and source placeholders outside sources", () => {
+    expect(unknownPlaceholders("{inputs.spec.path} {comment.path}")).toEqual(["{inputs.spec.path}", "{comment.path}"]);
     expect(unknownPlaceholders("{comment.path}", { source: true })).toEqual([]);
   });
 
@@ -158,6 +158,6 @@ describe("placeholders", () => {
   it("names environment variables as in design 3.1", () => {
     expect(placeholderEnvName("job.branch")).toBe("PECORE_JOB_BRANCH");
     expect(placeholderEnvName("project.repoDir")).toBe("PECORE_PROJECT_REPODIR");
-    expect(placeholderEnvName("inputs.spec.path")).toBe("PECORE_INPUTS_SPEC_PATH");
+    expect(placeholderEnvName("ticket.id")).toBe("PECORE_TICKET_ID");
   });
 });

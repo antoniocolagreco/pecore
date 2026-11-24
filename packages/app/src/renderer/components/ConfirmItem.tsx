@@ -6,7 +6,7 @@ import type { QueueItemView } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
-import { ArtifactView } from "./ArtifactView";
+import { artifactKey, ArtifactView } from "./ArtifactView";
 import { CodeSnapshot } from "./CodeSnapshot";
 import { Button } from "../ds/button";
 import { Details } from "../ds/data";
@@ -51,7 +51,7 @@ function Shown({ artifacts }: { artifacts: Artifact[] }) {
   const sorted: Artifact[] = [...artifacts].sort((a, b) => (reportOrder.indexOf(a.type) + 99) % 99 - (reportOrder.indexOf(b.type) + 99) % 99);
   return (
     <div className={ui.stack}>
-      {sorted.map((a) => <div key={a.path}><strong>{artifactLabel[a.type]}</strong><ArtifactView artifact={a} /></div>)}
+      {sorted.map((a) => <div key={artifactKey(a)}><strong>{artifactLabel[a.type]}</strong><ArtifactView artifact={a} /></div>)}
     </div>
   );
 }

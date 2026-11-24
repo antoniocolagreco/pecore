@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Artifact, AttemptView, JobDetail, NodeRunView } from "@pecore/schemas";
 import { useConnected } from "../api/live";
-import { ArtifactView, latestFindings } from "./ArtifactView";
+import { artifactKey, ArtifactView, latestFindings } from "./ArtifactView";
 import { DefinitionIcon, useDefinitionIcons } from "./DefinitionIcon";
 import { LogView } from "./LogView";
 import { duration, ui } from "./ui";
@@ -43,9 +43,9 @@ export function NodeRunDetail({ detail, run, nodeName, icon, onSelect }: {
   const newest: AttemptView[] = attempts.toReversed();
   const index: number = detail.nodeRuns.findIndex((entry) => entry.id === run.id);
   const earlier: NodeRunView[] = detail.nodeRuns.slice(0, index).filter((entry) => entry.node === run.node).toReversed();
-  const runDir: string | undefined = run.id.split("/")[1]?.replace("#", "-");
-  const artifacts: Artifact[] = detail.artifacts.filter((artifact) => artifact.path.split("/")[2] === runDir);
-  const artifact: Artifact | undefined = artifacts.find((entry) => entry.path === selected);
+  const artifactRun: string | undefined = run.id.split("/")[1]?.replace("#", "-");
+  const artifacts: Artifact[] = detail.artifacts.filter((artifact) => artifact.run === artifactRun);
+  const artifact: Artifact | undefined = artifacts.find((entry) => artifactKey(entry) === selected);
   const risk: Artifact | undefined = artifact?.type === "diff" ? latestFindings(detail.artifacts, artifact.contentState) : undefined;
   return (
     <Card padded>
@@ -89,10 +89,13 @@ export function NodeRunDetail({ detail, run, nodeName, icon, onSelect }: {
           <section>
             <h3>Artifacts</h3>
             <div className={ui.row}>
-              {artifacts.slice(artifactPage * pageSize, (artifactPage + 1) * pageSize).map((entry) => <Button key={entry.path} disabled={!connected} aria-pressed={entry.path === selected} onClick={() => setSelected(entry.path === selected ? null : entry.path)}>{entry.type}</Button>)}
+              {artifacts.slice(artifactPage * pageSize, (artifactPage + 1) * pageSize).map((entry) => {
+                const key: string = artifactKey(entry);
+                return <Button key={key} disabled={!connected} aria-pressed={key === selected} onClick={() => setSelected(key === selected ? null : key)}>{entry.type}</Button>;
+              })}
             </div>
             <Pages page={artifactPage} count={artifacts.length} onChange={setArtifactPage} />
-            {artifact && <ArtifactView key={artifact.path} artifact={artifact} findings={risk} />}
+            {artifact && <ArtifactView key={artifactKey(artifact)} artifact={artifact} findings={risk} />}
           </section>
         )}
         {latest && <LogView key={latest.id} attemptId={latest.id} running={run.state === "running" && latest.endedAt === null} />}

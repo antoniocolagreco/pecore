@@ -16,10 +16,12 @@ import s from "./ArtifactView.module.css";
 
 export { diffFiles } from "./DiffView";
 
-export async function readArtifact(artifact: Artifact) {
-  const [dir, job, run, name, extra] = artifact.path.split("/");
-  if (dir !== "artifacts" || !job || !run || !name || extra !== undefined) throw new Error("Invalid artifact path");
-  return call("getArtifact", { params: { job, run, name } });
+export function artifactKey({ jobId, run, name, type }: Artifact): string {
+  return JSON.stringify([jobId, run, name, type]);
+}
+
+export async function readArtifact({ jobId, run, name }: Artifact) {
+  return call("getArtifact", { params: { job: jobId, run, name } });
 }
 
 function json(content: string): unknown {
@@ -145,22 +147,24 @@ function ArtifactContent({ artifact, content, findings }: { artifact: Artifact; 
 }
 
 export function ArtifactView({ artifact, findings }: { artifact: Artifact; findings?: Artifact | undefined }) {
+  const key: string = artifactKey(artifact);
   const file = useData(async () => {
     const r = await readArtifact(artifact);
-    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(r.content)));
+    const bytes: Uint8Array<ArrayBuffer> = r.encoding === "base64" ? Uint8Array.from(atob(r.content), (char) => char.charCodeAt(0)) : new TextEncoder().encode(r.content);
+    const digest: Uint8Array = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
     return { ...r, sha256: [...digest].map((b) => b.toString(16).padStart(2, "0")).join("") };
-  }, [artifact.path, artifact.sha256]);
+  }, [key, artifact.sha256]);
   const findingsFile = useData(async () => {
     if (artifact.type !== "diff" || !findings) return undefined;
     const result = await readArtifact(findings);
     return FindingsArtifact.parse(json(result.content));
-  }, [artifact.type, findings?.path, findings?.sha256]);
+  }, [artifact.type, findings && artifactKey(findings), findings?.sha256]);
   const changed = file.data && file.data.sha256 !== artifact.sha256;
   return (
     <div className={s.artifact}>
       <ErrorText error={file.error ?? findingsFile.error} />
       {changed ? <Alert tone="warning">This artifact differs from the version recorded for this item.</Alert> : null}
-      {file.data?.artifact.path === artifact.path
+      {file.data && artifactKey(file.data.artifact) === key
         ? <ArtifactContent key={artifact.sha256} artifact={artifact} content={file.data.content} findings={findingsFile.data} />
         : file.loading && <EmptyState title="Loading artifact…" />}
     </div>

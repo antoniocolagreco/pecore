@@ -105,16 +105,33 @@ describe("local API (phase 5 decisions 2-5)", () => {
     const { id } = await call("createJob", { body: { project: "demo", title: "Add hello", ticket: { text: "x" } } });
     await until(async () => (await call("getJob", { params: { id } })).job.state === "waiting");
     const diff = (await call("getJob", { params: { id } })).artifacts.find((a) => a.type === "diff")!;
-    const [, , run, name] = diff.path.split("/");
-    const a = await call("getArtifact", { params: { job: id, run: run!, name: name! } });
+    const { run, name } = diff;
+    const a = await call("getArtifact", { params: { job: id, run, name } });
     expect(a.content).toContain("+hello");
-    await expect(call("getArtifact", { params: { job: id, run: run!, name: "../../pecore.db" } })).rejects.toMatchObject({ status: 404 });
+    await expect(call("getArtifact", { params: { job: id, run, name: "../../pecore.db" } })).rejects.toMatchObject({ status: 404 });
     const dir = engine.project("demo").ctx.dir;
+    await expect(stat(join(dir, "artifacts"))).rejects.toMatchObject({ code: "ENOENT" });
     await call("deleteProject", { params: { id: "demo" } });
     await expect(stat(dir)).rejects.toThrow();
     expect(await call("listProjects")).toEqual([]);
     expect(await call("listJobs", { query: {} })).toEqual([]);
     await close();
+  });
+
+  it("deletes the job's artifact rows with the job", async () => {
+    const { engine, call, close } = await apiProject();
+    try {
+      const { id } = await call("createJob", { body: { project: "demo", title: "Add hello", ticket: { text: "x" } } });
+      await until(async () => (await call("getJob", { params: { id } })).job.state === "waiting");
+      await call("stopJob", { params: { id } });
+      const count = engine.project("demo").ctx.db.db.prepare<[string], number>("SELECT count(*) FROM artifacts WHERE job_id = ?").pluck();
+      expect(count.get(id)).toBeGreaterThan(1);
+      await call("deleteJob", { params: { id } });
+      expect(count.get(id)).toBe(0);
+      await expect(call("getJob", { params: { id } })).rejects.toMatchObject({ status: 404 });
+    } finally {
+      await close();
+    }
   });
 
   it("sends log lines only for subscribed attempts", async () => {

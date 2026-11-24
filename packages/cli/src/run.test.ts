@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { apiProject } from "../../engine/test/api-project";
@@ -81,9 +81,7 @@ describe("pecore CLI over the local API", () => {
     expect(busy.err[0]).toBe("conflict: 1 job is active: stop or archive them first");
     await call("stopJob", { params: { id } });
 
-    const leak = join(engine.projectDir("demo"), "artifacts", id, "leak");
-    await mkdir(leak, { recursive: true });
-    await writeFile(join(leak, "out.txt"), `ghp_${"x".repeat(36)}\n`);
+    engine.project("demo").ctx.db.saveArtifact(id, "leak", "out.txt", "text", `ghp_${"x".repeat(36)}\n`, null);
     const f = capture();
     expect(await run(["project", "export", "demo", "--out", `${out}.h`, "--history"], f.io, env)).toBe(1);
     expect(f.err[0]).toMatch(new RegExp(`^FILE\\s+LINE\\s+RULE\\s+FINGERPRINT\\n${id}/leak/out.txt\\s+1\\s+github-pat\\s+`));

@@ -1,5 +1,3 @@
-import { readFile, readdir } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
 import type { ExportProjectResult } from "@pecore/schemas";
 
 type Finding = Extract<ExportProjectResult, { state: "findings" }>["findings"][number];
@@ -26,15 +24,11 @@ export const secretRules: Readonly<Record<string, RegExp>> = {
   "private-key": /-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/,
 };
 
-export async function scanSecrets(dir: string): Promise<Finding[]> {
-  const entries = await readdir(dir, { withFileTypes: true, recursive: true }).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return [];
-    throw error;
-  });
-  const files: string[] = entries.filter((entry) => entry.isFile()).map((entry) => relative(dir, join(entry.parentPath, entry.name)).split(sep).join("/")).sort();
+export function scanSecrets(artifacts: Iterable<{ file: string; content: Buffer | null }>): Finding[] {
   const findings: Finding[] = [];
-  for (const file of files) {
-    const lines: string[] = (await readFile(join(dir, file), "utf8")).split("\n");
+  for (const { file, content } of artifacts) {
+    if (content === null) continue;
+    const lines: string[] = content.toString("utf8").split("\n");
     for (const [index, text] of lines.entries()) {
       for (const [rule, pattern] of Object.entries(secretRules)) {
         if (pattern.test(text)) findings.push({ fingerprint: `${file}:${rule}:${index + 1}`, file, line: index + 1, rule });

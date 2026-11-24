@@ -8,7 +8,7 @@ if [ "$0" = gitlab-mr-probe ]; then
 fi
 
 if [ "$0" != gitlab-mr ]; then
-  url=$(jq -er '.url | strings | select(length > 0)' "$PECORE_INPUTS_REFERENCE_PATH")
+  url=$(jq -er '.reference.url | strings | select(length > 0)')
   exec glab mr view "$url" -R "$repo" --output json
 fi
 
@@ -17,7 +17,7 @@ id=$(printf '%s\n' "$requests" | jq -r '.[0].iid // empty')
 if [ -n "$id" ]; then
   glab mr update "$id" --target-branch "$PECORE_JOB_TARGET" -R "$repo" >/dev/null
 else
-  description=$(cat "$PECORE_INPUTS_SPEC_PATH")
+  description=$(jq -e '.spec')
   glab mr create --source-branch "$PECORE_JOB_BRANCH" --target-branch "$PECORE_JOB_TARGET" \
     --title "$PECORE_JOB_TITLE" --description "$description" -R "$repo" --yes >/dev/null
 fi

@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import Database from "better-sqlite3";
 import { monotonicFactory } from "ulid";
 import type { z } from "zod";
 import { EventBody } from "@pecore/schemas";
-import type { StoredEvent } from "@pecore/schemas";
+import type { Artifact, StoredEvent } from "@pecore/schemas";
 import { migrate } from "./migrate";
 
 type EventInput = z.input<typeof EventBody>;
@@ -29,6 +30,28 @@ export class ProjectDb {
 
   version(): number {
     return (this.db.prepare("SELECT version FROM schema_version").get() as { version: number }).version;
+  }
+
+  saveArtifact(jobId: string, run: string, name: string, type: Artifact["type"], content: string | Buffer, contentState: string | null): Artifact {
+    const bytes: Buffer = Buffer.isBuffer(content) ? content : Buffer.from(content);
+    const sha256: string = createHash("sha256").update(bytes).digest("hex");
+    this.db.prepare(`INSERT INTO artifacts (job_id, run, name, type, sha256, content_state, content) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (job_id, run, name, type) DO UPDATE SET sha256 = excluded.sha256, content_state = excluded.content_state, content = excluded.content`)
+      .run(jobId, run, name, type, sha256, contentState, bytes);
+    return { jobId, run, name, type, sha256, contentState };
+  }
+
+  artifactContent({ jobId, run, name, type }: Artifact, limit: number | null = null): Buffer | undefined {
+    return this.db.prepare<[number | null, number | null, string, string, string, string], Buffer>(
+      `SELECT CASE WHEN ? IS NULL THEN content ELSE substr(content, 1, ?) END
+       FROM artifacts WHERE job_id = ? AND run = ? AND name = ? AND type = ?`,
+    ).pluck().get(limit, limit, jobId, run, name, type);
+  }
+
+  requireArtifact(artifact: Artifact, limit?: number): Buffer {
+    const content: Buffer | undefined = this.artifactContent(artifact, limit);
+    if (content === undefined) throw new Error(`artifact ${artifact.jobId}/${artifact.run}/${artifact.name} not found`);
+    return content;
   }
 
   append(events: NewEvent[], now = Date.now()): StoredEvent[] {

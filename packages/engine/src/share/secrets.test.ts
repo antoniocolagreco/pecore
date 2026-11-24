@@ -1,7 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { tempDir } from "../../test/tmp";
 import { scanSecrets, secretRules } from "./secrets";
 
 const samples: Record<string, string> = {
@@ -40,13 +37,12 @@ describe("secret scan before a project export with history (decision 89)", () =>
     }
   });
 
-  it("reports file, line and rule of each match without the secret, and an empty list when there are no artifacts", async () => {
-    const dir: string = join(await tempDir(), "artifacts");
-    expect(await scanSecrets(dir)).toEqual([]);
-    await mkdir(join(dir, "job", "run"), { recursive: true });
-    await writeFile(join(dir, "job", "run", "log.txt"), `first line\nexport GH=${samples["github-pat"]!}\nlast line\n`);
-    await writeFile(join(dir, "clean.txt"), "nothing here\n");
-    const findings = await scanSecrets(dir);
+  it("reports file, line and rule of each match without the secret", () => {
+    expect(scanSecrets([])).toEqual([]);
+    const findings = scanSecrets([
+      { file: "job/run/log.txt", content: Buffer.from(`first line\nexport GH=${samples["github-pat"]!}\nlast line\n`) },
+      { file: "job/run/clean.txt", content: Buffer.from("nothing here\n") },
+    ]);
     expect(findings).toEqual([{ fingerprint: "job/run/log.txt:github-pat:2", file: "job/run/log.txt", line: 2, rule: "github-pat" }]);
     expect(JSON.stringify(findings)).not.toContain(samples["github-pat"]!);
   });

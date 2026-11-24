@@ -1,4 +1,4 @@
-import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readlink, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CommandNode } from "@pecore/schemas";
@@ -29,18 +29,17 @@ describe("fs-as: symlinks at every engine file path", () => {
     await expect(readFileAs(u, wd, "out.json")).rejects.toBeInstanceOf(FsAsError);
     await expect(writeFileAs(u, wd, "out.json", "x")).rejects.toMatchObject({ reason: "symlink" });
     await symlink(secretDir, join(wd, ".pecore"));
-    await expect(writeFileAs(u, wd, ".pecore/inputs/spec.json", "x")).rejects.toMatchObject({ reason: "symlink" });
+    await expect(writeFileAs(u, wd, ".pecore/output.schema.json", "x")).rejects.toMatchObject({ reason: "symlink" });
     await expect(readFileAs(u, wd, "../token")).rejects.toMatchObject({ reason: "outside" });
     expect(await readFile(secret, "utf8")).toBe("token");
   });
 
-  it("input copy: a planted .pecore/inputs symlink fails the node and leaves the target alone", async () => {
+  it("command stdin leaves a planted .pecore/inputs symlink and its target alone", async () => {
     const { wd, base, project, secret } = await setup();
     await mkdir(join(wd, ".pecore"));
-    await symlink(secret, join(wd, ".pecore", "inputs"));
-    const spec = join(project, "spec.json");
-    await writeFile(spec, "{}");
-    const node = CommandNode.parse({ name: "c", description: "c", kind: "command", command: ["true"], inputs: ["spec"], outcomes: ["passed"], changesFiles: false, outcomeRules: [{ exitCode: 0, outcome: "passed" }], timeoutSec: 10 });
+    const link: string = join(wd, ".pecore", "inputs");
+    await symlink(secret, link);
+    const node = CommandNode.parse({ name: "c", description: "c", kind: "command", command: ["cat"], inputs: ["text"], outcomes: ["passed"], changesFiles: false, outcomeRules: [{ exitCode: 0, outcome: "passed" }], timeoutSec: 10 });
     await expect(
       runCommandNode({
         node,
@@ -50,10 +49,11 @@ describe("fs-as: symlinks at every engine file path", () => {
         user: u,
         workdir: wd,
         context: { job: { id: "J1", title: "t", branch: "factory/J1", base, oldBase: base, target: "main", commit: null }, ticketId: null, project: { repoDir: join(project, "repo.git"), repoUrl: null, baseBranch: "main" } },
-        inputs: [{ type: "spec", path: spec }],
+        inputs: [{ type: "text", content: "input" }],
         cleanTree: null,
       }),
-    ).rejects.toMatchObject({ reason: "symlink" });
+    ).resolves.toMatchObject({ kind: "completed", log: expect.stringContaining('{"text":"input"}') });
+    expect(await readlink(link)).toBe(secret);
     expect(await readFile(secret, "utf8")).toBe("token");
   });
 
@@ -93,8 +93,8 @@ describe("fs-as: symlinks at every engine file path", () => {
 
   it("writes and reads files under the root", async () => {
     const { wd } = await setup();
-    await writeFileAs(u, wd, ".pecore/inputs/spec.json", '{"a":1}');
-    expect(await readFileAs(u, wd, ".pecore/inputs/spec.json")).toBe('{"a":1}');
+    await writeFileAs(u, wd, ".pecore/output.json", '{"a":1}');
+    expect(await readFileAs(u, wd, ".pecore/output.json")).toBe('{"a":1}');
     await expect(readFileAs(u, wd, "missing.json")).rejects.toMatchObject({ reason: "missing" });
   });
 });

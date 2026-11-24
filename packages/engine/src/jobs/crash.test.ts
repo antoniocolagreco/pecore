@@ -18,7 +18,7 @@ describe("crash during delivery (G12, 4.8)", () => {
     const s = await forge.state();
     expect(s.prs).toMatchObject([{ head: `factory/${id}`, base: "main", state: "OPEN" }]);
     expect(s.comments).toEqual([{ issue: "7", body: s.prs[0]!.url }]);
-    const sha: string | null = await jobCommit(p.ctx.dir, p.ctx.db.events(id));
+    const sha: string | null = jobCommit(p.ctx.db, p.ctx.db.events(id));
     expect(sha).toMatch(/^[0-9a-f]{40}$/);
     expect(forge.remoteHead("acme/shop", `factory/${id}`)).toBe(sha);
     await engine.shutdown();

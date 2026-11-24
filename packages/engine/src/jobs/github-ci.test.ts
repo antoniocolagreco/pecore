@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import type { RecipeInput } from "@pecore/schemas";
@@ -32,7 +32,7 @@ it("restarts a pending CI wait and runs a correction on the same pull request", 
     await writeFile(join(ctx.templates, "recipes", "with-ci.json"), JSON.stringify(recipe));
     await writeFile(join(ctx.defs.nodeDir, "fix-tests.json"), JSON.stringify({
       name: "fix-tests", description: "Make a new commit", kind: "command",
-      command: ["/bin/sh", "-c", "cp \"$PECORE_INPUTS_TEXT_PATH\" ci-log.txt && echo fixed >> hello.txt"], inputs: ["text"],
+      command: ["/bin/sh", "-c", "jq -ej '.text' > ci-log.txt && echo fixed >> hello.txt"], inputs: ["text"],
       changesFiles: true, outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }], timeoutSec: 10,
     }));
     await writeFile(join(ctx.dir, "project.json"), JSON.stringify({ ...ctx.project, recipes: ["with-ci"] }));
@@ -69,7 +69,7 @@ it("restarts a pending CI wait and runs a correction on the same pull request", 
     expect(new Set(checks.map(({ deadline }) => deadline)).size).toBe(1);
     expect(checks.at(-1)).toMatchObject({ commit: second, corrections: 1, result: "ci_passed" });
     const failure = checks.find(({ result }) => result === "ci_failed");
-    expect(await readFile(join(project.ctx.dir, failure!.log!.path), "utf8")).toContain("unit tests failed");
+    expect(project.ctx.db.requireArtifact(failure!.log!).toString("utf8")).toContain("unit tests failed");
     expect(execFileSync("git", ["--git-dir", fixture.forge.remote("acme/shop"), "show", `${second}:ci-log.txt`], { encoding: "utf8" })).toContain("unit tests failed");
   } finally {
     await engine.shutdown();

@@ -496,12 +496,14 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect(existsSync(join(t.engine.projectDir("demo-2"), "knowledge", "late.md"))).toBe(true);
 
       await rm(archive);
-      const leak: string = join(t.engine.projectDir("demo"), "artifacts", "leak");
-      await mkdir(leak, { recursive: true });
-      await writeFile(join(leak, "out.txt"), `token ${"ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"}\n`);
+      const db = t.engine.project("demo").ctx.db;
+      const leakJob: string = "leak-job";
+      db.append([{ jobId: leakJob, type: "job.created", payload: { title: "Leak fixture", recipe: { name: "empty" }, ticket: null, parentJobId: null, baseBranch: "main", base: null, target: "main", branch: "factory/leak-job" } },
+        { jobId: leakJob, type: "job.state_changed", payload: { state: "stopped", reason: null } }]);
+      db.saveArtifact(leakJob, "leak", "out.txt", "text", `token ${"ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"}\n`, null);
       expect(JSON.parse((await m.tool("export_project", { project: "demo", history: true })).result?.content?.[0]?.text ?? "")).toEqual({ state: "awaiting_confirmation", totalFindings: 1 });
       const card = await last();
-      expect(card.target).toMatchObject({ state: "awaiting_confirmation", project: "demo", history: true, findings: [{ file: "leak/out.txt", line: 1, rule: "github-pat" }] });
+      expect(card.target).toMatchObject({ state: "awaiting_confirmation", project: "demo", history: true, findings: [{ file: "leak-job/leak/out.txt", line: 1, rule: "github-pat" }] });
       expect(existsSync(archive)).toBe(false);
       const exportAnswer = (body: object) => t.call("answerChatProjectExport", { params: { id: card.id }, body: body as { decision: "cancel" } });
       await expect(exportAnswer({ decision: "approve", fingerprints: [] })).rejects.toThrow("findings changed");

@@ -1,6 +1,3 @@
-import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join, relative } from "node:path";
 import { monotonicFactory } from "ulid";
 import type { Artifact, JobDefinitions, Recipe } from "@pecore/schemas";
 import { checkRecipe, hasCommitNode, recipeParameterIssues } from "../definitions/recipe-check";
@@ -84,7 +81,7 @@ async function createJobInProject(ctx: ProjectContext, req: CreateJob): Promise<
     if (!hasCommitNode(JSON.parse(parent.recipe) as Recipe, jobNodes(jobDefinitions(ctx.db, parent.id), ctx.defs.nodes))) throw new JobCreateError(`the recipe of parent job ${parent.id} has no commit node`);
     baseBranch = parent.base_branch;
     target = parent.merged_at === null ? parent.branch : parent.target;
-    const sha = await jobCommit(ctx.dir, ctx.db.events(parent.id));
+    const sha: string | null = jobCommit(ctx.db, ctx.db.events(parent.id));
     if (parent.merged_at !== null) base = await fetchBase(ctx, target).catch((e: unknown) => fail(e));
     else if (parent.state === "succeeded" && sha) base = sha;
     else {
@@ -93,30 +90,19 @@ async function createJobInProject(ctx: ProjectContext, req: CreateJob): Promise<
     }
   } else base = await fetchBase(ctx, baseBranch).catch((e: unknown) => fail(e));
   const id = ulid();
-  const dir = join(ctx.dir, "artifacts", id, "ticket");
-  await mkdir(dir, { recursive: true });
   const content = JSON.stringify({ title: req.title, body: req.ticket.text, source: req.ticket.source ?? null, id: req.ticket.id ?? null }, null, 2);
-  const path = join(dir, "ticket.json");
-  await writeFile(path, content);
-  const ticket: Artifact = { type: "document", path: relative(ctx.dir, path), sha256: createHash("sha256").update(content).digest("hex"), contentState: null };
-  const attachments: Artifact[] = [];
-  if (req.attachments?.length) {
-    const attachmentDir: string = join(ctx.dir, "artifacts", id, "attachments");
-    await mkdir(attachmentDir, { recursive: true });
-    for (const { name, data } of req.attachments) {
-      const file: string = join(attachmentDir, name);
-      await writeFile(file, data, { mode: 0o600 });
-      attachments.push({ type: "attachment", path: relative(ctx.dir, file), sha256: createHash("sha256").update(data).digest("hex"), contentState: null });
-    }
-  }
-  ctx.db.append([
-    {
-      jobId: id,
-      type: "job.created",
-      payload: { title: req.title, recipe, definitions, ticket, ...(attachments.length ? { attachments } : {}), parentJobId: parent?.id ?? null, baseBranch, base, target, branch: jobBranch(id), orderId: req.orderId, orderKey: req.orderKey },
-    },
-    ...(reason ? [{ jobId: id, type: "job.state_changed" as const, payload: { state: "queued" as const, reason } }] : []),
-  ]);
+  ctx.db.db.transaction(() => {
+    const ticket: Artifact = ctx.db.saveArtifact(id, "ticket", "ticket.json", "document", content, null);
+    const attachments: Artifact[] = (req.attachments ?? []).map(({ name, data }) => ctx.db.saveArtifact(id, "attachments", name, "attachment", data, null));
+    ctx.db.append([
+      {
+        jobId: id,
+        type: "job.created",
+        payload: { title: req.title, recipe, definitions, ticket, ...(attachments.length ? { attachments } : {}), parentJobId: parent?.id ?? null, baseBranch, base, target, branch: jobBranch(id), orderId: req.orderId, orderKey: req.orderKey },
+      },
+      ...(reason ? [{ jobId: id, type: "job.state_changed" as const, payload: { state: "queued" as const, reason } }] : []),
+    ]);
+  })();
   ctx.changed(id);
   return id;
 }

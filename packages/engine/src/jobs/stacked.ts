@@ -1,9 +1,9 @@
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ReferenceArtifact } from "@pecore/schemas";
 import type { Artifact, ForgeAccount, Project, StoredEvent } from "@pecore/schemas";
 import { loadForgeDefaults } from "../projects/defaults";
 import { forgeEnv } from "../runners/forge-env";
+import type { ProjectDb } from "../store/project-db";
 import { branchHead, fetchBranch } from "../workdir/repo";
 
 export function reentryPending(events: StoredEvent[], onBaseChanged: string | undefined): boolean {
@@ -39,21 +39,21 @@ export function jobArtifacts(events: StoredEvent[]): JobArtifact[] {
   return out;
 }
 
-export async function readReference(projectDir: string, artifact: Artifact): Promise<ReferenceArtifact> {
-  return ReferenceArtifact.parse(JSON.parse(await readFile(join(projectDir, artifact.path), "utf8")));
+export function readReference(db: ProjectDb, artifact: Artifact): ReferenceArtifact {
+  return ReferenceArtifact.parse(JSON.parse(db.requireArtifact(artifact).toString("utf8")));
 }
 
-export async function latestReference(projectDir: string, artifacts: JobArtifact[], has: (reference: ReferenceArtifact, node: string | null) => boolean): Promise<(JobArtifact & { reference: ReferenceArtifact }) | undefined> {
+export function latestReference(db: ProjectDb, artifacts: JobArtifact[], has: (reference: ReferenceArtifact, node: string | null) => boolean): (JobArtifact & { reference: ReferenceArtifact }) | undefined {
   for (const found of artifacts.toReversed()) {
     if (found.artifact.type !== "reference") continue;
-    const reference: ReferenceArtifact = await readReference(projectDir, found.artifact);
+    const reference: ReferenceArtifact = readReference(db, found.artifact);
     if (has(reference, found.node)) return { ...found, reference };
   }
   return undefined;
 }
 
-export async function jobCommit(projectDir: string, events: StoredEvent[]): Promise<string | null> {
-  return (await latestReference(projectDir, jobArtifacts(events), (reference) => reference.sha !== undefined))?.reference.sha ?? null;
+export function jobCommit(db: ProjectDb, events: StoredEvent[]): string | null {
+  return latestReference(db, jobArtifacts(events), (reference) => reference.sha !== undefined)?.reference.sha ?? null;
 }
 
 export async function fetchBase(

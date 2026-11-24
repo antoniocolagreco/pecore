@@ -39,7 +39,6 @@ export function projectPaths(projectDir: string) {
     db: join(projectDir, "pecore.db"),
     repo: join(projectDir, "repo.git"),
     work: join(projectDir, "work"),
-    artifacts: join(projectDir, "artifacts"),
     logs: join(projectDir, "logs"),
   };
 }
@@ -113,7 +112,7 @@ async function removeRetiredTemplateFiles(templates: string): Promise<string[]> 
   return removed;
 }
 
-export const templatesFormat: string = "2";
+export const templatesFormat: string = "3";
 
 async function addShippedTemplateFiles(shipped: string, templates: string): Promise<string[]> {
   const added: string[] = [];

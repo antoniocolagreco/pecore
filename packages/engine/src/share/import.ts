@@ -24,7 +24,7 @@ type LoadedProject = Awaited<ReturnType<typeof loadProject>> & { project: Projec
 function allowedEntry(name: string, directory: boolean): boolean {
   const [root, ...parts]: string[] = name.split("/");
   if ((root === "nodes" || root === "recipes") && parts.length > 1 && name.endsWith(".json")) return false;
-  if (definitionDirs.includes(root!) || root === "artifacts" || root === "logs") return parts.length > 0 || directory;
+  if (definitionDirs.includes(root!) || root === "logs") return parts.length > 0 || directory;
   return ["manifest.json", "project.json", "pecore.db"].includes(root!) && parts.length === 0 && !directory;
 }
 
@@ -132,7 +132,7 @@ export async function withProjectArchive<T>(home: string, path: string, use: (di
     await mkdir(dir, { mode: 0o700 });
     const roots: Set<string> = source === "local" ? await unpackSource(path, dir) : await unpack(path, dir);
     const manifest: Manifest = Manifest.parse(JSON.parse(await readFile(join(dir, "manifest.json"), "utf8")));
-    if (manifest.history !== roots.has("pecore.db") || (!manifest.history && roots.has("artifacts")) || (!manifest.logs && roots.has("logs"))) {
+    if (manifest.history !== roots.has("pecore.db") || (!manifest.logs && roots.has("logs"))) {
       throw new InvalidArchive("archive files do not match the manifest's history and logs flags");
     }
     const original: string = join(stage, manifest.projectId);
@@ -249,7 +249,7 @@ export async function beginImport(home: string, input: ImportProjectBody, option
     project.folder = null;
     await writeFile(join(original, "project.json"), JSON.stringify(project, null, 2) + "\n");
     await rm(join(original, "manifest.json"));
-    for (const name of ["knowledge", "artifacts", "logs", "work"]) await mkdir(join(original, name), { recursive: true, mode: 0o700 });
+    for (const name of ["knowledge", "logs", "work"]) await mkdir(join(original, name), { recursive: true, mode: 0o700 });
     const dbPath: string = join(original, "pecore.db");
     if (manifest.history) migrateHistory(dbPath);
     const db: ProjectDb = new ProjectDb(dbPath);

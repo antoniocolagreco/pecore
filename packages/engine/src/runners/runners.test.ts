@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CommandNode } from "@pecore/schemas";
@@ -102,7 +102,7 @@ describe("placeholders", () => {
   });
 
   it("substitutes into single arguments and refuses missing values", () => {
-    const v = placeholderValues({ job: { id: "J", title: "t; rm -rf /", branch: "b", base: "1", oldBase: "0", target: "main", commit: null }, ticketId: null, workdir: "/w", project: { repoDir: "/r", repoUrl: null, baseBranch: "develop" }, params: { suite: "unit" }, inputs: {} });
+    const v = placeholderValues({ job: { id: "J", title: "t; rm -rf /", branch: "b", base: "1", oldBase: "0", target: "main", commit: null }, ticketId: null, workdir: "/w", project: { repoDir: "/r", repoUrl: null, baseBranch: "develop" }, params: { suite: "unit" } });
     expect(substituteArgv(["echo", "{job.title}", "--suite={params.suite}"], v)).toEqual(["echo", "t; rm -rf /", "--suite=unit"]);
     expect(() => substituteArgv(["{job.commit}"], v)).toThrow("no value for placeholder {job.commit}");
   });
@@ -137,14 +137,22 @@ describe("command nodes", () => {
     expect(await runCommandNode(ctx(node({ command: ["test", "-f", "nope"] })))).toMatchObject({ kind: "completed", outcome: "failed" });
   });
 
-  it("runs a script with placeholders as environment variables, not in the source", async () => {
-    const { nodeDir, ctx } = await setup();
-    await writeFile(join(nodeDir, "s.sh"), 'printf "%s" "$PECORE_JOB_TITLE" > title.txt; cat "$PECORE_INPUTS_SPEC_PATH"');
-    const spec = join(nodeDir, "spec.json");
-    await writeFile(spec, '{"criteria":[]}');
-    const r = await runCommandNode(ctx(node({ script: "s.sh", inputs: ["spec"], outputs: { passed: "text" }, outputRules: { passed: { file: "title.txt" } } }), { inputs: [{ type: "spec", path: spec }] }));
+  it("feeds declared inputs as JSON to the probe and command without creating input files", async () => {
+    const { nodeDir, ctx, wd } = await setup();
+    await writeFile(join(nodeDir, "s.sh"), 'set -e; test -z "${PECORE_INPUTS_SPEC_PATH:-}"; printf "%s" "$PECORE_JOB_TITLE" > title.txt; cat');
+    const n: CommandNode = node({
+      script: "s.sh", probe: ["/bin/sh", "-c", 'jq -e \'has("spec")\' >/dev/null'],
+      inputs: ["spec", "text", "diff"], optionalInputs: ["reference"], outputs: { passed: "text" }, outputRules: { passed: { file: "title.txt" } },
+    });
+    const input: CommandRun["inputs"] = [
+      { type: "spec", content: '{"criteria":[],"tests":[],"interfaces":[]}' },
+      { type: "text", content: 'first\n"second"\n' },
+      { type: "diff", content: "+change\n" },
+    ];
+    const r = await runCommandNode(ctx(n, { inputs: input }));
     expect(r).toMatchObject({ kind: "completed", outcome: "passed", outputs: [{ type: "text", content: "Fix it" }] });
-    expect(r.log).toContain('{"criteria":[]}');
+    expect(r.log).toContain(JSON.stringify({ spec: { criteria: [], tests: [], interfaces: [] }, text: 'first\n"second"\n', diff: "+change\n" }));
+    await expect(stat(join(wd, ".pecore", "inputs"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("reads only the output of the outcome it reached", async () => {

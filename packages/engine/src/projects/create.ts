@@ -131,7 +131,7 @@ export async function beginProject(home: string, input: ProjectInput, opts: Crea
   const templates = homePaths(home).templates;
   const p = projectPaths(dir);
   try {
-    for (const d of [p.knowledge, p.work, p.artifacts, p.logs]) await mkdir(d, { recursive: true });
+    for (const d of [p.knowledge, p.work, p.logs]) await mkdir(d, { recursive: true });
     const forge = account ? await loadForgeDefaults(templates, account.forge) : null;
     if (project.createRepo !== null && forge?.createRepo === null) {
       throw new ProjectCreateError(1, "This forge requires an existing repository.");

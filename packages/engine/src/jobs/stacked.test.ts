@@ -105,7 +105,7 @@ async function setup() {
   const repo = join(p.ctx.dir, "repo.git");
   const job = (id: string) => p.executor.job(id);
   const files = async (id: string) => (await gitApp(repo, ["ls-tree", "--name-only", `refs/heads/factory/${id}`])).trim().split("\n").sort();
-  const sha = async (id: string) => (await jobCommit(p.ctx.dir, p.ctx.db.events(id)))!;
+  const sha = (id: string): string => jobCommit(p.ctx.db, p.ctx.db.events(id))!;
   const openItem = (jobId: string | null, kind = "human-node") =>
     p.ctx.db.db.prepare("SELECT id, subject_hash FROM human_queue WHERE (? IS NULL OR job_id = ?) AND kind = ? AND state = 'open'").get(jobId, jobId, kind) as { id: string; subject_hash: string } | undefined;
   return { root, marker, engine, p, repo, job, files, sha, openItem };

@@ -627,7 +627,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
           {kind === "command" && <>
             <CommandInputs inputs={draft.inputs} optional={draft.optionalInputs} disabled={!file.editable}
               onChange={(inputs, optionalInputs) => updateFields({ inputs: inputs.length ? inputs : undefined, optionalInputs: optionalInputs.length ? optionalInputs : undefined })} />
-            <p className={ui.muted}>The recipe chooses which node each input comes from. The script reads it from PECORE_INPUTS_TYPE_PATH, for example PECORE_INPUTS_SPEC_PATH.</p>
+            <p className={ui.muted}>The recipe chooses where each input comes from. The script receives a JSON object on stdin with one key per input type, for example <code>jq '.spec'</code>.</p>
             {fieldErrors("inputs")}{fieldErrors("optionalInputs")}
           </>}
           {kind && kind !== "source" && <>

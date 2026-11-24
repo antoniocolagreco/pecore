@@ -35,7 +35,6 @@ export type PlaceholderContext = {
   workdir: string;
   project: { repoDir: string; repoUrl: string | null; baseBranch: string };
   params: Record<string, unknown>;
-  inputs: Record<string, string>;
 };
 
 export function repoOwnerAndName(url: string): { owner: string; name: string } {
@@ -63,7 +62,6 @@ export function placeholderValues(c: PlaceholderContext): PlaceholderValues {
     v["project.repo.name"] = name;
   }
   for (const [k, val] of Object.entries(c.params)) v[`params.${k}`] = typeof val === "string" ? val : JSON.stringify(val);
-  for (const [type, path] of Object.entries(c.inputs)) v[`inputs.${type}.path`] = path;
   return v;
 }
 

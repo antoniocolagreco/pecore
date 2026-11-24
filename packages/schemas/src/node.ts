@@ -16,8 +16,6 @@ export function unknownPlaceholders(text: string, opts: { source?: boolean } = {
     const name = m[1] as string;
     if (allowed.has(name)) continue;
     if (/^params\.[A-Za-z_][A-Za-z0-9_]*$/.test(name)) continue;
-    const input = /^inputs\.([a-z-]+)\.path$/.exec(name);
-    if (input && ArtifactType.safeParse(input[1]).success) continue;
     bad.push(`{${name}}`);
   }
   return bad;

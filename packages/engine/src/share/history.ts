@@ -3,11 +3,21 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { monotonicFactory } from "ulid";
 import { EventBody, JobState, Recipe } from "@pecore/schemas";
+import { jobArtifacts } from "../jobs/stacked";
 import { subjectHash } from "../runners/human";
 import { migrate } from "../store/migrate";
 import { ProjectDb } from "../store/project-db";
 import type { NewEvent } from "../store/project-db";
 import { activeJobCount, archivePath, InvalidArchive } from "./archive";
+
+type HistoryArtifact = { file: string; bytes: number; content: Buffer | null };
+
+export function historyArtifacts(db: ProjectDb["db"], maxBytes: number = Number.MAX_SAFE_INTEGER): IterableIterator<HistoryArtifact> {
+  return db.prepare<[number], HistoryArtifact>(`
+    SELECT job_id || '/' || run || '/' || name AS file, length(content) AS bytes,
+      CASE WHEN length(content) <= ? THEN content END AS content
+    FROM artifacts ORDER BY file, type`).iterate(maxBytes);
+}
 
 function schema(db: ProjectDb["db"]): unknown[] {
   return db.prepare("SELECT type, name, tbl_name, sql FROM sqlite_schema ORDER BY name").raw().all();
@@ -71,11 +81,9 @@ function remapHistory(db: ProjectDb["db"], dir: string): void {
     UPDATE events SET payload = json_set(payload, '$.subjectHash', import_subject_hash(payload -> '$.subject')) WHERE type = 'queue.added';
   `);
 
-  for (const root of ["artifacts", "logs"]) {
-    for (const name of readdirSync(join(dir, root))) {
-      const target: string = rewrite(name);
-      if (target !== name) renameSync(join(dir, root, name), join(dir, root, target));
-    }
+  for (const name of readdirSync(join(dir, "logs"))) {
+    const target: string = rewrite(name);
+    if (target !== name) renameSync(join(dir, "logs", name), join(dir, "logs", target));
   }
 }
 
@@ -93,12 +101,17 @@ export function resetHistory(project: ProjectDb, dir: string): void {
   }
   const logs = db.prepare("SELECT log_path FROM attempts").pluck().iterate() as Iterable<string>;
   for (const path of logs) checkPath(path, "logs");
-  for (const event of project.events()) {
+  const events = project.events();
+  const hasArtifact = db.prepare<[string, string, string, string]>("SELECT 1 FROM artifacts WHERE job_id = ? AND run = ? AND name = ? AND type = ?");
+  for (const event of events) {
     if (event.type === "confirmation.recorded") continue;
     EventBody.parse(event);
-    if (event.type === "job.created") for (const artifact of [...(event.payload.attachments ?? []), ...(event.payload.ticket ? [event.payload.ticket] : [])]) checkPath(artifact.path, "artifacts");
-    if (event.type === "node_run.completed") for (const artifact of event.payload.artifacts) checkPath(artifact.path, "artifacts");
-    if (event.type === "job.ci_check" && event.payload.log) checkPath(event.payload.log.path, "artifacts");
+    for (const { artifact: { jobId, run, name, type } } of jobArtifacts([event])) {
+      const key: string = `${jobId}/${run}/${name}`;
+      if (jobId !== event.jobId || key.split("/").length !== 3 || archivePath(key) !== key || !hasArtifact.get(jobId, run, name, type)) {
+        throw new InvalidArchive("pecore.db contains an invalid artifact reference");
+      }
+    }
     if (event.type === "attempt.started") checkPath(event.payload.logPath, "logs");
     if (event.type === "job.base_change_requested" && !validBase(event.payload.base)) throw new InvalidArchive("pecore.db contains an invalid requested job base");
   }

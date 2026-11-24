@@ -4,7 +4,7 @@ import type { ArchiveReview, ArchiveRisk } from "@pecore/schemas";
 import type { Engine } from "../main";
 import { ProjectDb } from "../store/project-db";
 import type { Manifest } from "./archive";
-import { migrateHistory } from "./history";
+import { historyArtifacts, migrateHistory } from "./history";
 import { withProjectArchive } from "./import";
 import { reviewWithModel } from "./review-model";
 import type { ReviewInput } from "./review-model";
@@ -48,24 +48,18 @@ function decode(bytes: Buffer): string | null {
   }
 }
 
-function historyText(path: string): string | null {
-  migrateHistory(path);
-  const project: ProjectDb = new ProjectDb(path);
-  try {
-    const lines: string[] = [];
-    let size: number = 0;
-    for (const table of ["jobs", "node_runs", "attempts", "events", "human_queue", "tickets_seen"]) {
-      for (const row of project.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).iterate()) {
-        const line: string = JSON.stringify({ table, row });
-        size += line.length + 1;
-        if (size > maxReviewBytes) return null;
-        lines.push(line);
-      }
+function historyText(project: ProjectDb): string | null {
+  const lines: string[] = [];
+  let size: number = 0;
+  for (const table of ["jobs", "node_runs", "attempts", "events", "human_queue", "tickets_seen"]) {
+    for (const row of project.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).iterate()) {
+      const line: string = JSON.stringify({ table, row });
+      size += line.length + 1;
+      if (size > maxReviewBytes) return null;
+      lines.push(line);
     }
-    return lines.join("\n");
-  } finally {
-    project.close();
   }
+  return lines.join("\n");
 }
 
 export function analyzeProjectSource(engine: Engine, path: string): Promise<ArchiveReview> {
@@ -78,13 +72,9 @@ export async function reviewProjectContents(engine: Engine, dir: string, manifes
   let modelChars: number = 0;
   const entries = (await readdir(dir, { withFileTypes: true, recursive: true })).filter((entry) => entry.isFile());
   const paths: string[] = entries.map((entry) => relative(dir, join(entry.parentPath, entry.name))).sort();
-  paths.sort((a, b) => Number(/^(?:logs|artifacts)\//.test(a)) - Number(/^(?:logs|artifacts)\//.test(b)));
-  for (const path of paths) {
-    const history: boolean = path === "pecore.db";
-    const size: number = (await lstat(join(dir, path))).size;
-    const tooLarge: boolean = !history && size > maxReviewBytes;
-    const text: string | null = history ? historyText(join(dir, path)) : tooLarge ? null : decode(await readFile(join(dir, path)));
-    const content: FileReview["content"] = history ? (text === null ? "too_large" : "history") : tooLarge ? "too_large" : text === null ? "binary" : "text";
+  const order = (path: string): number => path.startsWith("logs/") ? 2 : path === "pecore.db" ? 1 : 0;
+  paths.sort((a, b) => order(a) - order(b));
+  const add = (path: string, size: number, text: string | null, content: FileReview["content"]): void => {
     const file: number = files.length;
     files.push({ path, bytes: size, content, modelReviewed: false, findings: text === null ? [] : scanText(text) });
     if (text !== null) {
@@ -95,6 +85,27 @@ export async function reviewProjectContents(engine: Engine, dir: string, manifes
         modelChars += chars;
       }
     }
+  };
+  for (const path of paths) {
+    const source: string = join(dir, path);
+    const size: number = (await lstat(source)).size;
+    if (path === "pecore.db") {
+      migrateHistory(source);
+      const project: ProjectDb = new ProjectDb(source);
+      try {
+        const text: string | null = historyText(project);
+        add(path, size, text, text === null ? "too_large" : "history");
+        for (const artifact of historyArtifacts(project.db, maxReviewBytes)) {
+          const content: string | null = artifact.content === null ? null : decode(artifact.content);
+          add(`artifacts/${artifact.file}`, artifact.bytes, content, artifact.content === null ? "too_large" : content === null ? "binary" : "text");
+        }
+      } finally {
+        project.close();
+      }
+      continue;
+    }
+    const text: string | null = size > maxReviewBytes ? null : decode(await readFile(source));
+    add(path, size, text, size > maxReviewBytes ? "too_large" : text === null ? "binary" : "text");
   }
   const model = await reviewWithModel(engine, modelFiles);
   if (model.status !== "complete") return { projectId: manifest.projectId, model: model.status, files };

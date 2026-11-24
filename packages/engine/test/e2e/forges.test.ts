@@ -140,7 +140,7 @@ for (const c of cases) {
       await p.executor.play(second);
       await until(() => ended(p.executor.job(second).state), 300_000);
       expect(p.executor.job(second)).toMatchObject({ state: "succeeded" });
-      expect(remoteHead(`factory/${second}`)).toBe(await jobCommit(p.ctx.dir, p.ctx.db.events(second)));
+      expect(remoteHead(`factory/${second}`)).toBe(jobCommit(p.ctx.db, p.ctx.db.events(second)));
       expect(c.requests(repo, `factory/${second}`)).toHaveLength(1);
       expect(p.ctx.db.events(second).filter((e) => e.type === "effect.requested" && e.payload.node === "push")).toHaveLength(1);
       console.log(`${c.forge}: ${c.requests(repo, `factory/${first}`)[0]!.url} ${c.requests(repo, `factory/${second}`)[0]!.url}`);

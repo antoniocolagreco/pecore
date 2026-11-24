@@ -11,6 +11,7 @@ import type { ProjectContext } from "../graph/executor";
 import { nodeSidecars } from "../definitions/load";
 import { activeJobCount, archivePath, definitionDirs, ShareConflict } from "./archive";
 import type { Manifest } from "./archive";
+import { historyArtifacts } from "./history";
 import { scanSecrets } from "./secrets";
 
 type Finding = Extract<ExportProjectResult, { state: "findings" }>["findings"][number];
@@ -69,7 +70,7 @@ export async function exportProject(ctx: ProjectContext, input: ExportProjectBod
   if (history) assertIdle(ctx);
   const dir: string = await mkdtemp(join(tmpdir(), "pecore-export-"));
   try {
-    const dirs: string[] = [...definitionDirs, ...(history ? ["artifacts"] : []), ...(logs ? ["logs"] : [])];
+    const dirs: string[] = [...definitionDirs, ...(logs ? ["logs"] : [])];
     const db: string = join(dir, "pecore.db");
     const revision = (): number => ctx.db.db.prepare("SELECT total_changes() AS changes").pluck().get() as number;
     const before: number = history ? revision() : 0;
@@ -78,8 +79,7 @@ export async function exportProject(ctx: ProjectContext, input: ExportProjectBod
     if (ctx.project.recipes !== undefined) await copyTemplates(ctx, dir);
     if (history) {
       assertIdle(ctx);
-      const findings: Finding[] = await scanSecrets(join(dir, "artifacts"));
-      assertIdle(ctx);
+      const findings: Finding[] = scanSecrets(historyArtifacts(ctx.db.db));
       const accepted: Set<string> = new Set(acceptFindings);
       if (findings.some((finding) => !accepted.has(finding.fingerprint))) return { state: "findings", findings };
       if (before !== revision()) throw new ShareConflict("project history changed during export: retry the export");

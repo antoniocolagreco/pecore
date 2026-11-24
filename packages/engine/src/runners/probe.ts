@@ -31,9 +31,9 @@ export function readProbe(r: Pick<RunResult, "code" | "stdout" | "timedOut">, ru
   return rule.notDone.length === 0 ? "not_done" : "unknown";
 }
 
-export type ProbeRun = { argv: string[]; user: string; cwd: string; env: Record<string, string>; timeoutMs: number };
+export type ProbeRun = { argv: string[]; user: string; cwd: string; env: Record<string, string>; input: string; timeoutMs: number };
 
 export async function runProbe(p: ProbeRun, rule: JsonRule | undefined): Promise<{ result: ProbeResult; stdout: string; stderr: string }> {
-  const r = await run({ user: p.user, argv: p.argv, cwd: p.cwd, env: p.env, timeoutMs: p.timeoutMs }).catch(() => ({ code: null, signal: null, stdout: "", stderr: "", timedOut: false }));
+  const r = await run(p).catch(() => ({ code: null, signal: null, stdout: "", stderr: "", timedOut: false }));
   return { result: readProbe(r, rule), stdout: r.stdout, stderr: r.stderr };
 }

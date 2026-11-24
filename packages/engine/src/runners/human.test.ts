@@ -3,11 +3,11 @@ import { Node } from "@pecore/schemas";
 import type { Artifact, HumanNode } from "@pecore/schemas";
 import { humanArtifacts, humanItem, humanResult } from "./human";
 
-const log: Artifact = { type: "text", path: "artifacts/job/check/log.txt", sha256: "b".repeat(64), contentState: "tree" };
-const diff: Artifact = { type: "diff", path: "artifacts/job/build/diff.patch", sha256: "c".repeat(64), contentState: "tree" };
-const risk: Artifact = { type: "findings", path: "artifacts/job/assess/findings.json", sha256: "d".repeat(64), contentState: "tree" };
-const outdatedRisk: Artifact = { type: "findings", path: "artifacts/job/old-assess/findings.json", sha256: "e".repeat(64), contentState: "old-tree" };
-const spec: Artifact = { type: "spec", path: "artifacts/job/spec/spec.json", sha256: "f".repeat(64), contentState: "tree" };
+const log: Artifact = { type: "text", jobId: "job", run: "check", name: "log.txt", sha256: "b".repeat(64), contentState: "tree" };
+const diff: Artifact = { type: "diff", jobId: "job", run: "build", name: "diff.patch", sha256: "c".repeat(64), contentState: "tree" };
+const risk: Artifact = { type: "findings", jobId: "job", run: "assess", name: "findings.json", sha256: "d".repeat(64), contentState: "tree" };
+const outdatedRisk: Artifact = { type: "findings", jobId: "job", run: "old-assess", name: "findings.json", sha256: "e".repeat(64), contentState: "old-tree" };
+const spec: Artifact = { type: "spec", jobId: "job", run: "spec", name: "spec.json", sha256: "f".repeat(64), contentState: "tree" };
 
 function human(fields: Record<string, unknown>): HumanNode {
   const node = Node.parse({ name: "review", description: "Review the job", kind: "human", interface: "code-review",
