@@ -126,6 +126,12 @@
   flex: none;
 }
 
+@media (hover: hover) {
+  .paletteRail:not([data-gesture], [aria-disabled="true"]) > [data-node-template]:hover > section {
+    background: linear-gradient(var(--fill), var(--fill)) var(--surface);
+  }
+}
+
 .paletteRail[data-gesture] {
   cursor: grabbing;
 }

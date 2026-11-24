@@ -84,7 +84,7 @@ export function RecipePalette({ nodes, disabled, loading, onAdd, children }: {
       }} />
   }>
     <div className={s.paletteBody}>
-      <ul ref={rail} className={s.paletteRail} aria-label="Node palette" onPointerDown={start} onPointerMove={move}
+      <ul ref={rail} className={s.paletteRail} aria-label="Node palette" aria-disabled={disabled || undefined} onPointerDown={start} onPointerMove={move}
         onPointerUp={(event) => finish(event, true)} onPointerCancel={(event) => finish(event, false)}
         onLostPointerCapture={(event) => finish(event, false)} onDragStart={(event) => event.preventDefault()}>
         {filtered.map(({ name, title, icon, kind }) => <li key={name} data-node-template={name}>
