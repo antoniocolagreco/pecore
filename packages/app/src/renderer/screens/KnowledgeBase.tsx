@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent } from "react";
+import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import type { DragEvent, Ref } from "react";
 import { KnowledgeFileName } from "@pecore/schemas";
 import type { DefinitionEntry } from "@pecore/schemas";
 import { call } from "../api/client";
@@ -18,6 +18,7 @@ import editorStyles from "./Editors.module.css";
 import s from "./KnowledgeBase.module.css";
 
 type Selection = { name: string; creating: boolean };
+type KnowledgeEditor = { save(): Promise<boolean> };
 
 function fileName(input: string): string {
   const name: string = input.trim();
@@ -29,24 +30,27 @@ function links(entry: DefinitionEntry): string[] {
   return Array.isArray(value) ? value.filter((link): link is string => typeof link === "string") : [];
 }
 
-function KnowledgeFile({ path, name, creating, names, onCreated, onDirty }: {
-  path: string; name: string; creating: boolean; names: string; onCreated(): void; onDirty(dirty: boolean): void;
+function KnowledgeFile({ path, name, creating, names, busy, onCreated, onDirty, onCanSave, ref }: {
+  path: string; name: string; creating: boolean; names: string; busy: boolean;
+  onCreated(): void; onDirty(dirty: boolean): void; onCanSave(canSave: boolean): void; ref: Ref<KnowledgeEditor>;
 }) {
   const creation: NewDefinition | undefined = useMemo(
     () => creating ? { content: `# ${name.slice(0, -3)}\n`, path: () => path } : undefined,
     [creating, name, path],
   );
   const file = useDefinitionDraft(path, false, creation, names, false);
+  useImperativeHandle(ref, () => ({ save: async () => !file.dirty || (file.canCommit && await file.commit()) }), [file.dirty, file.canCommit, file.commit]);
   useEffect(() => { onDirty(file.dirty); return () => onDirty(false); }, [file.dirty, onDirty]);
+  useEffect(() => { onCanSave(file.canCommit); return () => onCanSave(false); }, [file.canCommit, onCanSave]);
   useEffect(() => { if (file.savedPath) onCreated(); }, [file.savedPath, onCreated]);
   return <div className={s.editor}>
     <header className={s.editorHeader}>
       <h2>{name}</h2>
     </header>
-    <PageActions>{file.saveButton()}</PageActions>
+    <PageActions>{file.saveButton(busy)}</PageActions>
     {file.feedback}
     <div className={s.desk}>
-      {file.ready ? <Sidecar paper className={s.sheet} content={file.content} change={file.update} disabled={!file.editable} isMarkdown
+      {file.ready ? <Sidecar paper className={s.sheet} content={file.content} change={file.update} disabled={busy || !file.editable} isMarkdown
         errors={file.errors} warnings={file.warnings} /> : <div className={`${editorStyles.paperSurface} ${s.sheet}`} aria-hidden />}
     </div>
     {(!!file.errors?.length || !!file.warnings?.length) && <div className={s.issues}>
@@ -67,10 +71,13 @@ export function KnowledgeBase({ id }: { id: string }) {
   const names: string[] = files.map(({ name }) => name);
   const [selected, setSelected] = useState<Selection | null>(null);
   const [dirty, setDirty] = useState<boolean>(false);
+  const [canSave, setCanSave] = useState<boolean>(false);
   const [dialog, setDialog] = useState<"new" | "rename" | "delete" | null>(null);
   const [draftName, setDraftName] = useState<string>("");
   const [dropping, setDropping] = useState<boolean>(false);
+  const [pendingDrop, setPendingDrop] = useState<File[]>();
   const input = useRef<HTMLInputElement>(null);
+  const editor = useRef<KnowledgeEditor>(null);
   const candidate: string = fileName(draftName);
   const nameError: string | undefined = !candidate ? undefined
     : !KnowledgeFileName.safeParse(candidate).success ? "Use letters, digits, dots, hyphens and underscores."
@@ -99,14 +106,26 @@ export function KnowledgeBase({ id }: { id: string }) {
     entries.reload();
   });
   const [removedLinks, setRemovedLinks] = useState<{ file: string; link: string }[]>([]);
-  const upload = useAction(async (chosen: File[]) => {
+  const upload = useAction(async (chosen: File[], openFirst = false) => {
     setRemovedLinks([]);
     const invalid: string[] = chosen.filter(({ name }) => !KnowledgeFileName.safeParse(name).success).map(({ name }) => name);
     if (invalid.length) throw new Error(`Rename before uploading: ${invalid.join(", ")}. Names use letters, digits, dots, hyphens and underscores and end in .md.`);
     const result = await call("uploadKnowledge", { params: { id }, body: { files: await Promise.all(chosen.map(async (file) => ({ name: file.name, content: await file.text() }))) } });
+    const first: string | undefined = result.saved[0];
+    if (openFirst && first) {
+      setDirty(false);
+      setSelected({ name: first.slice(dir.length + 1), creating: false });
+    }
     setRemovedLinks(result.removedLinks);
     entries.reload();
   });
+  const confirmDrop = useAction(async (save: boolean) => {
+    if (!pendingDrop) return;
+    if (save && !await editor.current?.save()) throw new Error("The current file could not be saved. Cancel to check the editor.");
+    if (await upload.run(pendingDrop, true)) setPendingDrop(undefined);
+  });
+  const busy: boolean = upload.busy || confirmDrop.busy;
+  const canDrop: boolean = connected && !busy && !dialog && !pendingDrop && !removedLinks.length;
   const open = (kind: "new" | "rename" | "delete"): void => {
     setDraftName(kind === "rename" && selected ? selected.name : "");
     rename.clear();
@@ -127,8 +146,8 @@ export function KnowledgeBase({ id }: { id: string }) {
       if (!carriesFiles(event)) return;
       event.preventDefault();
       event.stopPropagation();
-      event.dataTransfer.dropEffect = connected ? "copy" : "none";
-      setDropping(true);
+      event.dataTransfer.dropEffect = canDrop ? "copy" : "none";
+      setDropping(canDrop);
     }}
     onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropping(false); }}
     onDropCapture={(event) => {
@@ -136,16 +155,22 @@ export function KnowledgeBase({ id }: { id: string }) {
       event.preventDefault();
       event.stopPropagation();
       setDropping(false);
-      if (connected) void upload.run([...event.dataTransfer.files]);
+      const chosen: File[] = [...event.dataTransfer.files];
+      if (!canDrop || !chosen.length) return;
+      if (dirty) {
+        upload.clear();
+        confirmDrop.clear();
+        setPendingDrop(chosen);
+      } else void upload.run(chosen, true);
     }}>
     {dropping && <div className={s.drop} aria-hidden="true">Drop Markdown files to add them to the knowledge</div>}
     <Card className={s.list} padded={false}>
       <PageActions>
-        <Button disabled={!connected} onClick={() => open("new")}>New file</Button>
-        <Button disabled={!connected || upload.busy} onClick={() => input.current?.click()}>{upload.busy ? "Uploading…" : "Upload"}</Button>
+        <Button disabled={!connected || busy} onClick={() => open("new")}>New file</Button>
+        <Button disabled={!connected || busy} onClick={() => input.current?.click()}>{upload.busy ? "Uploading…" : "Upload"}</Button>
         {selected && !selected.creating && <>
-          <Button disabled={!connected} onClick={() => open("rename")}>Rename</Button>
-          <Button variant="danger" disabled={!connected || remove.busy} onClick={() => open("delete")}>Delete file</Button>
+          <Button disabled={!connected || busy} onClick={() => open("rename")}>Rename</Button>
+          <Button variant="danger" disabled={!connected || busy || remove.busy} onClick={() => open("delete")}>Delete file</Button>
         </>}
       </PageActions>
       <input ref={input} type="file" accept=".md,text/markdown" multiple hidden onChange={(event) => {
@@ -157,14 +182,14 @@ export function KnowledgeBase({ id }: { id: string }) {
       {entries.loading && !entries.data && <Spinner />}
       {entries.data && !files.length && !selected?.creating && <p className={ui.muted}>No knowledge files yet.</p>}
       <List label="Knowledge files">
-        {files.map(({ name }) => <ListItem key={name} mono active={selected?.name === name} disabled={!connected} onClick={() => choose({ name, creating: false })}>{name}</ListItem>)}
+        {files.map(({ name }) => <ListItem key={name} mono active={selected?.name === name} disabled={!connected || busy} onClick={() => choose({ name, creating: false })}>{name}</ListItem>)}
         {selected?.creating && <ListItem mono active>{selected.name}</ListItem>}
       </List>
     </Card>
     <Card className={s.content} padded>
       {selected
-        ? <KnowledgeFile key={`${selected.name}:${selected.creating}`} path={`${dir}/${selected.name}`} name={selected.name} creating={selected.creating}
-          names={names.join("\n")} onCreated={created} onDirty={setDirty} />
+        ? <KnowledgeFile key={`${selected.name}:${selected.creating}`} ref={editor} path={`${dir}/${selected.name}`} name={selected.name} creating={selected.creating}
+          names={names.join("\n")} busy={busy} onCreated={created} onDirty={setDirty} onCanSave={setCanSave} />
         : <div className={s.editor}>
           <div className={s.editorHeader} aria-hidden />
           <div className={s.desk}>
@@ -175,6 +200,15 @@ export function KnowledgeBase({ id }: { id: string }) {
           </div>
         </div>}
     </Card>
+    <Dialog open={!!pendingDrop} onOpenChange={(value) => { if (!value && !busy) setPendingDrop(undefined); }}
+      title={`Save changes to ${selected?.name ?? "the current file"}?`}
+      footer={<>
+        <Button disabled={busy} onClick={() => setPendingDrop(undefined)}>Cancel</Button>
+        <Button disabled={!connected || busy} onClick={() => void confirmDrop.run(false)}>Discard and open</Button>
+        <Button variant="primary" disabled={!connected || busy || (dirty && !canSave)} onClick={() => void confirmDrop.run(true)}>Save and open</Button>
+      </>}>
+      <ErrorText error={confirmDrop.error ?? upload.error} />
+    </Dialog>
     <Dialog open={dialog === "new" || dialog === "rename"} onOpenChange={(value) => { if (!value) setDialog(null); }}
       title={dialog === "rename" ? `Rename ${selected?.name ?? ""}` : "New knowledge file"}
       description={dialog === "rename" ? "Links to it in the other files are updated." : undefined}
