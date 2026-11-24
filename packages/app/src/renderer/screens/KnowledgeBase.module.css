@@ -1,5 +1,9 @@
-.layout {
+.panel {
+  container: knowledge / inline-size;
+  height: 100%;
+}
 
+.layout {
   position: relative;
   display: grid;
   grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
@@ -109,9 +113,15 @@
   pointer-events: none;
 }
 
-@media (max-width: 760px) {
+@container knowledge (max-width: 640px) {
   .layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(24rem, 1fr);
+  }
+
+  .list > ul {
+    max-height: calc(5 * var(--row-h) + 4px);
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
   }
 }

@@ -149,7 +149,7 @@ export function KnowledgeBase({ id }: { id: string }) {
 
   const carriesFiles =(event: DragEvent): boolean => [...event.dataTransfer.types].includes("Files");
 
-  return <div className={s.layout}
+  return <div className={s.panel}><div className={s.layout}
     onDragOverCapture={(event) => {
       if (!carriesFiles(event)) return;
       event.preventDefault();
@@ -247,5 +247,5 @@ export function KnowledgeBase({ id }: { id: string }) {
       {linking.length > 0 && <p>These files link to it, and their links will break: {linking.join(", ")}.</p>}
       <ErrorText error={remove.error} />
     </Dialog>
-  </div>;
+  </div></div>;
 }
