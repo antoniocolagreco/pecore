@@ -1077,6 +1077,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect(intakePrompt).toContain("You do not write code yourself");
       expect(intakePrompt).toContain("save it in the project's knowledge with write_knowledge");
       expect(intakePrompt).toContain("Your name is Chris.");
+      expect(intakePrompt).toContain("<PE/CORE> stands for Product Engineering Core");
       const userPrompt: string = await readFile(join(t.root, "user.json"), "utf8");
       expect(userPrompt).toContain("Write a note and ask on ticket 7 which browser");
       expect(userPrompt).not.toContain("You do not write code yourself");
@@ -1162,6 +1163,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       const assistantPrompt: string = await readFile(join(t.root, "assistant.json"), "utf8");
       expect(assistantPrompt).toContain("call delegate_to_pm");
       expect(assistantPrompt).toContain("Never say the work is done");
+      expect(assistantPrompt).toContain("<PE/CORE> stands for Product Engineering Core");
       const m = mcp(tokenFileOf("assistant"));
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       expect((await m.tool("delegate_to_pm", { project: "nope", order: "Create a job." })).result!.isError).toBe(true);
