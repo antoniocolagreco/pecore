@@ -354,3 +354,9 @@
 - Decision: store artifacts in `pecore.db` by job, run, name and type, with the hash and content state. Agents get labelled inputs inline, and commands receive typed inputs as JSON on stdin. Job deletion removes its artifact rows.
 - Why: a job's history and artifacts travel in one SQLite snapshot, and later nodes can read inputs without workdir copies.
 - Replaces: artifact files under `artifacts/`, input copies under `.pecore/inputs/` and `PECORE_INPUTS_*_PATH`. Shipped templates regenerate with format 3. Old artifact files are not migrated.
+
+## 2026-11-24: Everything in the database, files only when there is no other way
+
+- Decision: all app data lives in the database as records with their own fields, not as files and not as file contents stored in the database. This covers settings, accounts, profiles, tiers, agents, node and recipe templates, project definitions, knowledge and agent logs. Data passes to agents and scripts through messages and stdin, never through files: agent result, output format, agent questions, knowledge and ticket comments included. A file is allowed only when no other way exists: the project's code, attachments an agent must open, and the engine's port and token that the CLI and the MCP bridge read.
+- Why: an app keeps its data in a database. Many files written again for every run are waste with no reason.
+- Replaces: the rule "files describe what exists; SQLite records what happened", the definition and settings files in `PECORE_HOME`, `knowledge/*.md`, `logs/*.jsonl.zst`, `.pecore/output.json`, `.pecore/output.schema.json`, `.pecore/question.json`, `.pecore/context/` and `PECORE_COMMENT_PATH`.
