@@ -1,5 +1,4 @@
 {
-  "$schema": "../../schemas/recipe.json",
   "name": "feature-to-local-commit",
   "description": "Feature on a local repository with one provider: spec, tests, code, checks, review, human approval, commit to the job branch",
   "start": "spec",

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { chmod, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { Accounts, Settings } from "@pecore/schemas";
@@ -28,7 +28,8 @@ async function mode(path: string): Promise<number> {
 
 async function newHome(): Promise<string> {
   const home: string = join(await tempDir(), "home");
-  await initHome(home, { templates: shippedTemplates });
+  await initHome(home);
+  await cp(shippedTemplates, homePaths(home).templates, { recursive: true });
   return home;
 }
 
@@ -46,8 +47,11 @@ describe.skipIf(!linux)("PECORE_HOME permissions", () => {
   it("opens to another user only the folder made for it: full access there, pass-through on the folders above, nothing on the rest", async () => {
     const home: string = await newHome();
     const p = homePaths(home);
-    await writeFile(p.settings, "{}\n", { mode: 0o600 });
-    await writeFile(p.accounts, "{}\n", { mode: 0o600 });
+    const legacySettings: string = join(home, "settings.json");
+    const legacyAccounts: string = join(home, "accounts.json");
+    await writeFile(legacySettings, "{}\n", { mode: 0o600 });
+    await writeFile(legacyAccounts, "{}\n", { mode: 0o600 });
+    await writeFile(p.chatsDb, "", { mode: 0o600 });
     const appLogins: string = join(p.harness, appUser);
     await mkdir(join(appLogins, "claude"), { recursive: true, mode: 0o700 });
     await writeFile(join(appLogins, "claude", ".credentials.json"), "secret\n", { mode: 0o600 });
@@ -61,7 +65,7 @@ describe.skipIf(!linux)("PECORE_HOME permissions", () => {
     expect(acl(p.harness)).toEqual([`user:${otherUser}:--x`]);
     expect(acl(home)).toEqual([`user:${otherUser}:--x`]);
     expect(acl(dirname(home))).toEqual([`user:${otherUser}:--x`]);
-    for (const secret of [p.settings, p.accounts, appLogins, join(appLogins, "claude"), join(appLogins, "claude", ".credentials.json"), p.chats, p.templates, p.projects]) {
+    for (const secret of [legacySettings, legacyAccounts, p.chatsDb, appLogins, join(appLogins, "claude"), join(appLogins, "claude", ".credentials.json"), p.chats, p.templates, p.projects]) {
       expect(acl(secret), secret).toEqual([]);
     }
     expect(await mode(join(appLogins, "claude", ".credentials.json"))).toBe(0o600);
@@ -94,7 +98,9 @@ describe.skipIf(!linux)("closing PECORE_HOME at start", () => {
   it("makes every file private and stops others listing folders, but leaves adapters, chats, logins, work folders and repositories as they are", async () => {
     const home: string = await newHome();
     const p = homePaths(home);
-    await writeFile(p.settings, "{}\n", { mode: 0o644 });
+    const legacySettings: string = join(home, "settings.json");
+    await writeFile(legacySettings, "{}\n", { mode: 0o644 });
+    await writeFile(p.chatsDb, "", { mode: 0o644 });
     await mkdir(join(p.projects, "demo", "work"), { recursive: true, mode: 0o755 });
     await mkdir(join(p.projects, "demo", "repo.git"), { recursive: true, mode: 0o755 });
     await writeFile(join(p.projects, "demo", "project.json"), "{}\n", { mode: 0o644 });
@@ -112,7 +118,7 @@ describe.skipIf(!linux)("closing PECORE_HOME at start", () => {
 
     await closeHome(home);
 
-    for (const file of [p.settings, templateNode, join(p.projects, "demo", "project.json"), join(p.projects, "demo", "pecore.db")]) expect((await mode(file)) & 0o077, file).toBe(0);
+    for (const file of [legacySettings, p.chatsDb, templateNode, join(p.projects, "demo", "project.json"), join(p.projects, "demo", "pecore.db")]) expect((await mode(file)) & 0o077, file).toBe(0);
     expect((await mode(p.templates)) & 0o007).toBe(0);
     expect((await mode(join(p.projects, "demo"))) & 0o007).toBe(0);
     expect(await mode(join(p.projects, "demo", "work"))).toBe(0o755);
@@ -134,7 +140,7 @@ describe.skipIf(!linux)("moving the old folders into PECORE_HOME", () => {
     await mkdir(join(user, ".pecore-chats", "assistant", "files"), { recursive: true });
     await writeFile(join(user, ".pecore-chats", "assistant", "mcp-token"), "old\n", { mode: 0o600 });
     const home: string = join(user, ".pecore");
-    await initHome(home, { templates: shippedTemplates });
+    await initHome(home);
 
     await moveLegacyFolders(home, false);
 
@@ -155,7 +161,7 @@ describe.skipIf(!linux)("moving the old folders into PECORE_HOME", () => {
     await mkdir(join(user, ".pecore-harness", "codex"), { recursive: true });
     await writeFile(join(user, ".pecore-harness", "codex", "auth.json"), "old\n");
     const home: string = join(user, ".pecore");
-    await initHome(home, { templates: shippedTemplates });
+    await initHome(home);
     await mkdir(join(home, "harness", appUser, "codex"), { recursive: true });
     await writeFile(join(home, "harness", appUser, "codex", "auth.json"), "current\n");
 

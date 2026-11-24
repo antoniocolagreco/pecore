@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
+import { setTestConfiguration } from "../../test/configuration";
 import { existsSync } from "node:fs";
 import { cp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { apiClient } from "@pecore/schemas";
+import { apiClient, Node } from "@pecore/schemas";
 import type { ChatDetail, LiveMessage } from "@pecore/schemas";
 import { FakeForge, forgeAccount } from "../../test/fake-forge";
 import { createProjectWithRecipes } from "../../test/project";
@@ -122,18 +123,18 @@ async function setup(build: (root: string) => object[][], extra: { source?: bool
   await mkdir(home, { recursive: true });
   if (extra.pm) {
     await writeFile(join(connectors, "fake-background.json"), connector("fake-background", pmFiles));
-    await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [
+    await setTestConfiguration(home, "accounts", { accounts: [
       { id: "fake", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" },
       { id: "background", kind: "model", provider: "fakeco", connector: "fake-background", login: "subscription" },
-    ] }));
-    await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p1", account: "fake", model: "m1" }, { id: "p2", account: "background", model: "m2" }] }));
-    await writeFile(join(home, "settings.json"), JSON.stringify({ assistant: { profile: "p1" }, pm: { profile: "p2", ...extra.compaction && { compaction: extra.compaction } } }));
+    ] });
+    await setTestConfiguration(home, "profiles", { profiles: [{ id: "p1", account: "fake", model: "m1" }, { id: "p2", account: "background", model: "m2" }] });
+    await setTestConfiguration(home, "settings", { assistant: { profile: "p1" }, pm: { profile: "p2", ...extra.compaction && { compaction: extra.compaction } } });
   } else {
-    await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [{ id: "fake", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" }, ...(forge ? [forgeAccount] : [])] }));
-    await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p1", account: "fake", model: "m1" }] }));
-    await writeFile(join(home, "settings.json"), JSON.stringify({ assistant: { profile: "p1" } }));
+    await setTestConfiguration(home, "accounts", { accounts: [{ id: "fake", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" }, ...(forge ? [forgeAccount] : [])] });
+    await setTestConfiguration(home, "profiles", { profiles: [{ id: "p1", account: "fake", model: "m1" }] });
+    await setTestConfiguration(home, "settings", { assistant: { profile: "p1" } });
   }
-  await writeFile(join(home, "tiers.json"), JSON.stringify({ tiers: { strong: ["p1"] } }));
+  await setTestConfiguration(home, "tiers", { tiers: { strong: ["p1"] } });
   const agents = { connectorsDir: connectors, adaptersDir: join(root, "adapters"), adapters: {} };
   const open = async () => {
     const engine = await Engine.start({ home, templates, agents, checkLogins: false, development: extra.development ?? false });
@@ -143,10 +144,9 @@ async function setup(build: (root: string) => object[][], extra: { source?: bool
   const first = await open();
   await createProjectWithRecipes(first.engine, { id: "demo", name: "Demo", repo: null }, ["reviewed", "big"]);
   if (extra.source) {
-    const dir = first.engine.projectDir("demo");
-    await writeFile(join(first.engine.project("demo").ctx.defs.nodeDir, "fake-source.json"), JSON.stringify({ ...fakeSource, comment: { command: ["/bin/sh", "-c", `echo posted >> '${join(root, "comments")}'`] } }));
-    const project = JSON.parse(await readFile(join(dir, "project.json"), "utf8")) as Record<string, unknown>;
-    await writeFile(join(dir, "project.json"), JSON.stringify({ ...project, source: { node: "fake-source", params: { trusted: ["alice"] } } }));
+    const { ctx } = first.engine.project("demo");
+    first.engine.catalog.saveNode(Node.parse({ ...fakeSource, comment: { command: ["/bin/sh", "-c", `echo posted >> '${join(root, "comments")}'`] } }));
+    ctx.db.definition.write({ ...ctx.project, source: { node: "fake-source", params: { trusted: ["alice"] } } });
     expect(await first.engine.reloadProject("demo")).toEqual([]);
   }
   return { root, forge, open, ...first };
@@ -360,8 +360,8 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       [...init(), ...newSession, { expect: "session/prompt" }, usage(270_000), ...replyWith("Long.")],
       [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "compact.json") }, ...replyWith("")],
     ]);
-    const settings: string = join(t.root, "home", "settings.json");
-    await writeFile(settings, JSON.stringify({ assistant: { profile: "p1", compaction: { auto: 524_288, max: 1_048_576 } } }));
+    const home: string = join(t.root, "home");
+    await setTestConfiguration(home, "settings", { assistant: { profile: "p1", compaction: { auto: 524_288, max: 1_048_576 } } });
     await t.close();
     const first = await t.open();
     expect((await first.call("getChat")).supportsImages).toBe(false);
@@ -370,7 +370,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     await new Promise((r) => setTimeout(r, 300));
     expect(existsSync(join(t.root, "compact.json"))).toBe(false);
     await first.close();
-    await writeFile(settings, JSON.stringify({ assistant: { profile: "p1" } }));
+    await setTestConfiguration(home, "settings", { assistant: { profile: "p1" } });
     const again = await t.open();
     try {
       await until(() => existsSync(join(t.root, "compact.json")));
@@ -1109,7 +1109,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       const changed = JSON.stringify({ ...reviewed, description: "changed by the Project Manager" }, null, 2) + "\n";
       expect((await m.tool("write_instance", { path: "projects/demo/recipes/reviewed.json", content: changed })).result?.isError).toBe(true);
       m.close();
-      expect(JSON.parse(await readFile(join(ctx.templates, "recipes", "reviewed.json"), "utf8"))).toMatchObject({ description: reviewed.description });
+      expect(t.engine.catalog.recipe("reviewed")).toMatchObject({ description: reviewed.description });
       expect((await readFile(comments, "utf8")).trim().split("\n")).toHaveLength(1);
       expect(ctx.db.db.prepare("SELECT count(*) AS n FROM human_queue WHERE kind = 'outbound'").get()).toEqual({ n: 0 });
 

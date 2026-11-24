@@ -181,6 +181,9 @@ export async function runAgentNode(r: AgentRun): Promise<AgentOutcome> {
     session = await startSession({ connector: r.connector, login: r.login, spawn, cwd: r.workdir, model: r.model, effort: r.effort, ...(resumeId ? { resumeId } : {}) });
   } catch (e) {
     const err = e instanceof StartError ? e : new StartError("other", String(e));
+    if (err.traffic && r.onRaw) {
+      for await (const line of err.traffic) r.onRaw(line);
+    }
     if (err.kind === "auth") return { ...common, kind: "waiting", reason: "auth", detail: err.raw };
     const state = await checkLogin({ connector: r.connector, login: r.login, spawn: r.spawn }).catch(() => ({ state: "unknown" as const }));
     if (state.state === "logged_out") return { ...common, kind: "waiting", reason: "auth", detail: err.raw };

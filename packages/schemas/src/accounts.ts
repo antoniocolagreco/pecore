@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { SchemaRef } from "./common";
 
 const AccountId = z.string().regex(/^[a-z][a-z0-9-]*$/);
 
@@ -49,7 +48,6 @@ export type ServiceAccount = z.infer<typeof ServiceAccount>;
 
 export const Accounts = z
   .object({
-    $schema: SchemaRef,
     accounts: z.array(Account).default([]),
   })
   .strict()

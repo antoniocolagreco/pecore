@@ -2,7 +2,6 @@ import { join } from "node:path";
 import { z } from "zod";
 import { projectIdCandidate, ProjectManagerIdentity } from "@pecore/schemas";
 import type { ProjectInput } from "@pecore/schemas";
-import { homePaths } from "../home/layout";
 import type { Engine } from "../main";
 import { ProjectCreateError, repoHost } from "../projects/create";
 import { loadForgeDefaults } from "../projects/defaults";
@@ -55,7 +54,7 @@ export async function validateProjectCreation(engine: Engine, { name, repository
       throw new Error("Enter a Git repository URL without embedded credentials.");
     }
     if (repoHost(url) !== account.host) throw new Error(`Forge account ${accountId} requires a repository on ${account.host}.`);
-    const defaults = await loadForgeDefaults(homePaths(home).templates, account.forge);
+    const defaults = await loadForgeDefaults(engine.opts.templates, account.forge);
     if (repository.mode === "new") {
       if ((account.forge !== "github" && account.forge !== "gitlab") || !defaults.createRepo) {
         throw new Error("Creating a repository requires a GitHub or GitLab account.");

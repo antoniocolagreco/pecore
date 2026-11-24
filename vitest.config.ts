@@ -9,7 +9,6 @@ export default defineConfig({
       include: ["packages/*/src/**/*.{ts,tsx}"],
       exclude: [
         "**/*.test.{ts,tsx}",
-        "packages/app/src/renderer/ds/**",
         "packages/app/src/renderer/gallery/**",
       ],
       thresholds: { lines: 80, statements: 80, functions: 80, branches: 80 },

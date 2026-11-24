@@ -1,5 +1,3 @@
-import { readdirSync, renameSync } from "node:fs";
-import { join } from "node:path";
 import Database from "better-sqlite3";
 import { monotonicFactory } from "ulid";
 import { EventBody, JobState, Recipe } from "@pecore/schemas";
@@ -19,11 +17,18 @@ export function historyArtifacts(db: ProjectDb["db"], maxBytes: number = Number.
     FROM artifacts ORDER BY file, type`).iterate(maxBytes);
 }
 
+export function historyLogs(db: ProjectDb["db"], maxBytes: number = Number.MAX_SAFE_INTEGER): IterableIterator<HistoryArtifact> {
+  return db.prepare<[number], HistoryArtifact>(`
+    SELECT 'logs/' || attempt_id || '/' || sequence AS file, length(CAST(payload AS BLOB)) AS bytes,
+      CASE WHEN length(CAST(payload AS BLOB)) <= ? THEN CAST(payload AS BLOB) END AS content
+    FROM attempt_logs ORDER BY attempt_id, sequence`).iterate(maxBytes);
+}
+
 function schema(db: ProjectDb["db"]): unknown[] {
   return db.prepare("SELECT type, name, tbl_name, sql FROM sqlite_schema ORDER BY name").raw().all();
 }
 
-export function migrateHistory(path: string): void {
+export function migrateHistory(path: string, includeLogs: boolean): void {
   const db: ProjectDb["db"] = new Database(path, { fileMustExist: true });
   try {
     db.pragma("trusted_schema = OFF");
@@ -40,16 +45,19 @@ export function migrateHistory(path: string): void {
     } finally {
       expected.close();
     }
+    if (!includeLogs && db.prepare("SELECT 1 FROM attempt_logs LIMIT 1").get()) {
+      throw new InvalidArchive("archive files do not match the manifest's history and logs flags");
+    }
+    if (db.prepare("SELECT 1 FROM pragma_foreign_key_check('attempt_logs') LIMIT 1").get() ||
+      db.prepare("SELECT 1 FROM attempt_logs JOIN attempts ON attempts.id = attempt_logs.attempt_id WHERE log_omitted = 1 LIMIT 1").get()) {
+      throw new InvalidArchive("pecore.db contains an invalid attempt log reference");
+    }
   } finally {
     db.close();
   }
 }
 
-function checkPath(path: string, root: string): void {
-  if (archivePath(path) !== path || !path.startsWith(`${root}/`)) throw new InvalidArchive(`pecore.db contains an invalid ${root} path`);
-}
-
-function remapHistory(db: ProjectDb["db"], dir: string): void {
+function remapHistory(db: ProjectDb["db"]): void {
   const ulidText = /(?<![0-9a-z])[0-7][0-9a-hjkmnp-tv-z]{25}(?![0-9a-z])/gi;
   const oldIds: Set<string> = new Set();
   const sources: string = `
@@ -63,9 +71,11 @@ function remapHistory(db: ProjectDb["db"], dir: string): void {
   db.function("import_text", (value: unknown) => (typeof value === "string" ? rewrite(value) : value));
   const tables = db.prepare<[], string>("SELECT name FROM sqlite_schema WHERE type = 'table'").pluck().all();
   for (const table of tables) {
+    if (table.startsWith("project_") || table.startsWith("catalog_")) continue;
     const columns = db.prepare<[string], string>("SELECT name FROM pragma_table_info(?) WHERE type = 'TEXT'").pluck().all(table);
     if (columns.length > 0) db.exec(`UPDATE "${table}" SET ${columns.map((name) => {
       if (table === "jobs" && name === "recipe") return 'recipe = recipe';
+      if (table === "attempt_logs" && name === "payload") return 'payload = payload';
       if (table === "events" && name === "payload") return `payload = CASE
         WHEN type = 'job.definitions_saved' THEN payload
         WHEN type = 'job.created' AND json_type(payload, '$.definitions') IS NOT NULL
@@ -80,14 +90,9 @@ function remapHistory(db: ProjectDb["db"], dir: string): void {
     UPDATE human_queue SET subject_hash = import_subject_hash(subject);
     UPDATE events SET payload = json_set(payload, '$.subjectHash', import_subject_hash(payload -> '$.subject')) WHERE type = 'queue.added';
   `);
-
-  for (const name of readdirSync(join(dir, "logs"))) {
-    const target: string = rewrite(name);
-    if (target !== name) renameSync(join(dir, "logs", name), join(dir, "logs", target));
-  }
 }
 
-export function resetHistory(project: ProjectDb, dir: string): void {
+export function resetHistory(project: ProjectDb): void {
   const db: ProjectDb["db"] = project.db;
   const count: number = activeJobCount(db);
   if (count > 0) throw new InvalidArchive(`pecore.db contains ${count} active ${count === 1 ? "job" : "jobs"}`);
@@ -99,8 +104,6 @@ export function resetHistory(project: ProjectDb, dir: string): void {
     }
     Recipe.parse(JSON.parse(job.recipe));
   }
-  const logs = db.prepare("SELECT log_path FROM attempts").pluck().iterate() as Iterable<string>;
-  for (const path of logs) checkPath(path, "logs");
   const events = project.events();
   const hasArtifact = db.prepare<[string, string, string, string]>("SELECT 1 FROM artifacts WHERE job_id = ? AND run = ? AND name = ? AND type = ?");
   for (const event of events) {
@@ -112,11 +115,10 @@ export function resetHistory(project: ProjectDb, dir: string): void {
         throw new InvalidArchive("pecore.db contains an invalid artifact reference");
       }
     }
-    if (event.type === "attempt.started") checkPath(event.payload.logPath, "logs");
     if (event.type === "job.base_change_requested" && !validBase(event.payload.base)) throw new InvalidArchive("pecore.db contains an invalid requested job base");
   }
   db.transaction(() => {
-    remapHistory(db, dir);
+    remapHistory(db);
     const obsolete = db.prepare("SELECT id, job_id FROM human_queue WHERE state = 'open' OR (kind = 'import' AND state = 'resolved' AND choice = 'reject')").all() as { id: string; job_id: string | null }[];
     db.prepare("DELETE FROM events WHERE type = 'confirmation.recorded'").run();
     db.prepare("UPDATE node_runs SET state = 'interrupted', pgid = NULL, os_user = NULL WHERE state = 'running'").run();

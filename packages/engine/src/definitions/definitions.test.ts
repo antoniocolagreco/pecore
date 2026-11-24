@@ -1,10 +1,12 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Node, Recipe } from "@pecore/schemas";
 import { shippedTemplates, tempDir } from "../../test/tmp";
-import { instantiateRecipe, instantiateNode } from "./instantiate";
-import { loadGlobal, loadTemplates, loadProject } from "./load";
+import { apiProject } from "../../test/api-project";
+import type { RouteOutput } from "@pecore/schemas";
+import { setTestConfiguration, testConfiguration } from "../../test/configuration";
+import { loadTemplates, validateGlobal } from "./load";
 import { checkRecipe, hasCommitNode } from "./recipe-check";
 
 const check = (name: string, outcomes: string[], extra: object = {}) =>
@@ -162,74 +164,68 @@ describe("phase 1 gate: shipped templates", () => {
     expect(lib.recipes.has("feature-to-pr")).toBe(true);
   });
 });
-
 describe("instantiate", () => {
-  it("copies a node with its script into a project, with the project schema path", async () => {
-    const project = await tempDir();
-    const r = await instantiateNode(shippedTemplates, project, "git-commit");
-    expect(r.errors).toEqual([]);
-    expect(r.written.map((f) => f.slice(project.length + 1)).sort()).toEqual(["nodes/git-commit.json", "nodes/git-commit.sh"]);
-    expect(JSON.parse(await readFile(join(project, "nodes", "git-commit.json"), "utf8")).$schema).toBe("../../../schemas/node.json");
+  it("copies a node and its script to a project's catalog, and keeps an edited instance", async () => {
+    const { engine, call, close } = await apiProject();
+    try {
+      const { ctx } = engine.project("demo");
+      ctx.db.definition.write({ ...ctx.project, recipes: undefined });
+      await engine.reloadProject("demo");
+      const body: { kind: "node"; name: string; project: string } = { kind: "node", name: "git-commit", project: "demo" };
+      expect(await call("instantiate", { body })).toMatchObject({
+        created: ["projects/demo/nodes/git-commit.json", "projects/demo/nodes/git-commit.sh"], kept: [],
+      });
+      expect(ctx.db.catalog.content("git-commit.sh")).toBe(engine.catalog.content("git-commit.sh"));
+      const node: Node = ctx.db.catalog.node("git-commit")!;
+      ctx.db.catalog.saveNode({ ...node, description: "My commit" });
+      expect(await call("instantiate", { body })).toMatchObject({ created: [], kept: ["projects/demo/nodes/git-commit.json"] });
+      expect(ctx.db.catalog.node("git-commit")?.description).toBe("My commit");
+    } finally {
+      await close();
+    }
   });
 
-  it("keeps an existing instance with the same name", async () => {
-    const project = await tempDir();
-    await mkdir(join(project, "nodes"));
-    await writeFile(join(project, "nodes", "typecheck.json"), "{}");
-    const r = await instantiateNode(shippedTemplates, project, "typecheck");
-    expect(r.kept).toEqual([join(project, "nodes", "typecheck.json")]);
-    expect(await readFile(join(project, "nodes", "typecheck.json"), "utf8")).toBe("{}");
-  });
-
-  it("instantiates a recipe and gives a valid project", async () => {
-    const project = join(await tempDir(), "demo");
-    await mkdir(project);
-    expect((await instantiateRecipe(shippedTemplates, project, "feature-to-local-commit")).errors).toEqual([]);
-    await writeFile(join(project, "project.json"), JSON.stringify({
-      id: "demo", name: "Demo", repo: null, defaultRecipe: "feature-to-local-commit", limits: { jobs: 2, budget: { jobUsd: 5 } },
-    }));
-    const loaded = await loadProject(project);
-    expect(loaded.errors).toEqual([]);
-    expect(loaded.project?.baseBranch).toBe("main");
-    expect(loaded.project).not.toHaveProperty("limits");
-    expect(loaded.project).not.toHaveProperty("defaultRecipe");
-  });
-
-  it("refuses a recipe that pushes in a project without a remote repository (decision 72)", async () => {
-    const project = join(await tempDir(), "demo");
-    await mkdir(project);
-    expect((await instantiateRecipe(shippedTemplates, project, "feature-to-pr")).errors).toEqual([]);
-    await writeFile(join(project, "project.json"), JSON.stringify({ id: "demo", name: "Demo", repo: null }));
-    const loaded = await loadProject(project);
-    expect(loaded.errors.map(({ path, message }) => ({ path, message }))).toEqual([
-      { path: "nodes.push.use", message: "git-push needs a remote repository, and this project has none" },
-      { path: "nodes.pr.use", message: "github-pr needs a remote repository, and this project has none" },
-    ]);
+  it("instantiates a valid local recipe and rejects a delivery recipe", async () => {
+    const { engine, call, close } = await apiProject();
+    try {
+      const { ctx } = engine.project("demo");
+      ctx.db.definition.write({ ...ctx.project, recipes: undefined });
+      await engine.reloadProject("demo");
+      await expect(call("instantiate", { body: { kind: "recipe", name: "feature-to-pr", project: "demo" } }))
+        .rejects.toThrow("git-push needs a remote repository");
+      expect(ctx.db.catalog.node("git-push")).toBeNull();
+      const response: RouteOutput<"instantiate"> = await call("instantiate", { body: { kind: "recipe", name: "feature-to-local-commit", project: "demo" } });
+      expect(response.created).toContain("projects/demo/recipes/feature-to-local-commit.json");
+      expect(ctx.defs.errors).toEqual([]);
+    } finally {
+      await close();
+    }
   });
 });
 
-describe("global files", () => {
-  it("gives defaults when the files are missing", async () => {
-    const g = await loadGlobal(await tempDir());
-    expect(g.errors).toEqual([]);
-    expect(g.value?.settings.minFreeDiskGb).toBe(10);
-    expect(g.value?.tiers.tiers.strong).toEqual([]);
+describe("global configuration", () => {
+  it("gives defaults when the tables are empty", async () => {
+    const g = await testConfiguration(await tempDir(), (config) => config.read());
+    expect(validateGlobal(g)).toEqual([]);
+    expect(g.settings.minFreeDiskGb).toBe(10);
+    expect(g.tiers.tiers.strong).toEqual([]);
   });
 
   it("rejects profiles of unknown accounts and tiers of unknown profiles", async () => {
     const home = await tempDir();
-    await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "opus", account: "nobody", model: "opus" }] }));
-    await writeFile(join(home, "tiers.json"), JSON.stringify({ tiers: { strong: ["sonnet"] } }));
-    const g = await loadGlobal(home);
-    expect(g.errors.map((e) => e.message)).toEqual(["account nobody not found", "profile sonnet not found"]);
+    await setTestConfiguration(home, "profiles", { profiles: [{ id: "opus", account: "nobody", model: "opus" }] });
+    await setTestConfiguration(home, "tiers", { tiers: { strong: ["sonnet"] } });
+    const g = await testConfiguration(home, (config) => config.read());
+    expect(validateGlobal(g).map((e) => e.message)).toEqual(["account nobody not found", "profile sonnet not found"]);
   });
 
-  it("reads the old orchestrator settings key as the Project Manager's", async () => {
+  it("loads Project Manager settings without importing a legacy settings file", async () => {
     const home = await tempDir();
     await writeFile(join(home, "settings.json"), JSON.stringify({ orchestrator: { profile: "background", compaction: { auto: 65_536, max: 131_072 } } }));
-    const g = await loadGlobal(home);
-    expect(g.errors).toEqual([]);
-    expect(g.value?.settings.pm).toEqual({ profile: "background", compaction: { auto: 65_536, max: 131_072 } });
-    expect(g.value?.settings).not.toHaveProperty("orchestrator");
+    await setTestConfiguration(home, "settings", { pm: { profile: "manager", compaction: { auto: 131_072, max: 262_144 } } });
+    const g = await testConfiguration(home, (config) => config.read());
+    expect(validateGlobal(g)).toEqual([]);
+    expect(g.settings.pm).toEqual({ profile: "manager", compaction: { auto: 131_072, max: 262_144 } });
+    expect(g.settings).not.toHaveProperty("orchestrator");
   });
 });

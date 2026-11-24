@@ -1,6 +1,7 @@
 import { cp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Engine } from "../src/main";
+import { setTestConfiguration } from "./configuration";
 import { FakeForge, forgeAccount } from "./fake-forge";
 import { createProjectWithRecipes } from "./project";
 import { shippedTemplates, tempDir } from "./tmp";
@@ -51,7 +52,7 @@ export async function forgeHome() {
   await writeFile(join(templates, "nodes", "write-spec.json"), JSON.stringify(writeSpec));
   await writeFile(join(templates, "recipes", "deliver.json"), JSON.stringify(deliver));
   await mkdir(home, { recursive: true });
-  await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [forgeAccount] }));
+  await setTestConfiguration(home, "accounts", { accounts: [forgeAccount] });
   return { forge, home, templates };
 }
 

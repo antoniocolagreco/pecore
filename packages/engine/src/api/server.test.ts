@@ -118,16 +118,21 @@ describe("local API (phase 5 decisions 2-5)", () => {
     await close();
   });
 
-  it("deletes the job's artifact rows with the job", async () => {
+  it("deletes the job's artifact and log rows with the job", async () => {
     const { engine, call, close } = await apiProject();
     try {
       const { id } = await call("createJob", { body: { project: "demo", title: "Add hello", ticket: { text: "x" } } });
       await until(async () => (await call("getJob", { params: { id } })).job.state === "waiting");
       await call("stopJob", { params: { id } });
-      const count = engine.project("demo").ctx.db.db.prepare<[string], number>("SELECT count(*) FROM artifacts WHERE job_id = ?").pluck();
+      const db = engine.project("demo").ctx.db;
+      const count = db.db.prepare<[string], number>("SELECT count(*) FROM artifacts WHERE job_id = ?").pluck();
+      const attemptId: string = (await call("getJob", { params: { id } })).attempts[0]!.id;
       expect(count.get(id)).toBeGreaterThan(1);
+      expect(db.logs.read(attemptId).length).toBeGreaterThan(0);
       await call("deleteJob", { params: { id } });
       expect(count.get(id)).toBe(0);
+      expect(db.logs.read(attemptId)).toEqual([]);
+      await expect(call("getLog", { params: { id: attemptId }, query: { view: "raw" } })).rejects.toMatchObject({ status: 404 });
       await expect(call("getJob", { params: { id } })).rejects.toMatchObject({ status: 404 });
     } finally {
       await close();

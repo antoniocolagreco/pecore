@@ -34,7 +34,7 @@ describe("why (G13): one blocking reason per waiting reason, through GET /jobs/:
         job(id),
         { jobId: id, type: "job.state_changed", payload: { state: "running", reason: null } },
         { jobId: id, type: "node_run.created", payload: { nodeRunId, node: "build", round: 0 } },
-        { jobId: id, type: "attempt.started", payload: { attemptId: `${id}-a`, nodeRunId, profile: "p", connector: "claude-code", harnessVersion: null, connectorVersion: null, account: "claude-main", osUser: "u", sessionGroup: null, logPath: "logs/x" } },
+        { jobId: id, type: "attempt.started", payload: { attemptId: `${id}-a`, nodeRunId, profile: "p", connector: "claude-code", harnessVersion: null, connectorVersion: null, account: "claude-main", osUser: "u", sessionGroup: null } },
         {
           jobId: id,
           type: "node_run.state_changed",

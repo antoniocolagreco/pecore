@@ -44,6 +44,7 @@ async function runSourceAtLocation(ctx: ProjectContext, request: SourceRequest):
     node: spec,
     outputs: () => Object.entries(rules),
     nodeDir,
+    sidecars: ctx.defs.sidecars,
     params,
     user: appUser,
     workdir: ctx.dir,

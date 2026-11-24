@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { automaticOutputs, Node, placeholderEnvName, unknownPlaceholders } from "./node";
 
 const githubPr = {
-  $schema: "../../../schemas/node.json",
   name: "github-pr",
   description: "Open a pull request on GitHub for the pushed job branch, or move an existing one to the job's target branch",
   kind: "command",

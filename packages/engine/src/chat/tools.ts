@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
 import { z } from "zod";
 import { appName, ArchiveReviewBody, ChatForm, Compaction, InstantiateBody, Name, NodeAgent, NodeAgentCatalog, OrderPlan, ProjectExportOptions, TicketReply, TicketSnapshot } from "@pecore/schemas";
 import type { ExportProjectResult, ImportProjectPreview, StoredEvent } from "@pecore/schemas";
@@ -12,7 +11,6 @@ import { planOrder } from "../jobs/plan";
 import type { OrderPlanResult, TicketOrder } from "../jobs/plan";
 import { NotFoundError } from "../main";
 import type { Engine } from "../main";
-import { readLogTail } from "../observability/logs";
 import { analyzeProjectSource } from "../share/review";
 import { runSource } from "../sources/run";
 import type { SourceRequest } from "../sources/run";
@@ -267,7 +265,7 @@ export function chatTools(engine: Engine): {
     list_definitions: tool("List definitions in Templates, recipes selected by a project or knowledge files.", z.strictObject({ dir: id }), async ({ dir }) => ({
       value: (await definitions.handlers.listDefinitions({ params: undefined, query: { dir }, body: undefined })).map(({ path, errors }) => ({ path, errors })),
     })),
-    read_definition: tool("Read a node, recipe, SVG icon, prompt, script, knowledge or project.json file by its definition path.", z.strictObject({ path: id }), async ({ path }) => ({
+    read_definition: tool("Read a node, recipe, icon, prompt, script, knowledge document or project by its definition path.", z.strictObject({ path: id }), async ({ path }) => ({
       value: await definitions.handlers.getDefinition({ params: { path }, query: undefined, body: undefined }),
       target: { path },
     })),
@@ -335,11 +333,11 @@ export function chatTools(engine: Engine): {
         const encoding = artifact.type === "attachment" ? "base64" : "utf8";
         return { value: { untrusted: true, artifact, content: bytes.subarray(0, limit).toString(encoding), encoding, truncated: bytes.length > limit }, target: input };
       }
-      const row = ctx.db.db.prepare(`SELECT a.id, a.log_path FROM attempts a JOIN node_runs n ON n.id = a.node_run_id
+      const row: { id: string; log_omitted: number } | undefined = ctx.db.db.prepare<[string, string, string | null, string | null], { id: string; log_omitted: number }>(`SELECT a.id, a.log_omitted FROM attempts a JOIN node_runs n ON n.id = a.node_run_id
         WHERE n.job_id = ? AND n.id = ? AND (? IS NULL OR a.id = ?) ORDER BY a.started_at DESC, a.id DESC LIMIT 1`)
-        .get(input.jobId, input.nodeRunId, input.attemptId ?? null, input.attemptId ?? null) as { id: string; log_path: string } | undefined;
-      if (!row) throw new NotFoundError("node-run log not found");
-      const { bytes, truncated } = await readLogTail(join(ctx.dir, row.log_path), artifactLimit);
+        .get(input.jobId, input.nodeRunId, input.attemptId ?? null, input.attemptId ?? null);
+      if (!row || row.log_omitted) throw new NotFoundError("node-run log not found");
+      const { bytes, truncated } = ctx.db.logs.tail(row.id, artifactLimit);
       return { value: { untrusted: true, attemptId: row.id, content: bytes.toString("utf8"), truncated }, target: { ...input, attemptId: row.id } };
     }),
     answer_question: tool(`Answer an open agent-question item. Read its current hash from ${appName} context.`, z.strictObject({ itemId: id, answer: z.string().trim().min(1), hash: z.string().regex(/^[0-9a-f]{64}$/).optional() }), async ({ itemId, answer, hash }) => {

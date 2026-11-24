@@ -1,8 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import type { RecipeInput } from "@pecore/schemas";
+import { Node, Recipe } from "@pecore/schemas";
 import { forgeProject, until } from "../../test/forge-project";
 import { Engine } from "../main";
 
@@ -29,13 +28,13 @@ it("restarts a pending CI wait and runs a correction on the same pull request", 
       ],
       successOutcomes: ["pr:ci_passed"],
     };
-    await writeFile(join(ctx.templates, "recipes", "with-ci.json"), JSON.stringify(recipe));
-    await writeFile(join(ctx.defs.nodeDir, "fix-tests.json"), JSON.stringify({
+    engine.catalog.saveRecipe(Recipe.parse(recipe));
+    engine.catalog.saveNode(Node.parse({
       name: "fix-tests", description: "Make a new commit", kind: "command",
       command: ["/bin/sh", "-c", "jq -ej '.text' > ci-log.txt && echo fixed >> hello.txt"], inputs: ["text"],
       changesFiles: true, outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }], timeoutSec: 10,
     }));
-    await writeFile(join(ctx.dir, "project.json"), JSON.stringify({ ...ctx.project, recipes: ["with-ci"] }));
+    ctx.db.definition.write({ ...ctx.project, recipes: ["with-ci"] });
     expect(await engine.reloadProject("shop")).toEqual([]);
     const job: string = await engine.createJob("shop", { title: "Exercise CI", ticket: { text: "x" } });
     const first: string = await until<string>(() => {

@@ -4,12 +4,11 @@ import { basename, dirname, extname, join, relative, resolve, sep } from "node:p
 import { KnowledgeFileName, Name, Node, Project, projectManagerClash, Recipe } from "@pecore/schemas";
 import type { DefinitionEntry, InstantiateBody, RouteOutput } from "@pecore/schemas";
 import { validIcon } from "../../definitions/icon";
-import { instantiateNode, instantiateRecipe } from "../../definitions/instantiate";
 import { checkKnowledge, knowledgeLinks, knowledgeNames, removeBrokenKnowledgeLinks, renameKnowledgeLinks } from "../../definitions/knowledge";
 import type { KnowledgeIssue } from "../../definitions/knowledge";
-import { loadTemplates, loadProject, readJson, zodErrors } from "../../definitions/load";
+import { loadTemplates, nodeSidecars, zodErrors } from "../../definitions/load";
 import type { DefinitionError } from "../../definitions/load";
-import { checkRecipe, remoteIssues } from "../../definitions/recipe-check";
+import { checkRecipe } from "../../definitions/recipe-check";
 import { isFinal } from "../../graph/job-machine";
 import { homePaths } from "../../home/layout";
 import { NotFoundError } from "../../main";
@@ -17,6 +16,7 @@ import type { Engine } from "../../main";
 import { forgeAccountOf, ProjectCreateError } from "../../projects/create";
 import { loadForgeDefaults, projectDefaults } from "../../projects/defaults";
 import { absoluteProjectFolder, changeProjectLocation, ProjectLocationConflict, sameRepository } from "../../projects/location";
+import type { Catalog } from "../../store/catalog";
 import { HttpError } from "../server";
 import type { Handlers } from "../server";
 
@@ -138,15 +138,32 @@ export function definitionOperations(engine: Engine) {
     if (knowledgeName && !knowledgeName.success) {
       throw new HttpError("bad_request", `invalid knowledge file name ${file}: ${knowledgeName.error.issues[0]?.message ?? "invalid"}`);
     }
+    let catalog: Catalog | undefined = homeDirectory ? engine.catalog : undefined;
     if (id) {
       const ctx = projectContext(engine, id);
       if (definitionDirectory && ctx.project.recipes !== undefined) throw new HttpError("bad_request", "Edit nodes and recipes in Templates.");
+      if (definitionDirectory) catalog = ctx.db.catalog;
     }
     const projectDir: string | undefined = id ? resolve(engine.projectDir(id)) : undefined;
     const root: string = projectDir ?? home.home;
     const dir: string = projectDir ? join(projectDir, ...parts.slice(2)) : homeDirectory!;
     const absPath: string = join(dir, file);
-    return { id, projectDir, root, absPath, directory, kind, file };
+    return { id, projectDir, root, absPath, directory, kind, file, catalog };
+  }
+
+  async function definitionBytes(target: ReturnType<typeof location>): Promise<Buffer | null> {
+    if (target.kind === "project" && target.id) {
+      const stored: Project | null = projectContext(engine, target.id).db.definition.read();
+      return stored === null ? null : Buffer.from(JSON.stringify(stored, null, 2) + "\n");
+    }
+    if (target.catalog) {
+      const { catalog, kind, file } = target;
+      const stored: Node | Recipe | string | null = kind === "node" ? catalog.node(basename(file, ".json"))
+        : kind === "recipe" ? catalog.recipe(basename(file, ".json")) : kind === "icon" ? catalog.icon(file) : catalog.content(file);
+      return stored === null ? null : Buffer.from(typeof stored === "string" ? stored : JSON.stringify(stored, null, 2) + "\n");
+    }
+    await rejectSymlinks(target.root, target.absPath);
+    return optionalBytes(target.absPath);
   }
 
   function inspect(path: string, kind: DefinitionKind | undefined, id: string | undefined, content: string): Pick<DefinitionEntry, "value" | "errors"> {
@@ -204,22 +221,14 @@ export function definitionOperations(engine: Engine) {
     if (kind !== "recipe" || id || inspected.errors.length) return inspected;
     const recipe: Recipe = Recipe.parse(inspected.value);
     if (recipe.ends === undefined) return inspected;
-    const { nodes } = await loadTemplates(home.templates);
+    const { nodes } = await loadTemplates(home.templates, engine.catalog);
     return { value: inspected.value, errors: checkRecipe(recipe, nodes, true).map((issue) => ({ file: path, ...issue })) };
   }
 
   async function nodeTemplateUsers(name: string): Promise<string[]> {
     const users: string[] = [];
-    const dir: string = join(home.templates, "recipes");
-    await rejectSymlinks(home.home, dir);
-    for (const recipe of (await definitionFiles(dir, "recipes")).sort()) {
-      const { value } = await readJson(join(dir, recipe));
-      if (value && typeof value === "object" && "nodes" in value && value.nodes && typeof value.nodes === "object") {
-        const steps: unknown[] = Object.values(value.nodes);
-        if (steps.some((step) => step && typeof step === "object" && "use" in step && step.use === name)) {
-          users.push(`recipe ${basename(recipe, ".json")}`);
-        }
-      }
+    for (const recipe of engine.catalog.names("recipes")) {
+      if (Object.values(engine.catalog.recipe(recipe)!.nodes).some(({ use }) => use === name)) users.push(`recipe ${recipe}`);
     }
     for (const { ctx } of engine.projects.values()) {
       if (ctx.project.recipes !== undefined) {
@@ -230,13 +239,13 @@ export function definitionOperations(engine: Engine) {
         }
       }
     }
-    const forges: string[] = await readdir(join(home.templates, "forges")).catch((error: NodeJS.ErrnoException) => {
+    const forges: string[] = await readdir(join(engine.opts.templates, "forges")).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return [];
       throw error;
     });
     for (const file of forges.filter((entry) => entry.endsWith(".json")).sort()) {
       const forge: string = basename(file, ".json");
-      const { delivery, comment, createRepo, source } = await loadForgeDefaults(home.templates, forge);
+      const { delivery, comment, createRepo, source } = await loadForgeDefaults(engine.opts.templates, forge);
       if ([delivery, comment, createRepo, source].includes(name)) users.push(`forge ${forge}`);
     }
     return users;
@@ -251,9 +260,7 @@ export function definitionOperations(engine: Engine) {
           const entries: DefinitionEntry[] = [];
           for (const name of ctx.project.recipes) {
             const path: string = `templates/recipes/${name}.json`;
-            const target = location(path, false);
-            await rejectSymlinks(target.root, target.absPath);
-            const bytes: Buffer | null = await optionalBytes(target.absPath);
+            const bytes: Buffer | null = await definitionBytes(location(path, false));
             if (!bytes) continue;
             entries.push({ path, sha256: sha256(bytes), ...inspect(path, "recipe", ctx.id, bytes.toString("utf8")) });
           }
@@ -261,21 +268,27 @@ export function definitionOperations(engine: Engine) {
         }
       }
       const target = location(dir, true);
-      await rejectSymlinks(target.root, target.absPath);
-      const files: string[] = await definitionFiles(target.absPath, target.directory);
+      const { catalog, directory } = target;
+      let files: string[];
+      if (catalog) {
+        if (directory === "icons") files = catalog.names("icons");
+        else if (directory === "recipes") files = catalog.names("recipes").map((name) => `${name}.json`);
+        else files = [...catalog.names("nodes").map((name) => `${name}.json`), ...catalog.names("node_content")];
+      } else {
+        await rejectSymlinks(target.root, target.absPath);
+        files = await definitionFiles(target.absPath, directory);
+      }
       const entries: DefinitionEntry[] = [];
       for (const file of files.sort()) {
-        const bytes: Buffer | null = await optionalBytes(join(target.absPath, file));
-        if (!bytes) continue;
         const path: string = `${dir}/${file}`;
+        const bytes: Buffer | null = await definitionBytes(location(path, false));
+        if (!bytes) continue;
         entries.push({ path, sha256: sha256(bytes), ...inspect(path, fileKind(target.directory, basename(file)), target.id, bytes.toString("utf8")) });
       }
       return entries;
     },
     getDefinition: async ({ params: { path } }) => {
-      const target = location(path, false);
-      await rejectSymlinks(target.root, target.absPath);
-      const bytes: Buffer | null = await optionalBytes(target.absPath);
+      const bytes: Buffer | null = await definitionBytes(location(path, false));
       if (!bytes) throw new NotFoundError(`definition ${path} not found`);
       return { path, content: bytes.toString("utf8"), sha256: sha256(bytes) };
     },
@@ -336,12 +349,12 @@ export function definitionOperations(engine: Engine) {
       /^projects\/[^/]+\/project\.json$/.test(path) ? engine.withGlobalFiles(() => save(path, content, baseSha256)) : save(path, content, baseSha256)),
     getNodeTemplateUsage: ({ params: { name } }) => nodeTemplateUsers(name),
     deleteTemplate: ({ params: { path }, body: { baseSha256 } }) => mutate(() => engine.withGlobalFiles(async () => {
-      const { root, absPath, kind, file } = location(path, false);
+      const target: ReturnType<typeof location> = location(path, false);
+      const { kind, file } = target;
       if (!path.startsWith("templates/") || (kind !== "node" && kind !== "recipe")) {
         throw new HttpError("bad_request", "Only node and recipe templates can be deleted here.");
       }
-      await rejectSymlinks(root, absPath);
-      const bytes: Buffer | null = await optionalBytes(absPath);
+      const bytes: Buffer | null = await definitionBytes(target);
       if (!bytes) throw new NotFoundError(`definition ${path} not found`);
       if (sha256(bytes) !== baseSha256) throw new HttpError("conflict", "The template changed since it was loaded. Reopen it before deleting.");
 
@@ -351,7 +364,7 @@ export function definitionOperations(engine: Engine) {
         : projects.filter((project) => project.recipes?.includes(name)).map(({ id }) => `project ${id}`);
       if (users.length) throw new HttpError("conflict", `This template is used by ${users.join(", ")}.`);
 
-      await rm(absPath);
+      engine.catalog.delete(kind === "node" ? "nodes" : "recipes", name);
       for (const { id } of projects) await engine.reloadProject(id);
       engine.definitionChanged(path, null);
       return { ok: true as const };
@@ -364,9 +377,9 @@ export function definitionOperations(engine: Engine) {
   } satisfies Partial<Handlers>;
 
   async function save(path: string, content: string, baseSha256: string | null): Promise<RouteOutput<"saveDefinition">> {
-    const { root, absPath, kind, id, file } = location(path, false);
-    await rejectSymlinks(root, absPath);
-    const before: Buffer | null = await optionalBytes(absPath);
+    const target: ReturnType<typeof location> = location(path, false);
+    const { absPath, catalog, kind, id, file } = target;
+    const before: Buffer | null = await definitionBytes(target);
     const bytes: Buffer = Buffer.from(content, "utf8");
     if ((before === null ? null : sha256(before)) !== baseSha256) {
       throw new HttpError("conflict", "the file changed since it was loaded");
@@ -374,6 +387,13 @@ export function definitionOperations(engine: Engine) {
     const { errors, value } = await inspectWritable(path, kind, id, content);
     if (errors.length) throw new HttpError("bad_request", errors.map((error) => error.message).join("\n"));
     const persist = async (data: Buffer): Promise<void> => {
+      if (catalog) {
+        if (kind === "node") catalog.saveNode(Node.parse(value));
+        else if (kind === "recipe") catalog.saveRecipe(Recipe.parse(value));
+        else if (kind === "icon") catalog.saveIcon(file, content);
+        else catalog.saveContent(file, content);
+        return;
+      }
       await mkdir(dirname(absPath), { recursive: true });
       const stage: string = await mkdtemp(join(dirname(absPath), ".definition-"));
       try {
@@ -395,7 +415,7 @@ export function definitionOperations(engine: Engine) {
       if (current.recipes !== undefined && next.recipes === undefined) throw new HttpError("bad_request", "Keep the list of selected recipe templates.");
       const missing: string[] = (next.recipes ?? []).filter((name) => !loaded.ctx.defs.recipes.has(name));
       if (missing.length > 0) {
-        const templates = await loadTemplates(home.templates);
+        const templates = await loadTemplates(home.templates, engine.catalog);
         for (const name of missing) {
           const recipe: Recipe | undefined = templates.recipes.get(name);
           if (!recipe) throw new HttpError("bad_request", `recipe template ${name} not found`);
@@ -420,42 +440,44 @@ export function definitionOperations(engine: Engine) {
             const source = next.source && loaded.ctx.defs.nodes.get(next.source.node);
             if (!next.source?.account && source?.kind === "source" && source.credentials.includes("project.account")) next.source = null;
           }
-          saved = Buffer.from(JSON.stringify(next, null, 2) + "\n");
           await changeProjectLocation(loaded.ctx, current, next, engine.global().accounts, async () => {
+            loaded.ctx.db.definition.write(next);
             try {
-              await persist(saved);
+              await engine.reloadProject(id);
             } catch (error) {
-              if (before) await writeFile(absPath, before);
+              loaded.ctx.db.definition.write(current);
+              await engine.reloadProject(id);
               throw error;
             }
-            await engine.reloadProject(id);
           });
         } catch (error) {
           throw new HttpError(error instanceof ProjectLocationConflict ? "conflict" : "bad_request", (error as Error).message);
         }
-        const hash: string = sha256(saved);
-        engine.definitionChanged(path, hash);
-        return { sha256: hash };
+      } else {
+        loaded.ctx.db.definition.write(next);
+        await engine.reloadProject(id);
       }
+      const hash: string = sha256((await definitionBytes(target))!);
+      engine.definitionChanged(path, hash);
+      return { sha256: hash };
     }
     await persist(saved);
     if (id) await engine.reloadProject(id);
     else if (kind === "node" || kind === "recipe" || kind === "prompt" || kind === "script") {
       for (const [projectId, project] of engine.projects) if (project.ctx.project.recipes !== undefined) await engine.reloadProject(projectId);
     }
-    const hash: string = sha256(saved);
+    const hash: string = sha256((await definitionBytes(target))!);
     engine.definitionChanged(path, hash);
     return { sha256: hash };
   }
 
   async function instantiate({ kind, name, project: id }: InstantiateBody): Promise<RouteOutput<"instantiate"> & { errors: DefinitionError[] }> {
-    const { project } = projectContext(engine, id);
-    const projectDir: string = resolve(engine.projectDir(id));
+    const { project, db } = projectContext(engine, id);
     if (project.recipes !== undefined) {
       const path: string = `templates/recipes/${name}.json`;
       if (kind === "node") return { created: [], kept: [], errors: [{ file: `templates/nodes/${name}.json`, path: "", message: "Add the node to a recipe in Templates." }] };
       if (project.recipes.includes(name)) return { created: [], kept: [path], errors: [] };
-      const templates = await loadTemplates(home.templates);
+      const templates = await loadTemplates(home.templates, engine.catalog);
       const recipe: Recipe | undefined = templates.recipes.get(name);
       const errors: DefinitionError[] = recipe
         ? checkRecipe(recipe, templates.nodes, project.repo !== null).map((issue) => ({ file: path, ...issue }))
@@ -463,7 +485,7 @@ export function definitionOperations(engine: Engine) {
       if (errors.length > 0) return { created: [], kept: [], errors };
       const projectPath: string = `projects/${id}/project.json`;
       const target = location(projectPath, false);
-      const before: Buffer | null = await optionalBytes(target.absPath);
+      const before: Buffer | null = await definitionBytes(target);
       if (!before) throw new NotFoundError(`project ${id} not found`);
       const updated: Project = { ...Project.parse(JSON.parse(before.toString("utf8"))), recipes: [...project.recipes, name] };
       await save(projectPath, JSON.stringify(updated, null, 2) + "\n", sha256(before));
@@ -473,33 +495,67 @@ export function definitionOperations(engine: Engine) {
     if (kind === "recipe" && project.repo !== null) {
       try {
         const account = forgeAccountOf(project, engine.global().accounts);
-        ({ rename } = await projectDefaults(home.templates, project.repo, account?.forge ?? null));
+        ({ rename } = await projectDefaults(engine.opts.templates, project.repo, account?.forge ?? null));
       } catch (e) {
         if (e instanceof ProjectCreateError) throw new HttpError("bad_request", e.message);
         throw e;
       }
     }
-    if (kind === "recipe" && project.repo === null) {
-      const templates = await loadTemplates(home.templates);
-      const recipe = templates.recipes.get(name);
-      const errors: DefinitionError[] = recipe ? remoteIssues(recipe, templates.nodes).map((issue) => ({ file: `templates/recipes/${name}.json`, ...issue })) : [];
-      if (errors.length) return { created: [], kept: [], errors };
+    const recipe: Recipe | null = kind === "recipe" ? engine.catalog.recipe(name) : null;
+    const errors: DefinitionError[] = [];
+    if (kind === "recipe" && !recipe) {
+      return { created: [], kept: [], errors: [{ file: `templates/recipes/${name}.json`, path: "", message: `recipe template ${name} not found` }] };
     }
-    const nodesDir: string = join(projectDir, "nodes");
-    await rejectSymlinks(projectDir, nodesDir);
-    if (kind === "recipe") await rejectSymlinks(projectDir, join(projectDir, "recipes"));
-    const result = kind === "node"
-      ? await instantiateNode(home.templates, projectDir, name)
-      : await instantiateRecipe(home.templates, projectDir, name, rename, async (content) => {
-        const file: string = `projects/${id}/recipes/${name}.json`;
-        const { nodes } = await loadProject(projectDir);
-        const recipe: Recipe = Recipe.parse(JSON.parse(content));
-        return checkRecipe(recipe, nodes, project.repo !== null).map((issue) => ({ file, ...issue }));
-      });
+    if (recipe) for (const step of Object.values(recipe.nodes)) step.use = Object.hasOwn(rename, step.use) ? rename[step.use]! : step.use;
+    const created: string[] = [];
+    const kept: string[] = [];
+    const nodes: Map<string, Node> = new Map();
+    const additions: Node[] = [];
+    const contents: Map<string, string> = new Map();
+    const names: Set<string> = new Set(recipe ? Object.values(recipe.nodes).map(({ use }) => use) : [name]);
+    for (const use of names) {
+      const existing: Node | null = db.catalog.node(use);
+      const file: string = `projects/${id}/nodes/${use}.json`;
+      const node: Node | null = existing ?? engine.catalog.node(use);
+      if (!node) {
+        errors.push({ file, path: "", message: `node template ${use} not found` });
+        continue;
+      }
+      nodes.set(use, node);
+      if (existing) {
+        kept.push(file);
+        continue;
+      }
+      for (const [path, key] of nodeSidecars(node)) {
+        const body: string | null = engine.catalog.content(key);
+        if (body === null) errors.push({ file, path, message: `${key} has no saved content` });
+        else contents.set(key, body);
+      }
+      additions.push(node);
+      created.push(file);
+    }
+    const recipePath: string = `projects/${id}/recipes/${name}.json`;
+    const existingRecipe: boolean = recipe !== null && db.catalog.recipe(name) !== null;
+    if (recipe && !existingRecipe) errors.push(...checkRecipe(recipe, nodes, project.repo !== null).map((issue) => ({ file: recipePath, ...issue })));
+    if (errors.length) return { created: [], kept, errors };
+    db.db.transaction(() => {
+      for (const [key, body] of contents) {
+        if (db.catalog.content(key) !== null) continue;
+        db.catalog.saveContent(key, body);
+        created.push(`projects/${id}/nodes/${key}`);
+      }
+      for (const node of additions) db.catalog.saveNode(node);
+      if (recipe) {
+        if (existingRecipe) kept.push(recipePath);
+        else {
+          db.catalog.saveRecipe(recipe);
+          created.push(recipePath);
+        }
+      }
+    })();
     await engine.reloadProject(id);
-    const layoutPath = (file: string): string => `projects/${id}/${relative(projectDir, file).split(sep).join("/")}`;
-    for (const file of result.written) engine.definitionChanged(layoutPath(file), sha256(await readFile(file)));
-    return { created: result.written.map(layoutPath), kept: result.kept.map(layoutPath), errors: result.errors };
+    for (const path of created) engine.definitionChanged(path, sha256((await definitionBytes(location(path, false)))!));
+    return { created, kept, errors };
   }
 
   return {
@@ -509,11 +565,11 @@ export function definitionOperations(engine: Engine) {
       await engine.deleteProject(id);
     }),
     write: (path: string, content: string) => mutate(async () => {
-      const { root, absPath, kind, id } = location(path, false);
-      await rejectSymlinks(root, absPath);
+      const target: ReturnType<typeof location> = location(path, false);
+      const { kind, id } = target;
       const { errors, warnings = [] } = await inspectWritable(path, kind, id, content);
       if (errors.length) return { errors, warnings };
-      const before: Buffer | null = await optionalBytes(absPath);
+      const before: Buffer | null = await definitionBytes(target);
       const baseSha256: string | null = before === null ? null : sha256(before);
       return { errors, warnings, ...await save(path, content, baseSha256) };
     }),

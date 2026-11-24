@@ -3,6 +3,7 @@ import { cp, lstat, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
+import Database from "better-sqlite3";
 import { create } from "tar";
 import { createZstdCompress } from "node:zlib";
 import { ExportProjectBody } from "@pecore/schemas";
@@ -11,7 +12,7 @@ import type { ProjectContext } from "../graph/executor";
 import { nodeSidecars } from "../definitions/load";
 import { activeJobCount, archivePath, definitionDirs, ShareConflict } from "./archive";
 import type { Manifest } from "./archive";
-import { historyArtifacts } from "./history";
+import { historyArtifacts, historyLogs } from "./history";
 import { scanSecrets } from "./secrets";
 
 type Finding = Extract<ExportProjectResult, { state: "findings" }>["findings"][number];
@@ -45,50 +46,64 @@ async function copyEntry(from: string, to: string, name: string, directory: bool
   });
 }
 
-async function copyTemplates(ctx: ProjectContext, dir: string): Promise<void> {
-  const nodes: Set<string> = new Set();
-  const paths: Set<string> = new Set();
-  for (const name of ctx.project.recipes ?? []) {
+async function copyTemplates(ctx: Pick<ProjectContext, "project" | "defs">, dir: string): Promise<void> {
+  const nodes: Set<string> = new Set(ctx.project.recipes === undefined ? ctx.defs.nodes.keys() : []);
+  for (const name of ctx.project.recipes ?? ctx.defs.recipes.keys()) {
     const recipe = ctx.defs.recipes.get(name);
     if (!recipe) throw new ShareConflict(`recipe template ${name} not found`);
-    paths.add(`recipes/${name}.json`);
+    await writeFile(join(dir, "recipes", `${name}.json`), JSON.stringify(recipe, null, 2) + "\n");
     for (const { use } of Object.values(recipe.nodes)) nodes.add(use);
   }
   if (ctx.project.source) nodes.add(ctx.project.source.node);
   if (ctx.project.createRepo) nodes.add(ctx.project.createRepo);
+  const bodies: Set<string> = new Set();
   for (const name of nodes) {
     const node = ctx.defs.nodes.get(name);
     if (!node) throw new ShareConflict(`node template ${name} not found`);
-    paths.add(`nodes/${name}.json`);
-    for (const [, sidecar] of nodeSidecars(node)) paths.add(`nodes/${sidecar}`);
+    await writeFile(join(dir, "nodes", `${name}.json`), JSON.stringify(node, null, 2) + "\n");
+    for (const [, key] of nodeSidecars(node)) bodies.add(key);
   }
-  for (const path of paths) await copyEntry(ctx.templates, dir, path, false);
+  for (const key of bodies) {
+    const content: string | undefined = ctx.defs.sidecars?.[key];
+    if (content === undefined) throw new ShareConflict(`node content ${key} not found`);
+    await writeFile(join(dir, "nodes", key), content);
+  }
 }
 
 export async function exportProject(ctx: ProjectContext, input: ExportProjectBody): Promise<ExportProjectResult> {
   const { path, history, logs, acceptFindings }: ExportProjectBody = ExportProjectBody.parse(input);
+  const snapshot: Pick<ProjectContext, "project" | "defs"> = { project: ctx.project, defs: ctx.defs };
   if (history) assertIdle(ctx);
   const dir: string = await mkdtemp(join(tmpdir(), "pecore-export-"));
   try {
-    const dirs: string[] = [...definitionDirs, ...(logs ? ["logs"] : [])];
     const db: string = join(dir, "pecore.db");
     const revision = (): number => ctx.db.db.prepare("SELECT total_changes() AS changes").pluck().get() as number;
     const before: number = history ? revision() : 0;
-    await copyEntry(ctx.dir, dir, "project.json", false);
-    for (const name of dirs) await copyEntry(ctx.dir, dir, name, true);
-    if (ctx.project.recipes !== undefined) await copyTemplates(ctx, dir);
+    await writeFile(join(dir, "project.json"), JSON.stringify(snapshot.project, null, 2) + "\n");
+    await copyEntry(ctx.dir, dir, "knowledge", true);
+    for (const name of ["nodes", "recipes"]) await mkdir(join(dir, name));
+    await copyTemplates(snapshot, dir);
     if (history) {
       assertIdle(ctx);
       const findings: Finding[] = scanSecrets(historyArtifacts(ctx.db.db));
+      if (logs) findings.push(...scanSecrets(historyLogs(ctx.db.db)));
       const accepted: Set<string> = new Set(acceptFindings);
       if (findings.some((finding) => !accepted.has(finding.fingerprint))) return { state: "findings", findings };
       if (before !== revision()) throw new ShareConflict("project history changed during export: retry the export");
       ctx.db.db.prepare("VACUUM INTO ?").run(db);
+      if (!logs) {
+        const copy: Database.Database = new Database(db, { fileMustExist: true });
+        try {
+          copy.exec("DELETE FROM attempt_logs; UPDATE attempts SET log_omitted = 1; VACUUM");
+        } finally {
+          copy.close();
+        }
+      }
     }
     const manifest: Manifest = { format: 1, projectId: ctx.id, exportedAt: new Date().toISOString(), history, logs };
     await writeFile(join(dir, "manifest.json"), JSON.stringify(manifest) + "\n");
     const tar: string = join(dir, "project.tar");
-    await create({ cwd: dir, file: tar, portable: true, strict: true }, ["manifest.json", "project.json", ...dirs, ...(history ? ["pecore.db"] : [])]);
+    await create({ cwd: dir, file: tar, portable: true, strict: true }, ["manifest.json", "project.json", ...definitionDirs, ...(history ? ["pecore.db"] : [])]);
     const output: string = await mkdtemp(join(dirname(resolve(path)), ".pecore-export-"));
     try {
       const archive: string = join(output, "project.tar.zst");

@@ -1,5 +1,4 @@
 {
-  "$schema": "../../schemas/node.json",
   "name": "tests-writer",
   "tags": ["test"],
   "description": "Writes the tests the spec asks for, and stubs of the spec's interfaces that throw \"not implemented\", so the tests compile and fail",

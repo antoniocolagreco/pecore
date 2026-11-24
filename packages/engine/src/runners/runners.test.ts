@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CommandNode } from "@pecore/schemas";
 import { tempDir } from "../../test/tmp";
-import { readLog, LogWriter } from "../observability/logs";
 import { contentState } from "../workdir/content-state";
 import { createLocalRepo } from "../workdir/repo";
 import { addWorktree } from "../workdir/worktrees";
@@ -207,16 +206,3 @@ describe("command nodes", () => {
   });
 });
 
-describe("logs", () => {
-  it("writes and reads a zstd JSONL log", async () => {
-    const path = join(await tempDir(), "logs", "A1.jsonl.zst");
-    const w = await LogWriter.open(path);
-    w.write({ dir: "out", msg: { id: 1 }, at: 1 });
-    w.write({ dir: "err", line: "boom", at: 2 });
-    await w.close();
-    expect(await readLog(path)).toEqual([
-      { dir: "out", msg: { id: 1 }, at: 1 },
-      { dir: "err", line: "boom", at: 2 },
-    ]);
-  });
-});

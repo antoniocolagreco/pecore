@@ -1,9 +1,11 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { Node, Recipe } from "@pecore/schemas";
 import type { DefinitionEntry, LiveMessage } from "@pecore/schemas";
 import { apiProject } from "../../test/api-project";
+import { testConfiguration } from "../../test/configuration";
 import { definitionOperations } from "./routes/definitions";
 
 describe("definition routes", () => {
@@ -78,7 +80,7 @@ describe("definition routes", () => {
   });
 
   it("stores tags on the node template and returns them in the catalogue", async () => {
-    const { home, call, close } = await apiProject();
+    const { engine, call, close } = await apiProject();
     try {
       const path: string = "templates/nodes/tagged.json";
       const content: string = JSON.stringify({
@@ -86,7 +88,7 @@ describe("definition routes", () => {
         tags: ["github", "Human", "pull request"],
       });
       await call("saveDefinition", { params: { path }, body: { content, baseSha256: null } });
-      expect(JSON.parse(await readFile(join(home, path), "utf8"))).toMatchObject({ kind: "human", interface: "decision", tags: ["github", "pull request"] });
+      expect(engine.catalog.node("tagged")).toMatchObject({ kind: "human", interface: "decision", tags: ["github", "pull request"] });
       const nodes: DefinitionEntry[] = await call("listDefinitions", { query: { dir: "templates/nodes" } });
       expect(nodes.find((entry) => entry.path === path)).toMatchObject({ value: { tags: ["github", "pull request"] } });
     } finally {
@@ -99,17 +101,13 @@ describe("definition routes", () => {
     try {
       const path: string = "templates/nodes/write-hello.json";
       const { sha256, content } = await call("getDefinition", { params: { path } });
-      const projectDir: string = engine.projectDir("demo");
-      const projectPath: string = join(projectDir, "project.json");
-      const project = engine.project("demo").ctx.project;
-      await mkdir(join(projectDir, "nodes"), { recursive: true });
-      await mkdir(join(projectDir, "recipes"), { recursive: true });
-      await writeFile(join(projectDir, "nodes", "write-hello.json"), content);
-      await writeFile(join(projectDir, "recipes", "local.json"), JSON.stringify({
+      const { ctx } = engine.project("demo");
+      ctx.db.catalog.saveNode(Node.parse(JSON.parse(content)));
+      ctx.db.catalog.saveRecipe(Recipe.parse({
         name: "local", description: "Write a file", start: "write",
         nodes: { write: { use: "write-hello" } }, edges: [], ends: [{ from: "write", on: "done", result: "succeeded" }],
       }));
-      await writeFile(projectPath, JSON.stringify({ ...project, recipes: undefined }));
+      ctx.db.definition.write({ ...ctx.project, recipes: undefined });
       expect(await engine.reloadProject("demo")).toEqual([]);
 
       expect(await call("getNodeTemplateUsage", { params: { name: "write-hello" } })).toContain("recipe local in project demo");
@@ -172,8 +170,8 @@ describe("definition routes", () => {
   });
 });
 
-describe("global file routes", () => {
-  it("loads older settings without exposing removed manual configuration", async () => {
+describe("global configuration routes", () => {
+  it("ignores the old settings file", async () => {
     const { home, engine, call, close } = await apiProject();
     try {
       await writeFile(join(home, "settings.json"), JSON.stringify({
@@ -185,8 +183,8 @@ describe("global file routes", () => {
       }));
       expect(await engine.reloadGlobal()).toEqual([]);
       const settings = await call("getSettings");
-      expect(settings.value.limits).toEqual({ jobs: null, agents: 3 });
-      expect(settings.value.mergeCheckSec).toBe(45);
+      expect(settings.value.limits).toEqual({ jobs: null, agents: 4 });
+      expect(settings.value.mergeCheckSec).toBe(300);
       expect(settings.value).not.toHaveProperty("prices");
       expect(settings.value).not.toHaveProperty("projectPaths");
       expect(settings.value).not.toHaveProperty("programPaths");
@@ -211,7 +209,7 @@ describe("global file routes", () => {
     await expect(call("putProfiles", { body: { value: bad, baseSha256: p.sha256 } })).rejects.toMatchObject({ status: 400 });
     expect(engine.global().profiles.profiles).toEqual([]);
     expect((await call("getProfiles")).sha256).toBe(p.sha256);
-    expect(JSON.parse(await readFile(join(home, "settings.json"), "utf8"))).toMatchObject({ mergeCheckSec: 60 });
+    expect(await testConfiguration(home, (config) => config.settings())).toMatchObject({ mergeCheckSec: 60 });
     await close();
   });
 

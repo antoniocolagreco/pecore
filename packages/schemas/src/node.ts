@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ArtifactType } from "./artifacts";
-import { Argv, DefinitionName, JsonSchemaObject, Name, Outcome, SchemaRef, TierName } from "./common";
+import { Argv, DefinitionName, JsonSchemaObject, Name, Outcome, TierName } from "./common";
 
 const jobPlaceholders = ["job.id", "job.title", "job.branch", "job.base", "job.oldBase", "job.target", "job.commit"];
 const projectPlaceholders = ["project.repoDir", "project.repo.url", "project.repo.owner", "project.repo.name"];
@@ -53,7 +53,6 @@ export function isNodeKindTag(tag: string): boolean {
 }
 
 const Base = {
-  $schema: SchemaRef,
   name: DefinitionName,
   description: z.string().min(1),
   icon: Name.optional(),

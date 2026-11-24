@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-export const SchemaRef = z.string().optional();
 
 export const Name = z.string().regex(/^[a-z][a-z0-9-]*$/, "lower case letters, digits and dashes, starting with a letter");
 

@@ -1,5 +1,4 @@
 {
-  "$schema": "../../schemas/node.json",
   "name": "github-issues",
   "tags": ["issue tracker"],
   "description": "Read and comment on labeled GitHub issues.",

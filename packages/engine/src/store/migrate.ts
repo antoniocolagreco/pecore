@@ -6,7 +6,7 @@ const migrationsDir = fileURLToPath(new URL("./migrations/", import.meta.url));
 
 export function migrate(db: Database.Database, prefix: string): number {
   const files = readdirSync(migrationsDir)
-    .map((f) => ({ f, m: new RegExp(`^${prefix}(\\d{3})-.*\\.sql$`).exec(f) }))
+    .map((f) => ({ f, m: new RegExp(`^(?:${prefix}|shared-)(\\d{3})-.*\\.sql$`).exec(f) }))
     .filter((x): x is { f: string; m: RegExpExecArray } => x.m !== null)
     .map(({ f, m }) => ({ file: f, version: Number(m[1]) }))
     .sort((a, b) => a.version - b.version);

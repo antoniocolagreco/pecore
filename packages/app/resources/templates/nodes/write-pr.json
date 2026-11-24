@@ -1,5 +1,4 @@
 {
-  "$schema": "../../schemas/node.json",
   "name": "write-pr",
   "description": "Write a pull request title and description from the ticket, diff, and verification results.",
   "tags": ["github", "source control"],

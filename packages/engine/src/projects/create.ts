@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { mkdirSync } from "node:fs";
-import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, realpath, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -24,7 +24,7 @@ export const setupJobId = "project-setup";
 
 export type CreationStep = 1 | 3 | 4 | 5 | 6;
 export type Creation = { step: CreationStep };
-export type CreateOptions = { accounts: Accounts; protectedMode: boolean; admin?: (script: string) => Promise<void> };
+export type CreateOptions = { accounts: Accounts; protectedMode: boolean; templates: string; admin?: (script: string) => Promise<void> };
 
 export class ProjectCreateError extends Error {
   constructor(
@@ -35,8 +35,6 @@ export class ProjectCreateError extends Error {
   }
 }
 
-const creatingFile = (dir: string) => join(dir, "creating.json");
-
 async function exists(path: string): Promise<boolean> {
   return stat(path).then(
     () => true,
@@ -45,12 +43,22 @@ async function exists(path: string): Promise<boolean> {
 }
 
 export async function readCreation(dir: string): Promise<Creation | null> {
-  const text = await readFile(creatingFile(dir), "utf8").catch(() => null);
-  return text === null ? null : (JSON.parse(text) as Creation);
+  const path: string = projectPaths(dir).db;
+  if (!(await exists(path))) return null;
+  return withProjectDb(path, (project) => project.db.prepare<[], Creation>("SELECT step FROM project_creation WHERE id = 1").get() ?? null);
 }
 
 export async function writeCreation(dir: string, step: CreationStep): Promise<void> {
-  await writeFile(creatingFile(dir), JSON.stringify({ step } satisfies Creation) + "\n");
+  withProjectDb(projectPaths(dir).db, (project) => project.db.prepare("INSERT OR REPLACE INTO project_creation (id, step) VALUES (1, ?)").run(step));
+}
+
+function withProjectDb<T>(path: string, work: (project: ProjectDb) => T): T {
+  const project: ProjectDb = new ProjectDb(path);
+  try {
+    return work(project);
+  } finally {
+    project.close();
+  }
 }
 
 export function repoHost(url: string): string | null {
@@ -116,7 +124,7 @@ async function setupFolder(repo: string, project: Project): Promise<void> {
 }
 
 export async function beginProject(home: string, input: ProjectInput, opts: CreateOptions): Promise<Project> {
-  const parsed = Project.safeParse({ $schema: "../../schemas/project.json", ...input });
+  const parsed = Project.safeParse(input);
   if (!parsed.success) throw new ProjectCreateError(1, parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
   const project: Project = { ...parsed.data, recipes: parsed.data.recipes ?? [], folder: await checkFolder(parsed.data.folder, parsed.data) };
   const account = forgeAccountOf(project, opts.accounts);
@@ -128,17 +136,17 @@ export async function beginProject(home: string, input: ProjectInput, opts: Crea
     if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new ProjectCreateError(1, `project ${project.id} already exists`);
     throw new ProjectCreateError(3, (error as Error).message);
   }
-  const templates = homePaths(home).templates;
   const p = projectPaths(dir);
   try {
-    for (const d of [p.knowledge, p.work, p.logs]) await mkdir(d, { recursive: true });
-    const forge = account ? await loadForgeDefaults(templates, account.forge) : null;
+    for (const d of [p.knowledge, p.work]) await mkdir(d, { recursive: true });
+    const forge = account ? await loadForgeDefaults(opts.templates, account.forge) : null;
     if (project.createRepo !== null && forge?.createRepo === null) {
       throw new ProjectCreateError(1, "This forge requires an existing repository.");
     }
-    await writeFile(p.project, JSON.stringify(project, null, 2) + "\n");
-    new ProjectDb(p.db).close();
-    await writeCreation(dir, 3);
+    withProjectDb(p.db, (db) => db.db.transaction(() => {
+      db.definition.write(project);
+      db.db.prepare("INSERT INTO project_creation (id, step) VALUES (1, 3)").run();
+    })());
     return project;
   } catch (e) {
     await rm(dir, { recursive: true, force: true });
@@ -147,7 +155,7 @@ export async function beginProject(home: string, input: ProjectInput, opts: Crea
   }
 }
 
-export async function prepareRepo(home: string, dir: string, project: Project, opts: CreateOptions): Promise<"ready" | "setup"> {
+export async function prepareRepo(dir: string, project: Project, opts: CreateOptions): Promise<"ready" | "setup"> {
   const repo = projectPaths(dir).repo;
   try {
     if (project.repo === null || project.createRepo !== null) {
@@ -158,7 +166,7 @@ export async function prepareRepo(home: string, dir: string, project: Project, o
       if (project.repo !== null) return "setup";
     } else {
       const account = forgeAccountOf(project, opts.accounts)!;
-      const defaults = await loadForgeDefaults(homePaths(home).templates, account.forge);
+      const defaults = await loadForgeDefaults(opts.templates, account.forge);
       await rm(repo, { recursive: true, force: true });
       await cloneRepo(repo, project.repo.url, defaults.credentialHelper, await forgeEnv(account));
     }
@@ -206,7 +214,7 @@ export async function finishProject(dir: string, opts: CreateOptions): Promise<H
   } catch (e) {
     throw new ProjectCreateError(6, (e as Error).message);
   }
-  await rm(creatingFile(dir), { force: true });
+  withProjectDb(projectPaths(dir).db, (project) => project.db.prepare("DELETE FROM project_creation").run());
   return findings;
 }
 

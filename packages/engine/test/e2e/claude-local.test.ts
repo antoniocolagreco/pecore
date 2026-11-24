@@ -1,4 +1,5 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
+import { setTestConfiguration } from "../configuration";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -15,9 +16,9 @@ describe.skipIf(!real)("phase 3 gate: local-only job with Claude Code, normal mo
   it("runs to its commit", async () => {
     const home = join(await tempDir(), "home");
     await mkdir(home, { recursive: true });
-    await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [{ id: "claude", kind: "model", provider: "anthropic", connector: "claude-code", login: "subscription" }] }));
-    await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "sonnet", account: "claude", model: "sonnet", effort: "medium" }] }));
-    await writeFile(join(home, "tiers.json"), JSON.stringify({ tiers: { frontier: ["sonnet"], strong: ["sonnet"], standard: ["sonnet"], cheap: ["sonnet"] } }));
+    await setTestConfiguration(home, "accounts", { accounts: [{ id: "claude", kind: "model", provider: "anthropic", connector: "claude-code", login: "subscription" }] });
+    await setTestConfiguration(home, "profiles", { profiles: [{ id: "sonnet", account: "claude", model: "sonnet", effort: "medium" }] });
+    await setTestConfiguration(home, "tiers", { tiers: { frontier: ["sonnet"], strong: ["sonnet"], standard: ["sonnet"], cheap: ["sonnet"] } });
     const adapters = (await import(join(agentsRoot, "adapters.json"), { with: { type: "json" } })).default as { adapters: Record<string, { version: string; entry: string }> };
     const engine = await Engine.start({ home, templates: shippedTemplates, agents: { connectorsDir, adaptersDir: join(agentsRoot, "out", "adapters"), adapters: adapters.adapters } });
     engine.on("job", ({ jobId }) => {

@@ -508,13 +508,13 @@ export const themeTokens = [
 export const ThemeToken = z.enum(themeTokens);
 export const Theme = z
   .object({
-    $schema: z.string().optional(),
     name: z.string().min(1),
     tokens: z.partialRecord(ThemeToken, z.string().regex(/^(#[0-9a-fA-F]{3,8}|(rgb|rgba|hsl|hsla)\([^)]*\))$/, "a CSS color")),
   })
   .strict();
 export type Theme = z.infer<typeof Theme>;
-export const ThemeFileView = z.object({ file: z.string(), theme: Theme.nullable(), errors: z.array(DefinitionErrorView) });
+const ThemeId = z.string().min(1).max(100).regex(/^[\p{L}\p{N} ._-]+$/u);
+const ThemeView = z.object({ id: ThemeId, theme: Theme });
 
 const ListJobsQuery = z.object({ project: ProjectId.optional(), archived: z.enum(["true", "false"]).optional() });
 const ListQueueQuery = z.object({ project: ProjectId.optional(), state: z.enum(["open", "resolved", "cancelled"]).optional() });
@@ -651,7 +651,8 @@ export const routes = {
   checkPrerequisites: { method: "POST", path: "/prerequisites/check", response: z.array(PrerequisiteView) },
   getSetup: { method: "GET", path: "/setup", response: SetupView },
   startSetupLogin: { method: "POST", path: "/setup/:connector/login", params: z.object({ connector: BuiltInHarness }), response: z.object({ loginId: z.string() }) },
-  listThemes: { method: "GET", path: "/themes", response: z.array(ThemeFileView) },
+  listThemes: { method: "GET", path: "/themes", response: z.array(ThemeView) },
+  putTheme: { method: "PUT", path: "/themes/:id", params: z.object({ id: ThemeId }), body: Theme, response: ThemeView },
   getLog: { method: "GET", path: "/logs/:id", params: IdParams, query: LogQuery, response: z.union([z.object({ view: z.literal("raw"), lines: z.array(z.unknown()) }), z.object({ view: z.literal("events"), events: z.array(LogEvent) })]) },
 } as const satisfies Record<string, RouteDef>;
 

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Argv, SchemaRef, platformValue } from "./common";
+import { Argv, platformValue } from "./common";
 
 export const ErrorRule = z
   .object({
@@ -24,7 +24,6 @@ const SessionConfigEntry = z.tuple([z.string().min(1), z.string()]);
 
 export const Connector = z
   .object({
-    $schema: SchemaRef,
     name: z.string().regex(/^[a-z][a-z0-9-]*$/),
     title: z.string().min(1),
     kind: z.enum(["native", "adapter"]),

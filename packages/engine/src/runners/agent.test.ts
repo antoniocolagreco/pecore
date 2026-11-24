@@ -1,4 +1,5 @@
 import { cp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { setTestConfiguration } from "../../test/configuration";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Project } from "@pecore/schemas";
@@ -57,9 +58,9 @@ async function setup(scripts: object[][], node: object = agentNode(), recipeExtr
     JSON.stringify({ name: "fake", title: "Fake", kind: "native", harness: { program: "node", versionArgs: ["--version"], versionRange: ">=18.0.0" }, command: ["{harnessPath}", fakeAgent], env: { FAKE_AGENT_SCRIPT: files.join(",") }, reader: "claude-code" }),
   );
   await mkdir(home, { recursive: true });
-  await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [{ id: "fake", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" }] }));
-  await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p1", account: "fake", model: "m1" }] }));
-  await writeFile(join(home, "tiers.json"), JSON.stringify({ tiers: { strong: ["p1"] } }));
+  await setTestConfiguration(home, "accounts", { accounts: [{ id: "fake", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" }] });
+  await setTestConfiguration(home, "profiles", { profiles: [{ id: "p1", account: "fake", model: "m1" }] });
+  await setTestConfiguration(home, "tiers", { tiers: { strong: ["p1"] } });
   const engine = await Engine.start({ home, templates: lib, agents: { connectorsDir: connectors, adaptersDir: join(root, "adapters"), adapters: {} }, checkLogins: false });
   await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, recipeKnowledge }, ["one-agent"]);
   const p = engine.project("demo");
@@ -93,7 +94,9 @@ describe("agent nodes with the fake agent (5.4)", () => {
     expect(j.state).toBe("succeeded");
     const a = p.ctx.db.db.prepare("SELECT profile, account, session_id, resumed, tokens_in, tokens_out, cache_read, cache_write, end_reason FROM attempts").get();
     expect(a).toEqual({ profile: "p1", account: "fake", session_id: "S1", resumed: 0, tokens_in: 10, tokens_out: 20, cache_read: 30, cache_write: 40, end_reason: "done" });
-    const raw = await import("../observability/logs").then((m) => m.readLog(join(p.ctx.dir, (p.ctx.db.db.prepare("SELECT log_path FROM attempts").get() as { log_path: string }).log_path)));
+    const attemptId: string = p.ctx.db.db.prepare<[], string>("SELECT id FROM attempts").pluck().get()!;
+    const raw = p.ctx.db.logs.read(attemptId);
+    await expect(stat(join(p.ctx.dir, "logs"))).rejects.toMatchObject({ code: "ENOENT" });
     const sent = raw.find((l) => l.dir === "out" && (l.msg as { method?: string }).method === "session/prompt") as { msg: { params: { prompt: { text: string }[] } } };
     expect(sent.msg.params.prompt[0]!.text).toContain("Do the task Fix it.");
     expect(sent.msg.params.prompt[0]!.text).toContain("### the job's ticket");
@@ -114,10 +117,10 @@ describe("agent nodes with the fake agent (5.4)", () => {
       const completed = p.ctx.db.events(id).flatMap((event) => event.type === "node_run.completed" ? [event.payload] : []);
       expect(completed.map(({ outcome, artifacts }) => [outcome, artifacts.map(({ type }) => type)])).toEqual([["again", ["text", "diff"]], ["done", ["diff"]]]);
       expect(p.ctx.db.requireArtifact(completed[0]!.artifacts[0]!).toString("utf8")).toBe("the tests are wrong");
-      const logs = p.ctx.db.db.prepare("SELECT log_path FROM attempts ORDER BY started_at").all() as { log_path: string }[];
+      const attempts: string[] = p.ctx.db.db.prepare<[], string>("SELECT id FROM attempts ORDER BY started_at").pluck().all();
       const prompts: string[] = [];
-      for (const { log_path } of logs) {
-        const raw = await import("../observability/logs").then((m) => m.readLog(join(p.ctx.dir, log_path)));
+      for (const attemptId of attempts) {
+        const raw = p.ctx.db.logs.read(attemptId);
         const sent = raw.find((l) => l.dir === "out" && (l.msg as { method?: string }).method === "session/prompt") as { msg: { params: { prompt: { text: string }[] } } };
         prompts.push(sent.msg.params.prompt[0]!.text);
       }
@@ -137,7 +140,8 @@ describe("agent nodes with the fake agent (5.4)", () => {
     const { engine, p, id } = await setup([[...init, ...newSession, ...missing, prompt, output({ outcome: "done" }), usageAnswer]], agentNode({ outputs: { again: "spec" } }));
     try {
       expect((await until(final(p, id))).state).toBe("succeeded");
-      const raw = await import("../observability/logs").then((m) => m.readLog(join(p.ctx.dir, (p.ctx.db.db.prepare("SELECT log_path FROM attempts").get() as { log_path: string }).log_path)));
+      const attemptId: string = p.ctx.db.db.prepare<[], string>("SELECT id FROM attempts").pluck().get()!;
+      const raw = p.ctx.db.logs.read(attemptId);
       const sent = raw.filter((l) => l.dir === "out" && (l.msg as { method?: string }).method === "session/prompt") as { msg: { params: { prompt: { text: string }[] } } }[];
       expect(sent[1]!.msg.params.prompt[0]!.text).toContain("/output is required with again");
     } finally {
@@ -152,7 +156,8 @@ describe("agent nodes with the fake agent (5.4)", () => {
       "unrelated.md": "Other.\n",
     });
     expect((await until(final(p, id))).state).toBe("succeeded");
-    const raw = await import("../observability/logs").then((m) => m.readLog(join(p.ctx.dir, (p.ctx.db.db.prepare("SELECT log_path FROM attempts").get() as { log_path: string }).log_path)));
+    const attemptId: string = p.ctx.db.db.prepare<[], string>("SELECT id FROM attempts").pluck().get()!;
+    const raw = p.ctx.db.logs.read(attemptId);
     const sent = raw.find((l) => l.dir === "out" && (l.msg as { method?: string }).method === "session/prompt") as { msg: { params: { prompt: { text: string }[] } } };
     const text: string = sent.msg.params.prompt[0]!.text;
     expect(text).toContain("### architecture.md\n\n```\nSee [naming](naming.md).");
@@ -173,8 +178,8 @@ describe("agent nodes with the fake agent (5.4)", () => {
       expect((await until(final(p, id))).state).toBe("succeeded");
       expect(p.ctx.db.events(id).find(({ type }) => type === "job.created")?.payload)
         .toMatchObject({ definitions: { knowledgeByStep: { x: ["project.md"] } } });
-      const attempt = p.ctx.db.db.prepare("SELECT log_path FROM attempts").get() as { log_path: string };
-      const raw = await import("../observability/logs").then((m) => m.readLog(join(p.ctx.dir, attempt.log_path)));
+      const attemptId: string = p.ctx.db.db.prepare<[], string>("SELECT id FROM attempts").pluck().get()!;
+      const raw = p.ctx.db.logs.read(attemptId);
       const sent = raw.find((line) => line.dir === "out" && (line.msg as { method?: string }).method === "session/prompt") as {
         msg: { params: { prompt: { text: string }[] } };
       };
@@ -224,8 +229,8 @@ describe("agent nodes with the fake agent (5.4)", () => {
       { session_id: "S1", resumed: 0 },
       { session_id: "S1", resumed: 1 },
     ]);
-    const logs = p.ctx.db.db.prepare("SELECT log_path FROM attempts ORDER BY started_at").all() as { log_path: string }[];
-    const raw = await import("../observability/logs").then((m) => m.readLog(join(p.ctx.dir, logs[1]!.log_path)));
+    const attempts: string[] = p.ctx.db.db.prepare<[], string>("SELECT id FROM attempts ORDER BY started_at").pluck().all();
+    const raw = p.ctx.db.logs.read(attempts[1]!);
     const sent = raw.find((l) => l.dir === "out" && (l.msg as { method?: string }).method === "session/prompt") as { msg: { params: { prompt: { text: string }[] } } };
     expect(sent.msg.params.prompt[0]!.text).toContain("Email");
     await engine.shutdown();
@@ -249,6 +254,24 @@ describe("agent nodes with the fake agent (5.4)", () => {
     expect(p.ctx.db.db.prepare("SELECT auth_account, auth_kind FROM node_runs").get()).toEqual({ auth_account: "fake", auth_kind: "harness" });
     await p.executor.stop(id);
     await engine.shutdown();
+  });
+
+  it("stores ACP traffic when the connector rejects session creation", async () => {
+    const { engine, p, id } = await setup([[
+      ...init, { expect: "session/new" }, { send: { jsonrpc: "2.0", id: "$id", error: { code: -32000, message: "Authentication required" } } },
+    ]]);
+    try {
+      expect(await until(final(p, id))).toMatchObject({ state: "waiting", waiting_reason: "auth" });
+      const attemptId: string = p.ctx.db.db.prepare<[], string>("SELECT id FROM attempts").pluck().get()!;
+      expect(p.ctx.db.logs.read(attemptId).slice(0, 4)).toMatchObject([
+        { dir: "out", msg: { method: "initialize" } },
+        { dir: "in", msg: { result: { protocolVersion: 1 } } },
+        { dir: "out", msg: { method: "session/new" } },
+        { dir: "in", msg: { error: { code: -32000, message: "Authentication required" } } },
+      ]);
+    } finally {
+      await engine.shutdown();
+    }
   });
 
   it("uses the retry after a connector crash, then fails with HARNESS_ERROR", async () => {

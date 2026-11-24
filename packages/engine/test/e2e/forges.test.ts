@@ -1,10 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { chmod, cp, mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { setTestConfiguration } from "../configuration";
+import { chmod, cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { jobCommit } from "../../src/jobs/stacked";
 import { Engine } from "../../src/main";
 import { until } from "../forge-project";
+import { readCreation } from "../../src/projects/create";
 import { createProjectWithRecipes } from "../project";
 import { shippedTemplates, tempDir } from "../tmp";
 
@@ -83,12 +85,6 @@ done
 exit $rc
 `;
 
-const exists = (path: string) =>
-  stat(path).then(
-    () => true,
-    () => false,
-  );
-
 const ended = (state: string) => ["succeeded", "failed", "not_delivered"].includes(state);
 
 for (const c of cases) {
@@ -114,12 +110,12 @@ for (const c of cases) {
       const path = process.env.PATH;
       process.env.PATH = `${bin}:${path}`;
       await mkdir(home, { recursive: true });
-      await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [{ id: c.forge, kind: "forge", forge: c.forge, host: c.host, tool: c.tool, user: c.user, author: { name: "PeCore Test", email: "pecore-test@example.com" } }] }));
+      await setTestConfiguration(home, "accounts", { accounts: [{ id: c.forge, kind: "forge", forge: c.forge, host: c.host, tool: c.tool, user: c.user, author: { name: "PeCore Test", email: "pecore-test@example.com" } }] });
 
       let engine = await Engine.start({ home, templates });
       await createProjectWithRecipes(engine, { id: "e2e", name: "E2E", repo: { url, account: c.forge }, createRepo: c.createRepo }, ["forge-e2e"]);
       let p = engine.project("e2e");
-      await until(async () => !(await exists(join(p.ctx.dir, "creating.json"))), 180_000);
+      await until(async () => !(await readCreation(p.ctx.dir)), 180_000);
       expect(remoteHead("main")).not.toBeNull();
 
       const first = await engine.createJob("e2e", { title: "PeCore e2e: one request", ticket: { text: "x" } });

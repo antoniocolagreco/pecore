@@ -1,5 +1,4 @@
 {
-  "$schema": "../../schemas/node.json",
   "name": "builder",
   "tags": ["implementation"],
   "description": "Implements the spec by filling the stubs until the tests pass; never edits tests; reports a test it believes is wrong instead of changing it",

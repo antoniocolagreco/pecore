@@ -68,7 +68,7 @@ export async function openConnection(p: { connector: ResolvedConnector; login: L
     return { client, init, account: () => account };
   } catch (e) {
     await proc.stop();
-    throw new StartError("other", errorText(e));
+    throw new StartError("other", errorText(e), client.raw);
   }
 }
 
@@ -147,9 +147,9 @@ export async function startSession(p: StartParams): Promise<Session> {
   const fail = async (e: unknown): Promise<never> => {
     await client.proc.stop();
     events.end();
-    if (e instanceof StartError) throw e;
+    if (e instanceof StartError) throw new StartError(e.kind, e.raw, client.raw);
     const kind = e instanceof RpcError && e.error.code === -32000 && e.error.message.startsWith("Authentication required") ? "auth" : "other";
-    throw new StartError(kind, errorText(e));
+    throw new StartError(kind, errorText(e), client.raw);
   };
 
   const meta = c.sessionMeta ?? undefined;

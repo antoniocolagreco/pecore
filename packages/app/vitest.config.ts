@@ -1,5 +1,7 @@
 import { defineProject } from "vitest/config";
+import react from "@vitejs/plugin-react";
 
 export default defineProject({
-  test: { name: "app" },
+  plugins: [react()],
+  test: { name: "app", environment: "jsdom", setupFiles: ["test/setup.ts"] },
 });

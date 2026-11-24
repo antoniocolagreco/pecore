@@ -1,5 +1,4 @@
 {
-  "$schema": "../../schemas/connector.json",
   "name": "claude-code",
   "title": "Claude Code",
   "kind": "adapter",

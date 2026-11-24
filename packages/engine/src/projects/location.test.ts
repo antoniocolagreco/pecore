@@ -1,4 +1,5 @@
-import { appendFile, chmod, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { setTestConfiguration } from "../../test/configuration";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Project } from "@pecore/schemas";
@@ -26,7 +27,7 @@ describe("project repository and checkout settings", () => {
       id: "private-git", kind: "forge", forge: "git", host: "git.example.test", tool: "git", user: "tester",
       author: { name: "Test", email: "test@example.com" },
     }] };
-    await writeFile(join(home, "accounts.json"), JSON.stringify(accounts));
+    await setTestConfiguration(home, "accounts", accounts);
     await appendFile(join(forge.dir, "home", ".gitconfig"), "\tinsteadOf = https://git.example.test/\n");
     await forge.createRepo("acme/first");
     await forge.createRepo("acme/second");
@@ -78,20 +79,19 @@ describe("project repository and checkout settings", () => {
       await expect(save(engine, { folder: destination })).rejects.toThrow("Choose an empty destination folder");
       await rm(join(destination, "existing.txt"));
 
-      const file: string = join(engine.projectDir("demo"), "project.json");
-      const before: string = await readFile(file, "utf8");
+      const { db } = engine.project("demo").ctx;
+      const before = db.definition.read();
       const head: string | null = await branchHead(repo, "main");
-      await chmod(engine.projectDir("demo"), 0o500);
-      await expect(save(engine, { folder: destination, repo: { url: "https://github.com/acme/first.git", account: "gh-test" } })).rejects.toThrow("EACCES");
-      await chmod(engine.projectDir("demo"), 0o700);
-      expect(await readFile(file, "utf8")).toBe(before);
+      db.db.exec(`CREATE TRIGGER fail_project_write BEFORE INSERT ON project_definition
+        BEGIN SELECT RAISE(ABORT, 'could not save project'); END`);
+      await expect(save(engine, { folder: destination, repo: { url: "https://github.com/acme/first.git", account: "gh-test" } })).rejects.toThrow("could not save project");
+      expect(db.definition.read()).toEqual(before);
       expect(await branchHead(repo, "main")).toBe(head);
       expect((await gitAppResult(repo, ["config", "remote.origin.url"])).stdout.trim()).toBe(folder);
       expect((await gitAppIn(folder, ["remote"])).trim()).toBe("");
       expect(await readFile(join(folder, "keep.txt"), "utf8")).toBe("keep this file");
       expect(await readdir(destination)).toEqual([]);
     } finally {
-      await chmod(engine.projectDir("demo"), 0o700);
       await engine.shutdown();
     }
   });

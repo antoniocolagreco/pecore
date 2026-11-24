@@ -1,4 +1,6 @@
-import { readFile, writeFile } from "node:fs/promises";
+import type { Project } from "@pecore/schemas";
+import { ProjectDb } from "../store/project-db";
+import { setTestConfiguration } from "../../test/configuration";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { forgeHome } from "../../test/forge-project";
@@ -30,9 +32,9 @@ describe("Project Manager names and colours per project", () => {
 
   it("uses the default for new projects and keeps project overrides out of the agent catalog", async () => {
     const { home, templates } = await forgeHome();
-    await writeFile(join(home, "agents.json"), JSON.stringify({ agents: [
-      { id: "developer", name: "Developer", kind: "worker", model: null, compaction: { auto: 131072, max: 262144 } },
-    ] }));
+    await setTestConfiguration(home, "agents", { agents: [
+      { id: "developer", name: "Developer", kind: "agent", model: null, compaction: { auto: 131072, max: 262144 } },
+    ] });
     const engine = await Engine.start({ home, templates });
     try {
       const agents = globalFileHandlers(engine);
@@ -67,20 +69,24 @@ describe("Project Manager names and colours per project", () => {
     await first.createProject({ id: "beta", name: "Beta", repo: null });
     await first.createProject({ id: "gamma", name: "Gamma", repo: null });
     await first.shutdown();
-    const strip = async (id: string, pm: unknown): Promise<void> => {
-      const path = join(home, "projects", id, "project.json");
-      await writeFile(path, JSON.stringify({ ...JSON.parse(await readFile(path, "utf8")) as object, pm }, null, 2) + "\n");
+    const strip = (id: string, pm: Project["pm"]): void => {
+      const db: ProjectDb = new ProjectDb(join(home, "projects", id, "pecore.db"));
+      try {
+        db.definition.write({ ...db.definition.read()!, pm });
+      } finally {
+        db.close();
+      }
     };
-    await strip("alpha", null);
-    await strip("beta", { name: "Viola", color: "#9D57FF" });
-    await strip("gamma", { name: "Viola", color: "#9D57FF" });
+    strip("alpha", null);
+    strip("beta", { name: "Viola", color: "#9D57FF" });
+    strip("gamma", { name: "Viola", color: "#9D57FF" });
 
     const engine = await Engine.start({ home, templates });
     try {
       expect(engine.project("alpha").ctx.project.pm).toMatchObject({ name: "Chris", color: "#DC2626" });
       expect(engine.project("beta").ctx.project.pm).toEqual({ name: "Viola", color: "#9D57FF" });
       expect(engine.project("gamma").ctx.project.pm).toMatchObject({ name: "Amber", color: "#F97316" });
-      expect(JSON.parse(await readFile(join(home, "projects", "gamma", "project.json"), "utf8"))).toMatchObject({ pm: { name: "Amber" } });
+      expect(engine.project("gamma").ctx.db.definition.read()).toMatchObject({ pm: { name: "Amber" } });
     } finally {
       await engine.shutdown();
     }

@@ -1,4 +1,5 @@
 import { cp, mkdir, writeFile } from "node:fs/promises";
+import { setTestConfiguration } from "../configuration";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -18,7 +19,7 @@ const accounts = [
 async function start() {
   const home = join(await tempDir(), "home");
   await mkdir(home, { recursive: true });
-  await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts }));
+  await setTestConfiguration(home, "accounts", { accounts });
   const adapters = (await import(join(agentsRoot, "adapters.json"), { with: { type: "json" } })).default as { adapters: Record<string, { version: string; entry: string }> };
   return Engine.start({ home, templates: shippedTemplates, agents: { connectorsDir, adaptersDir: join(agentsRoot, "out", "adapters"), adapters: adapters.adapters }, checkLogins: false });
 }
@@ -55,8 +56,8 @@ describe.skipIf(!real)("phase 6 gate: Codex and opencode connectors with the use
       await writeFile(join(templates, "recipes", "one-agent.json"), JSON.stringify({ name: "one-agent", description: "one agent", start: "x", successOutcomes: ["x:done"], nodes: { x: { use: "agent-x" } }, edges: [] }));
       const home = join(root, "home");
       await mkdir(home, { recursive: true });
-      await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts }));
-      await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p", account, model, ...(effort ? { effort } : {}) }] }));
+      await setTestConfiguration(home, "accounts", { accounts });
+      await setTestConfiguration(home, "profiles", { profiles: [{ id: "p", account, model, ...(effort ? { effort } : {}) }] });
       const adapters = (await import(join(agentsRoot, "adapters.json"), { with: { type: "json" } })).default as { adapters: Record<string, { version: string; entry: string }> };
       const engine = await Engine.start({ home, templates, agents: { connectorsDir, adaptersDir: join(agentsRoot, "out", "adapters"), adapters: adapters.adapters }, checkLogins: false });
       await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["one-agent"]);
@@ -82,9 +83,9 @@ describe.skipIf(!real)("phase 6 gate: Codex and opencode connectors with the use
     it(`runs the local-only recipe (spec, tests, code, checks, review, approval, commit) with every agent node on ${account}`, async () => {
       const home = join(await tempDir(), "home");
       await mkdir(home, { recursive: true });
-      await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts }));
-      await writeFile(join(home, "profiles.json"), JSON.stringify({ profiles: [{ id: "p", account, model, ...(effort ? { effort } : {}) }] }));
-      await writeFile(join(home, "tiers.json"), JSON.stringify({ tiers: { frontier: ["p"], strong: ["p"], standard: ["p"], cheap: ["p"] } }));
+      await setTestConfiguration(home, "accounts", { accounts });
+      await setTestConfiguration(home, "profiles", { profiles: [{ id: "p", account, model, ...(effort ? { effort } : {}) }] });
+      await setTestConfiguration(home, "tiers", { tiers: { frontier: ["p"], strong: ["p"], standard: ["p"], cheap: ["p"] } });
       const adapters = (await import(join(agentsRoot, "adapters.json"), { with: { type: "json" } })).default as { adapters: Record<string, { version: string; entry: string }> };
       const engine = await Engine.start({ home, templates: shippedTemplates, agents: { connectorsDir, adaptersDir: join(agentsRoot, "out", "adapters"), adapters: adapters.adapters }, checkLogins: false });
       await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["feature-to-local-commit"]);

@@ -1,5 +1,4 @@
 {
-  "$schema": "../../schemas/node.json",
   "name": "human-review",
   "tags": ["review"],
   "description": "The user reviews the diff, with risky hunks first, and approves, asks for changes or rejects",

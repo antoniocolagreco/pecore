@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { SchemaRef } from "./common";
 
 export const Profile = z
   .object({
@@ -13,7 +12,6 @@ export type Profile = z.infer<typeof Profile>;
 
 export const Profiles = z
   .object({
-    $schema: SchemaRef,
     profiles: z.array(Profile).default([]),
   })
   .strict()

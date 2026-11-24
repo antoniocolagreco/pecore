@@ -182,7 +182,7 @@ export function useDefinitionDraft(existingPath: string, sidecar = false, creati
     feedback: <>
       <ErrorText error={remote.error ?? save.error ?? compare.error ?? reload.error ?? (validation?.content === content ? validation.error : undefined)} />
       {showLoading && !baseline && remote.loading && <p className={ui.muted}>Loading definition…</p>}
-      {baseline?.sha256 === null && !creation && !sidecar && !dirty && <ErrorText error="Definition file is missing." />}
+      {baseline?.sha256 === null && !creation && !sidecar && !dirty && <ErrorText error="Definition is missing." />}
       {changed && <Card padded>
         <p>Changed elsewhere: reload, compare, keep mine</p>
         <div className={ui.row}>
@@ -500,7 +500,7 @@ const sourceCommands: { key: string; label: string }[] = [
   { key: "replies", label: "Replies command" },
 ];
 const newNodeTemplate: NewDefinition = {
-  content: JSON.stringify({ $schema: "../../schemas/node.json", name: "", description: "", icon: defaultDefinitionIcon.node }, null, 2) + "\n",
+  content: JSON.stringify({ name: "", description: "", icon: defaultDefinitionIcon.node }, null, 2) + "\n",
   path(content) {
     const name = Name.safeParse(parseDraft(content)?.name);
     return name.success ? `templates/nodes/${name.data}.json` : "";
@@ -573,7 +573,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   </div>;
   const flag = (key: string, label: string, text: string): ReactNode => check(key, label, text, draft?.[key] === true, (checked) => update(key, checked));
   const commandField = (label: string, value: unknown, onChange: (command: string[] | undefined) => void): ReactNode => (
-    <CommandInput label={label} labelAction={help(label, "Run an executable directly. Use Script file if the command needs shell features such as pipes or redirection.")}
+    <CommandInput label={label} labelAction={help(label, "Run an executable directly. Use a script when the command needs pipes or redirection.")}
       value={Array.isArray(value) ? value.map(string) : []} onChange={onChange} />
   );
   const title: string = templateTitle(string(draft?.name) || path.split("/").at(-1)?.replace(/\.json$/, "") || "");
@@ -595,9 +595,9 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
               options={nodeKinds} value={kind || null} disabled={sidecarDirty} onValueChange={(value) => {
               const next: Node["kind"] | undefined = nodeKinds.find((option) => option.value === value)?.value;
               if (!next) return;
-              const { $schema, name, description, icon, params } = draft;
+              const { name, description, icon, params } = draft;
               file.update(JSON.stringify({
-                $schema, name, description, icon, tags: descriptiveTags, params, kind: next, ...initialNodeFields[next],
+                name, description, icon, tags: descriptiveTags, params, kind: next, ...initialNodeFields[next],
                 ...(next === "agent" ? { prompt: newContextFile } : {}),
               }, null, 2) + "\n");
             }} />
@@ -651,7 +651,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
           {kind === "agent" && flag("resume", "Resume session", "Continue the previous conversation if this step runs again in the same job.")}
           {kind === "command" && <>
             {!draft.script && <>{commandField("Command", draft.command, (command) => update("command", command))}{fieldErrors("command")}</>}
-            {!draft.command && textField("script", "Script file", "Enter the name of the .sh file to run. Choose either a command or a script file.")}
+            {!draft.command && textField("script", "Script name", "Enter the name of the saved .sh script. Choose either a command or a script.")}
             {check("runsAs", "Use source control credentials", "Turn this on only if the command must act on GitHub or GitLab with your account, for example to push, open a pull request or comment on an issue. Builds, tests and linters do not need it. With it on, the command must not change the job's files and needs a probe.",
               draft.runsAs === "engine", (checked) => update("runsAs", checked ? "engine" : undefined))}
             {flag("cleanCheckout", "Clean checkout", "Run a project-user command on a temporary clean copy of the job's files.")}

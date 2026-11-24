@@ -88,12 +88,12 @@ function Events({ attemptId, running }: { attemptId: string; running: boolean })
       if (timer !== undefined) clearTimeout(timer);
     };
   }, [attemptId, connected, running]);
-  const removed: boolean = error instanceof ApiError && error.status === 410;
+  const unavailable: boolean = error instanceof ApiError && error.status === 410;
   const events: LogEvent[] = withoutOverlap(history, live);
   const pages: number = Math.max(0, Math.ceil(events.length / pageSize) - 1);
   const offset: number = Math.min(page, pages);
   const end: number = Math.max(0, events.length - offset * pageSize);
-  if (removed) return <EmptyState title="Log removed" />;
+  if (unavailable) return <EmptyState title="Log unavailable" />;
   return (
     <>
       {(!running || events.length === 0) && <ErrorText error={error} />}
@@ -126,7 +126,7 @@ function RawLog({ attemptId, running }: { attemptId: string; running: boolean })
   const pages: number = Math.max(0, Math.ceil(lines.length / pageSize) - 1);
   const offset: number = Math.min(page, pages);
   const end: number = Math.max(0, lines.length - offset * pageSize);
-  if (log.error instanceof ApiError && log.error.status === 410) return <EmptyState title="Log removed" />;
+  if (log.error instanceof ApiError && log.error.status === 410) return <EmptyState title="Log unavailable" />;
   return (
     <>
       <ErrorText error={log.error} />

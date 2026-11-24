@@ -1,5 +1,4 @@
 {
-  "$schema": "../../schemas/node.json",
   "name": "gitlab-issue-comment",
   "tags": ["source control", "issue tracker"],
   "description": "Post the merge request URL on the GitLab issue if it is missing.",

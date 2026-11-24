@@ -67,7 +67,7 @@ async function createJobInProject(ctx: ProjectContext, req: CreateJob): Promise<
   if ((req.orderId === undefined) !== (req.orderKey === undefined)) throw new JobCreateError("orderId and orderKey must be set together");
   const recipe: Recipe = recipeForJob(ctx, jobRecipeName(ctx, req.recipe));
   const recipeHash: string = definitionHash(ctx.defs.recipes.get(recipe.name));
-  const definitions: JobDefinitions = await snapshotDefinitions(recipe, ctx.defs.nodes, ctx.defs.nodeDir).catch(fail);
+  const definitions: JobDefinitions = await snapshotDefinitions(recipe, ctx.defs.nodes, ctx.defs.nodeDir, ctx.defs.sidecars).catch(fail);
   definitions.recipeHash = recipeHash;
   const knowledgeByRecipe = ctx.project.recipeKnowledge;
   if (knowledgeByRecipe && Object.hasOwn(knowledgeByRecipe, recipe.name)) definitions.knowledgeByStep = knowledgeByRecipe[recipe.name];

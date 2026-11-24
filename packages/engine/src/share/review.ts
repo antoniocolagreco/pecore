@@ -4,7 +4,7 @@ import type { ArchiveReview, ArchiveRisk } from "@pecore/schemas";
 import type { Engine } from "../main";
 import { ProjectDb } from "../store/project-db";
 import type { Manifest } from "./archive";
-import { historyArtifacts, migrateHistory } from "./history";
+import { historyArtifacts, historyLogs, migrateHistory } from "./history";
 import { withProjectArchive } from "./import";
 import { reviewWithModel } from "./review-model";
 import type { ReviewInput } from "./review-model";
@@ -72,8 +72,7 @@ export async function reviewProjectContents(engine: Engine, dir: string, manifes
   let modelChars: number = 0;
   const entries = (await readdir(dir, { withFileTypes: true, recursive: true })).filter((entry) => entry.isFile());
   const paths: string[] = entries.map((entry) => relative(dir, join(entry.parentPath, entry.name))).sort();
-  const order = (path: string): number => path.startsWith("logs/") ? 2 : path === "pecore.db" ? 1 : 0;
-  paths.sort((a, b) => order(a) - order(b));
+  paths.sort((a, b) => Number(a === "pecore.db") - Number(b === "pecore.db"));
   const add = (path: string, size: number, text: string | null, content: FileReview["content"]): void => {
     const file: number = files.length;
     files.push({ path, bytes: size, content, modelReviewed: false, findings: text === null ? [] : scanText(text) });
@@ -90,7 +89,7 @@ export async function reviewProjectContents(engine: Engine, dir: string, manifes
     const source: string = join(dir, path);
     const size: number = (await lstat(source)).size;
     if (path === "pecore.db") {
-      migrateHistory(source);
+      migrateHistory(source, manifest.logs);
       const project: ProjectDb = new ProjectDb(source);
       try {
         const text: string | null = historyText(project);
@@ -98,6 +97,12 @@ export async function reviewProjectContents(engine: Engine, dir: string, manifes
         for (const artifact of historyArtifacts(project.db, maxReviewBytes)) {
           const content: string | null = artifact.content === null ? null : decode(artifact.content);
           add(`artifacts/${artifact.file}`, artifact.bytes, content, artifact.content === null ? "too_large" : content === null ? "binary" : "text");
+        }
+        if (manifest.logs) {
+          for (const log of historyLogs(project.db, maxReviewBytes)) {
+            const content: string | null = log.content === null ? null : decode(log.content);
+            add(log.file, log.bytes, content, log.content === null ? "too_large" : content === null ? "binary" : "text");
+          }
         }
       } finally {
         project.close();

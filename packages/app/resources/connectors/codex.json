@@ -1,5 +1,4 @@
 {
-  "$schema": "../../schemas/connector.json",
   "name": "codex",
   "title": "Codex",
   "kind": "adapter",

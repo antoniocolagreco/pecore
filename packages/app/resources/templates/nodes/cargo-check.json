@@ -1,5 +1,4 @@
 {
-  "$schema": "../../schemas/node.json",
   "name": "cargo-check",
   "tags": ["rust", "check"],
   "description": "Type-check a Rust project with cargo check, tests included",

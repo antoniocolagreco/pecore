@@ -46,7 +46,7 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
   const navigate = useNavigate();
   const scope: string = newTemplate ? "templates" : project ? `projects/${project}` : path.slice(0, path.lastIndexOf("/recipes/"));
   const creation = useMemo<NewDefinition | undefined>(() => newTemplate || project ? {
-    content: JSON.stringify({ $schema: newTemplate ? "../../schemas/recipe.json" : "../../../schemas/recipe.json", name: "", description: "", icon: defaultDefinitionIcon.recipe, nodes: {}, edges: [], ends: [] }, null, 2) + "\n",
+    content: JSON.stringify({ name: "", description: "", icon: defaultDefinitionIcon.recipe, nodes: {}, edges: [], ends: [] }, null, 2) + "\n",
     path(content) {
       const name = Name.safeParse(parseDraft(content)?.name);
       return name.success ? `${scope}/recipes/${name.data}.json` : "";

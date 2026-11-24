@@ -17,13 +17,17 @@ describe("pecore.db", () => {
   it("applies the migrations once, in WAL mode", async () => {
     const path = join(await tempDir(), "pecore.db");
     const db = new ProjectDb(path);
-    expect(db.version()).toBe(5);
+    expect(db.version()).toBe(12);
     expect(db.db.pragma("journal_mode", { simple: true })).toBe("wal");
     db.close();
     const again = new ProjectDb(path);
-    expect(again.version()).toBe(5);
-    const tables = (again.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as { name: string }[]).map((r) => r.name);
-    expect(tables).toEqual(["artifacts", "attempts", "events", "human_queue", "jobs", "node_runs", "schema_version", "tickets_seen"]);
+    expect(again.version()).toBe(12);
+    const tables = again.db.prepare<[], string>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'catalog_%' ORDER BY name").pluck().all();
+    expect(tables).toEqual([
+      "artifacts", "attempt_logs", "attempts", "events", "human_queue", "jobs", "node_runs",
+      "project_creation", "project_credentials", "project_definition", "project_knowledge_reads", "project_knowledge_recipes",
+      "project_knowledge_steps", "project_recipes", "project_source_params", "project_variables", "schema_version", "tickets_seen",
+    ]);
     again.close();
   });
 
@@ -80,17 +84,32 @@ describe("pecore.db", () => {
     db.close();
   });
 
-  it("records the end of each attempt", async () => {
-    const db = new ProjectDb(join(await tempDir(), "pecore.db"));
+  it("keeps ordered attempt logs and their tails after the attempts end and the database reopens", async () => {
+    const path: string = join(await tempDir(), "pecore.db");
+    const db: ProjectDb = new ProjectDb(path);
     db.append([created]);
     for (const id of ["A1", "A2"]) {
       db.append([
-        { jobId: job, type: "attempt.started", payload: { attemptId: id, nodeRunId: `${job}/code#0`, profile: "opus", connector: "claude-code", harnessVersion: "2.1.327", connectorVersion: "0.108.0", account: "claude", osUser: "ac", sessionGroup: null, logPath: `logs/${id}.jsonl.zst` } },
-        { jobId: job, type: "attempt.ended", payload: { attemptId: id, endReason: "done", model: "claude-opus-5-5", account: "claude", tokens: { input: 10, output: 20, cacheRead: 300, cacheWrite: 40 }, cost: 0.5 } },
-      ]);
+        { jobId: job, type: "attempt.started", payload: { attemptId: id, nodeRunId: `${job}/code#0`, profile: "opus", connector: "claude-code", harnessVersion: "2.1.327", connectorVersion: "0.108.0", account: "claude", osUser: "ac", sessionGroup: null } },
+      ], 10);
     }
-    expect(db.db.prepare("SELECT model, end_reason FROM attempts WHERE id = 'A2'").get()).toEqual({ model: "claude-opus-5-5", end_reason: "done" });
+    db.logs.write("A1", { dir: "out", msg: { id: 1 }, at: 13 });
+    db.logs.write("A1", { dir: "err", line: "é", at: 12 });
+    db.logs.write("A2", { dir: "cmd", text: "still running", at: 11 });
+    db.append([{ jobId: job, type: "attempt.ended", payload: { attemptId: "A1", endReason: "done", model: "claude-opus-5-5", account: "claude", tokens: { input: 10, output: 20, cacheRead: 300, cacheWrite: 40 }, cost: 0.5 } }], 20);
+    expect(db.db.prepare("SELECT model, end_reason FROM attempts WHERE id = 'A1'").get()).toEqual({ model: "claude-opus-5-5", end_reason: "done" });
     db.close();
+
+    const reopened: ProjectDb = new ProjectDb(path);
+    try {
+      expect(reopened.logs.read("A1")).toEqual([{ dir: "out", msg: { id: 1 }, at: 13 }, { dir: "err", line: "é", at: 12 }]);
+      expect(reopened.logs.tail("A1", 13)).toEqual({ bytes: Buffer.from('é","at":12}\n'), truncated: true });
+      expect(reopened.logs.tail("A2", 1000)).toEqual({ bytes: Buffer.from('{"dir":"cmd","text":"still running","at":11}\n'), truncated: false });
+      expect(reopened.logs.status("A1")).toBe("available");
+      expect(reopened.logs.status("A2")).toBe("available");
+    } finally {
+      reopened.close();
+    }
   });
 
   it("rejects an invalid event and writes nothing of its transaction", async () => {
@@ -116,7 +135,7 @@ describe("pecore.db", () => {
 describe("chats.db", () => {
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.version()).toBe(8);
+    expect(db.version()).toBe(12);
     for (let i = 0; i < notificationsKept + 3; i++) db.addNotification({ kind: "job", title: `n${i}`, body: "" }, 1000 + i);
     const kept = db.notifications();
     expect(kept).toHaveLength(notificationsKept);
@@ -129,12 +148,36 @@ describe("chats.db", () => {
     const old = new ChatsDb(file);
     expect(old.chats()).toEqual([{ id: assistantChat, project: null }]);
     old.addMessage(assistantChat, "user", "hello", []);
-    old.db.exec("UPDATE schema_version SET version = 5");
+    for (const name of old.db.prepare<[], string>("SELECT name FROM sqlite_schema WHERE type = 'table' AND name LIKE 'catalog_%' ORDER BY rowid DESC").pluck().all()) {
+      old.db.exec(`DROP TABLE "${name}"`);
+    }
+    old.db.exec(`DROP TABLE agent_contexts; DROP TABLE settings; DROP TABLE ui_preferences; DROP TABLE harness_colors;
+      DROP TABLE assistant_traits; DROP TABLE agent_traits; DROP TABLE agents; DROP TABLE tier_profiles;
+      DROP TABLE profiles; DROP TABLE accounts; DROP TABLE auto_setup_profiles; DROP TABLE theme_tokens; DROP TABLE themes;
+      UPDATE schema_version SET version = 5`);
     old.close();
     const db = new ChatsDb(file);
-    expect(db.version()).toBe(8);
+    expect(db.version()).toBe(12);
     expect(db.messages(assistantChat)).toEqual([]);
     db.close();
+  });
+
+  it("keeps each agent's context after reopening the database", async () => {
+    const path: string = join(await tempDir(), "chats.db");
+    const db: ChatsDb = new ChatsDb(path);
+    db.setAgentContext("assistant", "# Small changes");
+    db.setAgentContext("pm-default", "# Check dependencies");
+    db.setAgentContext("assistant", "# Ask before changing scope");
+    db.close();
+
+    const reopened: ChatsDb = new ChatsDb(path);
+    try {
+      expect(reopened.agentContext("assistant")).toBe("# Ask before changing scope");
+      expect(reopened.agentContext("pm-default")).toBe("# Check dependencies");
+      expect(reopened.agentContext("unknown")).toBe("");
+    } finally {
+      reopened.close();
+    }
   });
 
   it("keeps one Project Manager chat per project and counts unread Assistant replies", async () => {

@@ -1,5 +1,4 @@
 {
-  "$schema": "../../schemas/node.json",
   "name": "cargo-test",
   "tags": ["test"],
   "description": "Run the Rust tests with cargo test in a clean checkout",

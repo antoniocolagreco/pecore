@@ -1,5 +1,4 @@
 {
-  "$schema": "../../schemas/node.json",
   "name": "cargo-clippy",
   "tags": ["lint"],
   "description": "Lint a Rust project with clippy; warnings fail the check",

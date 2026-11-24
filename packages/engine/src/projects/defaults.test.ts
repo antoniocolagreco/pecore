@@ -1,8 +1,7 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { shippedTemplates, tempDir } from "../../test/tmp";
-import { instantiateRecipe } from "../definitions/instantiate";
+import { Accounts } from "@pecore/schemas";
+import { apiProject } from "../../test/api-project";
+import { shippedTemplates } from "../../test/tmp";
 import { loadForgeDefaults, projectDefaults } from "./defaults";
 
 const repo = { url: "https://gitlab.example.com/acme/shop.git", account: "work-gitlab" };
@@ -39,21 +38,26 @@ describe("project defaults (decision 8)", () => {
     expect(d.rename).not.toHaveProperty("github-issue-comment");
     expect(d.rename).not.toHaveProperty("github-create-repo");
     expect(d.rename).not.toHaveProperty("github-issues");
-    const project = await tempDir();
-    expect((await instantiateRecipe(shippedTemplates, project, "feature-to-pr", d.rename)).errors).toEqual([]);
-    const feature = JSON.parse(await readFile(join(project, "recipes", "feature-to-pr.json"), "utf8"));
-    expect(feature.nodes.pr.use).toBe("git-delivery");
   });
 
-  it("instantiating a recipe with the rename map writes the GitLab node and recipe", async () => {
-    const project = await tempDir();
-    const d = await projectDefaults(shippedTemplates, repo, "gitlab");
-    const r = await instantiateRecipe(shippedTemplates, project, "bugfix-to-pr", d.rename);
-    expect(r.errors).toEqual([]);
-    const recipe = JSON.parse(await readFile(join(project, "recipes", "bugfix-to-pr.json"), "utf8"));
-    expect(recipe.nodes.pr.use).toBe("gitlab-mr");
-    expect(recipe.nodes.comment.use).toBe("gitlab-issue-comment");
-    expect(r.written).toContain(join(project, "nodes", "gitlab-mr.json"));
-    expect(r.written.some((f) => f.includes("github-"))).toBe(false);
+  it("instantiates GitLab nodes and a GitLab recipe in the project database", async () => {
+    const { engine, call, close } = await apiProject();
+    try {
+      engine.configuration.write({ accounts: Accounts.parse({ accounts: [{
+        id: repo.account, kind: "forge", forge: "gitlab", host: "gitlab.example.com", tool: "glab",
+        user: "dev", author: { name: "Developer", email: "dev@example.com" },
+      }] }) });
+      await engine.reloadGlobal();
+      const { ctx } = engine.project("demo");
+      ctx.db.definition.write({ ...ctx.project, repo, recipes: undefined });
+      await engine.reloadProject("demo");
+      const r = await call("instantiate", { body: { kind: "recipe", name: "bugfix-to-pr", project: "demo" } });
+      expect(ctx.db.catalog.recipe("bugfix-to-pr")?.nodes.pr?.use).toBe("gitlab-mr");
+      expect(ctx.db.catalog.recipe("bugfix-to-pr")?.nodes.comment?.use).toBe("gitlab-issue-comment");
+      expect(r.created).toContain("projects/demo/nodes/gitlab-mr.json");
+      expect(r.created.some((path) => path.includes("github-"))).toBe(false);
+    } finally {
+      await close();
+    }
   });
 });

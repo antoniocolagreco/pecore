@@ -2,6 +2,7 @@ import { cp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { monotonicFactory } from "ulid";
 import { describe, expect, it } from "vitest";
+import { Node, Recipe } from "@pecore/schemas";
 import { createProjectWithRecipes } from "../../test/project";
 import { shippedTemplates, tempDir } from "../../test/tmp";
 import { Engine } from "../main";
@@ -81,7 +82,8 @@ describe("engine nodes", () => {
     try {
       const first: string = await engine.createJob("demo", { title: "First", ticket: { text: "x" } });
       await until(() => p.executor.job(first).state === "succeeded");
-      await writeFile(join(p.ctx.defs.nodeDir, "notify.sh"), `echo second >> ${marker(root)}\n`);
+      engine.catalog.saveContent("notify.sh", `echo second >> ${marker(root)}\n`);
+      await engine.reloadProject("demo");
       const second: string = await engine.createJob("demo", { title: "Second", ticket: { text: "x" } });
       await until(() => p.executor.job(second).state === "succeeded");
       expect((await readFile(marker(root), "utf8")).trim()).toBe("first\nsecond");
@@ -98,7 +100,7 @@ describe("engine nodes", () => {
       await engine.pauseAll();
       first = await engine.createJob("demo", { title: "First", ticket: { text: "x" } });
       expect(p.executor.job(first).state).toBe("queued");
-      await writeFile(join(p.ctx.defs.nodeDir, "notify.sh"), `echo second >> ${marker(root)}\n`);
+      engine.catalog.saveContent("notify.sh", `echo second >> ${marker(root)}\n`);
     } finally {
       await engine.shutdown();
     }
@@ -119,7 +121,7 @@ describe("engine nodes", () => {
     }
   });
 
-  it("moves a legacy project with a custom script into Templates without overwriting the shared node", async () => {
+  it("ignores legacy project files and keeps the selected recipe in the database across restarts", async () => {
     const { root, home, lib, engine, p } = await setup();
     const dir: string = p.ctx.dir;
     try {
@@ -137,14 +139,14 @@ describe("engine nodes", () => {
     const reopened: Engine = await Engine.start({ home, templates: lib });
     try {
       const project = reopened.project("demo");
-      expect(project.ctx.project.recipes).toEqual(["notify-demo"]);
-      expect(project.ctx.defs.recipes.get("notify-demo")?.nodes.n?.use).toBe("notify-demo");
-      await expect(stat(join(dir, "nodes"))).rejects.toMatchObject({ code: "ENOENT" });
-      await expect(stat(join(dir, "recipes"))).rejects.toMatchObject({ code: "ENOENT" });
+      expect(project.ctx.project.recipes).toEqual(["notify"]);
+      expect(project.ctx.defs.recipes.get("notify")?.nodes.n?.use).toBe("notify");
+      expect((await stat(join(dir, "nodes"))).isDirectory()).toBe(true);
+      expect((await stat(join(dir, "recipes"))).isDirectory()).toBe(true);
       const job: string = await reopened.createJob("demo", { title: "Legacy", ticket: { text: "x" } });
       await until(() => project.executor.job(job).state === "succeeded");
-      expect((await readFile(marker(root), "utf8")).trim()).toBe("migrated");
-      expect(await readFile(join(project.ctx.defs.nodeDir, "notify.sh"), "utf8")).toContain("echo first");
+      expect((await readFile(marker(root), "utf8")).trim()).toBe("first");
+      expect(reopened.catalog.content("notify.sh")).toContain("echo first");
     } finally {
       await reopened.shutdown();
     }
@@ -153,18 +155,18 @@ describe("engine nodes", () => {
   it("follows a Decision's selected branch without treating it as a Review", async () => {
     const { root, engine, p } = await setup();
     try {
-      await writeFile(join(p.ctx.defs.nodeDir, "pick.json"), JSON.stringify({
+      engine.catalog.saveNode(Node.parse({
         name: "pick", description: "Choose a branch", kind: "human", interface: "decision",
         outcomes: ["approve", "b", "c"],
       }));
-      await writeFile(join(p.ctx.templates, "recipes", "pick.json"), JSON.stringify({
+      engine.catalog.saveRecipe(Recipe.parse({
         name: "pick", description: "Route a decision", start: "pick",
         nodes: { pick: { use: "pick", params: { question: "Which branch should run?" } }, gated: { use: "notify", requires: ["pick"] }, free: { use: "notify" } },
         edges: [{ from: "pick", on: "approve", to: "gated" }, { from: "pick", on: "b", to: "free" }],
         successOutcomes: ["pick:c", "gated:done", "free:done"],
       }));
       const project = { ...p.ctx.project, recipes: ["notify", "pick"] };
-      await writeFile(join(p.ctx.dir, "project.json"), JSON.stringify(project));
+      p.ctx.db.definition.write(project);
       expect(await engine.reloadProject("demo")).toEqual([]);
       const decide = async (choice: string): Promise<string> => {
         const id: string = await engine.createJob("demo", { title: choice, recipe: "pick", ticket: { text: "x" } });

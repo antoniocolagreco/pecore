@@ -1,5 +1,4 @@
 {
-  "$schema": "../../schemas/connector.json",
   "name": "opencode",
   "title": "OpenCode",
   "kind": "native",

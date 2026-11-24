@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { appName, forgeHost, harnessColor, harnesses, Settings as SettingsSchema } from "@pecore/schemas";
+import { appName, forgeHost, harnessColor, harnesses, Settings as SettingsSchema, Theme } from "@pecore/schemas";
 import type { Account, ForgeAccount, HarnessInfo, LiveMessage, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useAutoSave, useData } from "../api/hooks";
@@ -19,7 +19,7 @@ import { ColorPicker, NumberField, Segmented } from "../ds/values";
 import { SidebarItem, SidebarSection } from "../shell/sidebar";
 import { builtInThemes, themePrefs } from "../theme/themes";
 import type { ThemePrefs } from "../theme/themes";
-import { DefinitionErrors, settingUrl } from "./NodeEditor";
+import { settingUrl } from "./NodeEditor";
 import { ChatAgentSettings } from "./Agents";
 import s from "./Settings.module.css";
 
@@ -316,6 +316,14 @@ export function Settings() {
   const accounts = useGlobalFile("accounts", () => call("getAccounts"), (body) => call("putAccounts", { body }));
   const status = useData(() => call("getStatus"), []);
   const themes = useData(() => call("listThemes"), [], (message) => message.type === "definition.changed" && message.path.startsWith("themes/"));
+  const themeInput = useRef<HTMLInputElement>(null);
+  const importTheme = useAction(async (file: File) => {
+    const id: string = file.name.replace(/\.json$/i, "");
+    const theme: ReturnType<typeof Theme.safeParse> = Theme.safeParse(JSON.parse(await file.text()));
+    if (!theme.success) throw new Error(theme.error.issues.map(({ path, message }) => [path.join("."), message].filter(Boolean).join(" ")).join("\n"));
+    await call("putTheme", { params: { id }, body: theme.data });
+    themes.reload();
+  });
   const [checks, setChecks] = useState<RouteResult<"checkPrerequisites">>();
   const [disableDialog, setDisableDialog] = useState(false);
   const [addForge, setAddForge] = useState(false);
@@ -431,9 +439,15 @@ export function Settings() {
                 options={[{ value: "system", label: "System" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} />
               <Select label="Theme" value={prefs.theme}
                 onValueChange={(theme) => theme && update({ ...value, ui: { ...value.ui, theme } })}
-                options={[...builtInThemes, ...(themes.data ?? []).flatMap((item) => item.theme ? [{ value: item.file, label: item.theme.name }] : [])]} />
+                options={[...builtInThemes, ...(themes.data ?? []).map(({ id, theme }) => ({ value: id, label: theme.name }))]} />
+              <Button loading={importTheme.busy} disabled={!connected} onClick={() => themeInput.current?.click()}>Import theme</Button>
+              <input ref={themeInput} type="file" accept=".json,application/json" hidden onChange={(event) => {
+                const file: File | undefined = event.currentTarget.files?.[0];
+                event.currentTarget.value = "";
+                if (file) void importTheme.run(file);
+              }} />
               <ErrorText error={themes.error} />
-              {themes.data?.filter((item) => item.errors.length).map((item) => <div key={item.file}><strong>{item.file}</strong><DefinitionErrors errors={item.errors} /></div>)}
+              <ErrorText error={importTheme.error} />
             </div>
           </Section>
         </>}

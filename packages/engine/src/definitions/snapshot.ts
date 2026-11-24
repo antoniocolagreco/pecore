@@ -14,20 +14,24 @@ export function definitionHash(content: unknown): string {
   return createHash("sha256").update(json).digest("hex");
 }
 
-export async function snapshotNode(definition: Node, dir: string): Promise<JobDefinitions["nodes"][string]> {
+export async function snapshotNode(definition: Node, dir: string, contents?: Readonly<Record<string, string>>): Promise<JobDefinitions["nodes"][string]> {
   const names: Set<string> = new Set(nodeSidecars(definition).map(([, name]) => name));
   const sidecars: Record<string, string> = Object.fromEntries(
-    await Promise.all([...names].map(async (name) => [name, await readFile(join(dir, name), "utf8")] as const)),
+    await Promise.all([...names].map(async (name) => {
+      const content: string | undefined = contents ? contents[name] : await readFile(join(dir, name), "utf8");
+      if (content === undefined) throw new Error(`missing node content ${name}`);
+      return [name, content] as const;
+    })),
   );
   return { definition, sidecars, hash: definitionHash({ definition, sidecars }) };
 }
 
-export async function snapshotDefinitions(recipe: Recipe, nodes: Map<string, Node>, dir: string): Promise<JobDefinitions> {
+export async function snapshotDefinitions(recipe: Recipe, nodes: Map<string, Node>, dir: string, contents?: Readonly<Record<string, string>>): Promise<JobDefinitions> {
   const names: Set<string> = new Set(Object.values(recipe.nodes).map(({ use }) => use));
   const entries: [string, JobDefinitions["nodes"][string]][] = await Promise.all([...names].map(async (name) => {
     const node: Node | undefined = nodes.get(name);
     if (!node) throw new Error(`node ${name} not found`);
-    return [name, await snapshotNode(node, dir)];
+    return [name, await snapshotNode(node, dir, contents)];
   }));
   return { recipeHash: definitionHash(recipe), nodes: Object.fromEntries(entries) };
 }

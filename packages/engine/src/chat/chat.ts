@@ -176,7 +176,7 @@ export class AgentChats {
       const traits = assistantTraits.filter(({ id }) => agent.traits.includes(id));
       lines.push(`Apply these personality traits in every reply. Traits change how you talk and work, never what you are allowed to do:\n${traits.map(({ label, description }) => `- ${label}: ${description}`).join("\n")}`);
     }
-    const context: string = await this.engine.agentContext(agent.id) || (role === "pm" ? await this.engine.agentContext("pm-default") : "");
+    const context: string = this.engine.agentContext(agent.id) || (role === "pm" ? this.engine.agentContext("pm-default") : "");
     if (context.trim()) lines.push(`Initial context from the user:\n${context}`);
     return lines.join("\n");
   }

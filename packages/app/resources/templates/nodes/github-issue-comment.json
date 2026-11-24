@@ -1,5 +1,4 @@
 {
-  "$schema": "../../schemas/node.json",
   "name": "github-issue-comment",
   "tags": ["source control", "issue tracker"],
   "description": "Post the pull request URL on the GitHub issue if it is missing.",

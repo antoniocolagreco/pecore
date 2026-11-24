@@ -17,16 +17,15 @@ function useSystemMode(): Mode {
 
 export function ThemeLoader() {
   const settings = useData(() => call("getSettings"), [], (m) => m.type === "definition.changed" && (m.path === "settings.json" || m.path.startsWith("themes/")));
-  const files = useData(() => call("listThemes"), [], (m) => m.type === "definition.changed" && m.path.startsWith("themes/"));
+  const themes = useData(() => call("listThemes"), [], (m) => m.type === "definition.changed" && m.path.startsWith("themes/"));
   const system = useSystemMode();
   const prefs: ThemePrefs = themePrefs(settings.data?.value.ui);
   const mode: Mode = prefs.mode === "system" ? system : prefs.mode;
   const choice: string = prefs.theme;
   useEffect(() => {
-    const file = choice.startsWith("builtin:") ? undefined : files.data?.find((f) => f.file === choice);
-    const theme = file?.theme ?? null;
+    const theme = themes.data?.find(({ id }) => id === choice)?.theme ?? null;
     const variant: Mode | null = themeMode(theme);
     return applyTheme(mode, choice, variant === null || variant === mode ? theme : null);
-  }, [mode, choice, files.data]);
+  }, [mode, choice, themes.data]);
   return null;
 }

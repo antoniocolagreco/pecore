@@ -1,9 +1,5 @@
-import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { Theme } from "@pecore/schemas";
 import type { PrerequisiteView } from "@pecore/schemas";
-import { zodErrors } from "../../definitions/load";
-import { homePaths } from "../../home/layout";
+import { definitionHash } from "../../definitions/snapshot";
 import { checkPrerequisites } from "../../home/prerequisites";
 import type { Prerequisite } from "../../home/prerequisites";
 import type { Engine } from "../../main";
@@ -17,24 +13,6 @@ async function prerequisites(engine: Engine): Promise<Prerequisite[]> {
   const { settings, accounts } = engine.global();
   const services = settings.servicesRuntime !== null || [...engine.projects.values()].some(({ ctx }) => ctx.project.services !== null);
   return checkPrerequisites({ accounts: accounts.accounts, protectedMode: settings.protectedMode, services, servicesRuntime: settings.servicesRuntime });
-}
-
-async function themes(engine: Engine) {
-  const dir = homePaths(engine.opts.home).themes;
-  const files = (await readdir(dir).catch(() => [] as string[])).filter((f) => f.endsWith(".json")).sort();
-  return Promise.all(
-    files.map(async (file) => {
-      const path = join(dir, file);
-      let value: unknown;
-      try {
-        value = JSON.parse(await readFile(path, "utf8"));
-      } catch (e) {
-        return { file, theme: null, errors: [{ file: path, path: "", message: (e as Error).message }] };
-      }
-      const r = Theme.safeParse(value);
-      return r.success ? { file, theme: r.data, errors: [] } : { file, theme: null, errors: zodErrors(path, r.error) };
-    }),
-  );
 }
 
 async function conflictOn<T>(fn: () => Promise<T>): Promise<T> {
@@ -66,6 +44,11 @@ export function systemHandlers(engine: Engine) {
     checkPrerequisites: async (): Promise<PrerequisiteView[]> => (await prerequisites(engine)).map((p) => ({ ...p, setting: prerequisiteSetting[p.tool] ?? null })),
     getSetup: async () => engine.setupView(),
     startSetupLogin: async ({ params }) => ({ loginId: await conflictOn(() => engine.startSetupLogin(params.connector)) }),
-    listThemes: async () => themes(engine),
+    listThemes: async () => engine.configuration.themes(),
+    putTheme: ({ params: { id }, body }) => engine.withGlobalFiles(async () => {
+      engine.configuration.setTheme(id, body);
+      engine.definitionChanged(`themes/${id}`, definitionHash(body));
+      return { id, theme: body };
+    }),
   } satisfies Partial<Handlers>;
 }

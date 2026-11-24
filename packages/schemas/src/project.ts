@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { agentColors } from "./colors";
-import { JsonSchemaObject, KnowledgeFileName, Name, SchemaRef } from "./common";
+import { JsonSchemaObject, KnowledgeFileName, Name } from "./common";
 
 export const ProjectId = z.string().regex(/^[a-z][a-z0-9-]{0,23}$/, "lower case letters, digits and dashes, starting with a letter, at most 24");
 
@@ -31,7 +31,6 @@ export function freeProjectManager(used: ProjectManagerIdentity[]): ProjectManag
 
 const ProjectDefinition = z
   .object({
-    $schema: SchemaRef,
     id: ProjectId,
     name: z.string().min(1),
     repo: z

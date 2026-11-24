@@ -1,8 +1,10 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { z } from "zod";
-import { Accounts, AgentDefinitions, Node, Profiles, Project, Recipe, Settings, Tiers, unknownPlaceholders } from "@pecore/schemas";
+import { Node, Project, Recipe, unknownPlaceholders } from "@pecore/schemas";
+import type { Accounts, AgentDefinitions, Profiles, Settings, Tiers } from "@pecore/schemas";
 import { checkRecipe } from "./recipe-check";
+import type { Catalog } from "../store/catalog";
 
 export type DefinitionError = { file: string; path: string; message: string; line?: number; column?: number; length?: number };
 
@@ -93,8 +95,37 @@ export type Definitions = {
   nodeDir: string;
   nodes: Map<string, Node>;
   recipes: Map<string, Recipe>;
+  sidecars?: Readonly<Record<string, string>>;
   errors: DefinitionError[];
 };
+
+function catalogDefinitions(dir: string, catalog: Catalog, opts: { checkRecipes: boolean; remote: boolean }): Definitions {
+  const nodeDir: string = join(dir, "nodes");
+  const errors: DefinitionError[] = [];
+  const nodes: Map<string, Node> = new Map();
+  const recipes: Map<string, Recipe> = new Map();
+  const sidecars: Record<string, string> = Object.fromEntries(catalog.names("node_content").map((name) => [name, catalog.content(name)!]));
+  for (const name of catalog.names("nodes")) {
+    const node: Node = catalog.node(name)!;
+    const file: string = join(nodeDir, `${name}.json`);
+    const issues: DefinitionError[] = nodeSidecars(node).filter(([, name]) => !Object.hasOwn(sidecars, name))
+      .map(([path, name]) => ({ file, path, message: `${name} has no saved content` }));
+    if (node.kind === "agent" && Object.hasOwn(sidecars, node.prompt)) {
+      for (const p of unknownPlaceholders(sidecars[node.prompt]!)) issues.push({ file, path: "prompt", message: `unknown placeholder ${p}` });
+    }
+    if (issues.length) errors.push(...issues);
+    else nodes.set(name, node);
+  }
+  for (const name of catalog.names("recipes")) {
+    const recipe: Recipe = catalog.recipe(name)!;
+    if (opts.checkRecipes) {
+      const file: string = join(dir, "recipes", `${name}.json`);
+      errors.push(...checkRecipe(recipe, nodes, opts.remote).map((issue) => ({ file, ...issue })));
+    }
+    recipes.set(name, recipe);
+  }
+  return { nodeDir, nodes, recipes, sidecars, errors };
+}
 
 export async function loadDefinitions(dir: string, opts: { checkRecipes: boolean; remote: boolean }): Promise<Definitions> {
   const nodes = new Map<string, Node>();
@@ -120,17 +151,23 @@ export async function loadDefinitions(dir: string, opts: { checkRecipes: boolean
   return { nodeDir: join(dir, "nodes"), nodes, recipes, errors };
 }
 
-export function loadTemplates(templatesDir: string): Promise<Definitions> {
-  return loadDefinitions(templatesDir, { checkRecipes: true, remote: true });
+export async function loadTemplates(templatesDir: string, catalog?: Catalog): Promise<Definitions> {
+  const options = { checkRecipes: true, remote: true };
+  return catalog ? catalogDefinitions(templatesDir, catalog, options) : loadDefinitions(templatesDir, options);
 }
 
 export type LoadedProject = Definitions & { project: Project | null };
 
-export async function loadProject(projectDir: string, templatesDir?: string): Promise<LoadedProject> {
+export async function loadProject(projectDir: string, templatesDir?: string, stored?: Project | null, catalogs?: { global: Catalog; project: Catalog }): Promise<LoadedProject> {
   const file = join(projectDir, "project.json");
-  const p = await parseFile(file, Project);
+  const p: Loaded<Project> = stored === undefined ? await parseFile(file, Project) :
+    { value: stored, errors: stored === null ? [{ file, path: "", message: "project definition not found in pecore.db" }] : [] };
   const shared: boolean = templatesDir !== undefined && p.value?.recipes !== undefined;
-  const defs = await loadDefinitions(shared ? templatesDir! : projectDir, { checkRecipes: !shared, remote: p.value?.repo !== null });
+  const root: string = shared ? templatesDir! : projectDir;
+  const options = { checkRecipes: !shared, remote: p.value?.repo !== null };
+  const defs: Definitions = catalogs
+    ? catalogDefinitions(root, shared ? catalogs.global : catalogs.project, options)
+    : await loadDefinitions(root, options);
   const errors = shared ? [...p.errors] : [...p.errors, ...defs.errors];
   const project = p.value;
   if (project) {
@@ -156,59 +193,26 @@ export async function loadProject(projectDir: string, templatesDir?: string): Pr
   return { ...defs, project, errors };
 }
 
-async function parseOptional<S extends z.ZodType>(file: string, schema: S, prepare?: (value: unknown) => unknown): Promise<Loaded<z.infer<S>>> {
-  if (!(await exists(file))) {
-    const r = schema.safeParse({});
-    return r.success ? { value: r.data, errors: [] } : { value: null, errors: zodErrors(file, r.error) };
-  }
-  return parseFile(file, schema, prepare);
-}
-
 export type Global = { settings: Settings; agents: AgentDefinitions; accounts: Accounts; profiles: Profiles; tiers: Tiers };
 
-export async function loadGlobal(home: string): Promise<{ value: Global | null; errors: DefinitionError[] }> {
-  const [settings, agents, accounts, profiles, tiers] = await Promise.all([
-    parseOptional(join(home, "settings.json"), Settings, (value) => {
-      if (value !== null && typeof value === "object") {
-        for (const key of ["firstRunDone", "prices", "projectPaths", "programPaths"]) Reflect.deleteProperty(value, key);
-        if ("limits" in value && value.limits !== null && typeof value.limits === "object") Reflect.deleteProperty(value.limits, "providers");
-        if ("orchestrator" in value) {
-          if (!("pm" in value)) Reflect.set(value, "pm", value.orchestrator);
-          Reflect.deleteProperty(value, "orchestrator");
-        }
-      }
-      return value;
-    }),
-    parseOptional(join(home, "agents.json"), AgentDefinitions, (value) => {
-      if (value && typeof value === "object" && "agents" in value && Array.isArray(value.agents)) {
-        return { ...value, agents: (value.agents as unknown[]).map((agent) =>
-          agent && typeof agent === "object" && "kind" in agent && agent.kind === "worker" ? { ...agent, kind: "agent" } : agent) };
-      }
-      return value;
-    }),
-    parseOptional(join(home, "accounts.json"), Accounts),
-    parseOptional(join(home, "profiles.json"), Profiles),
-    parseOptional(join(home, "tiers.json"), Tiers),
-  ]);
-  const errors = [...settings.errors, ...agents.errors, ...accounts.errors, ...profiles.errors, ...tiers.errors];
-  if (!settings.value || !agents.value || !accounts.value || !profiles.value || !tiers.value) return { value: null, errors };
-  const g: Global = { settings: settings.value, agents: agents.value, accounts: accounts.value, profiles: profiles.value, tiers: tiers.value };
+export function validateGlobal(g: Global): DefinitionError[] {
+  const errors: DefinitionError[] = [];
   const accountIds = new Set(g.accounts.accounts.map((a) => a.id));
   const profileIds = new Set(g.profiles.profiles.map((p) => p.id));
   for (const [i, p] of g.profiles.profiles.entries()) {
     const acc = g.accounts.accounts.find((a) => a.id === p.account);
-    if (!accountIds.has(p.account)) errors.push({ file: join(home, "profiles.json"), path: `profiles.${i}.account`, message: `account ${p.account} not found` });
-    else if (acc?.kind !== "model") errors.push({ file: join(home, "profiles.json"), path: `profiles.${i}.account`, message: `account ${p.account} is not a model account` });
+    if (!accountIds.has(p.account)) errors.push({ file: "profiles.json", path: `profiles.${i}.account`, message: `account ${p.account} not found` });
+    else if (acc?.kind !== "model") errors.push({ file: "profiles.json", path: `profiles.${i}.account`, message: `account ${p.account} is not a model account` });
   }
   for (const [i, { model }] of g.agents.agents.entries()) {
     if (model && !g.accounts.accounts.some(({ id, kind }) => id === model.account && kind === "model")) {
-      errors.push({ file: join(home, "agents.json"), path: `agents.${i}.model.account`, message: `model account ${model.account} not found` });
+      errors.push({ file: "agents.json", path: `agents.${i}.model.account`, message: `model account ${model.account} not found` });
     }
   }
   for (const [tier, list] of Object.entries(g.tiers.tiers)) {
     for (const [i, id] of list.entries()) {
-      if (!profileIds.has(id)) errors.push({ file: join(home, "tiers.json"), path: `tiers.${tier}.${i}`, message: `profile ${id} not found` });
+      if (!profileIds.has(id)) errors.push({ file: "tiers.json", path: `tiers.${tier}.${i}`, message: `profile ${id} not found` });
     }
   }
-  return { value: errors.length ? null : g, errors };
+  return errors;
 }

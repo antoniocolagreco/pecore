@@ -44,6 +44,15 @@ export class ChatsDb {
     return (this.db.prepare("SELECT version FROM schema_version").get() as { version: number }).version;
   }
 
+  agentContext(agentId: string): string {
+    return this.db.prepare<[string], string>("SELECT markdown FROM agent_contexts WHERE agent_id = ?").pluck().get(agentId) ?? "";
+  }
+
+  setAgentContext(agentId: string, markdown: string): void {
+    this.db.prepare(`INSERT INTO agent_contexts (agent_id, markdown) VALUES (?, ?)
+      ON CONFLICT (agent_id) DO UPDATE SET markdown = excluded.markdown`).run(agentId, markdown);
+  }
+
   chats(): Chat[] {
     return this.db.prepare("SELECT id, project FROM chats ORDER BY id").all() as Chat[];
   }

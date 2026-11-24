@@ -4,7 +4,10 @@ import { monotonicFactory } from "ulid";
 import type { z } from "zod";
 import { EventBody } from "@pecore/schemas";
 import type { Artifact, StoredEvent } from "@pecore/schemas";
+import { AttemptLogs } from "../observability/logs";
 import { migrate } from "./migrate";
+import { ProjectDefinition } from "./project-definition";
+import { Catalog } from "./catalog";
 
 type EventInput = z.input<typeof EventBody>;
 type TicketSeen = Extract<EventInput, { type: "ticket.seen" }>;
@@ -14,6 +17,9 @@ const ulid = monotonicFactory();
 
 export class ProjectDb {
   readonly db: Database.Database;
+  readonly logs: AttemptLogs;
+  readonly definition: ProjectDefinition;
+  readonly catalog: Catalog;
   onAppend: (events: StoredEvent[]) => void = () => undefined;
 
   constructor(path: string) {
@@ -22,6 +28,9 @@ export class ProjectDb {
     this.db.pragma("foreign_keys = ON");
     this.db.pragma("busy_timeout = 5000");
     migrate(this.db, "");
+    this.logs = new AttemptLogs(this.db);
+    this.definition = new ProjectDefinition(this.db);
+    this.catalog = new Catalog(this.db);
   }
 
   close(): void {
@@ -172,8 +181,8 @@ export class ProjectDb {
       case "attempt.started": {
         const p = e.payload;
         run(
-          `INSERT INTO attempts (id, node_run_id, profile, connector, harness_version, connector_version, account, os_user, session_group, log_path, started_at)
-           VALUES (@id, @nodeRun, @profile, @connector, @harness, @connectorVersion, @account, @osUser, @group, @log, @at)`,
+          `INSERT INTO attempts (id, node_run_id, profile, connector, harness_version, connector_version, account, os_user, session_group, started_at)
+           VALUES (@id, @nodeRun, @profile, @connector, @harness, @connectorVersion, @account, @osUser, @group, @at)`,
           {
             id: p.attemptId,
             nodeRun: p.nodeRunId,
@@ -184,7 +193,6 @@ export class ProjectDb {
             account: p.account,
             osUser: p.osUser,
             group: p.sessionGroup,
-            log: p.logPath,
             at,
           },
         );

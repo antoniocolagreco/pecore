@@ -13,18 +13,19 @@ import { importCatalog, saveLegacyJobDefinitions } from "../definitions/catalog"
 import { homePaths } from "../home/layout";
 import { forgeAccountOf, repoHost, writeCreation } from "../projects/create";
 import { ProjectDb } from "../store/project-db";
+import type { Catalog } from "../store/catalog";
 import { archivePath, definitionDirs, InvalidArchive, Manifest, ShareConflict } from "./archive";
 import { migrateHistory, resetHistory } from "./history";
 
 type AccountMapping = NonNullable<ImportProjectBody["accounts"]>;
 
-type ImportOptions = { accounts: Accounts; knownProject(id: string): boolean };
+type ImportOptions = { accounts: Accounts; catalog: Catalog; knownProject(id: string): boolean };
 type LoadedProject = Awaited<ReturnType<typeof loadProject>> & { project: Project };
 
 function allowedEntry(name: string, directory: boolean): boolean {
   const [root, ...parts]: string[] = name.split("/");
   if ((root === "nodes" || root === "recipes") && parts.length > 1 && name.endsWith(".json")) return false;
-  if (definitionDirs.includes(root!) || root === "logs") return parts.length > 0 || directory;
+  if (definitionDirs.includes(root!)) return parts.length > 0 || directory;
   return ["manifest.json", "project.json", "pecore.db"].includes(root!) && parts.length === 0 && !directory;
 }
 
@@ -132,7 +133,7 @@ export async function withProjectArchive<T>(home: string, path: string, use: (di
     await mkdir(dir, { mode: 0o700 });
     const roots: Set<string> = source === "local" ? await unpackSource(path, dir) : await unpack(path, dir);
     const manifest: Manifest = Manifest.parse(JSON.parse(await readFile(join(dir, "manifest.json"), "utf8")));
-    if (manifest.history !== roots.has("pecore.db") || (!manifest.logs && roots.has("logs"))) {
+    if (manifest.history !== roots.has("pecore.db")) {
       throw new InvalidArchive("archive files do not match the manifest's history and logs flags");
     }
     const original: string = join(stage, manifest.projectId);
@@ -247,23 +248,24 @@ export async function beginImport(home: string, input: ImportProjectBody, option
     project.id = id;
     project.createRepo = null;
     project.folder = null;
-    await writeFile(join(original, "project.json"), JSON.stringify(project, null, 2) + "\n");
+    await rm(join(original, "project.json"));
     await rm(join(original, "manifest.json"));
-    for (const name of ["knowledge", "logs", "work"]) await mkdir(join(original, name), { recursive: true, mode: 0o700 });
+    for (const name of ["knowledge", "work"]) await mkdir(join(original, name), { recursive: true, mode: 0o700 });
     const dbPath: string = join(original, "pecore.db");
-    if (manifest.history) migrateHistory(dbPath);
+    if (manifest.history) migrateHistory(dbPath, manifest.logs);
     const db: ProjectDb = new ProjectDb(dbPath);
     try {
       if (manifest.history) {
-        resetHistory(db, original);
+        resetHistory(db);
         await saveLegacyJobDefinitions(loaded, db);
       }
+      db.definition.write(project);
     } finally {
       db.close();
     }
     await writeCreation(original, 3);
     checkId(dest, id, options.knownProject);
-    const differences: string[] = await importCatalog(homePaths(home).templates, loaded);
+    const differences: string[] = await importCatalog(options.catalog, loaded);
     for (const name of ["nodes", "recipes"]) await rm(join(original, name), { recursive: true, force: true });
     renameSync(original, dest);
     return { state: "imported", id, ...(differences.length ? { differences } : {}) };

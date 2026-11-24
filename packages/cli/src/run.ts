@@ -16,7 +16,7 @@ Usage:
   pecore job why <job>
   pecore job stop|pause|play|resume|archive|delete <job>
   pecore job realign <job> [--target <branch>]
-  pecore validate <file>...`;
+  pecore validate <definition>...`;
 
 export type Out = { log(text: string): void; error(text: string): void };
 
@@ -117,7 +117,12 @@ async function command(call: ApiClient, home: string, args: string[], out: Out):
         failed++;
         continue;
       }
-      const { errors } = await call("validateDefinition", { body: { path: rel.split(sep).join("/"), content: await readFile(file, "utf8") } });
+      const path: string = rel.split(sep).join("/");
+      const content: string = await readFile(file, "utf8").catch(async (error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+        return (await call("getDefinition", { params: { path } })).content;
+      });
+      const { errors } = await call("validateDefinition", { body: { path, content } });
       if (errors.length === 0) out.log(`${file}: ok`);
       for (const e of errors) out.error(`${file} ${e.path}: ${e.message}`);
       if (errors.length) failed++;

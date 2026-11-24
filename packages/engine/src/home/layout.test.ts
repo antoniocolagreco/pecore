@@ -1,87 +1,50 @@
-import { chmod, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { Node, Recipe } from "@pecore/schemas";
 import { shippedTemplates, tempDir } from "../../test/tmp";
-import { homePaths, initHome, syncAdapters, templatesFormat } from "./layout";
+import { seedTemplates, templatesFormat } from "../definitions/seed";
+import { Catalog } from "../store/catalog";
+import { ChatsDb } from "../store/chats-db";
+import { homePaths, initHome, syncAdapters } from "./layout";
 
 describe("PECORE_HOME layout", () => {
-  it("initialises a new home without git: run/ 0700, schemas, templates", async () => {
-    const home = join(await tempDir(), "home");
-    expect(await initHome(home, { templates: shippedTemplates })).toEqual({ created: true });
-    const p = homePaths(home);
+  it("initialises a private home without generated definitions, schemas or repository files", async () => {
+    const home: string = join(await tempDir(), "home");
+    await initHome(home);
+    const p: ReturnType<typeof homePaths> = homePaths(home);
     expect((await stat(home)).mode & 0o777).toBe(0o700);
     expect((await stat(p.run)).mode & 0o777).toBe(0o700);
-    expect((await readdir(p.schemas)).sort()).toContain("node.json");
-    expect(await readdir(p.templateNodes)).toContain("git-commit.json");
-    expect(await readdir(home)).not.toContain(".git");
-    expect(await readdir(home)).not.toContain(".gitignore");
+    expect((await readdir(home)).sort()).toEqual(["projects", "run"]);
   });
 
-  it("rewrites the schemas on a second start", async () => {
-    const home = join(await tempDir(), "home");
-    await initHome(home, { templates: shippedTemplates });
-    await writeFile(join(homePaths(home).schemas, "node.json"), "{}");
-    expect(await initHome(home, { templates: shippedTemplates })).toEqual({ created: false });
-    expect(await readFile(join(homePaths(home).schemas, "node.json"), "utf8")).not.toBe("{}");
-  });
+  it("seeds a catalog once and only replaces shipped rows when the format changes", async () => {
+    const db: ChatsDb = new ChatsDb(join(await tempDir(), "chats.db"));
+    const catalog: Catalog = new Catalog(db.db);
+    try {
+      await seedTemplates(catalog, shippedTemplates);
+      expect(catalog.node("git-commit")).toMatchObject({ kind: "command", script: "git-commit.sh" });
+      expect(catalog.content("git-commit.sh")).toContain("git commit");
+      expect(catalog.recipe("feature-to-pr")).toMatchObject({ name: "feature-to-pr" });
+      const node: Node = Node.parse({ name: "builder", kind: "human", interface: "decision", description: "Mine", outcomes: ["accept"] });
+      catalog.saveNode(node);
+      catalog.saveContent("custom.md", "My context");
+      catalog.saveRecipe(Recipe.parse({ name: "old-shipped", description: "Retired" }), true);
+      catalog.saveRecipe(Recipe.parse({ name: "my-recipe", description: "Kept" }));
+      await seedTemplates(catalog, shippedTemplates);
+      expect(catalog.recipe("old-shipped")).not.toBeNull();
 
-  it("adds templates files a newer app ships to an existing home, without touching files the user changed", async () => {
-    const root = await tempDir();
-    const home = join(root, "home");
-    const shipped = join(root, "shipped");
-    await mkdir(join(shipped, "nodes"), { recursive: true });
-    await mkdir(join(shipped, "forges"), { recursive: true });
-    await writeFile(join(shipped, "nodes", "a.json"), "shipped a\n");
-    await initHome(home, { templates: shipped });
-    await writeFile(join(homePaths(home).templates, "nodes", "a.json"), "edited a\n");
-    await writeFile(join(shipped, "nodes", "a.json"), "shipped a v2\n");
-    await writeFile(join(shipped, "nodes", "b.sh"), "echo b\n");
-    await writeFile(join(shipped, "forges", "git.json"), "{}\n");
-    expect(await initHome(home, { templates: shipped })).toEqual({ created: false });
-    expect(await readFile(join(homePaths(home).templates, "nodes", "a.json"), "utf8")).toBe("edited a\n");
-    expect(await readFile(join(homePaths(home).templates, "nodes", "b.sh"), "utf8")).toBe("echo b\n");
-    expect(await readFile(join(homePaths(home).templates, "forges", "git.json"), "utf8")).toBe("{}\n");
-  });
+      db.db.prepare("UPDATE catalog_version SET format = ?").run("old");
+      await seedTemplates(catalog, shippedTemplates);
 
-  it("rewrites every shipped node and recipe of a home with the old template format, keeping the user's own templates", async () => {
-    const home = join(await tempDir(), "home");
-    await initHome(home, { templates: shippedTemplates });
-    const templates: string = homePaths(home).templates;
-    expect(await readFile(join(templates, ".format"), "utf8")).toBe(`${templatesFormat}\n`);
-    await rm(join(templates, ".format"));
-    await writeFile(join(templates, "nodes", "builder.json"), '{ "name": "builder", "inputs": ["ticket"] }\n');
-    await writeFile(join(templates, "recipes", "feature-to-pr.json"), "old recipe\n");
-    await writeFile(join(templates, "nodes", "mine.json"), "my node\n");
-    await initHome(home, { templates: shippedTemplates });
-    expect(await readFile(join(templates, "nodes", "builder.json"), "utf8")).toBe(await readFile(join(shippedTemplates, "nodes", "builder.json"), "utf8"));
-    expect(await readFile(join(templates, "recipes", "feature-to-pr.json"), "utf8")).toBe(await readFile(join(shippedTemplates, "recipes", "feature-to-pr.json"), "utf8"));
-    expect(await readFile(join(templates, "nodes", "mine.json"), "utf8")).toBe("my node\n");
-    expect(await readFile(join(templates, ".format"), "utf8")).toBe(`${templatesFormat}\n`);
-    await writeFile(join(templates, "nodes", "builder.json"), "edited\n");
-    await initHome(home, { templates: shippedTemplates });
-    expect(await readFile(join(templates, "nodes", "builder.json"), "utf8")).toBe("edited\n");
-  });
-
-  it("removes template files the app no longer ships when the user did not change them", async () => {
-    const home = join(await tempDir(), "home");
-    await initHome(home, { templates: shippedTemplates });
-    const templates: string = homePaths(home).templates;
-    const empty = '{\n  "$schema": "../../schemas/recipe.json",\n  "name": "empty",\n  "description": "A recipe with no nodes: the job ends at once as succeeded. Start here to build a recipe in the graph editor"\n}\n';
-    await writeFile(join(templates, "recipes", "empty.json"), empty);
-    await writeFile(join(templates, "icons", "recipe-empty.svg"), "<svg>mine</svg>\n");
-    await initHome(home, { templates: shippedTemplates });
-    expect(await readdir(join(templates, "recipes"))).not.toContain("empty.json");
-    expect(await readFile(join(templates, "icons", "recipe-empty.svg"), "utf8")).toBe("<svg>mine</svg>\n");
-  });
-
-  it("renames the library folder of an older home to templates, keeping the user's changes", async () => {
-    const home = join(await tempDir(), "home");
-    await initHome(home, { templates: shippedTemplates });
-    await rename(join(home, "templates"), join(home, "library"));
-    await writeFile(join(home, "library", "nodes", "typecheck.json"), "edited\n");
-    expect(await initHome(home, { templates: shippedTemplates })).toEqual({ created: false });
-    expect(await readdir(home)).not.toContain("library");
-    expect(await readFile(join(homePaths(home).templateNodes, "typecheck.json"), "utf8")).toBe("edited\n");
+      expect(catalog.node("builder")).toMatchObject(node);
+      expect(catalog.content("custom.md")).toBe("My context");
+      expect(catalog.recipe("old-shipped")).toBeNull();
+      expect(catalog.recipe("my-recipe")).toMatchObject({ description: "Kept" });
+      expect(db.db.prepare("SELECT format FROM catalog_version").pluck().get()).toBe(templatesFormat);
+    } finally {
+      db.close();
+    }
   });
 
   it("copies adapters when the app version changes and removes unpinned ones", async () => {

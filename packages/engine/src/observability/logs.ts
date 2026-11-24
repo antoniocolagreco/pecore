@@ -1,61 +1,56 @@
-import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
-import { pipeline } from "node:stream/promises";
-import { Readable } from "node:stream";
-import { createZstdCompress, createZstdDecompress } from "node:zlib";
+import type { RawLine } from "@pecore/agents";
+import type Database from "better-sqlite3";
 
-export type LogLine = { dir: "in" | "out"; msg: unknown; at: number } | { dir: "err"; line: string; at: number } | { dir: "cmd"; text: string; at: number };
+export type LogLine = RawLine | { dir: "cmd"; text: string; at: number };
 
-export class LogWriter {
-  private readonly input = new Readable({ read() {} });
-  private done: Promise<void> | null = null;
-  private closed = false;
+type LogRow = { direction: LogLine["dir"]; at: number; payload: string };
 
-  private constructor(readonly path: string) {}
-
-  static async open(path: string): Promise<LogWriter> {
-    await mkdir(dirname(path), { recursive: true });
-    const w = new LogWriter(path);
-    w.done = pipeline(w.input, createZstdCompress(), createWriteStream(path, { mode: 0o600 }));
-    return w;
-  }
-
-  write(line: LogLine): void {
-    if (!this.closed) this.input.push(JSON.stringify(line) + "\n");
-  }
-
-  async close(): Promise<void> {
-    if (!this.closed) {
-      this.closed = true;
-      this.input.push(null);
-    }
-    await this.done;
-  }
+function toLine({ direction: dir, at, payload }: LogRow): LogLine {
+  if (dir === "err") return { dir, line: payload, at };
+  if (dir === "cmd") return { dir, text: payload, at };
+  return { dir, msg: JSON.parse(payload) as unknown, at };
 }
 
-export async function readLog(path: string): Promise<LogLine[]> {
-  const chunks: Buffer[] = [];
-  const stream = createReadStream(path).pipe(createZstdDecompress());
-  for await (const c of stream) chunks.push(c as Buffer);
-  return Buffer.concat(chunks)
-    .toString("utf8")
-    .split("\n")
-    .filter(Boolean)
-    .map((l) => JSON.parse(l) as LogLine);
-}
+export class AttemptLogs {
+  private readonly insert: Database.Statement<[string, string, LogLine["dir"], number, string]>;
 
-export async function readLogTail(path: string, limit: number): Promise<{ bytes: Buffer; truncated: boolean }> {
-  let bytes: Buffer = Buffer.alloc(0);
-  let truncated = false;
-  await pipeline(createReadStream(path), createZstdDecompress(), async (stream) => {
-    for await (const value of stream) {
-      const chunk: Buffer = value as Buffer;
-      if (bytes.length + chunk.length > limit) truncated = true;
-      bytes = chunk.length >= limit
-        ? Buffer.from(chunk.subarray(chunk.length - limit))
-        : Buffer.concat([bytes.subarray(Math.max(0, bytes.length + chunk.length - limit)), chunk]);
+  constructor(private readonly db: Database.Database) {
+    this.insert = db.prepare(`INSERT INTO attempt_logs (attempt_id, sequence, direction, at, payload)
+      VALUES (?, (SELECT coalesce(max(sequence), 0) + 1 FROM attempt_logs WHERE attempt_id = ?), ?, ?, ?)`);
+  }
+
+  write(attemptId: string, line: LogLine): void {
+    const payload: string = line.dir === "err" ? line.line : line.dir === "cmd" ? line.text : JSON.stringify(line.msg);
+    this.insert.run(attemptId, attemptId, line.dir, line.at, payload);
+  }
+
+status(attemptId: string): "available" | "unavailable" | "missing" {
+    const row: { log_omitted: number } | undefined = this.db.prepare<[string], { log_omitted: number }>("SELECT log_omitted FROM attempts WHERE id = ?").get(attemptId);
+    if (!row) return "missing";
+    return row.log_omitted ? "unavailable" : "available";
+  }
+
+  read(attemptId: string): LogLine[] {
+    return this.db.prepare<[string], LogRow>(
+      "SELECT direction, at, payload FROM attempt_logs WHERE attempt_id = ? ORDER BY sequence",
+    ).all(attemptId).map(toLine);
+  }
+
+  tail(attemptId: string, limit: number): { bytes: Buffer; truncated: boolean } {
+    const rows = this.db.prepare<[string], LogRow>(
+      "SELECT direction, at, payload FROM attempt_logs WHERE attempt_id = ? ORDER BY sequence DESC",
+    ).iterate(attemptId);
+    const chunks: Buffer[] = [];
+    let remaining: number = limit;
+    for (const row of rows) {
+      const bytes: Buffer = Buffer.from(JSON.stringify(toLine(row)) + "\n");
+      if (bytes.length > remaining) {
+        chunks.push(bytes.subarray(bytes.length - remaining));
+        return { bytes: Buffer.concat(chunks.reverse()), truncated: true };
+      }
+      chunks.push(bytes);
+      remaining -= bytes.length;
     }
-  });
-  return { bytes, truncated };
+    return { bytes: Buffer.concat(chunks.reverse()), truncated: false };
+  }
 }

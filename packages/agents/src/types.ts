@@ -83,6 +83,7 @@ export class StartError extends Error {
   constructor(
     readonly kind: ErrorKind,
     readonly raw: string,
+    readonly traffic?: AsyncIterable<RawLine>,
   ) {
     super(raw);
   }

@@ -1,29 +1,16 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
 import type { ChatAgent } from "@pecore/schemas";
-import type { Global } from "../../definitions/load";
-import { homePaths } from "../../home/layout";
+import { validateGlobal } from "../../definitions/load";
+import type { DefinitionError, Global } from "../../definitions/load";
 import type { Engine } from "../../main";
 import { HttpError } from "../server";
 import type { Handlers } from "../server";
 
-async function readBytes(file: string): Promise<Buffer | null> {
-  try {
-    return await readFile(file);
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw e;
-  }
-}
-
-function sha256(bytes: Buffer | string): string {
+function sha256(bytes: string): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
 export function globalFileHandlers(engine: Engine) {
-  const paths = homePaths(resolve(engine.opts.home));
-
   function chatSettings({ project, role }: { project?: string; role: "assistant" | "pm" }): ChatAgent {
     const value: ChatAgent | undefined = engine.chatAgentSettings(project, role);
     if (!value) throw new HttpError("not_found", "Project Manager not found.");
@@ -37,31 +24,25 @@ export function globalFileHandlers(engine: Engine) {
 
   function get<K extends keyof Global>(kind: K): Promise<{ value: Global[K]; sha256: string }> {
     return engine.withGlobalFiles(async () => {
-      const bytes: Buffer | null = await readBytes(paths[kind]);
-      return { value: engine.global()[kind], sha256: sha256(bytes ?? "") };
+      const value: Global[K] = engine.global()[kind];
+      return { value, sha256: sha256(JSON.stringify(value)) };
     });
   }
 
   function put<K extends keyof Global>(kind: K, value: Global[K], baseSha256: string, prepare?: () => Global[K], version?: () => string): Promise<{ sha256: string }> {
     return engine.withGlobalFiles(async () => {
-      const file: string = paths[kind];
-      const before: Buffer | null = await readBytes(file);
-      if ((version?.() ?? sha256(before ?? "")) !== baseSha256) throw new HttpError("conflict", "the file changed since it was loaded");
-      if (kind === "settings" && "protectedMode" in value && value.protectedMode !== engine.global().settings.protectedMode) {
+      const current: Global = engine.global();
+      if ((version?.() ?? sha256(JSON.stringify(current[kind]))) !== baseSha256) throw new HttpError("conflict", "the configuration changed since it was loaded");
+      if (kind === "settings" && "protectedMode" in value && value.protectedMode !== current.settings.protectedMode) {
         throw new HttpError("bad_request", "protected mode changes only through POST /protected-mode");
       }
-      const content: string = JSON.stringify(prepare?.() ?? value, null, 2) + "\n";
-      await writeFile(file, content);
-      const errors = await engine.reloadGlobal();
-      if (errors.length) {
-        if (before === null) await rm(file);
-        else await writeFile(file, before);
-        await engine.reloadGlobal();
-        throw new HttpError("bad_request", errors.map((error) => error.message).join("\n"));
-      }
-      const name: string = `${kind}.json`;
-      const hash: string = sha256(content);
-      engine.definitionChanged(name, hash);
+      const next: Global[K] = prepare?.() ?? value;
+      const errors: DefinitionError[] = validateGlobal({ ...current, [kind]: next });
+      if (errors.length) throw new HttpError("bad_request", errors.map((error) => error.message).join("\n"));
+      engine.configuration.write({ [kind]: next });
+      await engine.reloadGlobal();
+      const hash: string = sha256(JSON.stringify(engine.global()[kind]));
+      engine.definitionChanged(`${kind}.json`, hash);
       return { sha256: version?.() ?? hash };
     });
   }
@@ -69,7 +50,7 @@ export function globalFileHandlers(engine: Engine) {
   return {
     getSettings: () => get("settings"),
     putSettings: ({ body }) => put("settings", body.value, body.baseSha256),
-    getAgents: () => engine.withGlobalFiles(async () => ({ value: engine.agentCatalog(), sha256: sha256(await readBytes(paths.agents) ?? "") })),
+    getAgents: () => engine.withGlobalFiles(async () => ({ value: engine.agentCatalog(), sha256: sha256(JSON.stringify(engine.global().agents)) })),
     putAgents: ({ body }) => put("agents", body.value, body.baseSha256, () => {
       const saved = engine.global().agents;
       return { ...body.value, agents: [...saved.agents.filter(({ kind }) => kind !== "agent"), ...body.value.agents] };
@@ -89,18 +70,14 @@ export function globalFileHandlers(engine: Engine) {
     }, () => sha256(JSON.stringify(chatSettings(query)))),
     getAgentContext: ({ params }) => engine.withGlobalFiles(async () => {
       if (!knownAgent(params.id)) throw new HttpError("not_found", "Agent not found.");
-      const content: string = await engine.agentContext(params.id);
+      const content: string = engine.agentContext(params.id);
       return { content, sha256: sha256(content) };
     }),
     putAgentContext: ({ params, body }) => engine.withGlobalFiles(async () => {
       if (!knownAgent(params.id)) throw new HttpError("not_found", "Agent not found.");
-      const before: string = await engine.agentContext(params.id);
+      const before: string = engine.agentContext(params.id);
       if (sha256(before) !== body.baseSha256) throw new HttpError("conflict", "The context changed since it was loaded.");
-      const file: string = join(paths.agentContexts, `${params.id}.md`);
-      if (before !== body.content) {
-        await mkdir(paths.agentContexts, { recursive: true });
-        await writeFile(file, body.content);
-      }
+      if (before !== body.content) engine.setAgentContext(params.id, body.content);
       const hash: string = sha256(body.content);
       engine.definitionChanged(`agents/${params.id}.md`, hash);
       return { sha256: hash };

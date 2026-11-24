@@ -1,5 +1,4 @@
 {
-  "$schema": "../../schemas/node.json",
   "name": "wait-for-ci",
   "tags": ["ci", "github", "gitlab"],
   "description": "Poll GitHub checks or the GitLab pipeline for the delivered commit.",

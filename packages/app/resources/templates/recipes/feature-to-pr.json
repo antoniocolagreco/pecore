@@ -1,5 +1,4 @@
 {
-  "$schema": "../../schemas/recipe.json",
   "name": "feature-to-pr",
   "description": "New feature on existing code: spec, tests, code, checks, review, commit, PR",
   "start": "spec",

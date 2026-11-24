@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, realpath, rm } from "node:fs/promises";
 import { applyTraverseAcls } from "./osuser/acl";
 import { cpus, homedir } from "node:os";
 import { join, relative } from "node:path";
@@ -17,9 +17,9 @@ import { AgentServices, protectedUser, spawnFor } from "./accounts/agents";
 import type { AgentPaths, LoginInfo } from "./accounts/agents";
 import { LoginRunner } from "./accounts/login";
 import { identityOk } from "./runners/forge-env";
-import { loadGlobal, loadProject } from "./definitions/load";
+import { loadProject, validateGlobal } from "./definitions/load";
 import type { DefinitionError, Global } from "./definitions/load";
-import { migrateProjectDefinitions } from "./definitions/catalog";
+import { seedTemplates } from "./definitions/seed";
 import { JobExecutor } from "./graph/executor";
 import type { JobRow, ProjectContext } from "./graph/executor";
 import { logEvents } from "./observability/log-events";
@@ -42,6 +42,8 @@ import { ServicesRuntimeController } from "./services/runtime";
 import { isFinal } from "./graph/job-machine";
 import { Pools } from "./scheduler/pools";
 import { ChatsDb } from "./store/chats-db";
+import { Catalog } from "./store/catalog";
+import { Configuration } from "./store/configuration";
 import { ProjectDb } from "./store/project-db";
 import { startSourcePolling } from "./sources/poll";
 import type { OrderSink } from "./sources/poll";
@@ -77,6 +79,8 @@ export class Engine extends EventEmitter {
   agents: AgentServices | null = null;
   agentChats!: AgentChats;
   private chats!: ChatsDb;
+  configuration!: Configuration;
+  catalog!: Catalog;
   private intake: OrderSink | null = null;
   private stoppingAgentChats: Promise<void> | null = null;
   private releaseLock!: () => Promise<void>;
@@ -108,20 +112,25 @@ export class Engine extends EventEmitter {
   private async init(): Promise<void> {
     process.umask(0o077);
     const p = homePaths(this.opts.home);
-    await initHome(this.opts.home, { templates: this.opts.templates });
+    await initHome(this.opts.home);
     this.releaseLock = await takeLock(p.lock);
     await moveLegacyFolders(this.opts.home, await protectedUserExists()).catch((e: unknown) => console.error("moving old folders into PECORE_HOME:", e));
     await closeHome(this.opts.home);
-    const global = await loadGlobal(this.opts.home);
-    if (!global.value) {
+    let global: Global;
+    try {
+      this.chats = new ChatsDb(p.chatsDb);
+      this.configuration = new Configuration(this.chats.db);
+      this.catalog = new Catalog(this.chats.db);
+      await seedTemplates(this.catalog, this.opts.templates);
+      global = this.configuration.read();
+      const errors: DefinitionError[] = validateGlobal(global);
+      if (errors.length) throw new EngineStartError(errors);
+    } catch (error) {
+      this.chats?.close();
       await this.releaseLock();
-      throw new EngineStartError(global.errors);
+      throw error;
     }
-    this.settings = global.value.settings;
-    this.agentDefinitions = global.value.agents;
-    this.accounts = withForgeHosts(global.value.accounts);
-    this.profiles = global.value.profiles;
-    this.tiers = global.value.tiers;
+    this.applyConfiguration(global);
     if (this.opts.agents) {
       this.agents = new AgentServices(this.opts.agents, this.opts.home, () => this.settings, () => this.accounts);
       for (const e of await this.agents.loadConnectors()) console.error(e);
@@ -131,7 +140,6 @@ export class Engine extends EventEmitter {
       if (pool === "agents") return this.settings.limits.agents;
       return null;
     });
-    this.chats = new ChatsDb(p.chatsDb);
     this.agentChats = new AgentChats(this, this.chats, (message) => this.live(message));
     if (this.opts.checkLogins !== false) await this.runAutoSetup();
     if (this.opts.detectRuntime && this.settings.servicesRuntime === null) {
@@ -233,11 +241,12 @@ export class Engine extends EventEmitter {
     return { ...agent, model };
   }
 
-  async agentContext(id: string): Promise<string> {
-    return readFile(join(homePaths(this.opts.home).agentContexts, `${id}.md`), "utf8").catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return "";
-      throw error;
-    });
+  agentContext(id: string): string {
+    return this.chats.agentContext(id);
+  }
+
+  setAgentContext(id: string, markdown: string): void {
+    this.chats.setAgentContext(id, markdown);
   }
 
   withGlobalFiles<T>(work: () => Promise<T>): Promise<T> {
@@ -250,13 +259,13 @@ export class Engine extends EventEmitter {
     const agents: AgentServices | null = this.agents;
     if (!agents || this.shuttingDown) return;
     await this.withGlobalFiles(async () => {
-      const { harnesses, changes } = await autoSetup(this.opts.home, agents);
+      const { harnesses, changes } = await autoSetup(this.configuration, agents);
       this.setupHarnesses = harnesses;
       if (!changes) return;
       await this.reloadGlobal();
       this.notify({ kind: "auto-setup", title: `${appName} setup`, body: changes.message });
-      for (const [kind, content] of Object.entries(changes.files)) {
-        this.definitionChanged(`${kind}.json`, createHash("sha256").update(content).digest("hex"));
+      for (const kind of changes.changed) {
+        this.definitionChanged(`${kind}.json`, createHash("sha256").update(JSON.stringify(this.global()[kind])).digest("hex"));
       }
     }).catch((error: unknown) => console.error("auto-setup:", error));
   }
@@ -318,7 +327,7 @@ export class Engine extends EventEmitter {
   async reloadProject(id: string): Promise<DefinitionError[]> {
     const p = this.projects.get(id);
     if (!p) return [];
-    const loaded = await loadProject(p.ctx.dir, p.ctx.templates);
+    const loaded = await loadProject(p.ctx.dir, p.ctx.templates, p.ctx.db.definition.read(), { global: this.catalog, project: p.ctx.db.catalog });
     if (loaded.project) {
       p.ctx.project = loaded.project;
       p.ctx.defs = loaded;
@@ -332,17 +341,22 @@ export class Engine extends EventEmitter {
   }
 
   async reloadGlobal(): Promise<DefinitionError[]> {
-    const g = await loadGlobal(this.opts.home);
-    if (!g.value) return g.errors;
-    this.settings = g.value.settings;
-    this.agentDefinitions = g.value.agents;
-    this.accounts = withForgeHosts(g.value.accounts);
-    this.profiles = g.value.profiles;
-    this.tiers = g.value.tiers;
+    const value: Global = this.configuration.read();
+    const errors: DefinitionError[] = validateGlobal(value);
+    if (errors.length) return errors;
+    this.applyConfiguration(value);
     for (const { ctx } of this.projects.values()) ctx.settings = this.settings;
     await this.refreshSourcePolling();
     this.kick();
     return [];
+  }
+
+  private applyConfiguration(value: Global): void {
+    this.settings = value.settings;
+    this.agentDefinitions = value.agents;
+    this.accounts = withForgeHosts(value.accounts);
+    this.profiles = value.profiles;
+    this.tiers = value.tiers;
   }
 
   private loginView(l: LoginInfo): LoginView {
@@ -499,20 +513,18 @@ export class Engine extends EventEmitter {
 
   private async openProject(id: string): Promise<void> {
     const dir = this.projectDir(id);
-    const templates: string = homePaths(this.opts.home).templates;
-    let loaded = await loadProject(dir, templates);
-    if (!loaded.project) {
-      this.projectErrors.set(id, loaded.errors);
+    const templates: string = this.opts.templates;
+    const path: string = join(dir, "pecore.db");
+    if (!(await lstat(path).catch(() => null))?.isFile()) {
+      this.projectErrors.set(id, [{ file: path, path: "", message: "project database not found" }]);
       return;
     }
-    const db: ProjectDb = new ProjectDb(join(dir, "pecore.db"));
-    if (loaded.project.recipes === undefined && !loaded.errors.length) {
-      try {
-        await migrateProjectDefinitions(dir, templates, loaded, db);
-      } catch (error) {
-        loaded.errors.push({ file: join(dir, "project.json"), path: "recipes", message: (error as Error).message });
-      }
-      if (!loaded.errors.length) loaded = await loadProject(dir, templates);
+    const db: ProjectDb = new ProjectDb(path);
+    const loaded: Awaited<ReturnType<typeof loadProject>> = await loadProject(dir, templates, db.definition.read(), { global: this.catalog, project: db.catalog });
+    if (!loaded.project) {
+      db.close();
+      this.projectErrors.set(id, loaded.errors);
+      return;
     }
     if (loaded.errors.length) this.projectErrors.set(id, loaded.errors);
     const ctx: ProjectContext = {
@@ -658,7 +670,7 @@ export class Engine extends EventEmitter {
   }
 
   private createOptions(): CreateOptions {
-    return { accounts: this.accounts, protectedMode: this.settings.protectedMode, ...(this.opts.admin ? { admin: this.opts.admin } : {}) };
+    return { accounts: this.accounts, protectedMode: this.settings.protectedMode, templates: this.opts.templates, ...(this.opts.admin ? { admin: this.opts.admin } : {}) };
   }
 
   projectManagers(except?: string): ProjectManagerIdentity[] {
@@ -745,6 +757,7 @@ export class Engine extends EventEmitter {
   private importOptions() {
     return {
       accounts: this.accounts,
+      catalog: this.catalog,
       knownProject: (id: string) => this.projects.has(id) || this.creating.has(id) || this.projectErrors.has(id),
     };
   }
@@ -760,7 +773,7 @@ export class Engine extends EventEmitter {
     const loaded: LoadedProject = this.project(id);
     const { ctx, executor } = loaded;
     try {
-      if (creation.step < 4 && (await prepareRepo(this.opts.home, dir, ctx.project, this.createOptions())) === "setup") {
+      if (creation.step < 4 && (await prepareRepo(dir, ctx.project, this.createOptions())) === "setup") {
         const setup = executor.jobs().find((j) => j.id === setupJobId);
         if (!setup) await executor.createSetupJob(ctx.project.createRepo!);
         else if (setup.state === "succeeded") {
@@ -839,10 +852,9 @@ export class Engine extends EventEmitter {
     if (script !== "") await this.opts.admin(script);
     if (on) await this.protectedTraverse();
     await this.withGlobalFiles(async () => {
-      const file = homePaths(this.opts.home).settings;
-      const current = JSON.parse(await readFile(file, "utf8").catch(() => "{}")) as Record<string, unknown>;
-      await writeFile(file, JSON.stringify({ ...current, protectedMode: on }, null, 2) + "\n");
-      this.settings = { ...this.settings, protectedMode: on };
+      const settings: Settings = { ...this.settings, protectedMode: on };
+      this.configuration.write({ settings });
+      this.settings = settings;
       for (const { ctx } of this.projects.values()) {
         ctx.settings = this.settings;
         ctx.user = on ? protectedUser : appUser;

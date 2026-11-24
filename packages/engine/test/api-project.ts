@@ -1,5 +1,6 @@
 import { cp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { setTestConfiguration } from "./configuration";
 import { apiClient } from "@pecore/schemas";
 import { handlers } from "../src/api/handlers";
 import { startApi } from "../src/api/server";
@@ -39,7 +40,7 @@ export async function apiProject(minFreeDiskGb?: number) {
   await writeFile(join(templates, "recipes", "reviewed.json"), JSON.stringify(reviewed));
   if (minFreeDiskGb !== undefined) {
     await mkdir(home);
-    await writeFile(join(home, "settings.json"), JSON.stringify({ minFreeDiskGb }));
+    await setTestConfiguration(home, "settings", { minFreeDiskGb });
   }
   const engine = await Engine.start({ home, templates });
   await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["reviewed"]);

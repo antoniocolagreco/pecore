@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { apiClient } from "@pecore/schemas";
 import type { LiveMessage } from "@pecore/schemas";
 import { apiProject } from "../../test/api-project";
+import { testConfiguration } from "../../test/configuration";
 import { forgeProject, until } from "../../test/forge-project";
 import { ChatsDb } from "../store/chats-db";
 import { handlers } from "./handlers";
@@ -39,19 +40,20 @@ describe("system routes", () => {
     }
   });
 
-  it("lists theme files with their tokens or their errors", async () => {
+  it("saves and replaces theme tokens, rejects invalid tokens and ignores legacy theme files", async () => {
     const { home, call, close } = await apiProject();
-    await mkdir(join(home, "themes"), { recursive: true });
-    await writeFile(join(home, "themes", "night.json"), JSON.stringify({ name: "Night", tokens: { bg: "#000", accent: "rgb(1, 2, 3)" } }));
-    await writeFile(join(home, "themes", "bad.json"), JSON.stringify({ name: "Bad", tokens: { bg: "url(x)", nope: "#fff" } }));
-    await writeFile(join(home, "themes", "broken.json"), "{");
-    const themes = await call("listThemes");
-    expect(themes.map((t) => t.file)).toEqual(["bad.json", "broken.json", "night.json"]);
-    expect(themes[2]).toMatchObject({ theme: { name: "Night", tokens: { bg: "#000" } }, errors: [] });
-    expect(themes[0]!.theme).toBeNull();
-    expect(themes[0]!.errors.length).toBeGreaterThan(0);
-    expect(themes[1]!.errors.length).toBe(1);
-    await close();
+    try {
+      await mkdir(join(home, "themes"), { recursive: true });
+      await writeFile(join(home, "themes", "day.json"), JSON.stringify({ name: "Day", tokens: { bg: "#fff" } }));
+      expect(await call("listThemes")).toEqual([]);
+      await call("putTheme", { params: { id: "night" }, body: { name: "Night", tokens: { bg: "#000", accent: "rgb(1, 2, 3)" } } });
+      await expect(call("putTheme", { params: { id: "night" }, body: { name: "Bad", tokens: { bg: "url(x)" } } })).rejects.toMatchObject({ status: 400 });
+      expect(await call("listThemes")).toEqual([{ id: "night", theme: { name: "Night", tokens: { bg: "#000", accent: "rgb(1, 2, 3)" } } }]);
+      await call("putTheme", { params: { id: "night" }, body: { name: "Dark", tokens: { surface: "#111" } } });
+    } finally {
+      await close();
+    }
+    expect(await testConfiguration(home, (config) => config.themes())).toEqual([{ id: "night", theme: { name: "Dark", tokens: { surface: "#111" } } }]);
   });
 
   it("checks prerequisites with the setting each one points to; unknown accounts are 404", async () => {

@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { SchemaRef } from "./common";
 import { HexColor } from "./harnesses";
 
 export const compactionSizes: readonly number[] = [65_536, 131_072, 262_144, 524_288, 1_048_576];
@@ -84,7 +83,6 @@ const AssistantAgent = z
 
 export const Settings = z
   .object({
-    $schema: SchemaRef,
     user: z.object({ name: z.string().trim().min(1).max(60).nullable().default(null) }).strict().default({ name: null }),
     limits: z
       .object({

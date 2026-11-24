@@ -1,6 +1,7 @@
-import { cp, readFile, writeFile } from "node:fs/promises";
+import { cp } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { Node } from "@pecore/schemas";
 import { createProjectWithRecipes } from "../../test/project";
 import { shippedTemplates, tempDir } from "../../test/tmp";
 import { Engine } from "../main";
@@ -42,13 +43,10 @@ describe("ticket intake (section 7, Phase 6 decision 1)", () => {
     };
     const engine = await Engine.start({ home, templates, orders });
     await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["feature-to-local-commit"]);
-    const dir = engine.projectDir("demo");
-    await writeFile(join(engine.project("demo").ctx.defs.nodeDir, "fake-source.json"), JSON.stringify(fakeSource));
-    const projectFile = join(dir, "project.json");
-    const project = JSON.parse(await readFile(projectFile, "utf8")) as Record<string, unknown>;
-    await writeFile(projectFile, JSON.stringify({ ...project, source: { node: "fake-source", params: { trusted: ["alice"] } } }));
-    expect(await engine.reloadProject("demo")).toEqual([]);
     const { ctx, executor } = engine.project("demo");
+    engine.catalog.saveNode(Node.parse(fakeSource));
+    ctx.db.definition.write({ ...ctx.project, source: { node: "fake-source", params: { trusted: ["alice"] } } });
+    expect(await engine.reloadProject("demo")).toEqual([]);
     const open = (kind: string) => () => ctx.db.db.prepare("SELECT id, subject_hash FROM human_queue WHERE state = 'open' AND kind = ?").get(kind) as { id: string; subject_hash: string } | undefined;
 
     await until(() => hands.length === 1);

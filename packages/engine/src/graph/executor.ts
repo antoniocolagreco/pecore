@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { rm } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { monotonicFactory } from "ulid";
 import type { RawLine, Usage } from "@pecore/agents";
@@ -13,7 +12,6 @@ import { jobDefinitions, jobNodes, snapshotDefinitions } from "../definitions/sn
 import { effectRecorder } from "../jobs/effects";
 import { checkGithubCi, githubHead } from "../jobs/github-ci";
 import type { JobAttachment } from "../jobs/create";
-import { LogWriter } from "../observability/logs";
 import { runAgentNode } from "../runners/agent";
 import type { AgentContinuation, AgentInput, AgentQuestion } from "../runners/agent";
 import { fetchBase, jobArtifacts, jobCommit, latestReference, reentryPending } from "../jobs/stacked";
@@ -441,7 +439,7 @@ export class JobExecutor {
     const baseBranch = this.ctx.project.baseBranch;
     const base = await branchHead(join(this.ctx.dir, "repo.git"), baseBranch);
     if (!base) throw new Error(`branch ${baseBranch} not found`);
-    const definitions: JobDefinitions = await snapshotDefinitions(recipe, new Map([[createRepo, node]]), this.ctx.defs.nodeDir);
+    const definitions: JobDefinitions = await snapshotDefinitions(recipe, new Map([[createRepo, node]]), this.ctx.defs.nodeDir, this.ctx.defs.sidecars);
     this.ctx.db.append([{ jobId: setupJobId, type: "job.created", payload: { title: "Create the remote repository", recipe, definitions, ticket: null, parentJobId: null, baseBranch, base, target: baseBranch, branch: jobBranch(setupJobId) } }]);
     this.ctx.changed(setupJobId);
     void this.tick(setupJobId);
@@ -668,7 +666,7 @@ export class JobExecutor {
     const result = await runMergedCheck({
       node,
       nodeDir: this.ctx.defs.nodeDir,
-      sidecars: definitions?.nodes[node.name]?.sidecars,
+      sidecars: definitions?.nodes[node.name]?.sidecars ?? this.ctx.defs.sidecars,
       params: paramsWithDefaults(node.params, recipe.nodes[nodeId]?.params),
       context: this.placeholderContext(parent),
       inputs: [{ type: "reference", content: this.ctx.db.requireArtifact(delivered.artifact).toString("utf8") }],
@@ -727,7 +725,7 @@ export class JobExecutor {
 
   private async runNode(job: JobRow, recipe: Recipe, run: NodeRunRow, nodes: Map<string, Node>, definitions: JobDefinitions | null): Promise<boolean> {
     const node = this.nodeFor(recipe, run.node, nodes);
-    const sidecars: Record<string, string> | undefined = definitions?.nodes[node.name]?.sidecars;
+    const sidecars: Readonly<Record<string, string>> | undefined = definitions?.nodes[node.name]?.sidecars ?? this.ctx.defs.sidecars;
     const recipeNode = recipe.nodes[run.node]!;
     const wd = workdirOf(this.ctx.dir, job.id);
     const runDir = runDirName(run.id);
@@ -830,16 +828,14 @@ export class JobExecutor {
         this.ctx.db.append([{ jobId: job.id, type: "node_run.git_recorded", payload: { nodeRunId: run.id, ...attemptGit } }]);
         this.setRun(job.id, run.id, "running", null, { osUser: this.ctx.user });
         const attemptId = ulid();
-        const logPath = join("logs", `${attemptId}.jsonl.zst`);
         const sessionGroup = node.kind === "agent" ? (recipeNode.session ?? null) : null;
         this.ctx.db.append([
           {
             jobId: job.id,
             type: "attempt.started",
-            payload: { attemptId, nodeRunId: run.id, profile: profile?.profile ?? null, connector: profile ? (this.ctx.agents!.account(profile.account)?.connector ?? null) : null, harnessVersion: null, connectorVersion: null, account: profile?.account ?? null, osUser: this.ctx.user, sessionGroup, logPath },
+            payload: { attemptId, nodeRunId: run.id, profile: profile?.profile ?? null, connector: profile ? (this.ctx.agents!.account(profile.account)?.connector ?? null) : null, harnessVersion: null, connectorVersion: null, account: profile?.account ?? null, osUser: this.ctx.user, sessionGroup },
           },
         ]);
-        const log = await LogWriter.open(join(this.ctx.dir, logPath));
         const context = this.placeholderContext(this.job(job.id));
         const read: JobArtifact[] = this.readArtifacts(job.id, recipeNode.reads);
         const commandInputs: CommandInput[] = node.kind !== "command" ? [] : [...node.inputs, ...node.optionalInputs].flatMap((type) => {
@@ -876,10 +872,9 @@ export class JobExecutor {
                 onStart,
                 effect: effectRecorder(this.ctx.db, job.id, run.id, run.node),
               })
-            : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, sessionGroup, { wd, context, inputs: agentInputs, log, onStart, env: servicesEnv, continuation: resumed, sidecars, knowledge: definitions?.knowledgeByStep });
+            : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, sessionGroup, { wd, context, inputs: agentInputs, onStart, env: servicesEnv, continuation: resumed, sidecars, knowledge: definitions?.knowledgeByStep });
         this.running.delete(job.id);
-        if (result.log) log.write({ dir: "cmd", text: result.log, at: Date.now() });
-        await log.close();
+        if (result.log) this.ctx.db.logs.write(attemptId, { dir: "cmd", text: result.log, at: Date.now() });
         if (this.closing) return false;
         const ended = (reason: string): NewEvent => ({
           jobId: job.id,
@@ -1090,7 +1085,7 @@ export class JobExecutor {
     profile: AgentProfile,
     attemptId: string,
     sessionGroup: string | null,
-    x: { wd: string; context: CommandRun["context"]; inputs: AgentInput[]; log: LogWriter; onStart: (pgid: number, user: string) => void; env: Record<string, string>; continuation: (QuestionSubject & AgentContinuation) | null; sidecars: CommandRun["sidecars"]; knowledge: JobDefinitions["knowledgeByStep"] },
+    x: { wd: string; context: CommandRun["context"]; inputs: AgentInput[]; onStart: (pgid: number, user: string) => void; env: Record<string, string>; continuation: (QuestionSubject & AgentContinuation) | null; sidecars: CommandRun["sidecars"]; knowledge: JobDefinitions["knowledgeByStep"] },
   ): Promise<Attempt> {
     const agents = this.ctx.agents!;
     const account = agents.account(profile.account);
@@ -1131,7 +1126,7 @@ export class JobExecutor {
       onStart: (pgid) => x.onStart(pgid, this.ctx.user),
       onSession: (sessionId, resumed) => this.ctx.db.append([{ jobId: job.id, type: "attempt.session_started", payload: { attemptId, sessionId, resumed } }]),
       onRaw: (line) => {
-        x.log.write(line);
+        this.ctx.db.logs.write(attemptId, line);
         this.ctx.live?.(attemptId, line);
       },
     });
@@ -1361,8 +1356,6 @@ export class JobExecutor {
       await removeWorktree(this.ctx.user, this.ctx.dir, workdirOf(this.ctx.dir, jobId));
       await gitWork(this.ctx.user, this.ctx.dir, [`--git-dir=${join(this.ctx.dir, "repo.git")}`, "update-ref", "-d", `refs/heads/${jobBranch(jobId)}`]).catch(() => "");
       await this.services.down(jobId);
-      const logs = this.ctx.db.db.prepare("SELECT a.log_path FROM attempts a JOIN node_runs n ON a.node_run_id = n.id WHERE n.job_id = ?").all(jobId) as { log_path: string }[];
-      for (const { log_path } of logs) await rm(join(this.ctx.dir, log_path), { force: true });
       const db = this.ctx.db.db;
       db.transaction(() => {
         db.prepare("DELETE FROM attempts WHERE node_run_id IN (SELECT id FROM node_runs WHERE job_id = ?)").run(jobId);

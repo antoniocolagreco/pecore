@@ -202,7 +202,7 @@ The prototype shows the Notifications list and detail pane and the node inspecto
     *   Graph: the recipe graph at the positions saved in the recipe's `layout`, with node run states. Each node is the Templates node card; its state, step name and round sit under it. Back edges are curved arrows with the round count on the target node. The running node pulses. Nodes with no run yet are Pending.
     *   History: node runs in order (`node_runs`, `attempts`): recipe node id, attempt, outcome, duration, failure reason; for example "test · round 1 · failed · 0m 42s".
 *   The selected node shows its latest run and a list of earlier runs. The detail panel shows duration, attempts, tokens, cost, artifacts loaded from the project database (IC7), and the attempt log.
-*   Log: the normalised events of the attempt (text, tool calls, results), streamed while it runs; a "Raw" toggle shows the JSONL lines. Only the open log is streamed (design.md "Local API"). A log removed by retention shows "Log removed".
+*   Log shows the attempt's messages from the project database. The default view displays text, tool calls and results, with live updates while the attempt runs. "Raw" shows the stored messages as JSON lines. Only the open log receives live updates. Logs stay until the job or project is deleted. Imported history that omitted logs shows "Log unavailable".
 *   Artifact viewer (IC7), one view per type: spec and findings as rendered Markdown (a finding shows `file:line` or the hunk, its level and text); diff as a unified view like a code review on GitHub (one block per file with added and removed line counts, hunk bands, old and new line numbers, red and green bands for removed and added lines, the changed part of a line marked), risky hunks first with their reason, taken from the findings of the same content; text as plain text; document as title, source and plain body; reference as a link when it has a URL, else its ref or SHA.
 *   Result view, for a job in a final state, above the tabs:
     *   state label and final outcome;
@@ -296,12 +296,12 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 ### Export (dialog)
 
-*   Export in project Settings offers "Include job history", then opens a native save dialog with `<project id>.tar.zst` in the system's downloads folder as the default. If the export finds possible secrets, the dialog lists them and offers "Export anyway". The dialog shows the saved path.
+*   Export in project Settings offers "Include job history", then opens a native save dialog with `<project id>.tar.zst` in the system's downloads folder as the default. The history snapshot omits attempt logs. If the export finds possible secrets, the dialog lists them and offers "Export anyway". The dialog shows the saved path.
 *   The Assistant accepts the same history option and saves to Downloads. It reports the path on success or shows each secret finding in a card with "Export anyway" and "Reject".
 
 ### Delete project (dialog)
 
-*   Lists what is removed (design.md 4.8): project directory, workdirs, artifacts, logs, database, definitions, service containers. Says that nothing on the forge is touched.
+*   Lists what is removed (design.md 4.8), including the project directory, workdirs, project database with its artifacts and logs, definitions and service containers. Remote branches and pull requests stay on the forge.
 *   Disabled while a job of the project is running, with a link to stop them.
 
 ### Recipe editor
@@ -329,7 +329,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   Under the outcomes, Outputs has one row per outcome: a select of the six types (Nothing by default). No text under the field. The info icon of Outputs explains, for a user who knows nothing of the app, that a job is a chain of nodes, that each outcome can hand a result to later nodes, and that they receive it only through Reads from, with the Spec Writer as example. It then explains each type in a short paragraph: what it is, an example, who writes it and who uses it. The menus show only the names. The info icons of Required inputs and Optional inputs explain inputs with an example and show the same paragraphs. For a command, a row with an output also asks where to read it: Last line of the output, Field of JSON output or File in the workdir, and the name, field or path. For a Human node the rows are checkboxes, "<outcome>: the person can write a note".
 *   Every select in the app opens its menu below the field, or above it when there is no room below, so the whole list is visible; it does not cover the field.
 *   A command shows Required inputs and Optional inputs as chip groups of the six types. Selecting a type in one group removes it from the other. The help says the recipe selects each source and the script reads a JSON object on stdin, for example `jq '.spec'`. Agents get labelled inputs inline in their prompts. Human review loads them from the project database.
-*   The node fields and its prompt or script are in one card. Node Context uses the Knowledge Markdown editor. The app manages the file name. Scripts use the code editor.
+*   The node fields and its prompt or script are in one card. Node Context uses the Knowledge Markdown editor. The app manages the prompt name. Scripts use the code editor. Both save in the template catalog.
 *   Creating and editing show the same fields, each with an info icon that explains it. A command is one line written as in a terminal (`npx --no-install eslint .`, quotes around an argument with spaces); a command node shows Command or Script file, whichever it uses, and a source node shows the command or script of each action. Runs as is a checkbox, "Use source control credentials", off by default: on only for commands that act on GitHub or GitLab with the user's account, such as push, pull request or issue comment (`runsAs: engine`).
 *   Validation errors next to the field. Save is disabled while the draft is invalid. The draft lives in memory until saved or discarded; leaving the page with an unsaved draft asks first.
 *   Save in the page header writes the changed node fields and prompt or script.
@@ -340,7 +340,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   Separate tabs for node templates and recipe templates.
 *   Like Settings, the sidebar also shows a Templates section below the main items with Nodes and Recipes, which open the same tabs. The tabs stay for the collapsed menu.
 *   Each tab explains what its templates do and has a New Node or New Recipe button that opens the editor.
-*   Delete node and Delete recipe are in the template editor and ask for confirmation. Delete node is disabled while the node is in use. Its tooltip lists the references. Deleting a node preserves its prompt and script files.
+*   Delete node and Delete recipe are in the template editor and ask for confirmation. Delete node is disabled while the node is in use. Its tooltip lists the references. Deleting a node preserves its saved prompt and script bodies.
 *   Entries form a grid that adds columns as space allows. Each entry pairs a square card with its description. The card shows a large icon above a title such as Cargo Check. The title always has room for two lines, so the icon sits at the same height on every card; a one-line title is centred in that space. Node and recipe names are at most 24 characters, so the title fits. Hovering anywhere on the entry highlights it. Clicking it opens the editor. The page scrolls with the full grid.
 *   Select tags from the node templates. Each selected tag appears in the filter and can be removed. Selecting `github` and `source control` shows templates with both tags.
 *   The automatic icon uses `node-<name>.svg` or `recipe-<name>.svg` from the shared library, with a built-in default. The editor can select another icon from a grid that shows the icons themselves, with the name as a tooltip. The Assistant saves new SVGs under `templates/icons/`. It mentions icons only while creating or editing a node or recipe template, or when the user asks for one.
@@ -349,14 +349,14 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 *   Vertical cards in a responsive grid. The title reserves two lines and truncates longer names. Each card shows the harness badge, provider, model, effort and both context thresholds. It uses the harness colour from Settings by default. Click the card to open the editor, choose a custom colour or restore the harness colour.
 *   Delete agent is in the editor and uses the same style as Delete project.
-*   Custom context in the agent and project manager editors shows ten lines and scrolls when the text is longer.
+*   Custom context in the agent and project manager editors shows ten lines and scrolls when the text is longer. Each agent's Markdown context saves in the global database.
 
 ### Settings
 
 *   Sections: You, Accounts (IG1), Assistant, Project Manager Default (IG6), Protected mode (IF6), Projects, Limits and disk threshold, Services runtime, Merge check interval (IG3), Updates (IG7), Appearance (IG9).
 *   The section list is in the main sidebar. Sections adapt to the window width, and each has a one-line description under its title.
 *   No text or JSON editing and no user-typed IDs; raw validation errors are never shown.
-*   Every change saves by itself, a moment after the last keystroke and at once when the page is left; there is no Save or Discard button. A value that is not valid is not saved and the problem shows at the bottom of the page.
+*   A valid change saves in the global database after the last keystroke or when the page is left. An invalid value shows an error and stays unsaved.
 *   Accounts has two lists:
     *   AI tools: every installed harness appears by itself. A row shows the tool, the account, its state, a Check button that looks clickable, and Log in only when needed. A working account shows "Logged in", OpenCode and a private Git server included. OpenCode is logged in when it lists at least one model; with none, the row says to set up a model provider in OpenCode. Each AI tool has a colour, shown on its row's initials, and a Colour button opens the colour picker; the choice is saved at once. Defaults: Claude Code terracotta, Codex slate, OpenCode ice. "Show unavailable" in the card header shows, and "Hide unavailable" hides again, the AI tools with no login found and the tools not supported yet; they are hidden when the page opens. Shown, greyed rows "Coming soon" list the tools not supported yet (Antigravity CLI, GitHub Copilot CLI, Cursor CLI, DeepSeek, Qwen, Kimi, Grok, Muse), each with its colour and Colour button and no other action.
     *   Git hosting offers Add account for a public service or the user's own server. General copy is service-neutral. The picker and account rows name the service. Forge tool logins show the tool's device code or URL, then recheck the account. A private Git server uses the user's Git credentials and has no Log in button.
@@ -504,7 +504,7 @@ Every size lives in `ds/tokens.css`; components use only these variables, never 
 | UI2 | Factory is a summary dashboard; every function has its own page with the full detail. |
 | UI2b | Withdrawn: the Assistant chat is always on the right of every screen, with no page of its own. |
 | UI3 | Surfaces and backgrounds use the chosen theme's tokens. |
-| UI4 | Themes: every color is a CSS variable. Settings > Appearance has a mode (System, Light, Dark) and one theme; the mode picks the theme's light or dark version, and System follows the operating system. Shipped: Default, Autumn, Spring, Woodlands, Summer, Winter and Monochrome, each in a light and a dark version, as variable blocks in `ds/tokens.css`. Woodlands is the summer version of Everforest, with a warm yellow background glow; Summer has sand tones, sky-blue accents and an orange background glow; both keep a coloured background with cards, sidebar and controls almost neutral, as Autumn, Spring and Winter do. The user can add a theme as a JSON file of tokens in `PECORE_HOME/themes/`, validated by a JSON Schema; missing tokens fall back to the default theme; values must be colors; the file applies only in the mode that matches its background. |
+| UI4 | Themes: every color is a CSS variable. Settings > Appearance has a mode (System, Light, Dark) and one theme; the mode picks the theme's light or dark version, and System follows the operating system. Shipped: Default, Autumn, Spring, Woodlands, Summer, Winter and Monochrome, each in a light and a dark version, as variable blocks in `ds/tokens.css`. Woodlands is the summer version of Everforest, with a warm yellow background glow; Summer has sand tones, sky-blue accents and an orange background glow; both keep a coloured background with cards, sidebar and controls almost neutral, as Autumn, Spring and Winter do. Import theme reads a JSON file and saves its name and colour tokens in the global database. Importing the same file name updates that theme. Missing tokens use the default theme. A custom theme applies in the mode that matches its background. |
 | UI5 | Page content uses a themed background with a soft moving glow. The shell honours reduced motion. |
 | UI6 | A running node pulses. Reduced motion disables the pulse. Show state, duration, round and attempts without a progress percentage. |
 | UI7 | Components: Base UI (unstyled, behaviour and accessibility); styles: CSS Modules with the theme's CSS variables. |
@@ -545,7 +545,7 @@ Every size lives in `ds/tokens.css`; components use only these variables, never 
 | Many running agents streaming logs | renderer overload | log streaming only for the open attempt; updates once per frame; virtual lists | Job view, Updates |
 | Very large diffs (thousands of lines) | slow diff view | files rendered 30 at a time, each collapsible, risky hunks first | Notifications ID1, artifact viewer |
 | Editor and Assistant write the same file | one change silently lost | save with the file hash; changed-elsewhere banner | Concurrent edits |
-| User theme file with bad values | unreadable UI | schema validation, fallback tokens, contrast rules | UI4, Color tokens |
+| Custom theme with invalid colours | unreadable UI | schema validation, fallback tokens, contrast rules | UI4, Color tokens |
 | Normal mode: agents run as the app user | agents read the user's files and logins | Settings shows the mode and offers protected mode in one step | Settings |
 
 ### Limits

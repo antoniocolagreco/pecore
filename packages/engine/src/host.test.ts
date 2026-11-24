@@ -62,7 +62,7 @@ describe("engine host over parentPort", () => {
     const { port, sent } = fakePort();
     const home = join(await tempDir(), "home");
     await mkdir(home, { recursive: true });
-    await writeFile(join(home, "settings.json"), "{ broken");
+    await writeFile(join(home, "chats.db"), "invalid SQLite database");
     expect(await host(port, { home, resources: await resources(), version: "1" })).toBeNull();
     expect(sent).toEqual([{ type: "error", message: expect.any(String) }]);
   });

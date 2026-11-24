@@ -1,5 +1,4 @@
 {
-  "$schema": "../../schemas/node.json",
   "name": "approver",
   "tags": ["review"],
   "description": "Classifies each hunk of the job's diff as safe or risky, with a reason, so the human review shows risky hunks first",

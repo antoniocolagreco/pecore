@@ -12,7 +12,6 @@ export * from "./events";
 export * from "./harnesses";
 export * from "./host";
 export * from "./job-definitions";
-export * from "./json-schema";
 export * from "./node";
 export * from "./profiles";
 export * from "./project";

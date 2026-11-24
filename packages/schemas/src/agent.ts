@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SchemaRef, Name } from "./common";
+import { Name } from "./common";
 import { HexColor } from "./harnesses";
 import { Profile } from "./profiles";
 import { ProjectManagerIdentity } from "./project";
@@ -23,7 +23,6 @@ export const AgentDefinition = z.discriminatedUnion("kind", [...ChatAgent.option
 export type AgentDefinition = z.infer<typeof AgentDefinition>;
 
 export const AgentDefinitions = z.strictObject({
-  $schema: SchemaRef,
   agents: z.array(AgentDefinition).default([]),
 }).superRefine(({ agents }, ctx) => {
   const ids = new Set<string>();

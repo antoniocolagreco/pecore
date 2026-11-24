@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { Recipe } from "./recipe";
 
 const feature = {
-  $schema: "../../../schemas/recipe.json",
   name: "feature",
   description: "New feature on existing code: spec, tests, code, checks, review, commit, PR",
   start: "spec",

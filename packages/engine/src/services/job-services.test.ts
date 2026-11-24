@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { setTestConfiguration } from "../../test/configuration";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -67,7 +68,7 @@ describe.skipIf(!ready())("job services (4.9)", () => {
     );
     await writeFile(join(lib, "recipes", "svc.json"), JSON.stringify({ name: "svc", description: "reads a port", start: "read", successOutcomes: ["read:done"], nodes: { read: { use: "read-port" } } }));
     await mkdir(home, { recursive: true });
-    await writeFile(join(home, "settings.json"), JSON.stringify({ servicesRuntime: "docker" }));
+    await setTestConfiguration(home, "settings", { servicesRuntime: "docker" });
     const engine = await Engine.start({ home, templates: lib });
     await createProjectWithRecipes(engine, { id: "svc", name: "Svc", repo: null, services: "compose.yaml" }, ["svc"]);
     const p = engine.project("svc");
@@ -94,7 +95,7 @@ describe.skipIf(!ready())("job services (4.9)", () => {
     }));
     await writeFile(join(lib, "recipes", "noop.json"), JSON.stringify({ name: "noop", description: "one node", start: "n", successOutcomes: ["n:done"], nodes: { n: { use: "noop" } } }));
     await mkdir(home, { recursive: true });
-    await writeFile(join(home, "settings.json"), JSON.stringify({ servicesRuntime: "docker" }));
+    await setTestConfiguration(home, "settings", { servicesRuntime: "docker" });
     const engine = await Engine.start({ home, templates: lib });
     await createProjectWithRecipes(engine, { id: "auto", name: "Auto", repo: null }, ["noop"]);
     const p = engine.project("auto");

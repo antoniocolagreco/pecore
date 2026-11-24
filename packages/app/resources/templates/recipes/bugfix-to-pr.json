@@ -1,5 +1,4 @@
 {
-  "$schema": "../../schemas/recipe.json",
   "name": "bugfix-to-pr",
   "description": "Check that tests fail before the fix, then deliver the fix and link its pull request on the issue.",
   "start": "spec",

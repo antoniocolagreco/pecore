@@ -1,5 +1,4 @@
 {
-  "$schema": "../../schemas/node.json",
   "name": "eslint",
   "tags": ["lint"],
   "description": "Run ESLint on the whole project",
