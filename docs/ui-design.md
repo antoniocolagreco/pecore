@@ -264,9 +264,9 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 
 ### Projects
 
-*   List: name with a dot in its Project Manager's colour, repo (or "local only"), base branch, jobs that need the user, failed jobs, warning when a login expired.
+*   List: project name, assigned Project Manager's avatar and name, repo (or "local only"), base branch, jobs that need the user, failed jobs, warning when a login expired.
 *   "New project" and "Import" appear next to each other. When there are no projects, both buttons appear in the empty state.
-*   Like Templates and Settings, on the Projects list and on a project's page the sidebar shows a Projects section below the main items: each project by name, with its Project Manager's colour dot, opening its page; the open project is highlighted.
+*   Like Templates and Settings, on the Projects list and on a project's page the sidebar shows a Projects section below the main items. Each entry shows the assigned Project Manager's avatar and the project name. The open project is highlighted.
 *   Project page header: a "New job" button that opens a dialog with Title, What to do and Recipe. Recipe is chosen by itself and locked when the project has one recipe; with none, the dialog says to add one in the Recipes tab. "Create job" creates it and closes the dialog; the job appears in the Jobs tab.
 *   Project page, full width, in tabs:
     *   Jobs, the first tab and open by default: the project's jobs, in the same table as the Jobs page without the Project column.

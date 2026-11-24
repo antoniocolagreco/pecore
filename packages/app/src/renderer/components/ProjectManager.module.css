@@ -17,15 +17,6 @@
   color: color-mix(in srgb, var(--pm) 30%, black);
 }
 
-.dot {
-  display: inline-block;
-  flex: none;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 1px var(--separator);
-}
-
 .swatch {
   position: relative;
   flex: none;

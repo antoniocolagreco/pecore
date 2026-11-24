@@ -4,7 +4,7 @@ import { Link, useNavigate } from "react-router";
 import { call } from "../api/client";
 import { useData } from "../api/hooks";
 import { useConnected } from "../api/live";
-import { ProjectDot } from "../components/ProjectManager";
+import { ProjectManagerAvatar } from "../components/ProjectManager";
 import { needsYou } from "../components/states";
 import { ErrorText, Page, ui } from "../components/ui";
 import { Button } from "../ds/button";
@@ -20,8 +20,12 @@ export function ProjectsSidebar({ active }: { active?: string }) {
   const projects = useData(() => call("listProjects"), [], (m) => m.type === "project.updated" || m.type === "definition.changed");
   if (!projects.data?.length) return null;
   return <SidebarSection title="Projects" label="Projects list">
-    {projects.data.map(({ id, project, creating }) => <SidebarItem key={id} to={creating ? `/projects/new?resume=${id}` : `/projects/${id}`} active={id === active}
-      trailing={<ProjectDot pm={project?.pm ?? null} />}>{project?.name ?? id}</SidebarItem>)}
+    {projects.data.map(({ id, project, creating }) => <SidebarItem key={id} to={creating ? `/projects/new?resume=${id}` : `/projects/${id}`} active={id === active}>
+      <span className={s.sidebarProject}>
+        {project?.pm && <ProjectManagerAvatar pm={project.pm} />}
+        <span>{project?.name ?? id}</span>
+      </span>
+    </SidebarItem>)}
   </SidebarSection>;
 }
 
@@ -66,9 +70,14 @@ export function Projects() {
           const body = (
             <>
               <span className={s.head}>
-                <span className={s.icon}><FolderIcon /></span>
-                <span className={s.name}>{project?.name ?? id}</span>
-                <ProjectDot pm={project?.pm ?? null} />
+                <span className={s.identity}>
+                  <span className={s.icon}><FolderIcon /></span>
+                  <span className={s.name}>{project?.name ?? id}</span>
+                </span>
+                {project?.pm && <span className={s.manager}>
+                  <ProjectManagerAvatar pm={project.pm} />
+                  <span>{project.pm.name}</span>
+                </span>}
               </span>
               <span className={s.repo}>
                 {project?.repo ? <>

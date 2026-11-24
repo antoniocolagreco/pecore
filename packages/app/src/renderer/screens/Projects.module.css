@@ -44,12 +44,40 @@ a.card:focus-visible {
 
 .head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
 }
 
+.sidebarProject {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebarProject > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.identity,
+.manager {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+
+.manager {
+  margin-inline-start: auto;
+  font-size: var(--text-size-sm);
+  color: var(--text-2);
+}
+
 .icon {
   display: grid;
+  flex: none;
   place-items: center;
   width: 30px;
   height: 30px;

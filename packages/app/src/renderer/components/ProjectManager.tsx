@@ -17,7 +17,3 @@ export function ProjectManagerAvatar({ pm }: { pm: ProjectManagerIdentity }) {
     </span>
   );
 }
-
-export function ProjectDot({ pm }: { pm: ProjectManagerIdentity | null }) {
-  return pm ? <span className={s.dot} style={{ background: pm.color }} title={`Project Manager ${pm.name}`} aria-hidden /> : null;
-}
