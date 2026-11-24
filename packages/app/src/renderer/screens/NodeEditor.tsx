@@ -399,22 +399,22 @@ const humanFields: Record<HumanInterface, Record<string, unknown>> = {
 const typeLabels: Record<ArtifactType, string> = {
   text: "Text", diff: "Diff", document: "Document", spec: "Spec", findings: "Findings", reference: "Reference",
 };
-const typeDetails: Record<ArtifactType, string> = {
-  text: "Free text, such as a reason, a log or a note",
-  diff: "Code changes, shown like a pull request",
-  document: "A title and a body, such as a pull request description",
-  spec: "Acceptance criteria, tests to write and interfaces",
-  findings: "Problems found in files, each with a level and a comment",
-  reference: "A link to something outside the files: commit, branch or URL",
+const typeExamples: Record<ArtifactType, string> = {
+  text: "free text, for example why the Spec Writer rejected a ticket, or the log of a check",
+  diff: "code changes. PeCore adds it by itself after a node that changes files",
+  document: "a title and a body, for example the ticket or a pull request description",
+  spec: "acceptance criteria, tests to write and functions to add, as the Spec Writer produces",
+  findings: "problems in specific files, each with a level and a comment, as a code review produces",
+  reference: "something outside the files, for example a commit, a pushed branch or a pull request link",
 };
-const typeOptions: { value: string; label: string; detail: string }[] = [
-  { value: "", label: "Nothing", detail: "This outcome passes no data to the next nodes" },
-  ...ArtifactType.options.map((type) => ({ value: type, label: typeLabels[type], detail: typeDetails[type] })),
-];
-const ruleKinds: { value: string; label: string; detail: string }[] = [
-  { value: "stdoutLastLine", label: "Last line of the output", detail: "For example the URL a command prints at the end" },
-  { value: "stdoutJson", label: "Field of JSON output", detail: "The command prints JSON and you name the field" },
-  { value: "file", label: "File in the workdir", detail: "The command writes a file and you give its path" },
+const typesHelp: ReactNode = <>
+  {ArtifactType.options.map((type) => <span key={type}><br /><strong>{typeLabels[type]}</strong>: {typeExamples[type]}.</span>)}
+</>;
+const typeOptions: { value: string; label: string }[] = [{ value: "", label: "Nothing" }, ...ArtifactType.options.map((type) => ({ value: type, label: typeLabels[type] }))];
+const ruleKinds: { value: string; label: string }[] = [
+  { value: "stdoutLastLine", label: "Last line of the output" },
+  { value: "stdoutJson", label: "Field of JSON output" },
+  { value: "file", label: "File in the workdir" },
 ];
 const ruleHints: Record<string, string> = {
   stdoutLastLine: "Name of the field that stores the line, for example url",
@@ -463,7 +463,6 @@ function OutcomeOutputs({ kind, outcomes, outputs, rules, disabled, onChange }: 
         {human
           ? <Checkbox label={`${outcome}: the person can write a note`} checked={type === "text"} disabled={disabled} onCheckedChange={(checked) => setType(outcome, checked ? "text" : undefined)} />
           : <Select label={`Output of ${outcome}`} options={typeOptions} value={type ?? ""} disabled={disabled}
-            description={type ? typeDetails[type] : undefined}
             onValueChange={(value) => setType(outcome, ArtifactType.safeParse(value).data)} />}
         {kind === "command" && type && <>
           <Select label="Read it from" options={ruleKinds} value={ruleKind || null} disabled={disabled}
@@ -481,9 +480,11 @@ function CommandInputs({ inputs, optional, disabled, onChange }: { inputs: unkno
   const required: ArtifactType[] = list(inputs);
   const extra: ArtifactType[] = list(optional);
   const group = (label: string, selected: ArtifactType[], other: ArtifactType[], set: (next: ArtifactType[], rest: ArtifactType[]) => void): ReactNode => <div>
-    <div className={s.fieldHeading}><span>{label}</span></div>
+    <div className={s.fieldHeading}><span>{label}</span><FieldHelp title={label}>
+      The kinds of data this command needs. The recipe chooses which node each one comes from. Required inputs must exist; optional ones are used when they exist.<br />{typesHelp}
+    </FieldHelp></div>
     <Chips label={label}>
-      {ArtifactType.options.map((type) => <Chip key={type} pressed={selected.includes(type)} disabled={disabled} title={typeDetails[type]}
+      {ArtifactType.options.map((type) => <Chip key={type} pressed={selected.includes(type)} disabled={disabled}
         onClick={() => set(selected.includes(type) ? selected.filter((t) => t !== type) : [...selected, type], other.filter((t) => t !== type))}>{typeLabels[type]}</Chip>)}
     </Chips>
   </div>;
@@ -637,7 +638,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
             <div>
               <div className={s.fieldHeading}><span>{human ? "Notes" : "Outputs"}</span>{help(human ? "Notes" : "Outputs", human
                 ? "Choose the answers that come with a note. The note is text that the nodes reading this one receive."
-                : "Choose what the node produces with each outcome, for example a spec when the outcome is accepted. Nodes that read this one receive it.")}</div>
+                : <>Each outcome can pass data to the nodes that read this one. For each outcome, choose the kind of data this node produces, or Nothing. For example the Spec Writer produces a Spec when it accepts a ticket and a Text with the reason when it rejects it.<br />{typesHelp}</>)}</div>
               <OutcomeOutputs kind={kind} outcomes={outcomes} outputs={object(draft.outputs)} rules={object(draft.outputRules)} disabled={!file.editable}
                 onChange={(outputs, outputRules) => updateFields({
                   outputs: Object.keys(outputs).length ? outputs : undefined,
