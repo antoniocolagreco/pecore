@@ -36,11 +36,19 @@
   text-decoration: none;
 }
 
-a.entry:hover,
-a.entry:focus-visible {
-  background: var(--fill);
+a.entry,
+a.entry > section {
+  transition: background-color var(--fast) ease;
+}
+
+a.entry:is(:hover, :focus-visible) {
+  background-color: var(--fill);
   color: var(--text);
   text-decoration: none;
+}
+
+a.entry:is(:hover, :focus-visible) > section {
+  background-color: color-mix(in srgb, var(--surface), var(--fill-strong));
 }
 
 a.entry:focus-visible {
