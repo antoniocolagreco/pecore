@@ -9,11 +9,11 @@ import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { DefinitionIcon, useDefinitionIcons } from "../components/DefinitionIcon";
 import { PageActions, PageActionsSlot } from "../components/PageActions";
-import { Button, Empty, ErrorText, Page, ui } from "../components/ui";
-import { Button as DsButton, IconButton } from "../ds/button";
+import { ErrorText, Page, ui } from "../components/ui";
+import { Button, IconButton } from "../ds/button";
 import { RadioGroup } from "../ds/choice";
-import { Table, Tabs } from "../ds/data";
-import { Alert, Card, Spinner } from "../ds/feedback";
+import { Details, Table, Tabs } from "../ds/data";
+import { Alert, Card, EmptyState, Spinner } from "../ds/feedback";
 import { TextArea, TextField } from "../ds/field";
 import { PlusIcon, TrashIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
@@ -57,7 +57,7 @@ function Recipes({ id }: { id: string }) {
     <div className={ui.stack}>
       <ErrorText error={entries.error ?? available.error} />
       {entries.loading && !entries.data ? <Spinner /> :
-        files.length === 0 && !entries.error ? <Empty>No recipes selected</Empty> : (
+        files.length === 0 && !entries.error ? <EmptyState title="No recipes selected" /> : (
           <ul className={s.files}>{files.slice(start, start + pageSize).map(({ path, value, errors }) => {
             const name: string = string(object(value).name);
             const label = <><DefinitionIcon icons={icons.data} type="recipe" name={name} selected={string(object(value).icon)} size="sm" /> {name}</>;
@@ -163,9 +163,9 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
   };
   return (
     <form id="project-settings" className={s.form} onSubmit={(e) => { e.preventDefault(); if (dirty && valid && !disabled) void save.run(); }}>
-      <dl className={`${ui.kv} ${s.details}`}>
+      <Details className={s.details}>
         <dt>Project ID</dt><dd>{id}</dd>
-      </dl>
+      </Details>
       <div className={s.pair}>
         <TextField label="Name" value={value.name} onValueChange={(name) => set({ name })} disabled={disabled} error={value.name.trim() ? undefined : "Give the project a name."} />
         <TextField label="Base branch" mono value={value.baseBranch} onValueChange={(baseBranch) => set({ baseBranch })} disabled={disabled} description="New jobs start from here." />
@@ -185,17 +185,17 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
       {repo && (value.remote ? value.url.trim() !== repo.url : true) && <span className={ui.muted}>Changing the remote keeps your local files and the old repository. Review the project's recipes for the new setup.</span>}
       <TextField label="Folder" mono value={value.folder} onValueChange={(folder) => set({ folder })} disabled={disabled}
         description={folder ? "Enter a new path or choose an empty folder to move your copy of the code." : "Choose an existing checkout or an empty folder to create a local copy."}
-        action={<DsButton disabled={disabled} onClick={() => void window.pecore.pickFolder().then((picked) => picked && set({ folder: picked }))}>Choose…</DsButton>} />
+        action={<Button disabled={disabled} onClick={() => void window.pecore.pickFolder().then((picked) => picked && set({ folder: picked }))}>Choose…</Button>} />
       <TextField label="Services compose file" mono value={value.services} onValueChange={(services) => { setPickError(null); set({ services }); }} disabled={disabled}
         placeholder="Automatic" error={pickError ?? undefined} description="Empty: a compose file at the repository root, if there is one."
-        action={<DsButton disabled={disabled} onClick={() => void pickCompose()}>Choose…</DsButton>} />
+        action={<Button disabled={disabled} onClick={() => void pickCompose()}>Choose…</Button>} />
       <ErrorText error={save.error} />
       {deleteNotice}
       <PageActions>
         {projectActions}
         {savedAt && !dirty && <span className={ui.muted} role="status">Saved</span>}
-        <DsButton disabled={!dirty || disabled} onClick={() => setDraft(null)}>Discard</DsButton>
-        <DsButton type="submit" form="project-settings" variant="primary" disabled={!dirty || !valid || disabled} loading={save.busy}>Save</DsButton>
+        <Button disabled={!dirty || disabled} onClick={() => setDraft(null)}>Discard</Button>
+        <Button type="submit" form="project-settings" variant="primary" disabled={!dirty || !valid || disabled} loading={save.busy}>Save</Button>
       </PageActions>
     </form>
   );
@@ -241,7 +241,7 @@ function VariableCell({ value, disabled, onChange }: { value: VariableValue; dis
       <summary>{value.rows.length} {value.kind === "list" ? "items" : "keys"}</summary>
       <VariableTable label={value.kind === "list" ? "List items" : "Object keys"} keyLabel={value.kind === "object" ? "Key" : undefined}
         rows={value.rows} disabled={disabled} onChange={(rows) => onChange({ ...value, rows })} />
-      <DsButton size="sm" icon={<PlusIcon />} disabled={disabled} onClick={() => onChange({ ...value, rows: [...value.rows, newVariable()] })}>{value.kind === "list" ? "Add item" : "Add key"}</DsButton>
+      <Button size="sm" icon={<PlusIcon />} disabled={disabled} onClick={() => onChange({ ...value, rows: [...value.rows, newVariable()] })}>{value.kind === "list" ? "Add item" : "Add key"}</Button>
     </details>;
   if (value.kind === "null") return null;
   if (value.kind === "boolean") return <Select ariaLabel="Value" value={value.text} options={[{ value: "true", label: "Yes" }, { value: "false", label: "No" }]}
@@ -321,12 +321,12 @@ function ProjectVariables({ id, onSaved }: { id: string; onSaved(): void }) {
       </section>
       <ErrorText error={save.error ?? file.error} />
       <div className={ui.row}>
-        <DsButton icon={<PlusIcon />} disabled={disabled} onClick={() => set([...rows, newVariable()])}>Add variable</DsButton>
+        <Button icon={<PlusIcon />} disabled={disabled} onClick={() => set([...rows, newVariable()])}>Add variable</Button>
       </div>
       <PageActions>
         {saved && <span className={ui.muted} role="status">Saved</span>}
-        <DsButton disabled={!dirty || disabled} onClick={() => { setDraft(null); save.clear(); }}>Discard</DsButton>
-        <DsButton type="submit" form="project-variables" variant="primary" disabled={!dirty || disabled} loading={save.busy}>Save</DsButton>
+        <Button disabled={!dirty || disabled} onClick={() => { setDraft(null); save.clear(); }}>Discard</Button>
+        <Button type="submit" form="project-variables" variant="primary" disabled={!dirty || disabled} loading={save.busy}>Save</Button>
       </PageActions>
     </form>
   );
@@ -350,8 +350,8 @@ function NewJobDialog({ id, onClose }: { id: string; onClose(): void }) {
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !create.busy) onClose(); }} title="New job" width={560}
       footer={<>
-        <DsButton disabled={create.busy} onClick={onClose}>Cancel</DsButton>
-        <DsButton variant="primary" loading={create.busy} disabled={disabled || !valid} onClick={() => void create.run()}>Create job</DsButton>
+        <Button disabled={create.busy} onClick={onClose}>Cancel</Button>
+        <Button variant="primary" loading={create.busy} disabled={disabled || !valid} onClick={() => void create.run()}>Create job</Button>
       </>}>
       <form className={s.form} onSubmit={(e) => { e.preventDefault(); if (valid && !disabled) void create.run(); }}>
         <TextField label="Title" required autoFocus value={title} onValueChange={setTitle} disabled={disabled} placeholder="e.g. Add dark mode" />
@@ -392,7 +392,7 @@ function ProjectDetails({ id }: { id: string }) {
   return (
     <Page title={project?.name ?? id} fillHeight={activeTab === "knowledge"} actions={project && !view?.creating && <>
       <span ref={setActionSlot} className={ui.row} />
-      <DsButton variant={activeTab === "jobs" ? "primary" : "secondary"} icon={<PlusIcon />} disabled={!connected} onClick={() => setCreatingJob(true)}>New job</DsButton>
+      <Button variant={activeTab === "jobs" ? "primary" : "secondary"} icon={<PlusIcon />} disabled={!connected} onClick={() => setCreatingJob(true)}>New job</Button>
     </>}>
       {creatingJob && <NewJobDialog id={id} onClose={() => setCreatingJob(false)} />}
       {exporting && <ProjectExportDialog id={id} onClose={() => setExporting(false)} />}
@@ -420,8 +420,8 @@ function ProjectDetails({ id }: { id: string }) {
                       id={id}
                       onSaved={data.reload}
                       projectActions={<>
-                        <DsButton variant="danger" disabled={!connected || !jobs.data || !!jobs.error || running} onClick={() => setDeleting(true)}>Delete project</DsButton>
-                        <DsButton disabled={!connected} onClick={() => setExporting(true)}>Export</DsButton>
+                        <Button variant="danger" disabled={!connected || !jobs.data || !!jobs.error || running} onClick={() => setDeleting(true)}>Delete project</Button>
+                        <Button disabled={!connected} onClick={() => setExporting(true)}>Export</Button>
                       </>}
                       deleteNotice={<>
                         <ErrorText error={jobs.error} />
@@ -445,7 +445,7 @@ function ProjectDetails({ id }: { id: string }) {
             width={460}
             footer={<>
               <Button disabled={!connected || remove.busy} onClick={() => setDeleting(false)}>Cancel</Button>
-              <DsButton variant="dangerSolid" loading={remove.busy} disabled={!connected || !jobs.data || !!jobs.error || running} onClick={() => void remove.run()}>Delete project</DsButton>
+              <Button variant="dangerSolid" loading={remove.busy} disabled={!connected || !jobs.data || !!jobs.error || running} onClick={() => void remove.run()}>Delete project</Button>
             </>}
           >
             {running && <span>Stop the running jobs first.</span>}
@@ -461,6 +461,6 @@ export function ProjectPage() {
   const { id } = useParams();
   return <>
     <ProjectsSidebar active={id} />
-    {id ? <ProjectDetails key={id} id={id} /> : <Page title="Project"><Empty>Project not found</Empty></Page>}
+    {id ? <ProjectDetails key={id} id={id} /> : <Page title="Project"><EmptyState title="Project not found" /></Page>}
   </>;
 }

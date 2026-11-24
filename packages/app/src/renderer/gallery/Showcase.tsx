@@ -5,7 +5,7 @@ import { applyTheme, builtInThemes, defaultTheme } from "../theme/themes";
 import type { Mode } from "../theme/themes";
 import { Button, IconButton } from "../ds/button";
 import { Checkbox, RadioGroup, Switch } from "../ds/choice";
-import { Stat, Stats, Table, Tabs, TextTable } from "../ds/data";
+import { Details, Stat, Stats, Table, Tabs, TextTable } from "../ds/data";
 import { Alert, Badge, Card, Count, EmptyState, Kbd, Progress, Skeleton, Spinner } from "../ds/feedback";
 import { PasswordField, SearchField, TextArea, TextField } from "../ds/field";
 import { ArrowUpIcon, BellIcon, ChatIcon, FolderIcon, InboxIcon, LinkIcon, MonitorIcon, MoonIcon, MoreIcon, PauseIcon, PlayIcon, PlusIcon, RefreshIcon, StopIcon, SunIcon, TrashIcon } from "../ds/icons";
@@ -434,6 +434,13 @@ function MoreComponents() {
             </tbody>
           </TextTable>
         </div>
+        <Example caption="Details (label and value)">
+          <Details>
+            <dt>Model</dt><dd>opus</dd>
+            <dt>Tokens</dt><dd>12,400 in · 1,830 out</dd>
+            <dt>Cost</dt><dd>$0.21</dd>
+          </Details>
+        </Example>
         <div className={g.wide}>
           <Tabs
             tabs={[

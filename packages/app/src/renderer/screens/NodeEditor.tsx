@@ -18,11 +18,13 @@ import { errorText, useAction, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
 import { defaultDefinitionIcon, DefinitionIconField, useDefinitionIcons } from "../components/DefinitionIcon";
 import { restorePageScroll } from "../components/usePageScroll";
-import { Button, ErrorText, Modal, Page, Panel, ui } from "../components/ui";
+import { ErrorText, Page, ui } from "../components/ui";
+import { Button } from "../ds/button";
+import { Alert, Card } from "../ds/feedback";
 import { Checkbox } from "../ds/choice";
 import { TextArea, TextField } from "../ds/field";
 import { NumberField } from "../ds/values";
-import { FieldHelp } from "../ds/overlay";
+import { Dialog, FieldHelp } from "../ds/overlay";
 import { MultiCombobox, Select } from "../ds/select";
 import { nodeKindLabels } from "../components/NodeCard";
 import s from "./Editors.module.css";
@@ -177,7 +179,7 @@ export function useDefinitionDraft(existingPath: string, sidecar = false, creati
       <ErrorText error={remote.error ?? save.error ?? compare.error ?? reload.error ?? (validation?.content === content ? validation.error : undefined)} />
       {!baseline && remote.loading && <p className={ui.muted}>Loading definition…</p>}
       {baseline?.sha256 === null && !creation && !sidecar && !dirty && <ErrorText error="Definition file is missing." />}
-      {changed && <Panel>
+      {changed && <Card padded>
         <p>Changed elsewhere: reload, compare, keep mine</p>
         <div className={ui.row}>
           <Button disabled={!connected || save.busy || reload.busy} onClick={() => void reload.run()}>Reload</Button>
@@ -185,9 +187,9 @@ export function useDefinitionDraft(existingPath: string, sidecar = false, creati
           <Button disabled={!canSave || !compared} onClick={() => void save.run(compared)}>Keep mine</Button>
         </div>
         {compared && <div className={s.compare}><div>On disk<pre>{compared.sha256 === null ? "File removed" : compared.content}</pre></div><div>Mine<pre>{content}</pre></div></div>}
-      </Panel>}
+      </Card>}
     </>,
-    saveButton: (disabled = false): ReactNode => <Button kind="primary" disabled={disabled || !canSave || !dirty || changed} onClick={() => void save.run()}>Save{sidecar ? " file" : ""}</Button>,
+    saveButton: (disabled = false): ReactNode => <Button variant="primary" disabled={disabled || !canSave || !dirty || changed} onClick={() => void save.run()}>Save{sidecar ? " file" : ""}</Button>,
   };
 }
 
@@ -200,13 +202,17 @@ export function useUnsaved(dirty: boolean): ReactNode {
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
-  return <Modal open={blocker.state === "blocked"} onClose={() => blocker.reset?.()} title="Unsaved changes">
-    <p>Leave this editor and discard your changes?</p>
-    <div className={ui.row}>
+  return <Dialog
+    open={blocker.state === "blocked"}
+    onOpenChange={(open) => !open && blocker.reset?.()}
+    title="Unsaved changes"
+    description="Leave this editor and discard your changes?"
+    width={400}
+    footer={<>
       <Button disabled={!connected} onClick={() => blocker.reset?.()}>Stay</Button>
-      <Button kind="danger" disabled={!connected} onClick={() => blocker.proceed?.()}>Discard and leave</Button>
-    </div>
-  </Modal>;
+      <Button variant="dangerSolid" disabled={!connected} onClick={() => blocker.proceed?.()}>Discard and leave</Button>
+    </>}
+  />;
 }
 
 export function DefinitionErrors({ errors }: { errors: RouteResult<"validateDefinition">["errors"] | undefined }) {
@@ -298,11 +304,11 @@ export function Sidecar({ content, disabled, change, isMarkdown, errors = noIssu
 function SidecarFile({ path, name, isMarkdown, onDirty }: { path: string; name: string; isMarkdown: boolean; onDirty(dirty: boolean): void }) {
   const file = useDefinitionDraft(path, true);
   useEffect(() => { onDirty(file.dirty); return () => onDirty(false); }, [file.dirty, onDirty]);
-  return <Panel>
+  return <Card padded>
     <h2>{isMarkdown ? "Prompt" : "Script"} <code>{name}</code></h2>
     {file.feedback}
     {file.ready && <><Sidecar content={file.content} change={file.update} disabled={!file.editable} isMarkdown={isMarkdown} />{file.saveButton()}</>}
-  </Panel>;
+  </Card>;
 }
 
 function parseCommand(text: string): string[] {
@@ -431,7 +437,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   return <Page title={creation ? "New Node" : templateTitle(string(draft?.name)) || "Node editor"} actions={file.saveButton(newTemplate && sidecarDirty)}>
     {(newTemplate || path.startsWith("templates/")) && <Link to="/templates" state={restorePageScroll}>Back to templates</Link>}
     {file.feedback}
-    {file.ready && <Panel>
+    {file.ready && <Card padded>
       {draft ? (
         <fieldset className={s.fields} disabled={!file.editable}>
           {creation ? <>
@@ -512,8 +518,8 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
         </fieldset>
       ) : <ErrorText error="Unable to read the node definition." />}
       <DefinitionErrors errors={draft ? file.errors?.filter(({ path }) => !inlineKeys.includes(path.split(".")[0] ?? "")) : file.errors} />
-    </Panel>}
-    {sidecarDirty && sidecarName !== validSidecar && <p className={ui.banner}>Save the open sidecar before switching files.</p>}
+    </Card>}
+    {sidecarDirty && sidecarName !== validSidecar && <Alert tone="warning">Save the open sidecar before switching files.</Alert>}
     {sidecarName && definitionPath && <SidecarFile key={sidecarName} path={definitionPath.slice(0, definitionPath.lastIndexOf("/") + 1) + sidecarName} name={sidecarName} isMarkdown={sidecarName.endsWith(".md")} onDirty={setSidecarDirty} />}
     {warn}
   </Page>;

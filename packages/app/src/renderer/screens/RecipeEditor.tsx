@@ -7,7 +7,7 @@ import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { defaultDefinitionIcon, definitionIconName, DefinitionIcon, DefinitionIconField, useDefinitionIcons } from "../components/DefinitionIcon";
 import { restorePageScroll } from "../components/usePageScroll";
-import { ErrorText, Page, Panel } from "../components/ui";
+import { ErrorText, Page } from "../components/ui";
 import { Button, IconButton } from "../ds/button";
 import { Checkbox } from "../ds/choice";
 import { Card } from "../ds/feedback";
@@ -282,10 +282,10 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
     {scope === "templates" && <Link to="/templates?tab=recipes" state={restorePageScroll}>Back to templates</Link>}
     {file.feedback}
     <ErrorText error={duplicate.error} />
-    {project && <Panel><div className={s.importRow}>
+    {project && <Card padded><div className={s.importRow}>
       <Select label="Recipe template" value={recipeTemplate} onValueChange={setRecipeTemplate} options={recipeOptions} disabled={!editable || !recipeOptions.length} placeholder="Choose a template" />
       <Button loading={importRecipe.busy} disabled={!editable || !recipeTemplate} onClick={() => void importRecipe.run()}>Import template</Button>
-    </div><ErrorText error={recipeTemplates.error ?? importRecipe.error} /></Panel>}
+    </div><ErrorText error={recipeTemplates.error ?? importRecipe.error} /></Card>}
     {file.ready && <div className={s.recipePanel}>
       {draft ? <>
         <RecipePalette nodes={paletteNodes} disabled={!editable} loading={definitions.loading} onAdd={add}>

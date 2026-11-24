@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { BoundaryCard, NodeCard } from "../components/NodeCard";
 import { ProjectManagerAvatar } from "../components/ProjectManager";
-import { Panel } from "../components/ui";
 import { Button } from "../ds/button";
 import { Badge, Card } from "../ds/feedback";
 import * as icons from "../ds/icons";
@@ -50,7 +49,7 @@ const rules: { title: string; items: ReactNode[] }[] = [
   {
     title: "Components",
     items: [
-      <>Build screens only from <code>ds/</code> (this page) and the page shell <code>Page</code>, <code>PageActions</code> and <code>ErrorText</code> from <code>components/ui</code>.</>,
+      <>Build screens only from <code>ds/</code> (this page) and the page shell <code>Page</code>, <code>PageActions</code> and <code>ErrorText</code> from <code>components/</code>. One component per kind: a button is <code>Button</code>, a frame is <code>Card</code>, a popup is <code>Dialog</code>, an empty list is <code>EmptyState</code>, a notice is <code>Alert</code>, a table is <code>Table</code> or <code>TextTable</code>, a label and value list is <code>Details</code>.</>,
       <>No native <code>&lt;button&gt;</code>, <code>&lt;input&gt;</code>, <code>&lt;select&gt;</code> or <code>&lt;textarea&gt;</code> in screens. The one exception: a Project Manager's colour uses the system colour picker.</>,
       <>Before writing a new component, look here. If one is close, extend it in <code>ds/</code> instead of copying it into a screen.</>,
       <>A new or changed component is added to this page in the same commit.</>,
@@ -338,11 +337,11 @@ export function Surfaces() {
           <span className={g.muted}>A card without a title, for a single block.</span>
         </Card>
       </Example>
-      <Example caption="Panel (components/ui)">
-        <Panel>
+      <Example caption="Card, padded, with a heading">
+        <Card padded>
           <h3>Repository</h3>
           <span className={g.muted}>A settings group on a page.</span>
-        </Panel>
+        </Card>
       </Example>
       <div className={g.wide}>
         <Example caption="Node cards (recipes and templates)">

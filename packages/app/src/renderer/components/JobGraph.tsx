@@ -11,7 +11,7 @@ import { BoundaryCard, NodeCard, recipeNodeKind } from "./NodeCard";
 import { templateTitle } from "./templateTitle";
 import { nodeRunState, StateLabel, toneColor } from "./states";
 import type { Tone } from "./states";
-import { Empty } from "./ui";
+import { EmptyState } from "../ds/feedback";
 import "@xyflow/react/dist/style.css";
 import s from "./JobGraph.module.css";
 
@@ -182,7 +182,7 @@ export function JobGraph({ recipe, definitions, runs, selected, onSelect }: {
     observer.observe(box.current);
     return () => observer.disconnect();
   }, []);
-  if (!nodes.length) return <Empty>This recipe has no nodes.</Empty>;
+  if (!nodes.length) return <EmptyState title="This recipe has no nodes." />;
   return (
     <div ref={box} className={s.graph}>
       <ReactFlow

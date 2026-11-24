@@ -1,19 +1,8 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { Button as DsButton } from "../ds/button";
-import { EmptyState } from "../ds/feedback";
-import { Dialog } from "../ds/overlay";
+import type { ReactNode } from "react";
 import { usePageScroll } from "./usePageScroll";
 import s from "./ui.module.css";
 
 export { s as ui };
-
-export function Button({ kind, children, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { kind?: "primary" | "danger" }) {
-  return <DsButton variant={kind ?? "secondary"} {...rest}>{children}</DsButton>;
-}
-
-export function Panel({ children, className }: { children: ReactNode; className?: string }) {
-  return <section className={[s.panel, className ?? ""].join(" ")}>{children}</section>;
-}
 
 export function Page({ title, actions, width, fillHeight, children }: { title: string; actions?: ReactNode; width?: number; fillHeight?: boolean; children: ReactNode }) {
   const { page, content } = usePageScroll();
@@ -30,33 +19,12 @@ export function Page({ title, actions, width, fillHeight, children }: { title: s
   );
 }
 
-export function Empty({ children }: { children: ReactNode }) {
-  return <EmptyState title={children} />;
-}
-
 export function ErrorText({ error }: { error: string | Error | null | undefined }) {
   if (!error) return null;
   return (
     <p className={s.error} role="alert">
       {typeof error === "string" ? error : error.message}
     </p>
-  );
-}
-
-export function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className={s.field}>
-      <span>{label}</span>
-      {children}
-    </label>
-  );
-}
-
-export function Modal({ open, onClose, title, children }: { open: boolean; onClose(): void; title: string; children: ReactNode }) {
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()} title={title} width={640}>
-      {children}
-    </Dialog>
   );
 }
 

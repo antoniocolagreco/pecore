@@ -4,8 +4,9 @@ import type { BuiltInHarness } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
-import { ErrorText, Field, ui } from "../components/ui";
+import { ErrorText, ui } from "../components/ui";
 import { Button } from "../ds/button";
+import { PasswordField } from "../ds/field";
 import { Alert } from "../ds/feedback";
 
 export const install: Record<BuiltInHarness, { name: string; url: string }> = {
@@ -58,7 +59,7 @@ export function SetupBanner() {
           event.preventDefault();
           if (connected && !send.busy && code.trim()) void send.run(loginId);
         }}>
-          <Field label="Login code"><input type="password" autoComplete="off" disabled={!connected || send.busy} value={code} onChange={(event) => setCode(event.target.value)} /></Field>
+          <PasswordField label="Login code" disabled={!connected || send.busy} value={code} onValueChange={setCode} />
           <Button type="submit" size="sm" disabled={!connected || send.busy || !code.trim()}>Send code</Button>
         </form>}
         <ErrorText error={start.error ?? send.error} />

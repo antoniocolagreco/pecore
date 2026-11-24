@@ -111,6 +111,31 @@
   border-bottom: 0;
 }
 
+.details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.details > dt {
+  color: var(--text-2);
+}
+
+.details > dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.hoverRows tbody tr td {
+  transition: background-color var(--fast) ease;
+}
+
+.hoverRows tbody tr:hover td {
+  background: color-mix(in srgb, var(--fill) 55%, transparent);
+}
+
 .row {
   transition: background-color var(--fast) ease;
 }

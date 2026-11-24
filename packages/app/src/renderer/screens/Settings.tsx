@@ -6,12 +6,12 @@ import type { Account, ForgeAccount, LiveMessage, RouteResult, Settings as Setti
 import { call } from "../api/client";
 import { useAction, useAutoSave, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
-import { ErrorText, Field, Page, ui } from "../components/ui";
+import { ErrorText, Page, ui } from "../components/ui";
 import { harnessName } from "../components/AgentFields";
 import { Button } from "../ds/button";
 import { Switch } from "../ds/choice";
 import { Alert, Badge, Card, Spinner } from "../ds/feedback";
-import { TextField } from "../ds/field";
+import { PasswordField, TextField } from "../ds/field";
 import { CheckCircleIcon, AlertIcon, PlusIcon, RefreshIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
@@ -76,7 +76,7 @@ function LoginOutput({ id, progress, running }: { id: string; progress?: Progres
     {url && connected && <a href={url} target="_blank" rel="noreferrer">Open login URL</a>}
     {!!progress?.lines.length && <pre className={s.log} aria-label="Login progress">{progress.lines.join("\n")}</pre>}
     {running && <form className={ui.row} onSubmit={(event) => { event.preventDefault(); if (connected && !send.busy && code.trim()) void send.run(); }}>
-      <Field label="Login code"><input type="password" autoComplete="off" disabled={!connected || send.busy} value={code} onChange={(event) => setCode(event.target.value)} /></Field>
+      <PasswordField label="Login code" disabled={!connected || send.busy} value={code} onValueChange={setCode} />
       <Button type="submit" size="sm" disabled={!connected || send.busy || !code.trim()}>Send code</Button>
     </form>}
     <ErrorText error={send.error} />

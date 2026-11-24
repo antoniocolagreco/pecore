@@ -10,9 +10,11 @@ import { isFinal, JobControls } from "../components/JobControls";
 import { JobGraph, latestRuns, useRecipe } from "../components/JobGraph";
 import { NodeRunDetail } from "../components/NodeRunDetail";
 import { jobState, StateLabel } from "../components/states";
-import { Button, duration, Empty, ErrorText, Page, Panel, time, ui } from "../components/ui";
+import { duration, ErrorText, Page, time, ui } from "../components/ui";
+import { Button } from "../ds/button";
+import { TextTable } from "../ds/data";
 import { Tabs } from "../ds/data";
-import { Alert, Badge, Card, Spinner } from "../ds/feedback";
+import { Alert, Badge, Card, EmptyState, Spinner } from "../ds/feedback";
 import { ArrowRightIcon, FolderIcon } from "../ds/icons";
 import s from "./JobView.module.css";
 
@@ -60,7 +62,7 @@ function Result({ detail, definitions }: { detail: JobDetail; definitions: Retur
     return node?.kind === "command" && node.outcomes.includes("passed");
   });
   return (
-    <Panel>
+    <Card padded>
       <section className={ui.stack} aria-label="Result">
         <h2 className={s.sectionTitle}>Result</h2>
         <div className={ui.row}><StateLabel info={{ ...jobState(job), detail: null }} />{outcome && <code>{outcome}</code>}</div>
@@ -85,7 +87,7 @@ function Result({ detail, definitions }: { detail: JobDetail; definitions: Retur
         {findings && <section><h3>Open findings</h3><ErrorText error={report.error} />{report.data && <Findings findings={report.data} />}</section>}
         {delivery && <section><h3>Delivery</h3><ErrorText error={delivered.error} />{delivered.data && <Delivery content={delivered.data} />}</section>}
       </section>
-    </Panel>
+    </Card>
   );
 }
 
@@ -102,11 +104,11 @@ function History({ detail, selected, onSelect }: { detail: JobDetail; selected: 
     const attempts: AttemptView[] | undefined = attemptsByRun.get(run.id);
     return attempts?.length ? attempts.map((attempt, index) => ({ run, attempt, index })) : [{ run, attempt: null, index: 0 }];
   });
-  if (!entries.length) return <Empty>No runs yet.</Empty>;
+  if (!entries.length) return <EmptyState title="No runs yet." />;
   const now: number = Date.now();
   return (
     <div>
-      <table className={ui.table}>
+      <TextTable hover>
         <thead><tr><th>Node</th><th>Attempt</th><th>Outcome</th><th>Duration</th><th>Failure reason</th></tr></thead>
         <tbody>{entries.slice(page * historyPageSize, (page + 1) * historyPageSize).map(({ run, attempt, index }) => {
           const start: number | null = attempt?.startedAt ?? run.startedAt;
@@ -121,7 +123,7 @@ function History({ detail, selected, onSelect }: { detail: JobDetail; selected: 
             </tr>
           );
         })}</tbody>
-      </table>
+      </TextTable>
       {entries.length > historyPageSize && (
         <div className={ui.row}>
           <Button disabled={!connected || page === 0} onClick={() => setPage(page - 1)}>Previous</Button>
@@ -218,13 +220,13 @@ function Loaded({ detail, error, reasons, whyError, reload }: { detail: JobDetai
 function JobLoader({ id }: { id: Job["id"] }) {
   const detail = useData(() => call("getJob", { params: { id } }), [id], (m) => (m.type === "job.updated" || m.type === "node_run.updated") && m.jobId === id);
   const why = useData(() => call("whyJob", { params: { id } }), [id], (m) => (m.type === "job.updated" || m.type === "node_run.updated") && m.jobId === id);
-  if (detail.error instanceof ApiError && detail.error.status === 404) return <Page title="Job"><Empty>Job not found.</Empty></Page>;
+  if (detail.error instanceof ApiError && detail.error.status === 404) return <Page title="Job"><EmptyState title="Job not found." /></Page>;
   return detail.data
     ? <Loaded detail={detail.data} error={detail.error} whyError={why.error} reasons={why.data?.reasons ?? []} reload={detail.reload} />
-    : <Page title="Job"><ErrorText error={detail.error} />{detail.loading && <Empty>Loading job…</Empty>}</Page>;
+    : <Page title="Job"><ErrorText error={detail.error} />{detail.loading && <EmptyState title="Loading job…" />}</Page>;
 }
 
 export function JobView() {
   const { id } = useParams();
-  return id ? <JobLoader key={id} id={id} /> : <Page title="Job"><Empty>Job not found.</Empty></Page>;
+  return id ? <JobLoader key={id} id={id} /> : <Page title="Job"><EmptyState title="Job not found." /></Page>;
 }

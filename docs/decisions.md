@@ -290,3 +290,9 @@
 - Decision: the component gallery becomes the Showcase page, a menu item in the app (and still `pnpm showcase` in a browser). It shows the rules, every colour, text and size token with its use, the icons, cards and panels and every component, with a theme preview restored on leaving the page. People and coding agents read it before UI work; a new or changed component or token is added there in the same commit.
 - Why: one visible reference stops screens from drifting into their own colours, sizes and controls.
 - Replaces: the browser-only gallery with components only.
+
+## 2026-11-24: One component per kind
+
+- Decision: the app has one component per kind, all in `ds/`: `Button`, `Card` (also for padded panels), `Dialog`, `EmptyState`, `Alert` for notices, `Table` or `TextTable` for tables, `Details` for label and value lists, `PasswordField` for secrets. The old wrappers in `components/ui` (`Button`, `Panel`, `Empty`, `Field`, `Modal`) and their CSS (`.panel`, `.table`, `.banner`, `.kv` and unused classes) are removed; `components/ui` keeps only the page shell (`Page`, `ErrorText`) and formatting helpers.
+- Why: two components for the same thing drift apart in look and behaviour.
+- Replaces: the `components/ui` wrappers, hand-made tables, banners and key and value lists.

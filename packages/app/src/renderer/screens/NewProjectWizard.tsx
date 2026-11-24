@@ -6,7 +6,8 @@ import { call } from "../api/client";
 import { errorText, useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { reasonLabel } from "../components/states";
-import { Button, ErrorText, Page, Panel, ui } from "../components/ui";
+import { ErrorText, Page, ui } from "../components/ui";
+import { Button } from "../ds/button";
 import { RadioGroup } from "../ds/choice";
 import { Alert, Badge, Card, Spinner } from "../ds/feedback";
 import type { Tone } from "../ds/feedback";
@@ -163,7 +164,7 @@ export function NewProjectWizard() {
     const busy: boolean = create.busy || retry.busy || cancel.busy;
     return (
       <Page title="New project" width={formWidth}>
-        <Panel>
+        <Card padded>
           <h2 className={w.creating}>Creating {creationId ?? inputs.name.trim()}</h2>
           <CreationTasks creation={creationId ? creation.data : undefined} pending={create.busy} />
           <ErrorText error={creation.data?.error ?? creation.error ?? create.error} />
@@ -171,10 +172,10 @@ export function NewProjectWizard() {
           <p>A repository created on the forge is left there when you cancel.</p>
           <div className={ui.row}>
             <Button disabled={!connected || busy || !creationId || !creation.data} onClick={() => creationId && void cancel.run(creationId)}>Cancel</Button>
-            {creation.data?.error && <Button kind="primary" disabled={!connected || busy || !creationId} onClick={() => creationId && void retry.run(creationId)}>Retry</Button>}
+            {creation.data?.error && <Button variant="primary" disabled={!connected || busy || !creationId} onClick={() => creationId && void retry.run(creationId)}>Retry</Button>}
             {creation.error && <Button disabled={!connected || busy} onClick={() => void navigate("/projects")}>Back to projects</Button>}
           </div>
-        </Panel>
+        </Card>
       </Page>
     );
   }
@@ -223,7 +224,7 @@ export function NewProjectWizard() {
           <ErrorText error={create.error} />
           <div className={w.actions}>
             <Button disabled={!connected} onClick={() => void navigate("/projects")}>Cancel</Button>
-            <Button kind="primary" type="submit" disabled={!connected || !valid}>Create project</Button>
+            <Button variant="primary" type="submit" disabled={!connected || !valid}>Create project</Button>
           </div>
         </form>
       </Card>

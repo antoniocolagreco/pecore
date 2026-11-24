@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import { call } from "../api/client";
 import { useData } from "../api/hooks";
 import { onLive, subscribeLog, useConnected } from "../api/live";
-import { Button, Empty, ErrorText, ui } from "./ui";
+import { ErrorText, ui } from "./ui";
+import { Button } from "../ds/button";
+import { EmptyState } from "../ds/feedback";
 import s from "./LogView.module.css";
 
 const pageSize: number = 150;
@@ -91,11 +93,11 @@ function Events({ attemptId, running }: { attemptId: string; running: boolean })
   const pages: number = Math.max(0, Math.ceil(events.length / pageSize) - 1);
   const offset: number = Math.min(page, pages);
   const end: number = Math.max(0, events.length - offset * pageSize);
-  if (removed) return <Empty>Log removed</Empty>;
+  if (removed) return <EmptyState title="Log removed" />;
   return (
     <>
       {(!running || events.length === 0) && <ErrorText error={error} />}
-      {!events.length && <Empty>{loading ? "Loading log…" : "No log events."}</Empty>}
+      {!events.length && <EmptyState title={loading ? "Loading log…" : "No log events."} />}
       {!!events.length && (
         <div className={s.log} aria-label="Log events">
           {events.slice(Math.max(0, end - pageSize), end).map((event, index) => <EventLine key={`${end - Math.min(end, pageSize) + index}-${event.at}`} event={event} />)}
@@ -124,11 +126,11 @@ function RawLog({ attemptId, running }: { attemptId: string; running: boolean })
   const pages: number = Math.max(0, Math.ceil(lines.length / pageSize) - 1);
   const offset: number = Math.min(page, pages);
   const end: number = Math.max(0, lines.length - offset * pageSize);
-  if (log.error instanceof ApiError && log.error.status === 410) return <Empty>Log removed</Empty>;
+  if (log.error instanceof ApiError && log.error.status === 410) return <EmptyState title="Log removed" />;
   return (
     <>
       <ErrorText error={log.error} />
-      {lines.length ? <pre className={s.log}>{lines.slice(Math.max(0, end - pageSize), end).map((line) => JSON.stringify(line)).join("\n")}</pre> : <Empty>{log.loading ? "Loading log…" : "No log lines."}</Empty>}
+      {lines.length ? <pre className={s.log}>{lines.slice(Math.max(0, end - pageSize), end).map((line) => JSON.stringify(line)).join("\n")}</pre> : <EmptyState title={log.loading ? "Loading log…" : "No log lines."} />}
       <LogPages page={offset} pages={pages} setPage={setPage} />
     </>
   );

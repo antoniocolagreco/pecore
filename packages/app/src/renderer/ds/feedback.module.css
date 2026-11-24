@@ -208,6 +208,20 @@
   padding: 18px 20px;
 }
 
+:where(.card) h2 {
+  font-size: var(--text-size-md);
+  font-weight: 600;
+}
+
+:where(.card) h3 {
+  font-size: var(--text-size);
+  font-weight: 600;
+}
+
+:where(.cardPadded) > :is(h2, h3):first-child {
+  margin-top: 0;
+}
+
 .cardHeader {
   display: flex;
   align-items: center;

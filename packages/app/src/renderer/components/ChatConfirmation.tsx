@@ -1,6 +1,8 @@
+import { Fragment } from "react";
 import type { ReactNode } from "react";
 import type { ChatConfirmationRow } from "@pecore/schemas";
 import { Button } from "../ds/button";
+import { Details } from "../ds/data";
 import { ErrorText } from "./ui";
 import s from "./ChatConfirmation.module.css";
 
@@ -21,11 +23,9 @@ export function ChatConfirmation({ title, rows, status, pending, disabled, busy,
   return (
     <section className={s.card} aria-label={title}>
       <strong>{title}</strong>
-      <table className={s.table} aria-label={`${title} details`}>
-        <tbody>
-          {rows.map(({ label, value }) => <tr key={label}><th scope="row">{label}</th><td>{value}</td></tr>)}
-        </tbody>
-      </table>
+      <Details label={`${title} details`}>
+        {rows.map(({ label, value }) => <Fragment key={label}><dt>{label}</dt><dd>{value}</dd></Fragment>)}
+      </Details>
       {status && <span className={s.status} role="status">{status}</span>}
       <ErrorText error={error} />
       {children}

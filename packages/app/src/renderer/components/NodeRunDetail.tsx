@@ -4,7 +4,10 @@ import { useConnected } from "../api/live";
 import { ArtifactView } from "./ArtifactView";
 import { DefinitionIcon, useDefinitionIcons } from "./DefinitionIcon";
 import { LogView } from "./LogView";
-import { Button, duration, Empty, Panel, ui } from "./ui";
+import { duration, ui } from "./ui";
+import { Button } from "../ds/button";
+import { Details } from "../ds/data";
+import { Card, EmptyState } from "../ds/feedback";
 import { reasonLabel } from "./states";
 
 const pageSize: number = 25;
@@ -45,16 +48,16 @@ export function NodeRunDetail({ detail, run, nodeName, icon, onSelect }: {
   const artifact: Artifact | undefined = artifacts.find((entry) => entry.path === selected);
   const risk: Artifact | undefined = detail.artifacts.findLast((entry) => entry.type === "risk");
   return (
-    <Panel>
+    <Card padded>
       <section className={ui.stack} aria-label="Node run detail">
         <h2 className={`${ui.title} ${ui.row}`}><DefinitionIcon icons={icons.data} type="node" name={nodeName} selected={icon} /> {run.node} · Round {run.round}</h2>
-        <dl className={ui.kv}>
+        <Details>
           <dt>Duration</dt><dd>{run.startedAt === null ? "—" : duration((run.endedAt ?? now) - run.startedAt)}</dd>
           <dt>State</dt><dd>{run.state}</dd>
           {run.outcome && <><dt>Outcome</dt><dd>{run.outcome}</dd></>}
           {run.failureReason && <><dt>Failure</dt><dd>{run.failureReason}</dd></>}
           {run.waitingReason && <><dt>Waiting</dt><dd>{reasonLabel(run.waitingReason, run.resetAt)}</dd></>}
-        </dl>
+        </Details>
         {!!earlier.length && (
           <section>
             <h3>Earlier runs</h3>
@@ -68,16 +71,16 @@ export function NodeRunDetail({ detail, run, nodeName, icon, onSelect }: {
         )}
         <section>
           <h3>Attempts</h3>
-          {newest.length === 0 ? <Empty>No attempts for this run.</Empty> : newest.slice(attemptPage * pageSize, (attemptPage + 1) * pageSize).map((attempt, index) => (
+          {newest.length === 0 ? <EmptyState title="No attempts for this run." /> : newest.slice(attemptPage * pageSize, (attemptPage + 1) * pageSize).map((attempt, index) => (
             <section key={attempt.id}>
               <strong>Attempt {attempts.length - attemptPage * pageSize - index}</strong>
-              <dl className={ui.kv}>
+              <Details>
                 <dt>Profile</dt><dd>{attempt.profile ?? "—"}</dd>
                 <dt>Model</dt><dd>{attempt.model ?? "—"}</dd>
                 <dt>Tokens</dt><dd>{attempt.tokens.input.toLocaleString()} in · {attempt.tokens.output.toLocaleString()} out · {attempt.tokens.cacheRead.toLocaleString()} cache read · {attempt.tokens.cacheWrite.toLocaleString()} cache write</dd>
                 <dt>Cost</dt><dd>{attempt.cost === null ? "—" : `$${attempt.cost.toLocaleString(undefined, { maximumFractionDigits: 6 })}`}</dd>
                 <dt>End reason</dt><dd>{attempt.endReason ?? "—"}</dd>
-              </dl>
+              </Details>
             </section>
           ))}
           <Pages page={attemptPage} count={attempts.length} onChange={setAttemptPage} />
@@ -94,6 +97,6 @@ export function NodeRunDetail({ detail, run, nodeName, icon, onSelect }: {
         )}
         {latest && <LogView key={latest.id} attemptId={latest.id} running={run.state === "running" && latest.endedAt === null} />}
       </section>
-    </Panel>
+    </Card>
   );
 }

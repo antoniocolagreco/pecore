@@ -10,7 +10,9 @@ import { useConnected } from "../api/live";
 import { TextTable } from "../ds/data";
 import { CodeSnapshot } from "./CodeSnapshot";
 import { DiffView } from "./DiffView";
-import { Button, Empty, ErrorText, ui } from "./ui";
+import { ErrorText, ui } from "./ui";
+import { Button } from "../ds/button";
+import { Alert, EmptyState } from "../ds/feedback";
 import s from "./ArtifactView.module.css";
 
 export { diffFiles } from "./DiffView";
@@ -152,10 +154,10 @@ export function ArtifactView({ artifact, risk, reviewView }: { artifact: Artifac
   return (
     <div className={s.artifact}>
       <ErrorText error={file.error ?? riskFile.error} />
-      {changed ? <div className={ui.banner}>This artifact differs from the version recorded for this item.</div> : null}
+      {changed ? <Alert tone="warning">This artifact differs from the version recorded for this item.</Alert> : null}
       {file.data?.artifact.path === artifact.path
         ? <ArtifactContent key={artifact.sha256} artifact={artifact} content={file.data.content} risk={riskFile.data} reviewView={reviewView} />
-        : file.loading && <Empty>Loading artifact…</Empty>}
+        : file.loading && <EmptyState title="Loading artifact…" />}
     </div>
   );
 }

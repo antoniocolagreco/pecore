@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { RiskArtifact } from "@pecore/schemas";
-import { Button, ui } from "./ui";
+import { ui } from "./ui";
+import { Button } from "../ds/button";
 import s from "./DiffView.module.css";
 
 type Hunk = { header: string; lines: string[]; oldStart: number; newStart: number };

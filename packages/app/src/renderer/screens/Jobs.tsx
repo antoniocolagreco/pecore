@@ -6,8 +6,10 @@ import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { isFinal, JobControls } from "../components/JobControls";
 import { jobState, needsYou, reasonLabel, StateLabel } from "../components/states";
-import { Button, dateTime, duration, Empty, ErrorText, Page, ui } from "../components/ui";
-import { Card } from "../ds/feedback";
+import { dateTime, duration, ErrorText, Page } from "../components/ui";
+import { Button } from "../ds/button";
+import { TextTable } from "../ds/data";
+import { Card, EmptyState } from "../ds/feedback";
 import { SearchField } from "../ds/field";
 import { ChevronDownIcon } from "../ds/icons";
 import { Select } from "../ds/select";
@@ -116,8 +118,7 @@ export function JobTable({ jobs, factory = false, project = true, loading, empty
   const headings: string[] = ["Title", ...(project ? ["Project"] : []), "State", factory ? "Node" : "Node or outcome", "Waiting reason", ...(factory ? [] : ["Duration", "Updated"]), "Actions"];
   return (
     <Card padded={false} className={s.card}>
-      <div className={s.tableWrap}>
-        <table className={ui.table}>
+      <TextTable hover>
           <thead><tr>{headings.map((heading) => <th key={heading} scope="col">{heading}</th>)}</tr></thead>
           <tbody>
             {rows.slice(currentPage * pageSize, (currentPage + 1) * pageSize).map((row) => (
@@ -132,9 +133,8 @@ export function JobTable({ jobs, factory = false, project = true, loading, empty
               <tr key={index} aria-hidden="true">{headings.map((heading) => <td key={heading}><span className={s.placeholder} /></td>)}</tr>
             ))}
           </tbody>
-        </table>
-      </div>
-      {rows.length === 0 && (loading ? <span role="status" className={s.visuallyHidden}>Loading jobs…</span> : <Empty>{empty ?? (factory ? "No active jobs." : "No jobs match these filters.")}</Empty>)}
+      </TextTable>
+      {rows.length === 0 && (loading ? <span role="status" className={s.visuallyHidden}>Loading jobs…</span> : <EmptyState title={empty ?? (factory ? "No active jobs." : "No jobs match these filters.")} />)}
       {rows.length > pageSize && (
         <div className={s.pagination}>
           <Button disabled={!connected || currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</Button>

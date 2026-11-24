@@ -75,12 +75,16 @@ export function Table<T>({ columns, rows, rowKey, onRowClick, empty, label }: {
   );
 }
 
-export function TextTable({ children }: { children?: ReactNode }) {
+export function TextTable({ hover, label, children }: { hover?: boolean; label?: string; children?: ReactNode }) {
   return (
     <div className={s.tableWrap}>
-      <table className={s.table}>{children}</table>
+      <table className={[s.table, hover ? s.hoverRows : ""].join(" ")} aria-label={label}>{children}</table>
     </div>
   );
+}
+
+export function Details({ className, label, children }: { className?: string; label?: string; children: ReactNode }) {
+  return <dl className={[s.details, className ?? ""].join(" ")} aria-label={label}>{children}</dl>;
 }
 
 export function Stats({ children }: { children: ReactNode }) {

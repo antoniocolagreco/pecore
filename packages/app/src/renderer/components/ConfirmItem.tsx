@@ -8,9 +8,10 @@ import { useConnected } from "../api/live";
 import { ArtifactView } from "./ArtifactView";
 import { CodeSnapshot } from "./CodeSnapshot";
 import { Button } from "../ds/button";
-import { Alert } from "../ds/feedback";
+import { Details } from "../ds/data";
+import { Alert, EmptyState } from "../ds/feedback";
 import { TextArea } from "../ds/field";
-import { Empty, ErrorText, ui } from "./ui";
+import { ErrorText, ui } from "./ui";
 import s from "./ConfirmItem.module.css";
 
 const positive: ReadonlySet<string> = new Set(["approve", "confirm", "accept", "yes", "continue", "retry", "allow", "start", "post"]);
@@ -45,7 +46,7 @@ const reviewOrder: Artifact["type"][] = ["diff", "findings", "spec", "check-log"
 function ReviewArtifacts({ artifacts, view }: { artifacts: Artifact[]; view?: ReviewView }) {
   const risk = view !== "report" ? artifacts.find((a) => a.type === "risk") : undefined;
   const shown = artifacts.filter((a) => a !== risk).sort((a, b) => (reviewOrder.indexOf(a.type) + 99) % 99 - (reviewOrder.indexOf(b.type) + 99) % 99);
-  if (view && !shown.length) return <Empty>{view === "code" ? "No code changes to review." : "No report to review."}</Empty>;
+  if (view && !shown.length) return <EmptyState title={view === "code" ? "No code changes to review." : "No report to review."} />;
   return (
     <div className={ui.stack}>
       {shown.map((a) =>
@@ -95,11 +96,11 @@ function Subject({ item, connected }: { item: QueueItemView; connected: boolean 
       </>;
     case "round-limit":
       return (
-        <dl className={ui.kv}>
+        <Details>
           <dt>Edge</dt><dd><Snapshot value={subject.edge ?? "Job node run limit"} /></dd>
           <dt>Cap</dt><dd>{typeof subject.cap === "number" ? subject.cap : "Unknown"}</dd>
           <dt>Job</dt><dd>{connected && item.jobId ? <Link to={`/jobs/${item.jobId}`}>{item.jobId}</Link> : item.jobId}</dd>
-        </dl>
+        </Details>
       );
     default:
       return <Snapshot value={item.subject} />;
@@ -176,7 +177,7 @@ export function ConfirmItem({ itemId, onDone }: { itemId: string; onDone?(): voi
     <>
       <ErrorText error={queue.error} />
       {item ? <ItemDetail key={item.id} item={item} replacement={replacement} reload={queue.reload} onDone={onDone} /> :
-        !queue.error && <Empty>{queue.loading ? "Loading item…" : "Item not found"}</Empty>}
+        !queue.error && <EmptyState title={queue.loading ? "Loading item…" : "Item not found"} />}
     </>
   );
 }

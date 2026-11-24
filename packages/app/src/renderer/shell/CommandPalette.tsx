@@ -6,7 +6,9 @@ import type { JobView } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
-import { Button, ErrorText, Modal, ui } from "../components/ui";
+import { ErrorText, ui } from "../components/ui";
+import { Button } from "../ds/button";
+import { Dialog } from "../ds/overlay";
 import { definitionUrl, object, string } from "../screens/NodeEditor";
 import { Kbd } from "../ds/feedback";
 import { SearchIcon } from "../ds/icons";
@@ -116,8 +118,8 @@ export function CommandPalette() {
       <span className={layout.searchLabel}>Search</span>
       <Kbd>Ctrl K</Kbd>
     </button>
-    <Modal open={open} onClose={() => setOpen(false)} title="Command palette">
+    <Dialog open={open} onOpenChange={setOpen} title="Command palette" width={640}>
       {open && <PaletteContent close={() => setOpen(false)} />}
-    </Modal>
+    </Dialog>
   </>;
 }

@@ -2,10 +2,6 @@
   overflow: hidden;
 }
 
-.tableWrap {
-  overflow-x: auto;
-}
-
 .clickable {
   cursor: default;
 }

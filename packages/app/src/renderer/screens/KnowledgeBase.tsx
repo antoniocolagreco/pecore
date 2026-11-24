@@ -6,7 +6,8 @@ import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { PageActions } from "../components/PageActions";
-import { Button, ErrorText, ui } from "../components/ui";
+import { ErrorText, ui } from "../components/ui";
+import { Button } from "../ds/button";
 import { Card, Spinner } from "../ds/feedback";
 import { TextField } from "../ds/field";
 import { Dialog } from "../ds/overlay";
@@ -176,7 +177,7 @@ export function KnowledgeBase({ id }: { id: string }) {
       description={dialog === "rename" ? "Links to it in the other files are updated." : undefined}
       footer={<>
         <Button onClick={() => setDialog(null)}>Cancel</Button>
-        <Button kind="primary" disabled={!canSubmitName} onClick={submitName}>{dialog === "rename" ? "Rename" : "Create"}</Button>
+        <Button variant="primary" disabled={!canSubmitName} onClick={submitName}>{dialog === "rename" ? "Rename" : "Create"}</Button>
       </>}>
       <form onSubmit={(event) => { event.preventDefault(); if (canSubmitName) submitName(); }}>
         <TextField label="File name" mono autoFocus placeholder="architecture.md" value={draftName} onValueChange={setDraftName} error={nameError} />
@@ -185,7 +186,7 @@ export function KnowledgeBase({ id }: { id: string }) {
     </Dialog>
     <Dialog open={removedLinks.length > 0} onOpenChange={(value) => { if (!value) setRemovedLinks([]); }} title="Links removed"
       description="These files linked to files that are not in this project. The links were removed and their text kept."
-      footer={<Button kind="primary" onClick={() => setRemovedLinks([])}>OK</Button>}>
+      footer={<Button variant="primary" onClick={() => setRemovedLinks([])}>OK</Button>}>
       <ul className={s.removed}>
         {[...new Set(removedLinks.map(({ file }) => file))].map((file) => <li key={file}>
           <strong>{file}</strong>: {removedLinks.filter((link) => link.file === file).map(({ link }) => link).join(", ")}
@@ -195,7 +196,7 @@ export function KnowledgeBase({ id }: { id: string }) {
     <Dialog open={dialog === "delete"} onOpenChange={(value) => { if (!value) setDialog(null); }} title={`Delete ${selected?.name ?? ""}?`}
       footer={<>
         <Button onClick={() => setDialog(null)}>Cancel</Button>
-        <Button kind="danger" disabled={!connected || remove.busy} onClick={() => void remove.run()}>Delete</Button>
+        <Button variant="danger" disabled={!connected || remove.busy} onClick={() => void remove.run()}>Delete</Button>
       </>}>
       {linking.length > 0 && <p>These files link to it, and their links will break: {linking.join(", ")}.</p>}
       <ErrorText error={remove.error} />
