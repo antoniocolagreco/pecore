@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, Ref } from "react";
 import { KnowledgeFileName } from "@pecore/schemas";
 import type { DefinitionEntry } from "@pecore/schemas";
@@ -40,7 +40,7 @@ function KnowledgeFile({ path, name, creating, names, busy, onCreated, onDirty, 
   );
   const file = useDefinitionDraft(path, false, creation, names, false);
   useImperativeHandle(ref, () => ({ save: async () => !file.dirty || (file.canCommit && await file.commit()) }), [file.dirty, file.canCommit, file.commit]);
-  useEffect(() => { onDirty(file.dirty); return () => onDirty(false); }, [file.dirty, onDirty]);
+  useLayoutEffect(() => { onDirty(file.dirty); return () => onDirty(false); }, [file.dirty, onDirty]);
   useEffect(() => { onCanSave(file.canCommit); return () => onCanSave(false); }, [file.canCommit, onCanSave]);
   useEffect(() => { if (file.savedPath) onCreated(); }, [file.savedPath, onCreated]);
   return <div className={s.editor}>
@@ -75,7 +75,7 @@ export function KnowledgeBase({ id }: { id: string }) {
   const [dialog, setDialog] = useState<"new" | "rename" | "delete" | null>(null);
   const [draftName, setDraftName] = useState<string>("");
   const [dropping, setDropping] = useState<boolean>(false);
-  const [pendingDrop, setPendingDrop] = useState<File[]>();
+  const [pendingUpload, setPendingUpload] = useState<File[]>();
   const input = useRef<HTMLInputElement>(null);
   const editor = useRef<KnowledgeEditor>(null);
   const candidate: string = fileName(draftName);
@@ -106,26 +106,34 @@ export function KnowledgeBase({ id }: { id: string }) {
     entries.reload();
   });
   const [removedLinks, setRemovedLinks] = useState<{ file: string; link: string }[]>([]);
-  const upload = useAction(async (chosen: File[], openFirst = false) => {
+  const upload = useAction(async (chosen: File[]) => {
     setRemovedLinks([]);
     const invalid: string[] = chosen.filter(({ name }) => !KnowledgeFileName.safeParse(name).success).map(({ name }) => name);
     if (invalid.length) throw new Error(`Rename before uploading: ${invalid.join(", ")}. Names use letters, digits, dots, hyphens and underscores and end in .md.`);
     const result = await call("uploadKnowledge", { params: { id }, body: { files: await Promise.all(chosen.map(async (file) => ({ name: file.name, content: await file.text() }))) } });
     const first: string | undefined = result.saved[0];
-    if (openFirst && first) {
+    if (first) {
       setDirty(false);
       setSelected({ name: first.slice(dir.length + 1), creating: false });
     }
     setRemovedLinks(result.removedLinks);
     entries.reload();
   });
-  const confirmDrop = useAction(async (save: boolean) => {
-    if (!pendingDrop) return;
+  const confirmUpload = useAction(async (save: boolean) => {
+    if (!pendingUpload) return;
     if (save && !await editor.current?.save()) throw new Error("The current file could not be saved. Cancel to check the editor.");
-    if (await upload.run(pendingDrop, true)) setPendingDrop(undefined);
+    if (await upload.run(pendingUpload)) setPendingUpload(undefined);
   });
-  const busy: boolean = upload.busy || confirmDrop.busy;
-  const canDrop: boolean = connected && !busy && !dialog && !pendingDrop && !removedLinks.length;
+  const busy: boolean = upload.busy || confirmUpload.busy;
+  const canUpload: boolean = connected && !busy && !dialog && !pendingUpload && !removedLinks.length;
+  const receiveFiles = (chosen: File[]): void => {
+    if (!canUpload || !chosen.length) return;
+    if (dirty) {
+      upload.clear();
+      confirmUpload.clear();
+      setPendingUpload(chosen);
+    } else void upload.run(chosen);
+  };
   const open = (kind: "new" | "rename" | "delete"): void => {
     setDraftName(kind === "rename" && selected ? selected.name : "");
     rename.clear();
@@ -146,8 +154,8 @@ export function KnowledgeBase({ id }: { id: string }) {
       if (!carriesFiles(event)) return;
       event.preventDefault();
       event.stopPropagation();
-      event.dataTransfer.dropEffect = canDrop ? "copy" : "none";
-      setDropping(canDrop);
+      event.dataTransfer.dropEffect = canUpload ? "copy" : "none";
+      setDropping(canUpload);
     }}
     onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropping(false); }}
     onDropCapture={(event) => {
@@ -155,19 +163,13 @@ export function KnowledgeBase({ id }: { id: string }) {
       event.preventDefault();
       event.stopPropagation();
       setDropping(false);
-      const chosen: File[] = [...event.dataTransfer.files];
-      if (!canDrop || !chosen.length) return;
-      if (dirty) {
-        upload.clear();
-        confirmDrop.clear();
-        setPendingDrop(chosen);
-      } else void upload.run(chosen, true);
+      receiveFiles([...event.dataTransfer.files]);
     }}>
     {dropping && <div className={s.drop} aria-hidden="true">Drop Markdown files to add them to the knowledge</div>}
     <Card className={s.list} padded={false}>
       <PageActions>
         <Button disabled={!connected || busy} onClick={() => open("new")}>New file</Button>
-        <Button disabled={!connected || busy} onClick={() => input.current?.click()}>{upload.busy ? "Uploading…" : "Upload"}</Button>
+        <Button disabled={!canUpload} onClick={() => input.current?.click()}>{upload.busy ? "Uploading…" : "Upload"}</Button>
         {selected && !selected.creating && <>
           <Button disabled={!connected || busy} onClick={() => open("rename")}>Rename</Button>
           <Button variant="danger" disabled={!connected || busy || remove.busy} onClick={() => open("delete")}>Delete file</Button>
@@ -176,10 +178,10 @@ export function KnowledgeBase({ id }: { id: string }) {
       <input ref={input} type="file" accept=".md,text/markdown" multiple hidden onChange={(event) => {
         const chosen: File[] = [...(event.target.files ?? [])];
         event.target.value = "";
-        if (chosen.length) void upload.run(chosen);
+        receiveFiles(chosen);
       }} />
       <ErrorText error={entries.error} />
-      {!pendingDrop && upload.error && <Alert tone="danger" title="Upload failed" onClose={upload.clear}>{upload.error}</Alert>}
+      {!pendingUpload && upload.error && <Alert tone="danger" title="Upload failed" onClose={upload.clear}>{upload.error}</Alert>}
       {entries.loading && !entries.data && <Spinner />}
       {entries.data && !files.length && !selected?.creating && <p className={ui.muted}>No knowledge files yet.</p>}
       <List label="Knowledge files">
@@ -201,18 +203,18 @@ export function KnowledgeBase({ id }: { id: string }) {
           </div>
         </div>}
     </Card>
-    <Dialog open={!!pendingDrop} onOpenChange={(value) => { if (!value && !busy) setPendingDrop(undefined); }}
+    <Dialog open={!!pendingUpload} onOpenChange={(value) => { if (!value && !busy) setPendingUpload(undefined); }}
       title={`Save changes to ${selected?.name ?? "the current file"}?`}
       footer={<>
-        <Button disabled={busy} onClick={() => setPendingDrop(undefined)}>Cancel</Button>
-        <Button disabled={!connected || busy} onClick={() => void confirmDrop.run(false)}>Discard and open</Button>
-        <Button variant="primary" disabled={!connected || busy || (dirty && !canSave)} onClick={() => void confirmDrop.run(true)}>Save and open</Button>
+        <Button disabled={busy} onClick={() => setPendingUpload(undefined)}>Cancel</Button>
+        <Button disabled={!connected || busy} onClick={() => void confirmUpload.run(false)}>Discard and open</Button>
+        <Button variant="primary" disabled={!connected || busy || (dirty && !canSave)} onClick={() => void confirmUpload.run(true)}>Save and open</Button>
       </>}>
-      {(confirmDrop.error || upload.error) && <Alert tone="danger" title="Could not open dropped files" onClose={() => {
-        confirmDrop.clear();
+      {(confirmUpload.error || upload.error) && <Alert tone="danger" title="Could not open files" onClose={() => {
+        confirmUpload.clear();
         upload.clear();
       }}>
-        {confirmDrop.error ?? upload.error}
+        {confirmUpload.error ?? upload.error}
       </Alert>}
     </Dialog>
     <Dialog open={dialog === "new" || dialog === "rename"} onOpenChange={(value) => { if (!value) setDialog(null); }}
