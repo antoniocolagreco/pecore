@@ -618,6 +618,7 @@ export const routes = {
   listDefinitions: { method: "GET", path: "/definitions", query: z.object({ dir: z.string().min(1) }), response: z.array(DefinitionEntry) },
   getDefinition: { method: "GET", path: "/definitions/*path", params: PathParams, response: DefinitionFile },
   saveDefinition: { method: "PUT", path: "/definitions/*path", params: PathParams, body: SaveDefinitionBody, response: SaveDefinitionResult },
+  getNodeTemplateUsage: { method: "GET", path: "/templates/nodes/:name/usage", params: z.object({ name: Name }), response: z.array(z.string()) },
   deleteTemplate: { method: "DELETE", path: "/definitions/*path", params: PathParams, body: z.strictObject({ baseSha256: Sha }), response: Ok },
   validateDefinition: { method: "POST", path: "/definitions/validate", body: ValidateDefinitionBody, response: z.object({ errors: z.array(DefinitionErrorView), warnings: z.array(DefinitionErrorView) }) },
   uploadKnowledge: { method: "POST", path: "/projects/:id/knowledge", params: IdParams, body: UploadKnowledgeBody, response: z.object({ saved: z.array(z.string()), removedLinks: z.array(z.object({ file: z.string(), link: z.string() })) }) },

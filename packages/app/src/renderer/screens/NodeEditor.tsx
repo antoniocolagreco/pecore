@@ -201,17 +201,32 @@ export function DeleteTemplateButton({ path, sha256, title, disabled }: {
   const [deleting, setDeleting] = useState(false);
   const isRecipe: boolean = path.startsWith("templates/recipes/");
   const label: string = isRecipe ? "Delete recipe" : "Delete node";
+  const name: string = path.slice("templates/nodes/".length, -5);
+  const usage = useData((): Promise<string[]> => isRecipe ? Promise.resolve([]) : call("getNodeTemplateUsage", { params: { name } }),
+    [path], (event) => !isRecipe && (event.type === "project.updated" ||
+      (event.type === "definition.changed" && event.path.includes("/recipes/"))));
+  const reason: string | undefined = isRecipe ? undefined
+    : usage.error ? "Could not check whether this node is in use."
+      : !usage.data ? "Checking whether this node is in use…"
+        : usage.data.length ? `Used by ${usage.data.join(", ")}.` : undefined;
+  const unavailable: boolean = disabled || !sha256 || !!reason;
   const remove = useAction(async () => {
     if (!sha256) return;
-    await call("deleteTemplate", { params: { path }, body: { baseSha256: sha256 } });
+    try {
+      await call("deleteTemplate", { params: { path }, body: { baseSha256: sha256 } });
+    } catch (error) {
+      if (!isRecipe) usage.reload();
+      throw error;
+    }
     await navigate(isRecipe ? "/templates?tab=recipes" : "/templates", { replace: true, state: restorePageScroll });
   });
+  const trigger = <Button variant="danger" disabled={unavailable} onClick={() => { remove.clear(); setDeleting(true); }}>{label}</Button>;
   return <>
-    <Button variant="danger" disabled={disabled || !sha256} onClick={() => { remove.clear(); setDeleting(true); }}>{label}</Button>
+    {reason ? <span title={reason}>{trigger}</span> : trigger}
     <Dialog open={deleting} onOpenChange={(open) => { if (!open && !remove.busy) setDeleting(false); }}
       title={`Delete ${title}?`} footer={<>
         <Button disabled={remove.busy} onClick={() => setDeleting(false)}>Cancel</Button>
-        <Button variant="dangerSolid" loading={remove.busy} disabled={disabled || !sha256} onClick={() => void remove.run()}>{label}</Button>
+        <Button variant="dangerSolid" loading={remove.busy} disabled={unavailable} onClick={() => void remove.run()}>{label}</Button>
       </>}>
       <ErrorText error={remove.error} />
     </Dialog>

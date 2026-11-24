@@ -210,6 +210,40 @@ export function definitionOperations(engine: Engine) {
     return { value: inspected.value, errors: checkRecipe(recipe, nodes, true).map((issue) => ({ file: path, ...issue })) };
   }
 
+  async function nodeTemplateUsers(name: string): Promise<string[]> {
+    const users: string[] = [];
+    const dir: string = join(home.templates, "recipes");
+    await rejectSymlinks(home.home, dir);
+    for (const recipe of (await definitionFiles(dir, "recipes")).sort()) {
+      const { value } = await readJson(join(dir, recipe));
+      if (value && typeof value === "object" && "nodes" in value && value.nodes && typeof value.nodes === "object") {
+        const steps: unknown[] = Object.values(value.nodes);
+        if (steps.some((step) => step && typeof step === "object" && "use" in step && step.use === name)) {
+          users.push(`recipe ${basename(recipe, ".json")}`);
+        }
+      }
+    }
+    for (const { ctx } of engine.projects.values()) {
+      if (ctx.project.recipes !== undefined) {
+        if (ctx.project.source?.node === name || ctx.project.createRepo === name) users.push(`project ${ctx.id}`);
+      } else {
+        for (const recipe of ctx.defs.recipes.values()) {
+          if (Object.values(recipe.nodes).some((step) => step.use === name)) users.push(`recipe ${recipe.name} in project ${ctx.id}`);
+        }
+      }
+    }
+    const forges: string[] = await readdir(join(home.templates, "forges")).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return [];
+      throw error;
+    });
+    for (const file of forges.filter((entry) => entry.endsWith(".json")).sort()) {
+      const forge: string = basename(file, ".json");
+      const { delivery, comment, createRepo, source } = await loadForgeDefaults(home.templates, forge);
+      if ([delivery, comment, createRepo, source].includes(name)) users.push(`forge ${forge}`);
+    }
+    return users;
+  }
+
   const handlers = {
     listDefinitions: async ({ query: { dir } }) => {
       const projectRecipes: RegExpExecArray | null = /^projects\/([^/]+)\/recipes$/.exec(dir);
@@ -302,6 +336,7 @@ export function definitionOperations(engine: Engine) {
     }),
     saveDefinition: ({ params: { path }, body: { content, baseSha256 } }) => mutate(async () =>
       /^projects\/[^/]+\/project\.json$/.test(path) ? engine.withGlobalFiles(() => save(path, content, baseSha256)) : save(path, content, baseSha256)),
+    getNodeTemplateUsage: ({ params: { name } }) => nodeTemplateUsers(name),
     deleteTemplate: ({ params: { path }, body: { baseSha256 } }) => mutate(() => engine.withGlobalFiles(async () => {
       const { root, absPath, kind, file } = location(path, false);
       if (!path.startsWith("templates/") || (kind !== "node" && kind !== "recipe")) {
@@ -314,31 +349,8 @@ export function definitionOperations(engine: Engine) {
 
       const name: string = basename(file, ".json");
       const projects: Project[] = [...engine.projects.values()].map(({ ctx }) => ctx.project).filter(({ recipes }) => recipes !== undefined);
-      const users: string[] = projects.filter((project) => kind === "recipe"
-        ? project.recipes?.includes(name)
-        : project.source?.node === name || project.createRepo === name).map(({ id }) => `project ${id}`);
-      if (kind === "node") {
-        const dir: string = join(home.templates, "recipes");
-        await rejectSymlinks(root, dir);
-        for (const recipe of (await definitionFiles(dir, "recipes")).sort()) {
-          const { value } = await readJson(join(dir, recipe));
-          if (value && typeof value === "object" && "nodes" in value && value.nodes && typeof value.nodes === "object") {
-            const steps: unknown[] = Object.values(value.nodes);
-            if (steps.some((step) => step && typeof step === "object" && "use" in step && step.use === name)) {
-              users.push(`recipe ${basename(recipe, ".json")}`);
-            }
-          }
-        }
-        const forges: string[] = await readdir(join(home.templates, "forges")).catch((error: NodeJS.ErrnoException) => {
-          if (error.code === "ENOENT") return [];
-          throw error;
-        });
-        for (const file of forges.filter((entry) => entry.endsWith(".json")).sort()) {
-          const forge: string = basename(file, ".json");
-          const { delivery, comment, createRepo, source } = await loadForgeDefaults(home.templates, forge);
-          if ([delivery, comment, createRepo, source].includes(name)) users.push(`forge ${forge}`);
-        }
-      }
+      const users: string[] = kind === "node" ? await nodeTemplateUsers(name)
+        : projects.filter((project) => project.recipes?.includes(name)).map(({ id }) => `project ${id}`);
       if (users.length) throw new HttpError("conflict", `This template is used by ${users.join(", ")}.`);
 
       await rm(absPath);

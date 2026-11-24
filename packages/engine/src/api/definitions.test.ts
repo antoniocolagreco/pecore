@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { DefinitionEntry, LiveMessage } from "@pecore/schemas";
@@ -48,6 +48,8 @@ describe("definition routes", () => {
         content: JSON.stringify({ name: "delete-me", description: "Decide", kind: "human", mode: "decision", outcomes: ["yes"] }),
         baseSha256: null,
       } });
+      const usage = () => call("getNodeTemplateUsage", { params: { name: "delete-me" } });
+      expect(await usage()).toEqual([]);
       const { sha256: recipeHash } = await call("saveDefinition", { params: { path: recipe }, body: {
         content: JSON.stringify({
           name: "delete-me", description: "Decide", start: "decision",
@@ -55,13 +57,16 @@ describe("definition routes", () => {
         }),
         baseSha256: null,
       } });
+      expect(await usage()).toEqual(["recipe delete-me"]);
       await expect(call("deleteTemplate", { params: { path: node }, body: { baseSha256: nodeHash } })).rejects.toThrow("recipe delete-me");
       const assigned: string = "templates/recipes/reviewed.json";
+      expect(await call("getNodeTemplateUsage", { params: { name: "write-hello" } })).toEqual(["recipe reviewed"]);
       const { sha256: assignedHash } = await call("getDefinition", { params: { path: assigned } });
       await expect(call("deleteTemplate", { params: { path: assigned }, body: { baseSha256: assignedHash } })).rejects.toThrow("project demo");
       await expect(call("deleteTemplate", { params: { path: recipe }, body: { baseSha256: "0".repeat(64) } })).rejects.toMatchObject({ status: 409 });
 
       await expect(call("deleteTemplate", { params: { path: recipe }, body: { baseSha256: recipeHash } })).resolves.toEqual({ ok: true });
+      expect(await usage()).toEqual([]);
       await expect(call("deleteTemplate", { params: { path: node }, body: { baseSha256: nodeHash } })).resolves.toEqual({ ok: true });
       for (const path of [node, recipe]) {
         await expect(call("getDefinition", { params: { path } })).rejects.toMatchObject({ status: 404 });
@@ -84,6 +89,31 @@ describe("definition routes", () => {
       expect(JSON.parse(await readFile(join(home, path), "utf8"))).toMatchObject({ kind: "human", mode: "decision", tags: ["github", "pull request"] });
       const nodes: DefinitionEntry[] = await call("listDefinitions", { query: { dir: "templates/nodes" } });
       expect(nodes.find((entry) => entry.path === path)).toMatchObject({ value: { tags: ["github", "pull request"] } });
+    } finally {
+      await close();
+    }
+  });
+
+  it("blocks deletion when a project has a local recipe that uses the node", async () => {
+    const { engine, call, close } = await apiProject();
+    try {
+      const path: string = "templates/nodes/write-hello.json";
+      const { sha256, content } = await call("getDefinition", { params: { path } });
+      const projectDir: string = engine.projectDir("demo");
+      const projectPath: string = join(projectDir, "project.json");
+      const project = engine.project("demo").ctx.project;
+      await mkdir(join(projectDir, "nodes"), { recursive: true });
+      await mkdir(join(projectDir, "recipes"), { recursive: true });
+      await writeFile(join(projectDir, "nodes", "write-hello.json"), content);
+      await writeFile(join(projectDir, "recipes", "local.json"), JSON.stringify({
+        name: "local", description: "Write a file", start: "write",
+        nodes: { write: { use: "write-hello" } }, edges: [], ends: [{ from: "write", on: "done", result: "succeeded" }],
+      }));
+      await writeFile(projectPath, JSON.stringify({ ...project, recipes: undefined }));
+      expect(await engine.reloadProject("demo")).toEqual([]);
+
+      expect(await call("getNodeTemplateUsage", { params: { name: "write-hello" } })).toContain("recipe local in project demo");
+      await expect(call("deleteTemplate", { params: { path }, body: { baseSha256: sha256 } })).rejects.toThrow("recipe local in project demo");
     } finally {
       await close();
     }
