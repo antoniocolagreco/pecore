@@ -42,7 +42,7 @@ it("loads a custom theme by record ID and refreshes it after a catalog update", 
 
   theme = { name: "Clear Blue", tokens: { bg: "#fff", accent: "#005599" } };
   act(() => {
-    for (const listener of api.listeners) listener({ type: "definition.changed", path: "themes/blue", sha256: "theme" });
+    for (const listener of api.listeners) listener({ type: "configuration.changed", kind: "themes" });
   });
   await waitFor(() => expect(root.style.getPropertyValue("--accent")).toBe("#005599"), { timeout: 1500 });
   mounted.unmount();

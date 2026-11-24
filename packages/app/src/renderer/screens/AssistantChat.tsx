@@ -678,8 +678,8 @@ function Chat({ project }: { project: string | null }) {
   const api: ChatApi = target.api;
   const connected: boolean = useConnected();
   const settings = useData(() => call("getChatAgentSettings", { query: project === null ? { role: "assistant" } : { role: "pm", project } }), [project],
-    (event) => event.type === "project.updated" || (event.type === "definition.changed" && ["agents.json", "settings.json", "profiles.json"].includes(event.path)));
-  const projectList = useData(() => call("listProjects"), [], (event) => event.type === "project.updated" || (event.type === "definition.changed" && event.path === "agents.json"));
+    (event) => event.type === "project.updated" || (event.type === "configuration.changed" && ["agents", "settings", "profiles"].includes(event.kind)));
+  const projectList = useData(() => call("listProjects"), [], (event) => event.type === "project.updated" || (event.type === "configuration.changed" && event.kind === "agents"));
   const projects: Map<string, ProjectEntry> = new Map((projectList.data ?? []).map(({ id, project: loaded }) => [id, { name: loaded?.name ?? id, pm: loaded?.pm ?? null }]));
   const own: ProjectEntry | undefined = project === null ? undefined : projects.get(project);
   const configured = settings.data?.value;

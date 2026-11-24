@@ -148,6 +148,7 @@ export const LiveMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("queue.updated"), itemId: z.string(), projectId: ProjectId }),
   z.object({ type: z.literal("project.updated"), projectId: ProjectId }),
   z.object({ type: z.literal("definition.changed"), path: z.string(), sha256: z.string().nullable() }),
+  z.object({ type: z.literal("configuration.changed"), kind: z.enum(["settings", "agents", "accounts", "profiles", "tiers", "themes"]) }),
   z.object({ type: z.literal("log.line"), attemptId: z.string(), event: LogEvent }),
   z.object({ type: z.literal("login.progress"), loginId: z.string(), text: z.string(), url: z.string().nullable(), done: z.boolean() }),
   z.object({ type: z.literal("chat.changed"), project: ProjectId.nullable() }),

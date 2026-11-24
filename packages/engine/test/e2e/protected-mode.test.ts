@@ -76,7 +76,6 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
       const appLogin: string = join(p.harness, appUser, "claude");
       await mkdir(appLogin, { recursive: true, mode: 0o700 });
       await writeFile(join(appLogin, ".credentials.json"), "app-secret\n", { mode: 0o600 });
-      await writeFile(join(home, "accounts.json"), JSON.stringify({ accounts: [] }) + "\n", { mode: 0o600 });
       await mkdir(p.templateNodes, { recursive: true, mode: 0o700 });
       await writeFile(join(p.templateNodes, "git-commit.json"), "{}\n", { mode: 0o600 });
       await mkdir(p.adapters, { recursive: true, mode: 0o755 });
@@ -90,7 +89,7 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
       await until(() => project.executor.job(job).state === "succeeded");
       expect((await gitApp(join(project.ctx.dir, "repo.git"), ["show", `factory/${job}:who.txt`])).trim()).toBe(protectedUser);
 
-      for (const secret of [join(home, "settings.json"), join(home, "accounts.json"), join(home, "profiles.json"), join(appLogin, ".credentials.json"), join(project.ctx.dir, "pecore.db"), join(project.ctx.dir, "project.json"), join(p.templateNodes, "git-commit.json"), p.chatsDb]) {
+      for (const secret of [join(appLogin, ".credentials.json"), join(project.ctx.dir, "pecore.db"), join(project.ctx.dir, "project.json"), join(p.templateNodes, "git-commit.json"), p.chatsDb]) {
         expect(await as(protectedUser, 'cat -- "$1"', secret), secret).toEqual({ ok: false, out: "" });
       }
       for (const folder of [home, p.harness, join(p.harness, appUser), appLogin, p.projects, p.templates]) {

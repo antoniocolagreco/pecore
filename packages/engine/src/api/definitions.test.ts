@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Node, Recipe } from "@pecore/schemas";
@@ -171,23 +171,13 @@ describe("definition routes", () => {
 });
 
 describe("global configuration routes", () => {
-  it("ignores the old settings file", async () => {
+  it("returns the default settings", async () => {
     const { home, engine, call, close } = await apiProject();
     try {
-      await writeFile(join(home, "settings.json"), JSON.stringify({
-        limits: { agents: 3, providers: { openai: 1 } },
-        prices: {},
-        projectPaths: { demo: "/old/demo" },
-        programPaths: { codex: "/old/codex" },
-        mergeCheckSec: 45,
-      }));
       expect(await engine.reloadGlobal()).toEqual([]);
       const settings = await call("getSettings");
       expect(settings.value.limits).toEqual({ jobs: null, agents: 4 });
       expect(settings.value.mergeCheckSec).toBe(300);
-      expect(settings.value).not.toHaveProperty("prices");
-      expect(settings.value).not.toHaveProperty("projectPaths");
-      expect(settings.value).not.toHaveProperty("programPaths");
       expect(engine.projectDir("demo")).toBe(join(home, "projects", "demo"));
       await expect(call("listDefinitions", { query: { dir: "connectors" } })).rejects.toMatchObject({ status: 400 });
     } finally {

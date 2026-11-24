@@ -1,5 +1,3 @@
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Node, Recipe } from "@pecore/schemas";
 import { shippedTemplates, tempDir } from "../../test/tmp";
@@ -219,9 +217,8 @@ describe("global configuration", () => {
     expect(validateGlobal(g).map((e) => e.message)).toEqual(["account nobody not found", "profile sonnet not found"]);
   });
 
-  it("loads Project Manager settings without importing a legacy settings file", async () => {
+  it("loads Project Manager settings from the database", async () => {
     const home = await tempDir();
-    await writeFile(join(home, "settings.json"), JSON.stringify({ orchestrator: { profile: "background", compaction: { auto: 65_536, max: 131_072 } } }));
     await setTestConfiguration(home, "settings", { pm: { profile: "manager", compaction: { auto: 131_072, max: 262_144 } } });
     const g = await testConfiguration(home, (config) => config.read());
     expect(validateGlobal(g)).toEqual([]);

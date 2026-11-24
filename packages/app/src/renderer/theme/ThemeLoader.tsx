@@ -16,8 +16,8 @@ function useSystemMode(): Mode {
 }
 
 export function ThemeLoader() {
-  const settings = useData(() => call("getSettings"), [], (m) => m.type === "definition.changed" && (m.path === "settings.json" || m.path.startsWith("themes/")));
-  const themes = useData(() => call("listThemes"), [], (m) => m.type === "definition.changed" && m.path.startsWith("themes/"));
+  const settings = useData(() => call("getSettings"), [], (m) => m.type === "configuration.changed" && (m.kind === "settings" || m.kind === "themes"));
+  const themes = useData(() => call("listThemes"), [], (m) => m.type === "configuration.changed" && m.kind === "themes");
   const system = useSystemMode();
   const prefs: ThemePrefs = themePrefs(settings.data?.value.ui);
   const mode: Mode = prefs.mode === "system" ? system : prefs.mode;

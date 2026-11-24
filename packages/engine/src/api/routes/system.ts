@@ -1,5 +1,4 @@
 import type { PrerequisiteView } from "@pecore/schemas";
-import { definitionHash } from "../../definitions/snapshot";
 import { checkPrerequisites } from "../../home/prerequisites";
 import type { Prerequisite } from "../../home/prerequisites";
 import type { Engine } from "../../main";
@@ -45,9 +44,9 @@ export function systemHandlers(engine: Engine) {
     getSetup: async () => engine.setupView(),
     startSetupLogin: async ({ params }) => ({ loginId: await conflictOn(() => engine.startSetupLogin(params.connector)) }),
     listThemes: async () => engine.configuration.themes(),
-    putTheme: ({ params: { id }, body }) => engine.withGlobalFiles(async () => {
+    putTheme: ({ params: { id }, body }) => engine.withConfiguration(async () => {
       engine.configuration.setTheme(id, body);
-      engine.definitionChanged(`themes/${id}`, definitionHash(body));
+      engine.configurationChanged("themes");
       return { id, theme: body };
     }),
   } satisfies Partial<Handlers>;

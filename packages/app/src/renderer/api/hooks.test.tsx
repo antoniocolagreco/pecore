@@ -33,7 +33,7 @@ it("keeps the current value when refresh fails, and coalesces matching live refr
   expect(hook.result.current.data).toBe("old");
   act(() => {
     for (const listener of live.listeners) {
-      listener({ type: "definition.changed", path: "settings.json", sha256: "rev" });
+      listener({ type: "configuration.changed", kind: "settings" });
       listener({ type: "project.updated", projectId: "demo" });
       listener({ type: "project.updated", projectId: "demo" });
     }

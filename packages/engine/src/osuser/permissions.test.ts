@@ -47,10 +47,6 @@ describe.skipIf(!linux)("PECORE_HOME permissions", () => {
   it("opens to another user only the folder made for it: full access there, pass-through on the folders above, nothing on the rest", async () => {
     const home: string = await newHome();
     const p = homePaths(home);
-    const legacySettings: string = join(home, "settings.json");
-    const legacyAccounts: string = join(home, "accounts.json");
-    await writeFile(legacySettings, "{}\n", { mode: 0o600 });
-    await writeFile(legacyAccounts, "{}\n", { mode: 0o600 });
     await writeFile(p.chatsDb, "", { mode: 0o600 });
     const appLogins: string = join(p.harness, appUser);
     await mkdir(join(appLogins, "claude"), { recursive: true, mode: 0o700 });
@@ -65,7 +61,7 @@ describe.skipIf(!linux)("PECORE_HOME permissions", () => {
     expect(acl(p.harness)).toEqual([`user:${otherUser}:--x`]);
     expect(acl(home)).toEqual([`user:${otherUser}:--x`]);
     expect(acl(dirname(home))).toEqual([`user:${otherUser}:--x`]);
-    for (const secret of [legacySettings, legacyAccounts, p.chatsDb, appLogins, join(appLogins, "claude"), join(appLogins, "claude", ".credentials.json"), p.chats, p.templates, p.projects]) {
+    for (const secret of [p.chatsDb, appLogins, join(appLogins, "claude"), join(appLogins, "claude", ".credentials.json"), p.chats, p.templates, p.projects]) {
       expect(acl(secret), secret).toEqual([]);
     }
     expect(await mode(join(appLogins, "claude", ".credentials.json"))).toBe(0o600);
@@ -98,8 +94,6 @@ describe.skipIf(!linux)("closing PECORE_HOME at start", () => {
   it("makes every file private and stops others listing folders, but leaves adapters, chats, logins, work folders and repositories as they are", async () => {
     const home: string = await newHome();
     const p = homePaths(home);
-    const legacySettings: string = join(home, "settings.json");
-    await writeFile(legacySettings, "{}\n", { mode: 0o644 });
     await writeFile(p.chatsDb, "", { mode: 0o644 });
     await mkdir(join(p.projects, "demo", "work"), { recursive: true, mode: 0o755 });
     await mkdir(join(p.projects, "demo", "repo.git"), { recursive: true, mode: 0o755 });
@@ -118,7 +112,7 @@ describe.skipIf(!linux)("closing PECORE_HOME at start", () => {
 
     await closeHome(home);
 
-    for (const file of [legacySettings, p.chatsDb, templateNode, join(p.projects, "demo", "project.json"), join(p.projects, "demo", "pecore.db")]) expect((await mode(file)) & 0o077, file).toBe(0);
+    for (const file of [p.chatsDb, templateNode, join(p.projects, "demo", "project.json"), join(p.projects, "demo", "pecore.db")]) expect((await mode(file)) & 0o077, file).toBe(0);
     expect((await mode(p.templates)) & 0o007).toBe(0);
     expect((await mode(join(p.projects, "demo"))) & 0o007).toBe(0);
     expect(await mode(join(p.projects, "demo", "work"))).toBe(0o755);

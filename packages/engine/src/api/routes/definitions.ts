@@ -346,9 +346,9 @@ export function definitionOperations(engine: Engine) {
       return { ok: true as const };
     }),
     saveDefinition: ({ params: { path }, body: { content, baseSha256 } }) => mutate(async () =>
-      /^projects\/[^/]+\/project\.json$/.test(path) ? engine.withGlobalFiles(() => save(path, content, baseSha256)) : save(path, content, baseSha256)),
+      /^projects\/[^/]+\/project\.json$/.test(path) ? engine.withConfiguration(() => save(path, content, baseSha256)) : save(path, content, baseSha256)),
     getNodeTemplateUsage: ({ params: { name } }) => nodeTemplateUsers(name),
-    deleteTemplate: ({ params: { path }, body: { baseSha256 } }) => mutate(() => engine.withGlobalFiles(async () => {
+    deleteTemplate: ({ params: { path }, body: { baseSha256 } }) => mutate(() => engine.withConfiguration(async () => {
       const target: ReturnType<typeof location> = location(path, false);
       const { kind, file } = target;
       if (!path.startsWith("templates/") || (kind !== "node" && kind !== "recipe")) {

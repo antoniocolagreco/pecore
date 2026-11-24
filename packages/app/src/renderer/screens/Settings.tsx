@@ -138,7 +138,7 @@ function AccountRow({ name, detail, state, checking, actions, color, muted, chil
 
 function LoginControls({ accounts, protectedOnly = false, kind = "model", harnessColors, hideMissing = false }: { accounts: Account[]; protectedOnly?: boolean; kind?: "model" | "tool"; harnessColors?: HarnessColors; hideMissing?: boolean }) {
   const connected: boolean = useConnected();
-  const logins = useData(() => call("listLogins"), [], (message) => (message.type === "login.progress" && message.done) || (message.type === "definition.changed" && ["settings.json", "accounts.json"].includes(message.path)));
+  const logins = useData(() => call("listLogins"), [], (message) => (message.type === "login.progress" && message.done) || (message.type === "configuration.changed" && ["settings", "accounts"].includes(message.kind)));
   const [progress, setProgress] = useState<Record<string, Progress>>({});
   const [toolRuns, setToolRuns] = useState<Record<string, string>>({});
   const [toolStates, setToolStates] = useState<Record<string, string>>({});
@@ -315,7 +315,7 @@ export function Settings() {
   const settings = useGlobalFile("settings", () => call("getSettings"), (body) => call("putSettings", { body }), (value) => SettingsSchema.safeParse(value).success);
   const accounts = useGlobalFile("accounts", () => call("getAccounts"), (body) => call("putAccounts", { body }));
   const status = useData(() => call("getStatus"), []);
-  const themes = useData(() => call("listThemes"), [], (message) => message.type === "definition.changed" && message.path.startsWith("themes/"));
+  const themes = useData(() => call("listThemes"), [], (message) => message.type === "configuration.changed" && message.kind === "themes");
   const themeInput = useRef<HTMLInputElement>(null);
   const importTheme = useAction(async (file: File) => {
     const id: string = file.name.replace(/\.json$/i, "");

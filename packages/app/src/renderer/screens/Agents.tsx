@@ -25,9 +25,9 @@ function sizeOptions(sizes: readonly number[]): { value: string; label: string }
 }
 
 function useAgentCatalog() {
-  const catalog = useData(() => call("getAgents"), [], (event) => event.type === "definition.changed" && event.path === "agents.json");
-  const accounts = useData(() => call("getAccounts"), [], (event) => event.type === "definition.changed" && event.path === "accounts.json");
-  const settings = useData(() => call("getSettings"), [], (event) => event.type === "definition.changed" && event.path === "settings.json");
+  const catalog = useData(() => call("getAgents"), [], (event) => event.type === "configuration.changed" && event.kind === "agents");
+  const accounts = useData(() => call("getAccounts"), [], (event) => event.type === "configuration.changed" && event.kind === "accounts");
+  const settings = useData(() => call("getSettings"), [], (event) => event.type === "configuration.changed" && event.kind === "settings");
   const modelAccounts: ModelAccount[] = accounts.data?.value.accounts.filter((account) => account.kind === "model") ?? [];
   return { catalog, modelAccounts, harnessColors: settings.data?.value.harnessColors, configurationError: accounts.error ?? settings.error };
 }
@@ -84,8 +84,8 @@ function CatalogNavigation({ dirty, completed }: { dirty: boolean; completed: bo
 
 export function ChatAgentSettings({ role, project }: { role: Role; project?: string }) {
   const query: { role: Role; project?: string } = { role, ...(project ? { project } : {}) };
-  const settings = useData(() => call("getChatAgentSettings", { query }), [role, project], (event) => event.type === "definition.changed" && ["agents.json", "settings.json", "profiles.json"].includes(event.path));
-  const accounts = useData(() => call("getAccounts"), [], (event) => event.type === "definition.changed" && event.path === "accounts.json");
+  const settings = useData(() => call("getChatAgentSettings", { query }), [role, project], (event) => event.type === "configuration.changed" && ["agents", "settings", "profiles"].includes(event.kind));
+  const accounts = useData(() => call("getAccounts"), [], (event) => event.type === "configuration.changed" && event.kind === "accounts");
   const connected: boolean = useConnected();
   const data = settings.data;
   const automatic: boolean = project === undefined;
@@ -140,7 +140,7 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, harnessCol
   const upload = useRef<HTMLInputElement>(null);
   const showContext: boolean = !scope || !!scope.project;
   const context = useData(() => showContext && !creating ? call("getAgentContext", { params: { id: agent.id } }) : Promise.resolve(undefined), [agent.id, creating, showContext],
-    (event) => showContext && event.type === "definition.changed" && event.path === `agents/${agent.id}.md`);
+    (event) => showContext && event.type === "configuration.changed" && event.kind === "agents");
   const content: string = draft?.content ?? context.data?.content ?? "";
   const duplicate: boolean = catalog?.agents.some((entry) => entry.id !== agent.id && entry.name.toLowerCase() === agent.name.trim().toLowerCase()) ?? false;
   const dirty: boolean = JSON.stringify(agent) !== JSON.stringify(saved);

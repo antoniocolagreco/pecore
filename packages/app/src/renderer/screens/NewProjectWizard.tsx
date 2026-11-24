@@ -69,7 +69,7 @@ export function NewProjectWizard() {
   const [creationId, setCreationId] = useState<string | null>(resume);
   const [restoring, setRestoring] = useState<boolean>(resume !== null);
   const accounts = useData(() => call("getAccounts"), [], (m) => m.type === "login.progress" && m.done);
-  const settings = useData(() => call("getSettings"), [], (m) => m.type === "definition.changed" && m.path === "settings.json");
+  const settings = useData(() => call("getSettings"), [], (m) => m.type === "configuration.changed" && m.kind === "settings");
   const projectsFolder: string = settings.data?.value.projectsFolder ?? "";
   const creation = useData(
     () => creationId ? call("getCreation", { params: { id: creationId } }) : Promise.resolve(undefined),

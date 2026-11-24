@@ -201,17 +201,17 @@ export function validateGlobal(g: Global): DefinitionError[] {
   const profileIds = new Set(g.profiles.profiles.map((p) => p.id));
   for (const [i, p] of g.profiles.profiles.entries()) {
     const acc = g.accounts.accounts.find((a) => a.id === p.account);
-    if (!accountIds.has(p.account)) errors.push({ file: "profiles.json", path: `profiles.${i}.account`, message: `account ${p.account} not found` });
-    else if (acc?.kind !== "model") errors.push({ file: "profiles.json", path: `profiles.${i}.account`, message: `account ${p.account} is not a model account` });
+    if (!accountIds.has(p.account)) errors.push({ file: "profiles", path: `profiles.${i}.account`, message: `account ${p.account} not found` });
+    else if (acc?.kind !== "model") errors.push({ file: "profiles", path: `profiles.${i}.account`, message: `account ${p.account} is not a model account` });
   }
   for (const [i, { model }] of g.agents.agents.entries()) {
     if (model && !g.accounts.accounts.some(({ id, kind }) => id === model.account && kind === "model")) {
-      errors.push({ file: "agents.json", path: `agents.${i}.model.account`, message: `model account ${model.account} not found` });
+      errors.push({ file: "agents", path: `agents.${i}.model.account`, message: `model account ${model.account} not found` });
     }
   }
   for (const [tier, list] of Object.entries(g.tiers.tiers)) {
     for (const [i, id] of list.entries()) {
-      if (!profileIds.has(id)) errors.push({ file: "tiers.json", path: `tiers.${tier}.${i}`, message: `profile ${id} not found` });
+      if (!profileIds.has(id)) errors.push({ file: "tiers", path: `tiers.${tier}.${i}`, message: `profile ${id} not found` });
     }
   }
   return errors;

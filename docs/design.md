@@ -532,7 +532,7 @@ The engine adds two outputs by itself: a `diff` after a node that changes files,
 | `recipes` | recipe template names selected by the project |
 | `variables` | project values that steps can reference |
 | `credentials` | account IDs bound to credential names used by templates |
-| `pm` | the Project Manager's `agentId`, `name` and `color` (`#RRGGBB`). AI tools (harnesses) are listed in `harnesses` in `schemas/src/harnesses.ts` with a name, a default colour (from the 24 agent colours, except Claude Code's terracotta `#D97757`) and whether they work yet; `settings.json` `harnessColors` keeps the user's colour per AI tool (`harnessColor()` reads it with the default as fallback). New projects receive the first free entry of the 24 agent colours (`agentColors` in `schemas/src/colors.ts`: colour name, hex and agent name, for example Crimson `#DC2626` Chris) and use Project Manager Default. The Project Manager tab can override its settings |
+| `pm` | the Project Manager's `agentId`, `name` and `color` (`#RRGGBB`). AI tools (harnesses) are listed in `harnesses` in `schemas/src/harnesses.ts` with a name, a default colour (from the 24 agent colours, except Claude Code's terracotta `#D97757`) and whether they work yet; the settings field `harnessColors` keeps the user's colour per AI tool (`harnessColor()` reads it with the default as fallback). New projects receive the first free entry of the 24 agent colours (`agentColors` in `schemas/src/colors.ts`: colour name, hex and agent name, for example Crimson `#DC2626` Chris) and use Project Manager Default. The Project Manager tab can override its settings |
 | `services` | path of a compose file for job services, relative to the repo (4.9); `null` (the default) means automatic: the first of `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml` found at the root of the job's base commit, and none when the services runtime is not set |
 | `source` | ticket source template and its parameters, with an optional separate forge account |
 
@@ -1090,7 +1090,7 @@ Recorded ACP traffic for tests lives in `packages/agents/fixtures/<connector>/<c
 | `GET /artifacts/:job/:run/:name` | artifact metadata and content from the project database |
 | `GET /logs/:attempt?view=events\|raw` | Normalised events or raw JSON lines from `attempt_logs`. Returns 410 when the log is unavailable |
 
-*   WebSocket `/live` sends a union of `job.updated`, `node_run.updated`, `queue.updated`, `project.updated` (a creation step changed), `definition.changed` (path, new hash), `log.line` (one normalised event), `login.progress`, `chat.changed`, `notify`. `log.line` is sent only for attempts the client subscribed to (`{subscribe: attempt id}`, `{unsubscribe: attempt id}`), so the GUI receives the lines of the log it shows and nothing else.
+*   WebSocket `/live` sends a union of `job.updated`, `node_run.updated`, `queue.updated`, `project.updated` (a creation step changed), `definition.changed` (path, new hash), `configuration.changed` (`settings`, `agents`, `accounts`, `profiles`, `tiers` or `themes`), `log.line` (one normalised event), `login.progress`, `chat.changed`, `notify`. `log.line` is sent only for attempts the client subscribed to (`{subscribe: attempt id}`, `{unsubscribe: attempt id}`), so the GUI receives the lines of the log it shows and nothing else.
 *   MCP uses a separate loopback endpoint with a private token. The harness talks to it through the stdio shim (section 6 and Phase 6 decisions).
 
 ### Engine and main process messages

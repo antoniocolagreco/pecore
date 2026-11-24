@@ -23,14 +23,14 @@ export function globalFileHandlers(engine: Engine) {
   }
 
   function get<K extends keyof Global>(kind: K): Promise<{ value: Global[K]; sha256: string }> {
-    return engine.withGlobalFiles(async () => {
+    return engine.withConfiguration(async () => {
       const value: Global[K] = engine.global()[kind];
       return { value, sha256: sha256(JSON.stringify(value)) };
     });
   }
 
   function put<K extends keyof Global>(kind: K, value: Global[K], baseSha256: string, prepare?: () => Global[K], version?: () => string): Promise<{ sha256: string }> {
-    return engine.withGlobalFiles(async () => {
+    return engine.withConfiguration(async () => {
       const current: Global = engine.global();
       if ((version?.() ?? sha256(JSON.stringify(current[kind]))) !== baseSha256) throw new HttpError("conflict", "the configuration changed since it was loaded");
       if (kind === "settings" && "protectedMode" in value && value.protectedMode !== current.settings.protectedMode) {
@@ -42,7 +42,7 @@ export function globalFileHandlers(engine: Engine) {
       engine.configuration.write({ [kind]: next });
       await engine.reloadGlobal();
       const hash: string = sha256(JSON.stringify(engine.global()[kind]));
-      engine.definitionChanged(`${kind}.json`, hash);
+      engine.configurationChanged(kind);
       return { sha256: version?.() ?? hash };
     });
   }
@@ -50,12 +50,12 @@ export function globalFileHandlers(engine: Engine) {
   return {
     getSettings: () => get("settings"),
     putSettings: ({ body }) => put("settings", body.value, body.baseSha256),
-    getAgents: () => engine.withGlobalFiles(async () => ({ value: engine.agentCatalog(), sha256: sha256(JSON.stringify(engine.global().agents)) })),
+    getAgents: () => engine.withConfiguration(async () => ({ value: engine.agentCatalog(), sha256: sha256(JSON.stringify(engine.global().agents)) })),
     putAgents: ({ body }) => put("agents", body.value, body.baseSha256, () => {
       const saved = engine.global().agents;
       return { ...body.value, agents: [...saved.agents.filter(({ kind }) => kind !== "agent"), ...body.value.agents] };
     }),
-    getChatAgentSettings: ({ query }) => engine.withGlobalFiles(async () => {
+    getChatAgentSettings: ({ query }) => engine.withConfiguration(async () => {
       const value: ChatAgent = chatSettings(query);
       return { value, effectiveModel: engine.chatAgent(query.project, query.role)?.model ?? null, sha256: sha256(JSON.stringify(value)) };
     }),
@@ -68,18 +68,18 @@ export function globalFileHandlers(engine: Engine) {
       if (saved.agents.some(({ id, kind }) => id === value.id && kind !== value.kind)) throw new HttpError("conflict", "The agent ID is already in use.");
       return { ...saved, agents: [...saved.agents.filter(({ id }) => id !== value.id), value.id === "pm-default" ? { ...value, traits: [] } : value] };
     }, () => sha256(JSON.stringify(chatSettings(query)))),
-    getAgentContext: ({ params }) => engine.withGlobalFiles(async () => {
+    getAgentContext: ({ params }) => engine.withConfiguration(async () => {
       if (!knownAgent(params.id)) throw new HttpError("not_found", "Agent not found.");
       const content: string = engine.agentContext(params.id);
       return { content, sha256: sha256(content) };
     }),
-    putAgentContext: ({ params, body }) => engine.withGlobalFiles(async () => {
+    putAgentContext: ({ params, body }) => engine.withConfiguration(async () => {
       if (!knownAgent(params.id)) throw new HttpError("not_found", "Agent not found.");
       const before: string = engine.agentContext(params.id);
       if (sha256(before) !== body.baseSha256) throw new HttpError("conflict", "The context changed since it was loaded.");
       if (before !== body.content) engine.setAgentContext(params.id, body.content);
       const hash: string = sha256(body.content);
-      engine.definitionChanged(`agents/${params.id}.md`, hash);
+      engine.configurationChanged("agents");
       return { sha256: hash };
     }),
     getAccounts: () => get("accounts"),

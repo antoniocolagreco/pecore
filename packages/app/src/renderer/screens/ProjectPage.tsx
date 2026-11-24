@@ -109,7 +109,7 @@ function useProjectDefinition(id: string) {
 function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: string; onSaved(): void; projectActions: ReactNode; deleteNotice: ReactNode }) {
   const connected: boolean = useConnected();
   const { path, file, raw } = useProjectDefinition(id);
-  const accounts = useData(() => call("getAccounts"), [], (m) => m.type === "definition.changed" && m.path === "accounts.json");
+  const accounts = useData(() => call("getAccounts"), [], (m) => m.type === "configuration.changed" && m.kind === "accounts");
   const forgeAccounts: ForgeAccount[] = (accounts.data?.value.accounts ?? []).filter((account) => account.kind === "forge");
   const [draft, setDraft] = useState<{ values: SettingsForm; sha256: string } | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -379,7 +379,7 @@ function ProjectDetails({ id }: { id: string }) {
   const [creatingJob, setCreatingJob] = useState<boolean>(false);
   const [actionSlot, setActionSlot] = useState<HTMLSpanElement | null>(null);
   const data = useData(() => call("getProject", { params: { id } }), [id], (m) =>
-    (m.type === "project.updated" && m.projectId === id) || (m.type === "definition.changed" && (m.path.startsWith(`projects/${id}/`) || m.path === "agents.json")),
+    (m.type === "project.updated" && m.projectId === id) || (m.type === "definition.changed" && m.path.startsWith(`projects/${id}/`)) || (m.type === "configuration.changed" && m.kind === "agents"),
   );
   const jobs = useJobs("false", id);
   const running: boolean = jobs.data?.some((job) => job.state === "running") ?? false;

@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { lstat, mkdir, readdir, realpath, rm } from "node:fs/promises";
 import { applyTraverseAcls } from "./osuser/acl";
 import { cpus, homedir } from "node:os";
@@ -249,7 +249,7 @@ export class Engine extends EventEmitter {
     this.chats.setAgentContext(id, markdown);
   }
 
-  withGlobalFiles<T>(work: () => Promise<T>): Promise<T> {
+  withConfiguration<T>(work: () => Promise<T>): Promise<T> {
     const result: Promise<T> = this.globalFilesPending.then(work);
     this.globalFilesPending = result.catch(() => undefined);
     return result;
@@ -258,15 +258,13 @@ export class Engine extends EventEmitter {
   private async runAutoSetup(): Promise<void> {
     const agents: AgentServices | null = this.agents;
     if (!agents || this.shuttingDown) return;
-    await this.withGlobalFiles(async () => {
+    await this.withConfiguration(async () => {
       const { harnesses, changes } = await autoSetup(this.configuration, agents);
       this.setupHarnesses = harnesses;
       if (!changes) return;
       await this.reloadGlobal();
       this.notify({ kind: "auto-setup", title: `${appName} setup`, body: changes.message });
-      for (const kind of changes.changed) {
-        this.definitionChanged(`${kind}.json`, createHash("sha256").update(JSON.stringify(this.global()[kind])).digest("hex"));
-      }
+      for (const kind of changes.changed) this.configurationChanged(kind);
     }).catch((error: unknown) => console.error("auto-setup:", error));
   }
 
@@ -511,6 +509,10 @@ export class Engine extends EventEmitter {
     this.live({ type: "definition.changed", path, sha256 });
   }
 
+  configurationChanged(kind: keyof Global | "themes"): void {
+    this.live({ type: "configuration.changed", kind });
+  }
+
   private async openProject(id: string): Promise<void> {
     const dir = this.projectDir(id);
     const templates: string = this.opts.templates;
@@ -715,7 +717,7 @@ export class Engine extends EventEmitter {
   }
 
   async createProject(input: ProjectInput): Promise<void> {
-    const project = await this.withGlobalFiles(async () => {
+    const project = await this.withConfiguration(async () => {
       const pm: ProjectManagerIdentity = { ...this.projectManagerFor(input.pm), agentId: `pm-${randomUUID()}` };
       const project = await beginProject(this.opts.home, { ...input, pm }, this.createOptions());
       await this.openProject(project.id);
@@ -851,7 +853,7 @@ export class Engine extends EventEmitter {
     const script = protectedModeScript(on, dirs, { createUser: !exists, removeUser });
     if (script !== "") await this.opts.admin(script);
     if (on) await this.protectedTraverse();
-    await this.withGlobalFiles(async () => {
+    await this.withConfiguration(async () => {
       const settings: Settings = { ...this.settings, protectedMode: on };
       this.configuration.write({ settings });
       this.settings = settings;

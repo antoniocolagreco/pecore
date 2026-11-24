@@ -86,7 +86,6 @@ describe("auto-setup", () => {
     await s.harnesses.set("codex", codex);
     await s.harnesses.set("opencode", opencode);
     await mkdir(s.home, { recursive: true });
-    await writeFile(join(s.home, "settings.json"), JSON.stringify({ firstRunDone: true }));
     const app = await s.start();
 
     expect((await s.records()).accounts).toEqual({
