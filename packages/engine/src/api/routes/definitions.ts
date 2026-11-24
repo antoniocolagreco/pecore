@@ -7,7 +7,7 @@ import { validIcon } from "../../definitions/icon";
 import { instantiateNode, instantiateRecipe } from "../../definitions/instantiate";
 import { checkKnowledge, knowledgeLinks, knowledgeNames, removeBrokenKnowledgeLinks, renameKnowledgeLinks } from "../../definitions/knowledge";
 import type { KnowledgeIssue } from "../../definitions/knowledge";
-import { loadTemplates, loadProject, zodErrors } from "../../definitions/load";
+import { loadTemplates, loadProject, readJson, zodErrors } from "../../definitions/load";
 import type { DefinitionError } from "../../definitions/load";
 import { checkRecipe, remoteIssues } from "../../definitions/recipe-check";
 import { isFinal } from "../../graph/job-machine";
@@ -15,7 +15,7 @@ import { homePaths } from "../../home/layout";
 import { NotFoundError } from "../../main";
 import type { Engine } from "../../main";
 import { forgeAccountOf, ProjectCreateError } from "../../projects/create";
-import { projectDefaults } from "../../projects/defaults";
+import { loadForgeDefaults, projectDefaults } from "../../projects/defaults";
 import { absoluteProjectFolder, changeProjectLocation, ProjectLocationConflict, sameRepository } from "../../projects/location";
 import { HttpError } from "../server";
 import type { Handlers } from "../server";
@@ -302,6 +302,50 @@ export function definitionOperations(engine: Engine) {
     }),
     saveDefinition: ({ params: { path }, body: { content, baseSha256 } }) => mutate(async () =>
       /^projects\/[^/]+\/project\.json$/.test(path) ? engine.withGlobalFiles(() => save(path, content, baseSha256)) : save(path, content, baseSha256)),
+    deleteTemplate: ({ params: { path }, body: { baseSha256 } }) => mutate(() => engine.withGlobalFiles(async () => {
+      const { root, absPath, kind, file } = location(path, false);
+      if (!path.startsWith("templates/") || (kind !== "node" && kind !== "recipe")) {
+        throw new HttpError("bad_request", "Only node and recipe templates can be deleted here.");
+      }
+      await rejectSymlinks(root, absPath);
+      const bytes: Buffer | null = await optionalBytes(absPath);
+      if (!bytes) throw new NotFoundError(`definition ${path} not found`);
+      if (sha256(bytes) !== baseSha256) throw new HttpError("conflict", "The template changed since it was loaded. Reopen it before deleting.");
+
+      const name: string = basename(file, ".json");
+      const projects: Project[] = [...engine.projects.values()].map(({ ctx }) => ctx.project).filter(({ recipes }) => recipes !== undefined);
+      const users: string[] = projects.filter((project) => kind === "recipe"
+        ? project.recipes?.includes(name)
+        : project.source?.node === name || project.createRepo === name).map(({ id }) => `project ${id}`);
+      if (kind === "node") {
+        const dir: string = join(home.templates, "recipes");
+        await rejectSymlinks(root, dir);
+        for (const recipe of (await definitionFiles(dir, "recipes")).sort()) {
+          const { value } = await readJson(join(dir, recipe));
+          if (value && typeof value === "object" && "nodes" in value && value.nodes && typeof value.nodes === "object") {
+            const steps: unknown[] = Object.values(value.nodes);
+            if (steps.some((step) => step && typeof step === "object" && "use" in step && step.use === name)) {
+              users.push(`recipe ${basename(recipe, ".json")}`);
+            }
+          }
+        }
+        const forges: string[] = await readdir(join(home.templates, "forges")).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return [];
+          throw error;
+        });
+        for (const file of forges.filter((entry) => entry.endsWith(".json")).sort()) {
+          const forge: string = basename(file, ".json");
+          const { delivery, comment, createRepo, source } = await loadForgeDefaults(home.templates, forge);
+          if ([delivery, comment, createRepo, source].includes(name)) users.push(`forge ${forge}`);
+        }
+      }
+      if (users.length) throw new HttpError("conflict", `This template is used by ${users.join(", ")}.`);
+
+      await rm(absPath);
+      for (const { id } of projects) await engine.reloadProject(id);
+      engine.definitionChanged(path, null);
+      return { ok: true as const };
+    })),
     instantiate: ({ body }) => mutate(async () => {
       const { errors, ...result } = await instantiate(body);
       if (errors.length) throw new HttpError("bad_request", errors.map((error) => error.message).join("\n"));

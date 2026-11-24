@@ -93,6 +93,7 @@ export function KnowledgeBase({ id }: { id: string }) {
   const remove = useAction(async () => {
     if (!selected) return;
     await call("deleteKnowledge", { params: { id, name: selected.name } });
+    setDirty(false);
     setSelected(null);
     setDialog(null);
     entries.reload();
@@ -142,6 +143,7 @@ export function KnowledgeBase({ id }: { id: string }) {
       <PageActions>
         <Button disabled={!connected} onClick={() => open("new")}>New file</Button>
         <Button disabled={!connected || upload.busy} onClick={() => input.current?.click()}>{upload.busy ? "Uploading…" : "Upload"}</Button>
+        {selected && !selected.creating && <Button variant="danger" disabled={!connected || remove.busy} onClick={() => open("delete")}>Delete file</Button>}
       </PageActions>
       <input ref={input} type="file" accept=".md,text/markdown" multiple hidden onChange={(event) => {
         const chosen: File[] = [...(event.target.files ?? [])];
@@ -160,10 +162,7 @@ export function KnowledgeBase({ id }: { id: string }) {
       {selected
         ? <KnowledgeFile key={`${selected.name}:${selected.creating}`} path={`${dir}/${selected.name}`} name={selected.name} creating={selected.creating}
           names={names.join("\n")} onCreated={created} onDirty={setDirty}
-          actions={!selected.creating && <>
-            <Button disabled={!connected} onClick={() => open("rename")}>Rename</Button>
-            <Button disabled={!connected} onClick={() => open("delete")}>Delete</Button>
-          </>} />
+          actions={!selected.creating && <Button disabled={!connected} onClick={() => open("rename")}>Rename</Button>} />
         : <div className={s.desk}>
           <div className={`${s.sheet} ${s.blank}`}>
             <p>Select a file, create one, or upload or drop Markdown files here.</p>
@@ -192,10 +191,11 @@ export function KnowledgeBase({ id }: { id: string }) {
         </li>)}
       </ul>
     </Dialog>
-    <Dialog open={dialog === "delete"} onOpenChange={(value) => { if (!value) setDialog(null); }} title={`Delete ${selected?.name ?? ""}?`}
+    <Dialog open={dialog === "delete"} onOpenChange={(value) => { if (!value && !remove.busy) setDialog(null); }} title={`Delete ${selected?.name ?? ""}?`}
+      description={dirty ? "This also discards your unsaved changes." : undefined}
       footer={<>
-        <Button onClick={() => setDialog(null)}>Cancel</Button>
-        <Button variant="danger" disabled={!connected || remove.busy} onClick={() => void remove.run()}>Delete</Button>
+        <Button disabled={remove.busy} onClick={() => setDialog(null)}>Cancel</Button>
+        <Button variant="dangerSolid" loading={remove.busy} disabled={!connected} onClick={() => void remove.run()}>Delete file</Button>
       </>}>
       {linking.length > 0 && <p>These files link to it, and their links will break: {linking.join(", ")}.</p>}
       <ErrorText error={remove.error} />

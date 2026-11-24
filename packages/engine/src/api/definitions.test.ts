@@ -37,6 +37,41 @@ describe("definition routes", () => {
     await close();
   });
 
+  it("deletes unused templates and protects references and newer revisions", async () => {
+    const { engine, call, close } = await apiProject();
+    try {
+      const live: LiveMessage[] = [];
+      engine.on("live", (message: LiveMessage) => live.push(message));
+      const node: string = "templates/nodes/delete-me.json";
+      const recipe: string = "templates/recipes/delete-me.json";
+      const { sha256: nodeHash } = await call("saveDefinition", { params: { path: node }, body: {
+        content: JSON.stringify({ name: "delete-me", description: "Decide", kind: "human", mode: "decision", outcomes: ["yes"] }),
+        baseSha256: null,
+      } });
+      const { sha256: recipeHash } = await call("saveDefinition", { params: { path: recipe }, body: {
+        content: JSON.stringify({
+          name: "delete-me", description: "Decide", start: "decision",
+          nodes: { decision: { use: "delete-me" } }, edges: [], ends: [{ from: "decision", on: "yes", result: "succeeded" }],
+        }),
+        baseSha256: null,
+      } });
+      await expect(call("deleteTemplate", { params: { path: node }, body: { baseSha256: nodeHash } })).rejects.toThrow("recipe delete-me");
+      const assigned: string = "templates/recipes/reviewed.json";
+      const { sha256: assignedHash } = await call("getDefinition", { params: { path: assigned } });
+      await expect(call("deleteTemplate", { params: { path: assigned }, body: { baseSha256: assignedHash } })).rejects.toThrow("project demo");
+      await expect(call("deleteTemplate", { params: { path: recipe }, body: { baseSha256: "0".repeat(64) } })).rejects.toMatchObject({ status: 409 });
+
+      await expect(call("deleteTemplate", { params: { path: recipe }, body: { baseSha256: recipeHash } })).resolves.toEqual({ ok: true });
+      await expect(call("deleteTemplate", { params: { path: node }, body: { baseSha256: nodeHash } })).resolves.toEqual({ ok: true });
+      for (const path of [node, recipe]) {
+        await expect(call("getDefinition", { params: { path } })).rejects.toMatchObject({ status: 404 });
+        expect(live).toContainEqual({ type: "definition.changed", path, sha256: null });
+      }
+    } finally {
+      await close();
+    }
+  });
+
   it("stores tags on the node template and returns them in the catalogue", async () => {
     const { home, call, close } = await apiProject();
     try {

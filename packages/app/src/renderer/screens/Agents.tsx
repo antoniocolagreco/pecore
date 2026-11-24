@@ -13,7 +13,7 @@ import { AgentCard } from "../components/AgentCard";
 import { Button } from "../ds/button";
 import { Card, EmptyState, Skeleton, Spinner } from "../ds/feedback";
 import { TextArea, TextField } from "../ds/field";
-import { PlusIcon, SparkIcon, TrashIcon } from "../ds/icons";
+import { PlusIcon, SparkIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
 import { ColorPicker } from "../ds/values";
@@ -242,7 +242,7 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, harnessCol
   </form>;
   if (scope) return form;
   return <Page title={title} width={820} actions={<>
-    {!creating && <Button icon={<TrashIcon />} disabled={!editable} onClick={() => { destroy.clear(); setRemoving(true); }}>Delete</Button>}
+    {!creating && <Button variant="danger" disabled={!editable} onClick={() => { destroy.clear(); setRemoving(true); }}>Delete agent</Button>}
     {submit}
   </>}>
     <CatalogNavigation dirty={contextDirty || (dirty && (!creating || edit !== null))} completed={completed} />
@@ -251,7 +251,7 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, harnessCol
     {form}
     {removing && <Dialog open onOpenChange={(open) => { if (!open && !destroy.busy) setRemoving(false); }} title={`Delete ${initial.name}?`} footer={<>
       <Button disabled={destroy.busy} onClick={() => setRemoving(false)}>Cancel</Button>
-      <Button variant="danger" loading={destroy.busy} disabled={disabled} onClick={() => void destroy.run()}>Delete</Button>
+      <Button variant="dangerSolid" loading={destroy.busy} disabled={disabled} onClick={() => void destroy.run()}>Delete agent</Button>
     </>}>
       <ErrorText error={destroy.error} />
     </Dialog>}

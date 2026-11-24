@@ -173,6 +173,7 @@ export function useDefinitionDraft(existingPath: string, sidecar = false, creati
 
   return {
     content, dirty, ready: !!baseline && (!!creation || sidecar || baseline.sha256 !== null || dirty), errors, warnings, savedPath,
+    sha256: baseline?.sha256 ?? null,
     editable: connected && !save.busy && !reload.busy,
     update(value: string): void { if (!base && baseline) setBase(baseline); setDraft(value); },
     feedback: <>
@@ -191,6 +192,30 @@ export function useDefinitionDraft(existingPath: string, sidecar = false, creati
     </>,
     saveButton: (disabled = false): ReactNode => <Button variant="primary" disabled={disabled || !canSave || !dirty || changed} onClick={() => void save.run()}>Save{sidecar ? " file" : ""}</Button>,
   };
+}
+
+export function DeleteTemplateButton({ path, sha256, title, disabled }: {
+  path: string; sha256: string | null; title: string; disabled: boolean;
+}) {
+  const navigate = useNavigate();
+  const [deleting, setDeleting] = useState(false);
+  const isRecipe: boolean = path.startsWith("templates/recipes/");
+  const label: string = isRecipe ? "Delete recipe" : "Delete node";
+  const remove = useAction(async () => {
+    if (!sha256) return;
+    await call("deleteTemplate", { params: { path }, body: { baseSha256: sha256 } });
+    await navigate(isRecipe ? "/templates?tab=recipes" : "/templates", { replace: true, state: restorePageScroll });
+  });
+  return <>
+    <Button variant="danger" disabled={disabled || !sha256} onClick={() => { remove.clear(); setDeleting(true); }}>{label}</Button>
+    <Dialog open={deleting} onOpenChange={(open) => { if (!open && !remove.busy) setDeleting(false); }}
+      title={`Delete ${title}?`} footer={<>
+        <Button disabled={remove.busy} onClick={() => setDeleting(false)}>Cancel</Button>
+        <Button variant="dangerSolid" loading={remove.busy} disabled={disabled || !sha256} onClick={() => void remove.run()}>{label}</Button>
+      </>}>
+      <ErrorText error={remove.error} />
+    </Dialog>
+  </>;
 }
 
 export function useUnsaved(dirty: boolean): ReactNode {
@@ -434,7 +459,12 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
     <CommandInput label={label} labelAction={help(label, "Run an executable directly. Use Script file if the command needs shell features such as pipes or redirection.")}
       value={Array.isArray(value) ? value.map(string) : []} onChange={onChange} />
   );
-  return <Page title={creation ? "New Node" : templateTitle(string(draft?.name)) || "Node editor"} actions={file.saveButton(newTemplate && sidecarDirty)}>
+  const title: string = templateTitle(string(draft?.name) || path.split("/").at(-1)?.replace(/\.json$/, "") || "");
+  return <Page title={creation ? "New Node" : title || "Node editor"} actions={<>
+    {!creation && path.startsWith("templates/nodes/") && <DeleteTemplateButton path={path} sha256={file.sha256} title={title}
+      disabled={!file.editable || file.dirty || sidecarDirty} />}
+    {file.saveButton(newTemplate && sidecarDirty)}
+  </>}>
     {(newTemplate || path.startsWith("templates/")) && <Link to="/templates" state={restorePageScroll}>Back to templates</Link>}
     {file.feedback}
     {file.ready && <Card padded>

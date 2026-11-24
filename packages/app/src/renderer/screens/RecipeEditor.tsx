@@ -17,7 +17,7 @@ import { Dialog, FieldHelp } from "../ds/overlay";
 import { MultiCombobox, Select } from "../ds/select";
 import type { Option } from "../ds/select";
 import { NumberField } from "../ds/values";
-import { DefinitionErrors, definitionUrl, object, parseDraft, string, useDefinitionDraft, useUnsaved } from "./NodeEditor";
+import { DefinitionErrors, DeleteTemplateButton, definitionUrl, object, parseDraft, string, useDefinitionDraft, useUnsaved } from "./NodeEditor";
 import type { NewDefinition } from "./NodeEditor";
 import { RecipeGraph } from "./RecipeGraph";
 import type { RecipeCanvas, RecipeGraphLink, RecipeGraphNode } from "./RecipeGraph";
@@ -273,7 +273,10 @@ function RecipeFile({ path, project, newTemplate }: { path: string; project?: st
 
   const recipeOptions = templateOptions(recipeTemplates.data);
   const nodeOptions = templateOptions(nodeTemplates.data).filter(({ value }) => !palette.some((item) => object(item.value).name === value));
-  return <Page fillHeight title={creation ? "New Recipe" : templateTitle(string(draft?.name)) || "Recipe editor"} actions={<>
+  const title: string = templateTitle(string(draft?.name) || path.split("/").at(-1)?.replace(/\.json$/, "") || "");
+  return <Page fillHeight title={creation ? "New Recipe" : title || "Recipe editor"} actions={<>
+    {!creation && scope === "templates" && <DeleteTemplateButton path={path} sha256={file.sha256} title={title}
+      disabled={!editable || duplicate.busy || file.dirty} />}
     {!creation && scope === "templates" && <Button loading={duplicate.busy} disabled={!editable || !file.ready || !draft || file.dirty}
       onClick={() => void duplicate.run()}>Duplicate</Button>}
     {file.saveButton(importing)}
