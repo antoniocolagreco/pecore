@@ -175,10 +175,10 @@ export async function autoSetup(configuration: Configuration, agents: AgentServi
       }
     }
     if (assistant === null) {
-      const frontier: Profile | undefined = [...newProfiles, ...profiles.profiles].find((profile) => profile.account === id && profile.id === `${name}-frontier`)
-        ?? tiers.tiers.frontier.map((profileId) => profiles.profiles.find((profile) => profile.id === profileId)).find((profile) => profile?.account === id);
-      if (frontier) {
-        assistant = frontier.id;
+      const standard: Profile | undefined = [...newProfiles, ...profiles.profiles].find((profile) => profile.account === id && profile.id === `${name}-standard`)
+        ?? tiers.tiers.standard.map((profileId) => profiles.profiles.find((profile) => profile.id === profileId)).find((profile) => profile?.account === id);
+      if (standard) {
+        assistant = standard.id;
         titles.add(title);
       }
     }

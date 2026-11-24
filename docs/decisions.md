@@ -360,3 +360,10 @@
 - Decision: all app data lives in the database as records with their own fields, not as files and not as file contents stored in the database. This covers settings, accounts, profiles, tiers, agents, node and recipe templates, project definitions, knowledge and agent logs. Data passes to agents and scripts through messages and stdin, never through files: agent result, output format, agent questions, knowledge and ticket comments included. A file is allowed only when no other way exists: the project's code, attachments an agent must open, and the engine's port and token that the CLI and the MCP bridge read.
 - Why: an app keeps its data in a database. Many files written again for every run are waste with no reason.
 - Replaces: the rule "files describe what exists; SQLite records what happened", the definition and settings files in `PECORE_HOME`, `knowledge/*.md`, `logs/*.jsonl.zst`, `.pecore/output.json`, `.pecore/output.schema.json`, `.pecore/question.json`, `.pecore/context/` and `PECORE_COMMENT_PATH`.
+- Correction: knowledge documents stay files in the project, because the user writes or uploads them; only their copy for agents is gone.
+
+## 2026-11-24: The Assistant starts on the standard profile
+
+- Decision: when no profile is set, the Assistant gets the first usable account's `standard` profile: the tool's default model with middle effort.
+- Why: the most expensive model at maximum effort was a costly default for chatting and configuring the app.
+- Replaces: the `frontier` profile as the Assistant's default.

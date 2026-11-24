@@ -119,8 +119,8 @@ describe("auto-setup", () => {
         cheap: ["claude-code-cheap", "codex-cheap", "opencode-cheap"],
       },
     });
-    expect((await s.records()).settings).toMatchObject({ assistant: { profile: "claude-code-frontier" } });
-    expect(app.engine.global().settings.assistant.profile).toBe("claude-code-frontier");
+    expect((await s.records()).settings).toMatchObject({ assistant: { profile: "claude-code-standard" } });
+    expect(app.engine.global().settings.assistant.profile).toBe("claude-code-standard");
     expect(app.engine.global().settings.pm.profile).toBeNull();
     expect(app.engine.global().profiles.profiles).toHaveLength(12);
     expect(s.notices).toEqual([{ kind: "auto-setup", title: "<PE/CORE> setup", body: "Set up Claude Code, Codex, and OpenCode: 12 profiles added" }]);
