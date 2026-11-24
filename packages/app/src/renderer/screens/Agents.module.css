@@ -46,13 +46,7 @@
 }
 
 .markdown {
-  --paper-ink: var(--text);
-
   padding-block: 8px;
-  background: var(--control-bg);
-  border: 1px solid var(--control-border);
-  border-radius: var(--radius);
-  box-shadow: var(--control-shadow);
 }
 
 .markdown :global(.cm-editor .cm-scroller) {
@@ -63,9 +57,4 @@
 
 .markdown :global(.cm-editor .cm-content) {
   padding: 0 12px;
-}
-
-.markdown:focus-within {
-  outline: 2px solid var(--ring);
-  border-color: var(--accent);
 }

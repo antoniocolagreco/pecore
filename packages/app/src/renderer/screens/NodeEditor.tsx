@@ -341,7 +341,7 @@ export function Sidecar({ content, disabled, change, isMarkdown, errors = noIssu
     };
     editor.dispatch(setDiagnostics(editor.state, [...errors.flatMap((issue) => place(issue, "error")), ...warnings.flatMap((issue) => place(issue, "warning"))]));
   }, [content, errors, warnings]);
-  return <div ref={parent} className={className} />;
+  return <div ref={parent} className={[paper && s.paperEditor, className].filter(Boolean).join(" ")} />;
 }
 
 type SidecarStatus = { path: string; ready: boolean; dirty: boolean; missing: boolean; canCommit: boolean };
