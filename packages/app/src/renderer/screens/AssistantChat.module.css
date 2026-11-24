@@ -26,26 +26,13 @@
   padding: 0 12px;
 }
 
-.heading {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
-}
-
 .title {
+  flex: 1;
+  min-width: 0;
   margin: 0;
   font-size: var(--text-size);
   font-weight: 600;
   color: var(--text);
-}
-
-.subtitle {
-  overflow: hidden;
-  font-size: var(--text-size-sm);
-  color: var(--text-3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .history {

@@ -687,7 +687,6 @@ function Chat({ project }: { project: string | null }) {
   const title: string = configured?.name ?? pm?.name ?? agent;
   const ready: boolean | null = settings.data ? !!settings.data.effectiveModel : null;
   const projectName: string | null = project === null ? null : own?.name ?? project;
-  const subtitle: string | null = projectName !== null ? `Project Manager of ${projectName}` : null;
   const people: ChatTarget & ChatPeople = { ...target, title, pm, projects, projectName };
   const detail = useData(() => api.get(), [], (event) => event.type === "chat.changed" && event.project === project);
   const [query, setQuery] = useSearchParams();
@@ -764,10 +763,7 @@ function Chat({ project }: { project: string | null }) {
     <aside className={s.panel} aria-label={agent}><section ref={pane} className={s.pane}>
       <div className={s.toolbar} role="group" aria-label="Conversation controls">
         {pm ? <ProjectManagerAvatar pm={pm} /> : project === null && <span className={s.avatar} aria-hidden><SparkIcon /></span>}
-        <div className={s.heading}>
-          <h2 className={s.title}>{title}</h2>
-          {subtitle && <span className={s.subtitle} title={subtitle}>{subtitle}</span>}
-        </div>
+        <h2 className={s.title}>{title}</h2>
         <IconButton label="Compact conversation" icon={<CompactIcon />} disabled={!canCompact} loading={compact.busy} onClick={() => void compact.run()} />
         <IconButton label="Clear conversation" icon={<TrashIcon />} disabled={!canManage || !chat?.messages.length} loading={clear.busy} onClick={() => {
           if (window.confirm(`Delete this conversation and start a new ${agent} session?`)) void clear.run();
