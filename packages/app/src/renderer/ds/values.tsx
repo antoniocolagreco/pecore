@@ -3,12 +3,14 @@ import { NumberField as BaseNumberField } from "@base-ui/react/number-field";
 import { Slider as BaseSlider } from "@base-ui/react/slider";
 import { Toggle } from "@base-ui/react/toggle";
 import { ToggleGroup } from "@base-ui/react/toggle-group";
+import { agentColors } from "@pecore/schemas";
 import { useLayoutEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { FieldFrame } from "./field";
 import type { FieldProps } from "./field";
 import f from "./field.module.css";
 import { ChevronDownIcon, ChevronUpIcon } from "./icons";
+import { Tooltip } from "./overlay";
 import s from "./values.module.css";
 
 export function NumberField({
@@ -161,5 +163,28 @@ export function Segmented({
         </Toggle>
       ))}
     </ToggleGroup>
+  );
+}
+
+export function ColorPicker({ label, description, error, disabled, className, value, onValueChange }: FieldProps & { value: string; onValueChange(value: string): void }) {
+  const custom: boolean = !agentColors.some(({ hex }) => hex === value);
+  return (
+    <FieldFrame label={label} description={description} error={error} disabled={disabled} className={className}>
+      <div className={s.colors} role="radiogroup" aria-label={typeof label === "string" ? label : "Colour"}>
+        {agentColors.map(({ color, hex }) => (
+          <Tooltip key={hex} content={color} delay={0} side="top">
+            <button type="button" role="radio" aria-checked={hex === value} aria-label={color} disabled={disabled} className={s.swatch}
+              style={{ "--swatch": hex } as CSSProperties} onClick={() => onValueChange(hex)} />
+          </Tooltip>
+        ))}
+      </div>
+      <div className={s.custom}>
+        <label className={[s.swatch, s.customSwatch].join(" ")} data-checked={custom || undefined} data-disabled={disabled || undefined}
+          style={custom ? { "--swatch": value } as CSSProperties : undefined}>
+          <input type="color" aria-label="Custom colour" disabled={disabled} value={value.toLowerCase()} onChange={(event) => onValueChange(event.target.value.toUpperCase())} />
+        </label>
+        {custom ? `Custom · ${value}` : "Custom"}
+      </div>
+    </FieldFrame>
   );
 }

@@ -7,7 +7,7 @@ import { join, relative } from "node:path";
 import { removeAs } from "./workdir/fs-as";
 import { definitionOperations } from "./api/routes/definitions";
 import { globalFileHandlers } from "./api/routes/settings";
-import { appName, BuiltInHarness, defaultJobLimit, freeProjectManager, projectManagerClash, roleProfile, withForgeHosts } from "@pecore/schemas";
+import { appName, BuiltInHarness, defaultJobLimit, freeProjectManager, projectManagerClash, projectManagers, roleProfile, withForgeHosts } from "@pecore/schemas";
 import { listOptions, satisfies } from "@pecore/agents";
 import type { LoginState } from "@pecore/agents";
 import type { Account, AccountOptions, Accounts, AgentDefinition, AgentDefinitions, ChatAgent, ForgeAccount, JobState, LiveMessage, LoginView, NodeAgentCatalog, NotificationTarget, Profiles, ProjectInput, ProjectManagerIdentity, Role, Settings, SetupView, Tiers, WhyView } from "@pecore/schemas";
@@ -681,7 +681,7 @@ export class Engine extends EventEmitter {
     }
     const chosen: ProjectManagerIdentity | null = freeProjectManager(used);
     if (chosen) return chosen;
-    for (let index: number = 21; ; index++) {
+    for (let index: number = projectManagers.length + 1; ; index++) {
       const fallback: ProjectManagerIdentity = { name: `Manager ${index}`, color: `#${((index * 0x9e3779) & 0xffffff).toString(16).padStart(6, "0").toUpperCase()}` };
       if (!projectManagerClash(fallback, used)) return fallback;
     }

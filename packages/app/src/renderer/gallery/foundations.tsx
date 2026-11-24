@@ -52,7 +52,7 @@ const rules: { title: string; items: ReactNode[] }[] = [
     title: "Components",
     items: [
       <>Build screens only from <code>ds/</code> (this page) and the page shell <code>Page</code>, <code>PageActions</code> and <code>ErrorText</code> from <code>components/</code>. One component per kind: a button is <code>Button</code> (<code>variant="link"</code> for a link inside text or a table), a pick list is <code>List</code> with <code>ListItem</code>, an on/off tag is <code>Chip</code>, a frame is <code>Card</code>, a popup is <code>Dialog</code>, an empty list is <code>EmptyState</code>, a notice is <code>Alert</code>, a table is <code>Table</code> or <code>TextTable</code>, a label and value list is <code>Details</code>.</>,
-      <>No native <code>&lt;button&gt;</code>, <code>&lt;input&gt;</code>, <code>&lt;select&gt;</code> or <code>&lt;textarea&gt;</code> in screens. The one exception: a Project Manager's colour uses the system colour picker.</>,
+      <>No native <code>&lt;button&gt;</code>, <code>&lt;input&gt;</code>, <code>&lt;select&gt;</code> or <code>&lt;textarea&gt;</code> in screens. A colour is chosen with <code>ColorPicker</code>: the 24 agent colours, each with its agent name, and a custom colour from the system picker.</>,
       <>Before writing a new component, look here. If one is close, extend it in <code>ds/</code> instead of copying it into a screen.</>,
       <>A new or changed component is added to this page in the same commit.</>,
     ],
@@ -370,7 +370,7 @@ export function Surfaces() {
       </Example>
       <Example caption="Project Managers">
         <div className={g.stack}>
-          {[{ name: "Eva", color: "#FFDE38", project: "shop" }, { name: "Marco", color: "#3B82F6", project: "blog" }, { name: "Lia", color: "#E5484D", project: "space-game" }].map((pm) => (
+          {[{ name: "Aura", color: "#FBBF24", project: "shop" }, { name: "Cole", color: "#1D4ED8", project: "blog" }, { name: "Chris", color: "#DC2626", project: "space-game" }].map((pm) => (
             <div key={pm.name} className={g.row}>
               <ProjectManagerAvatar pm={pm} />
               <span>{pm.name} - Project Manager</span>

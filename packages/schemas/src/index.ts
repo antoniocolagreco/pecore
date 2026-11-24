@@ -4,6 +4,7 @@ export * from "./app";
 export * from "./api";
 export * from "./artifacts";
 export * from "./client";
+export * from "./colors";
 export * from "./common";
 export * from "./connector";
 export * from "./errors";

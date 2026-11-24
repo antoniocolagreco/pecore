@@ -308,3 +308,9 @@
 - Decision: by default the Assistant chat takes 35% of the window, between 340 and 520 px.
 - Why: tables written by agents did not fit in the chat.
 - Replaces: 30% of the window, between 300 and 380 px.
+
+## 2026-11-24: 24 agent colours and the colour picker
+
+- Decision: one internal list of 24 colours, each with a colour name, a hex and an agent name (Crimson Chris, Orange Amber, Gold Aura, Lime Liam, Green Greta, Teal Talia, Azure Azra, Cobalt Cole, Coral Coral, Peach Penny, Lemon Lena, Mint Mina, Aqua Aki, Ice Elsa, Lavender Lavinia, Blush Rosie, Burgundy Bree, Copper Cora, Olive Olive, Forest Forrest, Slate Sloane, Indigo Indra, Purple Violet, Magenta Magda). New Project Managers take the first free name and colour in this order. Colours are chosen with the design system's `ColorPicker`: the 24 colours, named on hover, plus a custom colour from the system picker. Every agent will have a colour; the field for agents other than Project Managers comes with the agent cards.
+- Why: one palette keeps agent colours uniform across cards, avatars and the sidebar.
+- Replaces: the 20 Project Manager names and colours (Eva, Viola, Mara…) and the bare system colour picker for the Project Manager. Existing projects keep their saved name and colour.

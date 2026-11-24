@@ -42,15 +42,15 @@ describe("Project Manager names and colours per project", () => {
       };
       await engine.createProject({ id: "one", name: "One", repo: null });
       await engine.createProject({ id: "two", name: "Two", repo: null });
-      expect(engine.projectManagerIdentity("one")).toMatchObject({ name: "Eva" });
-      expect(engine.projectManagerIdentity("two")).toMatchObject({ name: "Viola" });
+      expect(engine.projectManagerIdentity("one")).toMatchObject({ name: "Chris" });
+      expect(engine.projectManagerIdentity("two")).toMatchObject({ name: "Amber" });
       await save({ role: "pm" }, "Project Manager Default", { auto: 65536, max: 131072 });
       expect(engine.chatAgent("one")?.compaction).toEqual({ auto: 65536, max: 131072 });
       expect(engine.chatAgent("two")?.compaction).toEqual({ auto: 65536, max: 131072 });
       await save({ role: "pm", project: "one" }, "Evelyn", { auto: 262144, max: 524288 });
       expect(engine.chatAgent("one")).toMatchObject({ name: "Evelyn", compaction: { auto: 262144, max: 524288 } });
-      expect(engine.chatAgent("two")).toMatchObject({ name: "Viola", compaction: { auto: 65536, max: 131072 } });
-      await expect(save({ role: "pm", project: "one" }, "Viola", { auto: 65536, max: 131072 })).rejects.toThrow("already uses this name");
+      expect(engine.chatAgent("two")).toMatchObject({ name: "Amber", compaction: { auto: 65536, max: 131072 } });
+      await expect(save({ role: "pm", project: "one" }, "Amber", { auto: 65536, max: 131072 })).rejects.toThrow("already uses this name");
       const catalog = await agents.getAgents();
       expect(catalog.value.agents.map(({ name, kind }) => ({ name, kind }))).toEqual([{ name: "Developer", kind: "agent" }]);
       await agents.putAgents({ params: undefined, query: undefined, body: { value: { agents: [] }, baseSha256: catalog.sha256 } });
@@ -77,10 +77,10 @@ describe("Project Manager names and colours per project", () => {
 
     const engine = await Engine.start({ home, templates });
     try {
-      expect(engine.project("alpha").ctx.project.pm).toMatchObject({ name: "Eva", color: "#FFDE38" });
+      expect(engine.project("alpha").ctx.project.pm).toMatchObject({ name: "Chris", color: "#DC2626" });
       expect(engine.project("beta").ctx.project.pm).toEqual({ name: "Viola", color: "#9D57FF" });
-      expect(engine.project("gamma").ctx.project.pm).toMatchObject({ name: "Mara", color: "#2F8E76" });
-      expect(JSON.parse(await readFile(join(home, "projects", "gamma", "project.json"), "utf8"))).toMatchObject({ pm: { name: "Mara" } });
+      expect(engine.project("gamma").ctx.project.pm).toMatchObject({ name: "Amber", color: "#F97316" });
+      expect(JSON.parse(await readFile(join(home, "projects", "gamma", "project.json"), "utf8"))).toMatchObject({ pm: { name: "Amber" } });
     } finally {
       await engine.shutdown();
     }

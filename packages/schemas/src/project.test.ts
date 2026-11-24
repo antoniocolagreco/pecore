@@ -1,18 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { freeProjectManager, Project, projectManagerClash, projectManagers } from "./project";
+import { freeProjectManager, Project, projectManagerClash, ProjectManagerIdentity, projectManagers } from "./project";
 
 describe("Project Manager names and colours", () => {
-  it("offers twenty distinct names and colours in the table's order", () => {
-    expect(projectManagers.map(({ name }) => name)).toEqual([
-      "Eva", "Viola", "Mara", "Nora", "Cleo", "Rosa", "Luna", "Zoe", "Ada", "Enya",
-      "Ivy", "Olivia", "Jade", "Iris", "Mila", "Ruby", "Lin", "Faye", "Alba", "Mary",
+  it("offers the twenty-four palette colours with their names, in the palette's order", () => {
+    expect(projectManagers).toEqual([
+      { name: "Chris", color: "#DC2626" }, { name: "Amber", color: "#F97316" }, { name: "Aura", color: "#FBBF24" }, { name: "Liam", color: "#84CC16" },
+      { name: "Greta", color: "#16A34A" }, { name: "Talia", color: "#14B8A6" }, { name: "Azra", color: "#0EA5E9" }, { name: "Cole", color: "#1D4ED8" },
+      { name: "Coral", color: "#F87171" }, { name: "Penny", color: "#FDBA74" }, { name: "Lena", color: "#FEF08A" }, { name: "Mina", color: "#6EE7B7" },
+      { name: "Aki", color: "#67E8F9" }, { name: "Elsa", color: "#BAE6FD" }, { name: "Lavinia", color: "#C4B5FD" }, { name: "Rosie", color: "#F9A8D4" },
+      { name: "Bree", color: "#9F1239" }, { name: "Cora", color: "#92400E" }, { name: "Olive", color: "#3F6212" }, { name: "Forrest", color: "#065F46" },
+      { name: "Sloane", color: "#64748B" }, { name: "Indra", color: "#6366F1" }, { name: "Violet", color: "#7E22CE" }, { name: "Magda", color: "#D946EF" },
     ]);
-    expect(new Set(projectManagers.map(({ color }) => color)).size).toBe(20);
+    expect(new Set(projectManagers.map(({ name }) => name.toLowerCase())).size).toBe(24);
+    expect(new Set(projectManagers.map(({ color }) => color)).size).toBe(24);
+    for (const { color } of projectManagers) expect(ProjectManagerIdentity.shape.color.safeParse(color).success).toBe(true);
   });
 
   it("gives the first name and colour not used by another project, and none when all are used", () => {
-    expect(freeProjectManager([])).toEqual({ name: "Eva", color: "#FFDE38" });
-    expect(freeProjectManager([{ name: "eva", color: "#000000" }, { name: "Custom", color: "#9D57FF" }])).toEqual({ name: "Mara", color: "#2F8E76" });
+    expect(freeProjectManager([])).toEqual({ name: "Chris", color: "#DC2626" });
+    expect(freeProjectManager([{ name: "chris", color: "#000000" }, { name: "Custom", color: "#F97316" }])).toEqual({ name: "Aura", color: "#FBBF24" });
     expect(freeProjectManager([...projectManagers])).toBeNull();
   });
 

@@ -673,7 +673,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       };
       const original = await get();
       expect((await m.tool("get_project", { project: "managed" })).result?.content?.[0]?.text).toContain('"name":"Managed"');
-      expect((await m.tool("list_projects", {})).result?.content?.[0]?.text).toContain('"id":"managed","name":"Managed","repo":null,"source":null,"baseBranch":"main","projectManagerName":"Viola"');
+      expect((await m.tool("list_projects", {})).result?.content?.[0]?.text).toContain('"id":"managed","name":"Managed","repo":null,"source":null,"baseBranch":"main","projectManagerName":"Amber"');
       for (const changes of [{}, { name: " " }, { baseBranch: "bad..branch" }, { services: "../compose.yaml" }, { repo: null }]) {
         expect((await propose(changes)).result?.isError).toBe(true);
       }
@@ -1072,7 +1072,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect(intakePrompt).toContain("prompt injection");
       expect(intakePrompt).toContain("You do not write code yourself");
       expect(intakePrompt).toContain("save it in the project's knowledge with write_knowledge");
-      expect(intakePrompt).toContain("Your name is Eva.");
+      expect(intakePrompt).toContain("Your name is Chris.");
       const userPrompt: string = await readFile(join(t.root, "user.json"), "utf8");
       expect(userPrompt).toContain("Write a note and ask on ticket 7 which browser");
       expect(userPrompt).not.toContain("You do not write code yourself");

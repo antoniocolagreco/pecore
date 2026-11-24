@@ -1,0 +1,28 @@
+export type AgentColor = { readonly color: string; readonly hex: string; readonly agent: string };
+
+export const agentColors: readonly AgentColor[] = [
+  { color: "Crimson", hex: "#DC2626", agent: "Chris" },
+  { color: "Orange", hex: "#F97316", agent: "Amber" },
+  { color: "Gold", hex: "#FBBF24", agent: "Aura" },
+  { color: "Lime", hex: "#84CC16", agent: "Liam" },
+  { color: "Green", hex: "#16A34A", agent: "Greta" },
+  { color: "Teal", hex: "#14B8A6", agent: "Talia" },
+  { color: "Azure", hex: "#0EA5E9", agent: "Azra" },
+  { color: "Cobalt", hex: "#1D4ED8", agent: "Cole" },
+  { color: "Coral", hex: "#F87171", agent: "Coral" },
+  { color: "Peach", hex: "#FDBA74", agent: "Penny" },
+  { color: "Lemon", hex: "#FEF08A", agent: "Lena" },
+  { color: "Mint", hex: "#6EE7B7", agent: "Mina" },
+  { color: "Aqua", hex: "#67E8F9", agent: "Aki" },
+  { color: "Ice", hex: "#BAE6FD", agent: "Elsa" },
+  { color: "Lavender", hex: "#C4B5FD", agent: "Lavinia" },
+  { color: "Blush", hex: "#F9A8D4", agent: "Rosie" },
+  { color: "Burgundy", hex: "#9F1239", agent: "Bree" },
+  { color: "Copper", hex: "#92400E", agent: "Cora" },
+  { color: "Olive", hex: "#3F6212", agent: "Olive" },
+  { color: "Forest", hex: "#065F46", agent: "Forrest" },
+  { color: "Slate", hex: "#64748B", agent: "Sloane" },
+  { color: "Indigo", hex: "#6366F1", agent: "Indra" },
+  { color: "Purple", hex: "#7E22CE", agent: "Violet" },
+  { color: "Magenta", hex: "#D946EF", agent: "Magda" },
+];

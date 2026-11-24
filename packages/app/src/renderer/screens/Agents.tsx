@@ -16,6 +16,7 @@ import { TextArea, TextField } from "../ds/field";
 import { PlusIcon, SparkIcon, TrashIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
+import { ColorPicker } from "../ds/values";
 import { Sidecar, useUnsaved } from "./NodeEditor";
 import s from "./Agents.module.css";
 
@@ -189,12 +190,8 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, accountsEr
           <TextField label={agent.kind === "agent" ? "Title" : "Name"} value={agent.name} disabled={!editable}
             error={duplicate ? "This name is already in use." : tooLong ? "This name is too long." : onAutoChange && !agent.name.trim() ? "Enter a name." : undefined}
             onValueChange={(name) => changeAgent((entry) => ({ ...entry, name }))} />
-          {agent.kind === "pm" && scope?.project && <label className={s.color}>Colour
-            <input type="color" value={agent.color.toLowerCase()} disabled={!editable} onChange={(event) => {
-              const color: string = event.target.value.toUpperCase();
-              changeAgent((entry) => entry.kind === "pm" ? { ...entry, color } : entry);
-            }} />
-          </label>}
+          {agent.kind === "pm" && scope?.project && <ColorPicker label="Colour" value={agent.color} disabled={!editable}
+            onValueChange={(color) => changeAgent((entry) => entry.kind === "pm" ? { ...entry, color } : entry)} />}
         </div>}
         <ModelPicker accounts={accounts} choice={agent.model} inherit={inheritance} disabled={!editable} onChoice={(model) => changeAgent((entry) => ({ ...entry, model }))} />
         {scope && !agent.model && effectiveModel && <p className={s.hint}>Current model · {effectiveModel.model}{effectiveModel.effort && ` · ${effectiveModel.effort}`}</p>}

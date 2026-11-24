@@ -11,7 +11,7 @@ import { PasswordField, SearchField, TextArea, TextField } from "../ds/field";
 import { ArrowUpIcon, BellIcon, ChatIcon, FolderIcon, InboxIcon, LinkIcon, MonitorIcon, MoonIcon, MoreIcon, PauseIcon, PlayIcon, PlusIcon, RefreshIcon, StopIcon, SunIcon, TrashIcon } from "../ds/icons";
 import { Dialog, Menu, useToasts } from "../ds/overlay";
 import { Combobox, MultiCombobox, Select } from "../ds/select";
-import { NumberField, Segmented, Slider } from "../ds/values";
+import { ColorPicker, NumberField, Segmented, Slider } from "../ds/values";
 import { Colors, Example, Icons, Rules, Section, Sizes, Surfaces, Typography, slug } from "./foundations";
 import g from "./gallery.module.css";
 
@@ -133,6 +133,7 @@ export function Showcase() {
   const [recipe, setRecipe] = useState<string | null>(null);
   const [effort, setEffort] = useState(2);
   const [freeDisk, setFreeDisk] = useState<number | null>(10);
+  const [color, setColor] = useState("#DC2626");
   const [mode, setMode] = useState("ask");
   const [all, setAll] = useState<boolean[]>([true, false, true]);
   const [traits, setTraits] = useState<string[]>(["Concise"]);
@@ -284,6 +285,9 @@ export function Showcase() {
             <Segmented options={[{ value: "all", label: "All" }, { value: "running", label: "Running" }, { value: "waiting", label: "Waiting" }, { value: "done", label: "Done" }]} />
             <Segmented options={[{ value: "day", label: "Day" }, { value: "week", label: "Week" }, { value: "month", label: "Month" }]} defaultValue="week" />
           </div>
+        </Example>
+        <Example caption="Colour">
+          <ColorPicker label="Colour" description="The 24 agent colours, or a custom one." value={color} onValueChange={setColor} />
         </Example>
       </Section>
 

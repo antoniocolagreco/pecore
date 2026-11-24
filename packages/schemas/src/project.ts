@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { agentColors } from "./colors";
 import { JsonSchemaObject, Name, SchemaRef } from "./common";
 
 export const ProjectId = z.string().regex(/^[a-z][a-z0-9-]{0,23}$/, "lower case letters, digits and dashes, starting with a letter, at most 24");
@@ -16,28 +17,7 @@ export const ProjectManagerIdentity = z.strictObject({
 });
 export type ProjectManagerIdentity = z.infer<typeof ProjectManagerIdentity>;
 
-export const projectManagers: readonly ProjectManagerIdentity[] = [
-  { name: "Eva", color: "#FFDE38" },
-  { name: "Viola", color: "#9D57FF" },
-  { name: "Mara", color: "#2F8E76" },
-  { name: "Nora", color: "#D65C05" },
-  { name: "Cleo", color: "#75C6FF" },
-  { name: "Rosa", color: "#FC9CC4" },
-  { name: "Luna", color: "#919191" },
-  { name: "Zoe", color: "#9C7D21" },
-  { name: "Ada", color: "#9FFF1A" },
-  { name: "Enya", color: "#75FFFF" },
-  { name: "Ivy", color: "#E1EDC9" },
-  { name: "Olivia", color: "#699C21" },
-  { name: "Jade", color: "#05D690" },
-  { name: "Iris", color: "#007DFA" },
-  { name: "Mila", color: "#EDD2C9" },
-  { name: "Ruby", color: "#F91F44" },
-  { name: "Lin", color: "#C3B8FF" },
-  { name: "Faye", color: "#F406A5" },
-  { name: "Alba", color: "#FFAB57" },
-  { name: "Mary", color: "#1391AA" },
-];
+export const projectManagers: readonly ProjectManagerIdentity[] = agentColors.map(({ agent, hex }) => ({ name: agent, color: hex }));
 
 export function projectManagerClash(identity: ProjectManagerIdentity, others: ProjectManagerIdentity[]): "name" | "color" | null {
   if (others.some(({ name }) => name.toLowerCase() === identity.name.toLowerCase())) return "name";
