@@ -336,3 +336,9 @@
 ## Agent card colours
 
 - Agent cards follow the harness colour from Settings. The agent editor uses `ColorPicker` to set an override in `agents.json`. “Use harness colour” clears the override.
+
+## 2026-11-24: Development stage told to agents
+
+- Decision: the app knows whether it is in development (run from source) or production (installed package), with nothing to set by hand. In development every agent (Assistant, Project Managers, job agents) is told that it runs inside an app under active development and that many requests test the app's features. In production nothing is added. The shared-project security review is left out.
+- Why: agents otherwise take odd test requests at face value or refuse them.
+- Replaces: the same instructions in both stages.

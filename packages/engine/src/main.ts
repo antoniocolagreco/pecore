@@ -52,7 +52,7 @@ import { InvalidArchive } from "./share/archive";
 import { beginImport, previewImport } from "./share/import";
 import { reviewProjectContents } from "./share/review";
 
-export type EngineOptions = { home: string; templates: string; downloads?: string; agents?: AgentPaths; checkLogins?: boolean; detectRuntime?: () => Promise<Settings["servicesRuntime"]>; admin?: (script: string) => Promise<void>; orders?: OrderSink; notify?: (notification: Pick<Notification, "kind" | "title" | "body">) => void };
+export type EngineOptions = { home: string; templates: string; downloads?: string; development?: boolean; agents?: AgentPaths; checkLogins?: boolean; detectRuntime?: () => Promise<Settings["servicesRuntime"]>; admin?: (script: string) => Promise<void>; orders?: OrderSink; notify?: (notification: Pick<Notification, "kind" | "title" | "body">) => void };
 
 export class EngineStartError extends Error {
   constructor(readonly errors: DefinitionError[]) {
@@ -524,6 +524,7 @@ export class Engine extends EventEmitter {
       project: loaded.project!,
       defs: loaded,
       user: this.settings.protectedMode ? protectedUser : appUser,
+      development: this.opts.development ?? false,
       settings: this.settings,
       pools: this.pools,
       notify: (n) => this.notify({ kind: n.kind, title: n.title, body: n.body, target: { project: id, job: n.jobId, item: null } }),

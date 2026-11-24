@@ -254,6 +254,7 @@ async function main(): Promise<void> {
 				version: app.getVersion(),
 				devOrigin: devUrl ? new URL(devUrl).origin : null,
 				downloads: app.getPath("downloads"),
+				development: !app.isPackaged,
 			},
 			{
 				notify: (n) => {

@@ -15,6 +15,7 @@ import { HttpError } from "../api/server";
 import type { JobAttachment } from "../jobs/create";
 import { NotFoundError } from "../main";
 import type { Engine } from "../main";
+import { developmentNote } from "../runners/agent";
 import { appUser } from "../runners/process";
 import type { OrderSink } from "../sources/poll";
 import { assistantChat } from "../store/chats-db";
@@ -167,6 +168,7 @@ export class AgentChats {
   private async instructions(role: Role, agent: NonNullable<ReturnType<Engine["chatAgent"]>>): Promise<string> {
     const { user } = this.engine.global().settings;
     const lines: string[] = [preambles[role], "The user does not see tool calls that fail. If you cannot recover from a failed tool call, say in your reply what failed and what the user can do.", "When you talk with the user and offer options to choose from, or need a short value such as a URL or a name, ask with ask_user instead of writing the options in your reply."];
+    if (this.engine.opts.development) lines.push(developmentNote);
     lines.push(`Your name is ${agent.name}.`);
     if (user.name) lines.push(`The user's name is ${user.name}.`);
     else if (role === "assistant") lines.push("You do not know the user's name yet. Ask for it once, briefly, and save it with set_user_name.");

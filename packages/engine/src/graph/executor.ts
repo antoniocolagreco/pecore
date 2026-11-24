@@ -85,6 +85,7 @@ export type ProjectContext = {
   project: Project;
   defs: Definitions;
   user: string;
+  development?: boolean;
   settings: Settings;
   pools: Pools;
   notify(n: { kind: string; title: string; body: string; jobId: string }): void;
@@ -1090,6 +1091,7 @@ export class JobExecutor {
       inputs: x.inputs,
       attachments,
       knowledge: await this.knowledgeFiles(node.knowledge),
+      development: this.ctx.development ?? false,
       connector,
       login,
       spawn,

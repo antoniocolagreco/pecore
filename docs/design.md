@@ -13,7 +13,9 @@ Naming rule: "<PE/CORE>" in prose. Use `pecore` for the command, packages and fi
 
 The name the user reads lives in one place: `appName` in `packages/schemas/src/app.ts`, used by the app, the engine, the Assistant's instructions and the CLI. Packaging repeats it in `packages/app/package.json` (`productName`) and `packages/app/electron-builder.yml`. Renaming the app changes those three files and the prose in `docs/`. `pecore` in commands, packages, folders, OS users and `PECORE_*` variables is an internal name the user does not read, and stays.
 
-The name stands for Product Engineering Core. The core is designed to support plugins. The mascot is a sheep. The Apache License 2.0 grants patent rights and covers contributions. The distribution includes `NOTICE`. The licence does not grant rights to the product name or logo.
+The name stands for Product Engineering Core. The core is designed to support plugins. The mascot is a sheep. The Assistant's and Project Managers' instructions say so.
+
+The app is in development when it runs from source (Electron `app.isPackaged` false) and in production when installed from a package. The main process passes `PECORE_STAGE=dev` or `prod` to the engine (`EngineOptions.development`). In development every agent is told, in its instructions (Assistant, Project Managers) or in its node prompt (a "Development" section after the template), that the app is under active development and that many requests test its features. The model-based review of shared projects does not get it. The Apache License 2.0 grants patent rights and covers contributions. The distribution includes `NOTICE`. The licence does not grant rights to the product name or logo.
 
 Terms used throughout:
 

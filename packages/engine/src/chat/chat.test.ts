@@ -88,7 +88,7 @@ async function until<T>(fn: () => T | undefined | false | Promise<T | undefined 
   }
 }
 
-async function setup(build: (root: string) => object[][], extra: { source?: boolean; pm?: (root: string) => object[][]; compaction?: { auto: number; max: number }; forge?: boolean } = {}) {
+async function setup(build: (root: string) => object[][], extra: { source?: boolean; pm?: (root: string) => object[][]; compaction?: { auto: number; max: number }; forge?: boolean; development?: boolean } = {}) {
   const root = await tempDir();
   const scripts: object[][] = build(root);
   const pmScripts: object[][] = extra.pm?.(root) ?? [];
@@ -136,7 +136,7 @@ async function setup(build: (root: string) => object[][], extra: { source?: bool
   await writeFile(join(home, "tiers.json"), JSON.stringify({ tiers: { strong: ["p1"] } }));
   const agents = { connectorsDir: connectors, adaptersDir: join(root, "adapters"), adapters: {} };
   const open = async () => {
-    const engine = await Engine.start({ home, templates, agents, checkLogins: false });
+    const engine = await Engine.start({ home, templates, agents, checkLogins: false, development: extra.development ?? false });
     const api = await startApi(engine, { handlers: handlers("0.0.0-test"), validateResponses: true });
     return { engine, api, call: apiClient({ port: api.port, token: api.token }), close: async () => { await api.close(); await engine.shutdown(); } };
   };
@@ -1078,6 +1078,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect(intakePrompt).toContain("save it in the project's knowledge with write_knowledge");
       expect(intakePrompt).toContain("Your name is Chris.");
       expect(intakePrompt).toContain("<PE/CORE> stands for Product Engineering Core");
+      expect(intakePrompt).not.toContain("still under active development");
       const userPrompt: string = await readFile(join(t.root, "user.json"), "utf8");
       expect(userPrompt).toContain("Write a note and ask on ticket 7 which browser");
       expect(userPrompt).not.toContain("You do not write code yourself");
@@ -1150,6 +1151,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       [...init(true), ...newSession, { expect: "session/prompt" }, { dump: join(root, "assistant.json") }, { waitFile: join(root, "assistant-done") }, ...replyWith("Sent to Demo's Project Manager.")],
       [...init(true), ...resumed, { expect: "session/prompt" }, { dump: join(root, "assistant-2.json") }, ...replyWith("Demo has the API job.")],
     ], {
+      development: true,
       pm: (root) => [
         init(true),
         [...init(true), ...newSession, { expect: "session/prompt" }, { dump: join(root, "pm.json") }, { waitFile: join(root, "pm-done") }, ...replyWith("Created the API job.")],
@@ -1164,6 +1166,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect(assistantPrompt).toContain("call delegate_to_pm");
       expect(assistantPrompt).toContain("Never say the work is done");
       expect(assistantPrompt).toContain("<PE/CORE> stands for Product Engineering Core");
+      expect(assistantPrompt).toContain("still under active development");
       const m = mcp(tokenFileOf("assistant"));
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       expect((await m.tool("delegate_to_pm", { project: "nope", order: "Create a job." })).result!.isError).toBe(true);
@@ -1176,6 +1179,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       const pmPrompt = (JSON.parse(await readFile(join(t.root, "pm.json"), "utf8")) as { params: { prompt: { type: string; text?: string; data?: string }[] } }).params.prompt;
       expect(pmPrompt[0]!.text).toContain("Current order, passed on by the Assistant:\n\nCreate an API job like in the screenshot.");
       expect(pmPrompt[0]!.text).not.toContain("Ask Demo for an API job");
+      expect(pmPrompt[0]!.text).toContain("still under active development");
       expect(pmPrompt).toContainEqual(expect.objectContaining({ type: "image", mimeType: "image/png", data: png }));
       const pmChat: ChatDetail = await t.call("getProjectChat", { params: { id: "demo" } });
       expect(pmChat.messages).toMatchObject([{ role: "user", sender: "assistant", text: "Create an API job like in the screenshot.", context: [{ project: "demo" }] }]);
