@@ -434,7 +434,7 @@ function ProjectDetails({ id }: { id: string }) {
               { value: "variables", label: "Variables", content: <Card padded className={s.narrow}><ProjectVariables id={id} onSaved={data.reload} /></Card> },
               { value: "recipes", label: "Recipes", content: <Card padded className={s.narrow}><Recipes id={id} /></Card> },
               { value: "knowledge", label: "Knowledge", content: <KnowledgeBase id={id} /> },
-              { value: "project-manager", label: "Project Manager", content: <div className={s.narrow}><ChatAgentSettings role="pm" project={id} /></div> },
+              { value: "project-manager", label: "PM", content: <div className={s.narrow}><ChatAgentSettings role="pm" project={id} /></div> },
             ]}
           />
           <Dialog
