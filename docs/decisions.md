@@ -270,7 +270,7 @@
 
 ## Agents list
 
-- Agents uses the cards, grid and hover style from node templates. A coloured badge inside each card names the harness. Provider, harness, model and effort appear beside it. Clicking the entry opens the editor, where the agent can be edited or deleted. Delete asks for confirmation.
+- Agents uses vertical cards inspired by trading cards. Each card shows the name, harness badge, provider, model, effort and both context thresholds. The grid adds columns as space allows. Clicking a card opens the editor. Delete asks for confirmation.
 - The Assistant can list, create and edit agents, read model and effort options, and edit initial Markdown context. Deleting through the Assistant requires confirmation in chat.
 
 ## 2026-11-24: Tables in chat

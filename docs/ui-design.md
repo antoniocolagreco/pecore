@@ -340,6 +340,10 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   Select tags from the node templates. Each selected tag appears in the filter and can be removed. Selecting `github` and `source control` shows templates with both tags.
 *   The automatic icon uses `node-<name>.svg` or `recipe-<name>.svg` from the shared library, with a built-in default. The editor can select another icon from a grid that shows the icons themselves, with the name as a tooltip. The Assistant saves new SVGs under `templates/icons/`. It mentions icons only while creating or editing a node or recipe template, or when the user asks for one.
 
+### Agents
+
+*   Vertical cards in a responsive grid. Each card contains the agent name, a harness-coloured emblem and badge, the provider, model, effort and both context thresholds. Click anywhere on the card to open the editor.
+
 ### Settings
 
 *   Sections: You, Accounts (IG1), Assistant, Project Manager Default (IG6), Protected mode (IF6), Projects, Limits and disk threshold, Services runtime, Merge check interval (IG3), Updates (IG7), Appearance (IG9).

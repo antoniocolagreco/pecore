@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import type { ModelAccount, NodeAgent } from "@pecore/schemas";
+import { AgentCard } from "../components/AgentCard";
 import { BoundaryCard, NodeCard } from "../components/NodeCard";
 import { ProjectManagerAvatar } from "../components/ProjectManager";
 import { Button } from "../ds/button";
@@ -313,6 +315,15 @@ export function Icons() {
   );
 }
 
+const sampleAgent: NodeAgent = {
+  id: "developer", name: "Developer", kind: "agent",
+  model: { account: "claude", model: "opus", effort: "high" }, compaction: { auto: 262144, max: 524288 },
+};
+
+const sampleAccount: ModelAccount = {
+  id: "claude", kind: "model", connector: "claude-code", provider: "Anthropic", login: "subscription", email: null, maxParallel: 2,
+};
+
 export function Surfaces() {
   return (
     <Section title="Cards and panels" note="Surfaces are --surface with a --separator outline; never draw a new frame with its own border and shadow.">
@@ -354,6 +365,9 @@ export function Surfaces() {
           </div>
         </Example>
       </div>
+      <Example caption="Agent card">
+        <div className={g.agentPreview}><AgentCard agent={sampleAgent} account={sampleAccount} /></div>
+      </Example>
       <Example caption="Project Managers">
         <div className={g.stack}>
           {[{ name: "Eva", color: "#FFDE38", project: "shop" }, { name: "Marco", color: "#3B82F6", project: "blog" }, { name: "Lia", color: "#E5484D", project: "space-game" }].map((pm) => (

@@ -4,41 +4,12 @@
 }
 
 .list {
-  --entry-width: 320px;
-}
-
-.harnessBadge,
-.harnessBadge > span {
-  min-width: 0;
-  max-width: 100%;
-}
-
-.harnessBadge > span {
-  --tone: var(--harness-color, var(--text-2));
-  --tag-h: 20px;
-  padding: 0 6px;
-}
-
-.harnessName {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.details {
   display: grid;
-  gap: 8px;
-}
-
-.agentSettings {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 4px 8px;
+  grid-template-columns: repeat(auto-fill, min(280px, 100%));
+  gap: var(--gap);
   margin: 0;
-}
-
-.agentSettings dd {
-  margin: 0;
-  color: var(--text);
+  padding: 0;
+  list-style: none;
 }
 
 .pair {

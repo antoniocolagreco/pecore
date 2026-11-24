@@ -1,7 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
-import type { CSSProperties } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { BuiltInHarness, ChatAgent, NodeAgentCatalog, Compaction, compactionSizes } from "@pecore/schemas";
+import { ChatAgent, NodeAgentCatalog, Compaction, compactionSizes } from "@pecore/schemas";
 import type { Account, AgentDefinition, AssistantTraitId, ModelAccount, NodeAgent, Role } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useAutoSave, useData } from "../api/hooks";
@@ -10,24 +9,15 @@ import { PageActions } from "../components/PageActions";
 import { ErrorText, Page } from "../components/ui";
 import { restorePageScroll } from "../components/usePageScroll";
 import { ModelPicker, Traits } from "../components/AgentFields";
-import { NodeIconTile } from "../components/DefinitionIcon";
-import { NodeCard } from "../components/NodeCard";
+import { AgentCard } from "../components/AgentCard";
 import { Button } from "../ds/button";
-import { Badge, Card, EmptyState, Skeleton, Spinner } from "../ds/feedback";
+import { Card, EmptyState, Skeleton, Spinner } from "../ds/feedback";
 import { TextArea, TextField } from "../ds/field";
 import { PlusIcon, SparkIcon, TrashIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
-import { install } from "../shell/SetupBanner";
 import { Sidecar, useUnsaved } from "./NodeEditor";
 import s from "./Agents.module.css";
-import templates from "./Templates.module.css";
-
-const harnessColors: Readonly<Record<BuiltInHarness, string>> = {
-  "claude-code": "light-dark(#9b492f, #d97757)",
-  codex: "light-dark(#5143b9, #a89aff)",
-  opencode: "light-dark(#626262, #aeaeae)",
-};
 
 function sizeOptions(sizes: readonly number[]): { value: string; label: string }[] {
   return sizes.map((size) => ({ value: String(size), label: `${size / 1024}K tokens` }));
@@ -50,38 +40,17 @@ export function Agents() {
 
   return <Page title="Agents" actions={catalog.data && agents.length === 0 ? undefined : newAgent}>
     <ErrorText error={catalog.error ?? accountsError} />
-    {catalog.loading && !catalog.data && <ul className={`${templates.list} ${s.list}`} aria-hidden="true">
-      {[0, 1, 2].map((index) => <li key={index} className={templates.entry}>
-        <Skeleton height={120} />
-        <div className={s.details}><Skeleton width="65%" /><Skeleton width="90%" /></div>
-      </li>)}
+    {catalog.loading && !catalog.data && <ul className={s.list} aria-hidden="true">
+      {[0, 1, 2].map((index) => <li key={index}><Skeleton height={338} /></li>)}
     </ul>}
     {catalog.data && (
       agents.length === 0
         ? <Card padded><EmptyState icon={<SparkIcon size="md" />} title="No agents yet" action={newAgent} /></Card>
-        : <ul className={`${templates.list} ${s.list}`} aria-label="Agents">
-          {agents.map((agent) => {
-            const to: string = `/agents/edit/${encodeURIComponent(agent.id)}`;
-            const modelAccount: ModelAccount | undefined = modelAccounts.find(({ id }) => id === agent.model?.account);
-            const builtIn: BuiltInHarness | undefined = BuiltInHarness.safeParse(modelAccount?.connector).data;
-            const harness: string = builtIn ? install[builtIn].name : modelAccount?.connector ?? "Not set";
-            const contents = <>
-              <NodeCard icon={<NodeIconTile size="lg"><SparkIcon size="md" /></NodeIconTile>} title={agent.name} badge={
-                <span className={s.harnessBadge} style={builtIn ? { "--harness-color": harnessColors[builtIn] } as CSSProperties : undefined}>
-                  <Badge dot><span className={s.harnessName} title={modelAccount ? harness : undefined}>{modelAccount ? harness : "No harness"}</span></Badge>
-                </span>
-              } />
-              <dl className={`${templates.description} ${s.agentSettings}`}>
-                <dt>Provider</dt><dd>{modelAccount?.provider ?? "Not set"}</dd>
-                <dt>Harness</dt><dd>{harness}</dd>
-                <dt>Model</dt><dd>{agent.model?.model ?? "Not set"}</dd>
-                <dt>Effort</dt><dd>{agent.model ? agent.model.effort ?? "Default" : "Not set"}</dd>
-              </dl>
-            </>;
-            return <li key={agent.id}>
-              {connected ? <Link to={to} className={templates.entry} aria-label={agent.name}>{contents}</Link> : <div className={templates.entry}>{contents}</div>}
-            </li>;
-          })}
+        : <ul className={s.list} aria-label="Agents">
+          {agents.map((agent) => <li key={agent.id}>
+            <AgentCard agent={agent} account={modelAccounts.find(({ id }) => id === agent.model?.account)}
+              to={connected ? `/agents/edit/${encodeURIComponent(agent.id)}` : undefined} />
+          </li>)}
         </ul>
     )}
   </Page>;
