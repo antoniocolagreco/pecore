@@ -320,3 +320,9 @@
 - Decision: each AI tool has a colour from the 24 agent colours (Claude Code orange, Codex indigo, OpenCode slate, Antigravity CLI azure, GitHub Copilot CLI purple, Cursor CLI teal, DeepSeek cobalt, Qwen lavender, Kimi aqua, Grok crimson, Muse magenta). In Settings, Accounts, AI tools, each row shows it on its initials and a Colour button changes it with the colour picker; the choice is saved in `settings.json`. The eight tools not supported yet appear as greyed "Coming soon" rows with only the Colour button. Agent cards will use these colours.
 - Why: one colour per AI tool, chosen by the user, keeps cards and lists consistent; the coming soon rows show what is planned.
 - Replaces: colours hard-coded in the agent card CSS for Claude Code, Codex and OpenCode.
+
+## 2026-11-24: AI tool default colours revised
+
+- Decision: Claude Code terracotta `#D97757` (its brand colour, outside the 24), Codex slate, Antigravity CLI (Google) green, Muse azure, Qwen gold (amber), Grok purple, DeepSeek cobalt (dark blue). To keep colours distinct, OpenCode moves to ice and GitHub Copilot CLI to indigo; Cursor CLI teal and Kimi aqua stay.
+- Why: the author's choice, closer to each tool's brand.
+- Replaces: Claude Code orange, Codex indigo, OpenCode slate, Antigravity azure, Copilot purple, Qwen lavender, Grok crimson, Muse magenta.

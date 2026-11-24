@@ -4,17 +4,18 @@ import { harnessColor, harnesses } from "./harnesses";
 import { Settings } from "./settings";
 
 describe("AI tool colours", () => {
-  it("lists three working AI tools and eight coming soon, each with its own palette colour", () => {
+  it("lists three working AI tools and eight coming soon, each with its own colour, from the palette except Claude Code's terracotta", () => {
     expect(harnesses.map(({ id, supported }) => [id, supported])).toEqual([
       ["claude-code", true], ["codex", true], ["opencode", true],
       ["antigravity", false], ["copilot", false], ["cursor", false], ["deepseek", false], ["qwen", false], ["kimi", false], ["grok", false], ["muse", false],
     ]);
     expect(new Set(harnesses.map(({ color }) => color)).size).toBe(harnesses.length);
-    for (const { color } of harnesses) expect(agentColors.some(({ hex }) => hex === color)).toBe(true);
+    for (const { id, color } of harnesses) expect(agentColors.some(({ hex }) => hex === color)).toBe(id !== "claude-code");
+    expect(harnesses.find(({ id }) => id === "claude-code")?.color).toBe("#D97757");
   });
 
   it("uses the user's colour when set, else the AI tool's own, else slate", () => {
-    expect(harnessColor("codex", {})).toBe("#6366F1");
+    expect(harnessColor("codex", {})).toBe("#64748B");
     expect(harnessColor("codex", { codex: "#123456" })).toBe("#123456");
     expect(harnessColor("something-else", {})).toBe("#64748B");
   });
