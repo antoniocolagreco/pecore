@@ -132,7 +132,7 @@
 | IG3 | Global limits, services runtime, disk threshold, merge check interval | 4.7, 4.9, "Risks & Limits" |
 | IG4 | Withdrawn: the Usage page | 4.7 |
 | IG5 | Setup status and next steps | G14 |
-| IG6 | Settings configures Assistant and Project Manager Default. Each project has a PM tab for its own settings. | 6 |
+| IG6 | Agents has fixed Assistant and Default Agent cards with editable settings. The PM tab holds the project's agent card, identity and context. | 6 |
 | IG7 | Auto-update | "Fixed implementation choices" |
 | IG8 | Withdrawn: quiet hours are left to the operating system | 9 |
 | IG9 | Appearance: theme, reduced motion | UI4, UI6 |
@@ -254,7 +254,7 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 *   After sending, the cursor stays in the message box.
 *   Files: the clip button, pasting into the message box (for example a screenshot just taken with Print Screen), or dropping files anywhere on the chat panel, which shows "Drop files to attach" while dragging. Any file type, up to 10 MB each. Each file shows above the message box in a 16:9 tile, 128 px wide, with a remove button in its corner: an image fits whole, never cropped; another file shows its name. The pasted text, if any, is not inserted. When the model cannot read images, an image is refused with the reason; other files still attach. A sent message keeps each image as the same 16:9 thumbnail, with its name and size as a tooltip, and lists other files by name and size.
 *   Compaction: the Compact button, or `/compact` typed as a message, sends the harness's own compaction command to the chat's session. The chat shows a divider ("Compacting the conversation…", then "Conversation compacted"), no reply.
-*   Chat compacts at the maximum threshold or after five idle minutes above the automatic threshold. Settings holds the Assistant and Project Manager Default thresholds. A project's PM tab can override its thresholds.
+*   Chat compacts at the maximum threshold or after five idle minutes above the automatic threshold. The Assistant card sets Assistant thresholds. Each Project Manager uses the thresholds of its selected card.
 *   An order the user gives in the chat is authorised as given: if the user asks to comment on an issue, the Project Manager posts it. A question the Project Manager wants to ask while handling a new ticket still waits for approval in Notifications.
 *   The Assistant can change a project's name, base branch, services Compose path and Project Manager name and colour: a "Change project" card lists each change as "old → new" with Confirm and Reject, and nothing changes before Confirm. Sending a job or other frequent operations have no card. A deletion request shows the project and what will be removed in a card with Confirm and Reject. Confirm deletes <PE/CORE>'s data only, using the same operation as the project settings page.
 *   "Ask the AI" (IE5) puts the cursor in the chat with the current screen's object as context.
@@ -282,7 +282,7 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 
 Pages: Inputs and Create. Create runs the tasks of design.md "Project creation" in order; the project exists when Create ends.
 
-1.  **Inputs:** name, repository, forge account, folder and base branch. The wizard assigns a unique Project Manager identity and uses Project Manager Default. The folder starts as the projects folder of Settings plus `<id>` and follows the name until edited. Add recipes after creation. Recipes that push or open a PR need a remote.
+1.  **Inputs:** name, repository, forge account, folder and base branch. The wizard assigns a unique Project Manager identity and uses the Default Agent card. The folder starts as the projects folder of Settings plus `<id>` and follows the name until edited. Add recipes after creation. Recipes that push or open a PR need a remote.
 2.  **Create:** the tasks of "Project creation" (validation, project directory, clone or repo creation, `repo.git` setup and home check, access for `pecore-agent` in protected mode, commit), each with its state. A failed task undoes the tasks before it, says why, and returns to Inputs with the values kept. A repo created on the forge is never deleted by the undo: the page lists it as left on the forge.
 3.  No logins page: logins belong to the user, not to the project (Settings > Accounts).
 
@@ -325,7 +325,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 ### Node editor
 
-*   Opened from a recipe or from Templates. New Node offers Agent, Run command and Human. A Human node has an Interface select: Decision (offers Yes and No by default; set the question on the recipe step), Code review or Report review. The select shows what the chosen interface does.
+*   Opened from a recipe or from Templates. New Node offers Agent, Run command, Human and Source. A Source node configures commands for listing, reading, commenting and reading replies. A Human node has an Interface select: Decision, Code review or Report review.
 *   Under the outcomes, Outputs has one row per outcome: a select of the six types (Nothing by default). No text under the field. The info icon of Outputs explains, for a user who knows nothing of the app, that a job is a chain of nodes, that each outcome can hand a result to later nodes, and that they receive it only through Reads from, with the Spec Writer as example. It then explains each type in a short paragraph: what it is, an example, who writes it and who uses it. The menus show only the names. The info icons of Required inputs and Optional inputs explain inputs with an example and show the same paragraphs. For a command, a row with an output also asks where to read it: Last line of the output, Field of JSON output or File in the workdir, and the name, field or path. For a Human node the rows are checkboxes, "<outcome>: the person can write a note".
 *   Every select in the app opens its menu below the field, or above it when there is no room below, so the whole list is visible; it does not cover the field.
 *   A command shows Required inputs and Optional inputs as chip groups of the six types. Selecting a type in one group removes it from the other. The help says the recipe selects each source and the script reads a JSON object on stdin, for example `jq '.spec'`. Agents get labelled inputs inline in their prompts. Human review loads them from the project database.
@@ -342,18 +342,20 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   Each tab explains what its templates do and has a New Node or New Recipe button that opens the editor.
 *   Delete node and Delete recipe are in the template editor and ask for confirmation. Delete node is disabled while the node is in use. Its tooltip lists the references. Deleting a node preserves its saved prompt and script bodies.
 *   Entries form a grid that adds columns as space allows. Each entry pairs a square card with its description. The card shows a large icon above a title such as Cargo Check. The title always has room for two lines, so the icon sits at the same height on every card; a one-line title is centred in that space. Node and recipe names are at most 24 characters, so the title fits. Hovering anywhere on the entry highlights it. Clicking it opens the editor. The page scrolls with the full grid.
+*   An agent node's badge shows the name and colour of its agent card. It fits on one line, truncates long names with an ellipsis and shows the full name on hover.
 *   Select tags from the node templates. Each selected tag appears in the filter and can be removed. Selecting `github` and `source control` shows templates with both tags.
 *   The automatic icon uses `node-<name>.svg` or `recipe-<name>.svg` from the shared library, with a built-in default. The editor can select another icon from a grid that shows the icons themselves, with the name as a tooltip. The Assistant saves new SVGs under `templates/icons/`. It mentions icons only while creating or editing a node or recipe template, or when the user asks for one.
 
 ### Agents
 
-*   Vertical cards in a responsive grid. The title reserves two lines and truncates longer names. Each card shows the harness badge, provider, model, effort and both context thresholds. It uses the harness colour from Settings by default. Click the card to open the editor, choose a custom colour or restore the harness colour.
+*   Vertical cards in a responsive grid. The title reserves two lines and truncates longer names. Each card shows the harness badge, provider, model, effort and both context thresholds. Assistant and Default Agent start with the Agent badge colour. New custom cards start white. Each card has its own colour setting in the editor.
+*   You can create a card before connecting a provider. When no provider is available, Provider shows Unavailable and Provider, Model and Effort are disabled.
 *   Delete agent is in the editor and uses the same style as Delete project.
 *   Custom context in the agent and project manager editors shows ten lines and scrolls when the text is longer. Each agent's Markdown context saves in the global database.
 
 ### Settings
 
-*   Sections: You, Accounts (IG1), Assistant, Project Manager Default (IG6), Protected mode (IF6), Projects, Limits and disk threshold, Services runtime, Merge check interval (IG3), Updates (IG7), Appearance (IG9).
+*   Sections: You, Accounts (IG1), Protected mode (IF6), Projects, Limits and disk threshold, Services runtime, Merge check interval (IG3), Updates (IG7), Appearance (IG9).
 *   The section list is in the main sidebar. Sections adapt to the window width, and each has a one-line description under its title.
 *   No text or JSON editing and no user-typed IDs; raw validation errors are never shown.
 *   A valid change saves in the global database after the last keystroke or when the page is left. An invalid value shows an error and stays unsaved.
@@ -362,7 +364,6 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
     *   Git hosting offers Add account for a public service or the user's own server. General copy is service-neutral. The picker and account rows name the service. Forge tool logins show the tool's device code or URL, then recheck the account. A private Git server uses the user's Git credentials and has no Log in button.
 *   You: "Your name", empty by default. The Assistant and the Project Managers get it at the start of a conversation; when it is empty the Assistant asks for it in the chat and saves it here.
 *   Assistant settings offer the provider, model and effort from the harness and the automatic and maximum compaction thresholds (131,072 and 262,144 tokens by default). Both are selects, not number fields: "Compact when idle above" offers 64K, 128K, 256K and 512K tokens (1K = 1,024); "Compact at once above" offers 128K, 256K, 512K and 1024K, only those at least twice the idle threshold, and rises with it when the idle threshold grows.
-*   Assistant > Personality: the 17 traits of `assistantTraits` (Pragmatic, Analytical, Socratic, Critical, Creative, Visionary, Empathetic, Friendly, Playful, Sarcastic, Diplomatic, Professional, Mentor, Strategic, Investigative, Minimalist, Bold), each distinct from the others, as round toggles, none chosen by default. Hovering a trait shows its description at once: how the Assistant will behave in the app, the same text the Assistant receives. Like every tooltip, it closes as soon as the pointer leaves the trait, even onto the tooltip itself. A trait incompatible with a chosen one (`incompatibleTraits`, for example Minimalist and Mentor) is greyed out and its tooltip names the trait it does not go with. Traits apply to the Assistant only.
 *   Project Manager: Provider, Model and Effort selects, by default "Same as the Assistant", and its own pair of compaction thresholds with the same defaults.
 *   In both pickers Effort is locked until a model is chosen and lists only the levels that model offers, Default alone when it offers none; choosing another model resets it to Default. The model list is read once when the app starts, and each model's levels the first time they are needed; a small refresh button next to Model reads both again.
 *   Services runtime starts as None and fills itself at app start when Docker (or OrbStack, Colima) or Podman is running; the user can still change it.
