@@ -18,9 +18,9 @@ function chooseContent(catalog: Catalog, name: string, alternate: string, conten
 
 function rewriteSidecar(node: Node, field: string, file: string): void {
   if (node.kind === "agent") node.prompt = file;
-  if (node.kind === "command") {
-    if (field === "script") node.script = file;
-    else if (field === "probe.script") node.probe = { script: file };
+  if (node.kind === "command") node.script = file;
+  if (node.kind === "repository") {
+    if (field === "repeat check") node.probe = { script: file };
     else node.mergedCheck = { script: file };
   }
 }

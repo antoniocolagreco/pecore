@@ -1,5 +1,5 @@
-import { Node, Recipe } from "@pecore/schemas";
-import type { CommandNode, OutcomeRule, OutputRule, TrackerNode } from "@pecore/schemas";
+import { argvShellScript, Node, Recipe } from "@pecore/schemas";
+import type { CommandNode, OutcomeRule, OutputRule, RepositoryNode, TrackerNode } from "@pecore/schemas";
 import type Database from "better-sqlite3";
 
 type NodeRow = {
@@ -14,7 +14,8 @@ type NodeRow = {
   tier: string | null;
   agent_session: string | null;
   human_interface: string | null;
-  runs_as: string | null;
+  repository_account: string | null;
+  repository_script: string | null;
   tracker_provider: string | null;
   tracker_account: string | null;
   tracker_script: string | null;
@@ -63,7 +64,7 @@ type EdgeRow = {
 };
 
 type CommandAction = "command" | "probe" | "mergedCheck";
-type CommandRules = NonNullable<CommandNode["probeRules"]>;
+type CommandRules = NonNullable<RepositoryNode["probeRules"]>;
 type CatalogTable = "nodes" | "recipes" | "node_content" | "icons";
 
 export class Catalog {
@@ -90,7 +91,6 @@ export class Catalog {
       params: this.params("SELECT name, value FROM catalog_node_params WHERE node = ? ORDER BY name", name),
     };
     const timeout: { timeoutSec: number | null } = { timeoutSec: row.timeout_sec };
-    const credentials: string[] = list("credentials");
     const outputs: { outcome: string; type: string }[] = this.db.prepare<[string], { outcome: string; type: string }>(
       "SELECT outcome, type FROM catalog_node_outputs WHERE node = ? ORDER BY outcome",
     ).all(name);
@@ -122,12 +122,14 @@ export class Catalog {
       ...common, ...inputs, provider: row.tracker_provider, account: row.tracker_account, script: row.tracker_script,
       outputRules: command?.outputRules, ...(row.tracker_repeat_check ? { repeatCheck: true } : {}),
     });
-    return Node.parse({
-      ...common, ...command, credentials, runsAs: row.runs_as,
-      ...inputs,
+    if (row.kind === "repository") return Node.parse({
+      ...common, ...inputs, account: row.repository_account,
+      script: row.repository_script ?? (command?.command?.length ? argvShellScript(command.command) : undefined),
+      outputRules: command?.outputRules,
       probe: probe?.command ?? (probe?.script ? { script: probe.script } : undefined), probeRules: probe?.rules,
       mergedCheck: merged?.command ?? (merged?.script ? { script: merged.script } : undefined), mergedCheckRules: merged?.rules,
     });
+    return Node.parse({ ...common, ...command, ...inputs });
   }
 
   private command(node: string, action: CommandAction): { command?: string[]; script?: string; outputRules: Record<string, OutputRule>; rules?: CommandRules } | null {
@@ -155,34 +157,34 @@ export class Catalog {
     this.db.transaction(() => {
       this.delete("nodes", name);
       this.db.prepare(`INSERT INTO catalog_nodes
-        (name, description, icon, kind, shipped, timeout_sec, changes_files, retry, prompt, tier, agent_session, human_interface, runs_as, tracker_provider, tracker_account, tracker_script, tracker_repeat_check)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        (name, description, icon, kind, shipped, timeout_sec, changes_files, retry, prompt, tier, agent_session, human_interface, repository_account, repository_script, tracker_provider, tracker_account, tracker_script, tracker_repeat_check)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         name, node.description, node.icon ?? null, node.kind, Number(shipped),
         "timeoutSec" in node ? node.timeoutSec : null, "changesFiles" in node ? Number(node.changesFiles) : null,
         "retry" in node ? node.retry : null, node.kind === "agent" ? node.prompt : null,
         node.kind === "agent" ? node.agent.tier ?? null : null, node.kind === "agent" ? node.agentSession : null,
-        node.kind === "human" ? node.interface : null, node.kind === "command" ? node.runsAs : null,
+        node.kind === "human" ? node.interface : null,
+        node.kind === "repository" ? node.account : null, node.kind === "repository" ? node.script : null,
         node.kind === "tracker" ? node.provider : null, node.kind === "tracker" ? node.account : null,
         node.kind === "tracker" ? node.script : null, node.kind === "tracker" && node.repeatCheck ? 1 : null,
       );
       this.writeParams("INSERT INTO catalog_node_params (node, name, value) VALUES (?, ?, ?)", [name], node.params);
       this.writeLists("INSERT INTO catalog_node_lists (node, field, position, value) VALUES (?, ?, ?, ?)", [name], {
         tags: node.tags, ...("outcomes" in node ? { outcomes: node.outcomes, failOutcomes: node.failOutcomes, scratchPaths: node.scratchPaths } : {}),
-        ...("credentials" in node ? { credentials: node.credentials } : {}),
         ...(node.kind === "agent" ? { knowledge: node.knowledge, profiles: node.agent.profiles, providerNot: node.agent.providerNot } : {}),
-        ...(node.kind === "command" || node.kind === "tracker" ? { inputs: node.inputs, optionalInputs: node.optionalInputs } : {}),
+        ...("inputs" in node ? { inputs: node.inputs, optionalInputs: node.optionalInputs } : {}),
       });
       if ("outputs" in node) {
         const insert: Database.Statement<[string, string, string]> = this.db.prepare("INSERT INTO catalog_node_outputs (node, outcome, type) VALUES (?, ?, ?)");
         for (const [outcome, type] of Object.entries(node.outputs)) insert.run(name, outcome, type);
       }
-      if (node.kind === "command" || node.kind === "tracker") this.saveCommandNode(node);
+      if ("inputs" in node) this.saveCommandNode(node);
     })();
   }
 
-  private saveCommandNode(node: CommandNode | TrackerNode): void {
-    this.saveCommand(node.name, "command", node.kind === "tracker" ? { outputRules: node.outputRules } : node);
-    if (node.kind === "command") {
+  private saveCommandNode(node: CommandNode | RepositoryNode | TrackerNode): void {
+    this.saveCommand(node.name, "command", node.kind === "command" ? node : { outputRules: node.outputRules });
+    if (node.kind === "repository") {
       if (node.probe) this.saveCommand(node.name, "probe", Array.isArray(node.probe) ? { command: node.probe } : node.probe, node.probeRules);
       if (node.mergedCheck) this.saveCommand(node.name, "mergedCheck", Array.isArray(node.mergedCheck) ? { command: node.mergedCheck } : node.mergedCheck, node.mergedCheckRules);
     }

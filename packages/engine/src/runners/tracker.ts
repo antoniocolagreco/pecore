@@ -32,7 +32,8 @@ export async function runTrackerNode(
   const login = await trackerLogin(ctx, node);
   return runCommandNode({
     ...options,
-    node: { name: node.name, runsAs: "engine", timeoutSec: node.timeoutSec, outcomeRules: node.outcomeRules },
+    node: { name: node.name, timeoutSec: node.timeoutSec, outcomeRules: node.outcomeRules },
+    remote: true,
     outputs: outcomeOutputs(node),
     inlineScript: node.script,
     repeatCheck: node.repeatCheck,

@@ -1,19 +1,20 @@
 import { describe, expect, it } from "vitest";
+import { JobDefinitions } from "./job-definitions";
+import type { NodeInput } from "./node";
 import { automaticOutputs, Node, placeholderEnvName, unknownPlaceholders } from "./node";
 
 const githubPr = {
   name: "github-pr",
   description: "Open a pull request on GitHub for the pushed job branch, or move an existing one to the job's target branch",
-  kind: "command",
-  runsAs: "engine",
-  credentials: ["project.account"],
+  kind: "repository",
+  account: "project.account",
   inputs: ["spec"],
   optionalInputs: ["document"],
   outcomes: ["opened", "failed"],
   outputs: { opened: "reference" },
   failOutcomes: ["failed"],
   changesFiles: false,
-  script: "github-pr.sh",
+  script: 'gh pr create --head "$PECORE_JOB_BRANCH"',
   outcomeRules: [
     { exitCode: 0, outcome: "opened" },
     { exitCode: "other", outcome: "failed" },
@@ -46,7 +47,7 @@ describe("node schema", () => {
   it("accepts the delivery node of design 3.1", () => {
     expect(issues(githubPr)).toEqual([]);
     const n = Node.parse(githubPr);
-    expect(n.kind === "command" && n.retry).toBe(1);
+    expect(n.kind === "repository" && n.retry).toBe(1);
   });
 
   it("accepts an agent node and fills defaults", () => {
@@ -87,17 +88,21 @@ describe("node schema", () => {
     expect(issues({ ...builder, outputSchema: { type: "object" } }).length).toBeGreaterThan(0);
   });
 
-  it("requires a probe on runsAs: engine", () => {
-    expect(issues({ ...githubPr, probe: undefined })).toContain("probe: Enter a check command that can tell whether the remote action already happened.");
+  it("requires an account and a script for a Repository node and accepts nodes without repeat checks", () => {
+    expect(issues({ ...githubPr, account: undefined })).toContain("account: Choose a Git hosting account.");
+    expect(issues({ ...githubPr, script: "" })).toContain("script: Enter a repository script.");
+    expect(issues({ ...githubPr, probe: undefined })).toEqual([]);
   });
 
-  it("requires exactly one of command and script", () => {
-    expect(issues({ ...githubPr, command: ["true"] })).toContain("command: exactly one of command and script");
-    expect(issues({ ...githubPr, script: undefined })).toContain("command: exactly one of command and script");
-  });
-
-  it("rejects credentials on project-user nodes", () => {
-    expect(issues({ ...githubPr, runsAs: "project-user" })).toContain("credentials: Turn on Use source control credentials to use the accounts saved on this node.");
+  it("requires exactly one command or script file and rejects credentials on Command nodes", () => {
+    const command: NodeInput = { name: "check", description: "Run a check", kind: "command",
+      changesFiles: false, timeoutSec: 30, outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }] };
+    expect(issues({ ...command, command: ["true"], script: "check.sh" })).toContain("command: exactly one of command and script");
+    expect(issues(command)).toContain("command: exactly one of command and script");
+    expect(issues({ ...command, command: ["true"] })).toEqual([]);
+    for (const removed of [{ account: "gh-user" }, { credentials: ["gh-user"] }, { runsAs: "engine" }, { probe: ["true"] }]) {
+      expect(Node.safeParse({ ...command, command: ["true"], ...removed }).success).toBe(false);
+    }
   });
 
   it("rejects failOutcomes and rule outcomes not in outcomes", () => {
@@ -110,7 +115,8 @@ describe("node schema", () => {
   });
 
   it("rejects unknown placeholders in argument arrays", () => {
-    expect(issues({ ...githubPr, probe: ["gh", "{job.secret}"] })).toContain("probe.1: unknown placeholder {job.secret}");
+    expect(issues({ name: "check", description: "Run a check", kind: "command", command: ["gh", "{job.secret}"],
+      changesFiles: false, timeoutSec: 30, outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }] })).toContain("command.1: unknown placeholder {job.secret}");
   });
 
   it("requires exactly one of tier and profiles on agent nodes", () => {
@@ -135,6 +141,22 @@ it("validates Tracker's provider, account and inline script", () => {
   expect(Node.safeParse({ ...input, account: "" }).success).toBe(false);
   expect(Node.safeParse({ ...input, script: "" }).success).toBe(false);
   expect(Node.safeParse({ ...input, kind: "source" }).success).toBe(false);
+});
+
+it("reads a saved delivery with its old script and repeat check", () => {
+  const old: Record<string, unknown> = {
+    name: "publish", kind: "command", description: "Publish the branch", runsAs: "engine",
+    credentials: ["gh-user"], script: "publish.sh", probe: { script: "check.sh" },
+    timeoutSec: 30, changesFiles: false, outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }],
+  };
+  const snapshot: JobDefinitions = JobDefinitions.parse({
+    recipeHash: "a".repeat(64),
+    nodes: { publish: { definition: old, sidecars: { "publish.sh": "gh pr create", "check.sh": "gh pr view" }, hash: "b".repeat(64) } },
+  });
+  expect(snapshot.nodes.publish?.definition).toMatchObject({
+    kind: "repository", account: "gh-user", script: "gh pr create", probe: { script: "check.sh" },
+  });
+  expect(snapshot.nodes.publish?.sidecars["check.sh"]).toBe("gh pr view");
 });
 
 describe("human node", () => {

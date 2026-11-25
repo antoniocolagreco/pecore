@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ArtifactType, CommandNode, FailureReason, OutcomeRule, OutputRule } from "@pecore/schemas";
+import type { ArtifactType, CommandNode, FailureReason, OutcomeRule, OutputRule, RepositoryNode } from "@pecore/schemas";
 import { FsAsError, readFileAs } from "../workdir/fs-as";
 import { gitIdentityEnv } from "../workdir/git-as";
 import { placeholderEnv, placeholderValues, substituteArgv } from "./placeholders";
@@ -14,7 +14,7 @@ import type { ProbeResult } from "./probe";
 export type CommandInput = { type: ArtifactType; content: string };
 
 export type CommandRun<Output extends string = ArtifactType> = {
-  node: Pick<CommandNode, "name" | "runsAs" | "timeoutSec" | "command" | "script" | "probe" | "probeRules" | "mergedCheck" | "mergedCheckRules" | "outcomeRules">;
+  node: Pick<CommandNode, "name" | "timeoutSec" | "command" | "script" | "outcomeRules"> & Pick<RepositoryNode, "probe" | "probeRules" | "mergedCheck" | "mergedCheckRules">;
   outputs: (outcome: string) => [Output, OutputRule][];
   nodeDir: string;
   sidecars?: Readonly<Record<string, string>> | undefined;
@@ -24,6 +24,7 @@ export type CommandRun<Output extends string = ArtifactType> = {
   context: Omit<PlaceholderContext, "params" | "workdir">;
   inputs: CommandInput[];
   inlineScript?: string;
+  remote?: boolean;
   repeatCheck?: boolean;
   extraEnv?: Record<string, string>;
   onStart?: (pgid: number, user: string) => void;
@@ -93,7 +94,7 @@ export function commandHash(argv: string[]): string {
 }
 
 export async function runMergedCheck(c: Pick<CommandRun, "node" | "nodeDir" | "sidecars" | "params" | "context" | "inputs" | "extraEnv">): Promise<ProbeResult> {
-  const cwd = await mkdtemp(join(tmpdir(), "pecore-engine-"));
+  const cwd = await mkdtemp(join(tmpdir(), "pecore-remote-"));
   try {
     const values = placeholderValues({ ...c.context, params: c.params, workdir: cwd });
     const env = { ...(await baseEnv(appUser)), ...placeholderEnv(values), ...c.extraEnv };
@@ -105,13 +106,13 @@ export async function runMergedCheck(c: Pick<CommandRun, "node" | "nodeDir" | "s
 }
 
 export async function runCommandNode<Output extends string = ArtifactType>(c: CommandRun<Output>): Promise<CommandOutcome<Output>> {
-  const engine = c.node.runsAs === "engine";
-  const user = engine ? appUser : c.user;
+  const remote: boolean = c.remote === true;
+  const user = remote ? appUser : c.user;
   const temp: string[] = [];
   let cwd = c.workdir;
   try {
-    if (engine) {
-      cwd = await mkdtemp(join(tmpdir(), "pecore-engine-"));
+    if (remote) {
+      cwd = await mkdtemp(join(tmpdir(), "pecore-remote-"));
       temp.push(cwd);
     }
     const input: string = commandInput(c.inputs);
@@ -125,7 +126,7 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
       const argv: string[] = c.repeatCheck ? ["/bin/sh", "-c", c.inlineScript!, label] : await argvOf(c.node.probe, undefined, c, label, values);
       const p = await runProbe({ argv, user, cwd, env, input, timeoutMs }, c.node.probeRules);
       env.PECORE_PROBE_STDOUT = p.stdout;
-      const check: string = c.repeatCheck ? "Repeat check" : "probe";
+      const check: string = "Repeat check";
       log += `$ ${check}\n${p.stdout}${p.stderr}${check}: ${p.result}\n`;
       if (p.result === "unknown") return { kind: "waiting", reason: "network", log };
       if (p.result === "done") {
@@ -142,27 +143,27 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
 
     const argv: string[] = c.inlineScript === undefined ? await argvOf(c.node.command, c.node.script, c, c.node.name, values) : ["/bin/sh", "-c", c.inlineScript, c.node.name];
     const hash = commandHash(argv);
-    if (engine) c.effect?.requested(hash);
+    if (remote) c.effect?.requested(hash);
     let r: RunResult;
     try {
       r = await run({ user, argv, cwd, env, input, timeoutMs, onStart: (pgid) => c.onStart?.(pgid, user) });
     } catch (e) {
-      if (engine) c.effect?.done(false, { error: String(e) });
+      if (remote) c.effect?.done(false, { error: String(e) });
       if (e instanceof SpawnError && e.code === "not_found") return { kind: "failed", reason: "COMMAND_NOT_FOUND", log: log + `${argv[0]}: not found\n` };
       throw e;
     }
     log += `$ ${c.inlineScript === undefined ? c.node.script ?? argv.join(" ") : c.node.name}\n${r.stdout}${r.stderr}exit: ${r.code ?? r.signal}\n`;
-    if (engine) c.effect?.done(r.code === 0, { code: r.code, stdout: r.stdout.slice(-4096) });
+    if (remote) c.effect?.done(r.code === 0, { code: r.code, stdout: r.stdout.slice(-4096) });
     if (r.timedOut) return { kind: "failed", reason: "TIMEOUT", log };
     if (r.code === null) return { kind: "failed", reason: "PROCESS_KILLED", log };
     if (r.code === 127) return { kind: "failed", reason: "COMMAND_NOT_FOUND", log };
     const outcome = pickOutcome(c.node.outcomeRules, r);
-    if (outcome === null && engine) return { kind: "waiting", reason: "network", log: log + "no outcome rule matched\n" };
+    if (outcome === null && remote) return { kind: "waiting", reason: "network", log: log + "no outcome rule matched\n" };
     if (outcome === null) return { kind: "failed", reason: "HARNESS_ERROR", log: log + "no outcome rule matched\n" };
     const outputs = [];
     for (const [type, rule] of c.outputs(outcome)) {
       try {
-        outputs.push({ type, content: await readOutput(rule, r.stdout, (rel) => (engine ? readFile(join(cwd, rel), "utf8") : readFileAs(c.user, cwd, rel))) });
+        outputs.push({ type, content: await readOutput(rule, r.stdout, (rel) => (remote ? readFile(join(cwd, rel), "utf8") : readFileAs(c.user, cwd, rel))) });
       } catch (e) {
         if (e instanceof FsAsError) return { kind: "failed", reason: "HARNESS_ERROR", log: log + `output ${type}: ${e.message}\n` };
         throw e;

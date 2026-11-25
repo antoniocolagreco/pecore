@@ -29,7 +29,9 @@ async function runCi(forge: "github" | "gitlab", cli: string) {
     writeFile(join(dir, "date"), "#!/bin/sh\ncat time\n", { mode: 0o700 }),
     writeFile(join(dir, "sleep"), "#!/bin/sh\n[ \"$1\" = 30 ] || exit 2\nprintf '%s' \"$(($(cat time) + $1))\" > time\n", { mode: 0o700 }),
   ]);
-  const child = exec("/bin/sh", [join(nodeDir, "wait-for-ci.sh")], { cwd: dir, env, timeout: 5_000 });
+  const { value: node } = await loadNodeFile(join(nodeDir, "wait-for-ci.json"));
+  if (node?.kind !== "repository") throw new Error("Wait for CI must be a Repository node");
+  const child = exec("/bin/sh", ["-c", node.script, node.name], { cwd: dir, env, timeout: 5_000 });
   child.child.stdin!.end(JSON.stringify({ reference: { url } }));
   const result = await child.then(
     ({ stdout }) => ({ code: 0, log: stdout }),
@@ -38,11 +40,11 @@ async function runCi(forge: "github" | "gitlab", cli: string) {
   return { ...result, elapsed: Number(await readFile(join(dir, "time"), "utf8")) };
 }
 
-describe("Wait for CI command", () => {
-  it("loads as a Command with two recipe outcomes", async () => {
+describe("Wait for CI", () => {
+  it("loads as a Repository node with two recipe outcomes", async () => {
     const loaded = await loadNodeFile(join(nodeDir, "wait-for-ci.json"));
     expect(loaded.errors).toEqual([]);
-    expect(loaded.value).toMatchObject({ kind: "command", outcomes: ["success", "failure"], failOutcomes: ["failure"] });
+    expect(loaded.value).toMatchObject({ kind: "repository", account: "project.account", outcomes: ["success", "failure"], failOutcomes: ["failure"] });
   });
 
   it("polls pending GitHub checks until they pass", async () => {

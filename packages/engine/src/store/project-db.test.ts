@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Node, Recipe } from "@pecore/schemas";
 import type { Artifact } from "@pecore/schemas";
@@ -23,12 +23,12 @@ describe("pecore.db", () => {
   it("applies the migrations once, in WAL mode", async () => {
     const path = join(await tempDir(), "pecore.db");
     const db = new ProjectDb(path);
-    expect(db.version()).toBe(27);
+    expect(db.version()).toBe(28);
     expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_nodes') WHERE name = 'clean_checkout'").get()).toBeUndefined();
     expect(db.db.pragma("journal_mode", { simple: true })).toBe("wal");
     db.close();
     const again = new ProjectDb(path);
-    expect(again.version()).toBe(27);
+    expect(again.version()).toBe(28);
     const tables = again.db.prepare<[], string>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'catalog_%' ORDER BY name").pluck().all();
     expect(tables).toEqual([
       "artifacts", "attempt_logs", "attempts", "events", "human_queue", "jobs", "node_runs",
@@ -36,6 +36,41 @@ describe("pecore.db", () => {
       "project_knowledge_steps", "project_recipes", "project_variables", "schema_version", "tickets_seen",
     ]);
     again.close();
+  });
+
+  it("migrates credentialed Command nodes to Repository and removes credentials and checks from Command", async () => {
+    const path: string = join(await tempDir(), "pecore.db");
+    const old: Database.Database = new Database(path);
+    const dir: URL = new URL("./migrations/", import.meta.url);
+    const migrations: string[] = (await readdir(dir)).filter((name) => /^(?:shared-)?0(?:0\d|1\d|2[0-7])-.*\.sql$/.test(name))
+      .sort((a, b) => a.replace("shared-", "").localeCompare(b.replace("shared-", "")));
+    for (const name of migrations) old.exec(await readFile(new URL(name, dir), "utf8"));
+    old.exec(`INSERT INTO schema_version VALUES (27);
+      INSERT INTO catalog_nodes (name, description, kind, shipped, timeout_sec, changes_files, retry, runs_as)
+        VALUES ('publish', 'Publish', 'command', 0, 60, 0, 1, 'engine'), ('check', 'Check', 'command', 0, 60, 0, 1, 'project-user'),
+        ('inspect', 'Inspect the remote', 'command', 0, 60, 0, 1, 'engine');
+      INSERT INTO catalog_node_lists VALUES ('publish', 'credentials', 0, 'gh-user'), ('publish', 'outcomes', 0, 'done'),
+        ('check', 'outcomes', 0, 'done'), ('inspect', 'outcomes', 0, 'done');
+      INSERT INTO catalog_commands (node, action, script) VALUES ('publish', 'command', 'publish.sh'), ('publish', 'probe', NULL),
+        ('check', 'command', NULL), ('check', 'probe', NULL), ('inspect', 'command', NULL);
+      INSERT INTO catalog_command_args VALUES ('publish', 'probe', 0, 'true'), ('check', 'command', 0, 'true'), ('check', 'probe', 0, 'false'),
+        ('inspect', 'command', 0, 'gh'), ('inspect', 'command', 1, 'repo'), ('inspect', 'command', 2, 'view'),
+        ('inspect', 'command', 3, '{project.repo.owner}/{project.repo.name}');
+      INSERT INTO catalog_outcome_rules (node, position, outcome, exit_code) VALUES ('publish', 0, 'done', 0), ('check', 0, 'done', 0), ('inspect', 0, 'done', 0);
+      INSERT INTO catalog_node_content VALUES ('publish.sh', 'shell', 'gh repo view', 0);`);
+    old.close();
+    const db: ProjectDb = new ProjectDb(path);
+    try {
+      expect(db.catalog.node("publish")).toMatchObject({ kind: "repository", account: "gh-user", script: "gh repo view", probe: ["true"] });
+      expect(db.catalog.node("check")).toMatchObject({ kind: "command", command: ["true"] });
+      expect(db.catalog.node("check")).not.toHaveProperty("probe");
+      expect(db.catalog.node("inspect")).toMatchObject({
+        kind: "repository", account: "project.account", script: expect.stringContaining("PECORE_PROJECT_REPO_OWNER"),
+      });
+      expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_nodes') WHERE name = 'runs_as'").get()).toBeUndefined();
+    } finally {
+      db.close();
+    }
   });
 
   it("migrates old agent templates, recipe steps and attempts to the agent session fields", async () => {
@@ -309,7 +344,7 @@ describe("chats.db", () => {
 
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.version()).toBe(26);
+    expect(db.version()).toBe(28);
     for (let i = 0; i < notificationsKept + 3; i++) db.addNotification({ kind: "job", title: `n${i}`, body: "" }, 1000 + i);
     const kept = db.notifications();
     expect(kept).toHaveLength(notificationsKept);
@@ -331,7 +366,7 @@ describe("chats.db", () => {
       UPDATE schema_version SET version = 5`);
     old.close();
     const db = new ChatsDb(file);
-    expect(db.version()).toBe(26);
+    expect(db.version()).toBe(28);
     expect(db.messages(assistantChat)).toEqual([]);
     db.close();
   });

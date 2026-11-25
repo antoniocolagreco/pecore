@@ -92,7 +92,7 @@ function readIssues(recipe: Recipe, resolved: Map<string, Node>, live: Set<strin
       const source: Node | undefined = resolved.get(read);
       if (source && producedTypes(recipe, read, source).length === 0) issues.push({ path: `nodes.${id}.reads`, message: `${read} produces nothing to read` });
     }
-    if ((node.kind !== "command" && node.kind !== "tracker")) continue;
+    if (!("inputs" in node)) continue;
     for (const type of [...node.inputs, ...node.optionalInputs]) {
       const providers: string[] = reads.filter((read) => {
         const source: Node | undefined = resolved.get(read);
@@ -122,7 +122,7 @@ export function reachable(recipe: Recipe): Set<string> {
 export function remoteIssues(recipe: Recipe, nodes: Map<string, Node>): RecipeIssue[] {
   return Object.entries(recipe.nodes).flatMap(([id, r]) => {
     const node = nodes.get(r.use);
-    return node?.kind === "command" && node.credentials.includes("project.account")
+    return node?.kind === "repository" && node.account === "project.account"
       ? [{ path: `nodes.${id}.use`, message: `${r.use} needs a remote repository, and this project has none` }]
       : [];
   });
@@ -138,7 +138,7 @@ export function checkRecipe(recipe: Recipe, nodes: Map<string, Node>, remote: bo
       continue;
     }
     resolved.set(id, node);
-    if (r.params && node.kind === "command" && node.runsAs === "engine") issues.push({ path: `nodes.${id}.params`, message: "Recipes cannot change parameters for nodes that use source control credentials." });
+    if (r.params && node.kind === "repository") issues.push({ path: `nodes.${id}.params`, message: "Recipes cannot change parameters for Repository nodes." });
     if (r.agent && node.kind !== "agent") issues.push({ path: `nodes.${id}.agent`, message: `${r.use} is not an agent node` });
     if (r.agentId !== undefined && node.kind !== "agent") issues.push({ path: `nodes.${id}.agentId`, message: `${r.use} is not an agent node` });
     if (r.agentSession !== undefined && node.kind !== "agent") issues.push({ path: `nodes.${id}.agentSession`, message: `${r.use} is not an agent node` });
@@ -153,8 +153,8 @@ export function checkRecipe(recipe: Recipe, nodes: Map<string, Node>, remote: bo
   const endKeys = new Set((recipe.ends ?? []).map((e) => `${e.from}:${e.on}`));
   if (recipe.ci) {
     const producer: Node | undefined = resolved.get(recipe.ci.after);
-    if (!remote || producer?.kind !== "command" || producer.outputs[recipe.ci.on] !== "reference") {
-      issues.push({ path: "ci", message: "CI needs a remote delivery command and one of its outcomes" });
+    if (!remote || producer?.kind !== "repository" || producer.outputs[recipe.ci.on] !== "reference") {
+      issues.push({ path: "ci", message: "CI needs a Repository delivery node and one of its outcomes" });
     }
     if (edgeKeys.has(`${recipe.ci.after}:${recipe.ci.on}`) || endKeys.has(`${recipe.ci.after}:${recipe.ci.on}`)) {
       issues.push({ path: "ci.on", message: "use edges for the CI outcomes" });

@@ -149,14 +149,16 @@ describe("recipe check", () => {
     expect(checkRecipe(r, nodes, true)).toContainEqual({ path: "nodes.lint.optional", message: "optional node lint needs an edge on skipped" });
   });
 
-  it("rejects params overrides on runsAs: engine nodes", () => {
-    const engine = check("push", ["pushed", "failed"], { runsAs: "engine", probe: ["true"] });
+  it("rejects params overrides on Repository nodes", () => {
+    const repository: Node = Node.parse({ name: "push", description: "Push", kind: "repository", script: "true", account: "project.account",
+      outcomes: ["pushed", "failed"], outcomeRules: [{ exitCode: 0, outcome: "pushed" }] });
     const r = recipe({ start: "push", successOutcomes: ["push:pushed"], nodes: { push: { use: "push", params: { x: 1 } } } });
-    expect(checkRecipe(r, new Map([["push", engine]]), true)).toContainEqual({ path: "nodes.push.params", message: "Recipes cannot change parameters for nodes that use source control credentials." });
+    expect(checkRecipe(r, new Map([["push", repository]]), true)).toContainEqual({ path: "nodes.push.params", message: "Recipes cannot change parameters for Repository nodes." });
   });
 
   it("rejects a node that needs the project's remote repository only when the project has none (decision 72)", () => {
-    const push = check("git-push", ["pushed", "failed"], { runsAs: "engine", probe: ["true"], credentials: ["project.account"] });
+    const push: Node = Node.parse({ name: "git-push", description: "Push a branch", kind: "repository", script: "true", account: "project.account",
+      outcomes: ["pushed", "failed"], outcomeRules: [{ exitCode: 0, outcome: "pushed" }] });
     const r = recipe({ start: "push", successOutcomes: ["push:pushed"], nodes: { push: { use: "git-push" } } });
     const pushNodes = new Map<string, Node>([["git-push", push]]);
     expect(checkRecipe(r, pushNodes, false)).toEqual([{ path: "nodes.push.use", message: "git-push needs a remote repository, and this project has none" }]);

@@ -13,7 +13,7 @@ vi.mock("../api/live", () => ({ useConnected: () => true, onLive: () => () => un
 
 afterEach(cleanup);
 
-it("shows the required check and saves the command with source control credentials", async () => {
+it("edits a Command without showing account or check controls", async () => {
   const node: Node = Node.parse({
     name: "publish", description: "Publish a result", kind: "command", command: ["fixture-cli", "publish"],
     changesFiles: true, timeoutSec: 60, outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }],
@@ -32,27 +32,25 @@ it("shows the required check and saves the command with source control credentia
   const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: [`/edit/node/${path}`] });
   render(<RouterProvider router={router} />);
   const user = userEvent.setup();
-  const credentials: HTMLElement = await screen.findByRole("checkbox", { name: "Use source control credentials" });
+  const editable: HTMLElement = await screen.findByRole("checkbox", { name: "Can edit files" });
+  expect(screen.queryByRole("checkbox", { name: "Use source control credentials" })).toBeNull();
+  expect(screen.queryByRole("combobox", { name: "Account" })).toBeNull();
   expect(screen.queryByRole("textbox", { name: "Check command" })).toBeNull();
-  await user.click(credentials);
-  const check: HTMLElement = screen.getByRole("textbox", { name: "Check command" });
-  expect(await screen.findByText(/Enter a check command that can tell whether the remote action already happened/)).toBeTruthy();
-  expect(screen.getByText(/Turn off Can edit files when using source control credentials/)).toBeTruthy();
-  expect(screen.queryByText(/runsAs/)).toBeNull();
   const save: HTMLButtonElement = screen.getByRole("button", { name: "Save" });
-  expect(save.disabled).toBe(true);
-
-  await user.click(screen.getByRole("checkbox", { name: "Can edit files" }));
-  await user.type(check, 'fixture-cli status "example branch"');
+  await user.click(editable);
   await waitFor(() => expect(save.disabled).toBe(false));
   await user.click(save);
   const saved: RouteInput<"saveDefinition"> = api.call.mock.calls.findLast(([route]) => route === "saveDefinition")?.[1];
   expect(Node.parse(JSON.parse(saved.body.content))).toMatchObject({
-    runsAs: "engine", changesFiles: false, command: ["fixture-cli", "publish"], probe: ["fixture-cli", "status", "example branch"],
+    kind: "command", changesFiles: false, command: ["fixture-cli", "publish"],
   });
 });
 
-it("creates a Tracker node with a shell script and an account", async () => {
+
+it.each([
+  { label: "Tracker", kind: "tracker", provider: { provider: "github" } },
+  { label: "Repository", kind: "repository", provider: {} },
+])("creates a $label node with a shell script and requires its account", async ({ label, kind, provider }) => {
   const rect = new DOMRect();
   Object.defineProperty(Range.prototype, "getClientRects", { configurable: true, value: () => [rect] });
   Object.defineProperty(Range.prototype, "getBoundingClientRect", { configurable: true, value: () => rect });
@@ -68,29 +66,31 @@ it("creates a Tracker node with a shell script and an account", async () => {
   });
   const router = createMemoryRouter([
     { path: "/templates/nodes/new", element: <NodeEditor newTemplate /> },
-    { path: "/edit/node/*", element: <span>Saved Tracker</span> },
+    { path: "/edit/node/*", element: <span>Saved node</span> },
   ], { initialEntries: ["/templates/nodes/new"] });
   render(<RouterProvider router={router} />);
   const user = userEvent.setup();
   await user.type(await screen.findByRole("textbox", { name: "Name" }), "issue-tracker");
   await user.click(screen.getByRole("combobox", { name: "Kind" }));
-  await user.click(await screen.findByRole("option", { name: "Tracker" }));
+  await user.click(await screen.findByRole("option", { name: label }));
   await user.type(screen.getByRole("textbox", { name: "Description" }), "Read test issues");
-  await user.click(screen.getByRole("combobox", { name: "Account" }));
-  await user.click(await screen.findByRole("option", { name: "alice · github.com" }));
-  const script = screen.getByRole("group", { name: "Tracker script" }).querySelector<HTMLElement>(".cm-content")!;
+  const script = screen.getByRole("group", { name: `${label} script` }).querySelector<HTMLElement>(".cm-content")!;
   await user.click(script);
   await user.paste("echo checked");
+  expect(await screen.findByText(/Choose (a Git hosting|an) account/)).toBeTruthy();
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: "Save" }).disabled).toBe(true);
+  await user.click(screen.getByRole("combobox", { name: "Account" }));
+  await user.click(await screen.findByRole("option", { name: "alice · github.com" }));
   const save = screen.getByRole<HTMLButtonElement>("button", { name: "Save" });
   await waitFor(() => expect(save.disabled).toBe(false));
   await user.click(save);
-  await screen.findByText("Saved Tracker");
+  await screen.findByText("Saved node");
   await waitFor(() => expect(api.call).toHaveBeenCalledWith("saveDefinition", {
     params: { path: "templates/nodes/issue-tracker.json" }, body: { content: expect.any(String), baseSha256: null },
   }));
-  const saved: RouteInput<"saveDefinition"> = api.call.mock.calls.find(([route]) => route === "saveDefinition")?.[1];
+  const saved: RouteInput<"saveDefinition"> = api.call.mock.calls.findLast(([route]) => route === "saveDefinition")?.[1];
   expect(Node.parse(JSON.parse(saved.body.content))).toMatchObject({
-    kind: "tracker", provider: "github", account: "gh-alice", script: "echo checked",
+    kind, ...provider, account: "gh-alice", script: "echo checked",
   });
 });
 

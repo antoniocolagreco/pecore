@@ -1,10 +1,10 @@
-import type { CommandNode } from "@pecore/schemas";
+import type { RepositoryNode } from "@pecore/schemas";
 import { run } from "./process";
 import type { RunResult } from "./process";
 
 export type ProbeResult = "done" | "not_done" | "unknown";
 
-type JsonRule = NonNullable<CommandNode["probeRules"]>;
+type JsonRule = NonNullable<RepositoryNode["probeRules"]>;
 
 export function readJsonField(stdout: string, field: string): unknown {
   let value: unknown = JSON.parse(stdout);

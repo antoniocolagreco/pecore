@@ -3,7 +3,6 @@
   "tags": ["source control"],
   "description": "Rebase the job branch onto its new base and restore uncommitted changes.",
   "kind": "command",
-  "runsAs": "project-user",
   "script": "git-rebase.sh",
   "outcomes": ["clean", "conflict"],
   "changesFiles": true,

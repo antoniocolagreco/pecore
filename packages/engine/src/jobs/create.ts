@@ -5,6 +5,7 @@ import { definitionHash, jobDefinitions, jobNodes, snapshotDefinitions } from ".
 import type { JobRow, ProjectContext } from "../graph/executor";
 import { ProjectLocationConflict, withProjectLocation } from "../projects/location";
 import { jobBranch } from "../workdir/repo";
+import { repositoryAccount } from "../runners/repository";
 import { trackerLogin } from "../runners/tracker";
 import { fetchBase, jobCommit } from "./stacked";
 
@@ -72,11 +73,15 @@ async function createJobInProject(ctx: ProjectContext, req: CreateJob): Promise<
   definitions.recipeHash = recipeHash;
   for (const entry of Object.values(definitions.nodes)) {
     const node = entry.definition;
-    if (node.kind === "tracker") {
-      const login = await trackerLogin(ctx, node).catch(fail);
-      const definition = { ...node, account: login.id };
-      entry.definition = definition;
-      entry.hash = definitionHash({ definition, sidecars: entry.sidecars });
+    if (node.kind === "tracker" || node.kind === "repository") {
+      try {
+        const account: string = node.kind === "tracker" ? (await trackerLogin(ctx, node)).id : repositoryAccount(ctx, node).id;
+        const definition = { ...node, account };
+        entry.definition = definition;
+        entry.hash = definitionHash({ definition, sidecars: entry.sidecars });
+      } catch (error) {
+        fail(error);
+      }
     }
   }
   const knowledgeByRecipe = ctx.project.recipeKnowledge;

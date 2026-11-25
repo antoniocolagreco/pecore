@@ -35,7 +35,7 @@ async function setup() {
   const wd = await addWorktree(u, project, "J1", base);
   const nodeDir = join(project, "nodes");
   await mkdir(nodeDir);
-  const ctx = (n: CommandNode, extra: Partial<CommandRun> = {}): CommandRun => ({
+  const ctx = (n: CommandRun["node"] & Pick<CommandNode, "outputs" | "outputRules">, extra: Partial<CommandRun> = {}): CommandRun => ({
     node: n,
     outputs: outcomeOutputs(n),
     nodeDir,
@@ -138,7 +138,7 @@ describe("command nodes", () => {
     const { nodeDir, ctx, wd } = await setup();
     await writeFile(join(nodeDir, "s.sh"), 'set -e; test -z "${PECORE_INPUTS_SPEC_PATH:-}"; printf "%s" "$PECORE_JOB_TITLE" > title.txt; cat');
     const n: CommandNode = node({
-      script: "s.sh", probe: ["/bin/sh", "-c", 'jq -e \'has("spec")\' >/dev/null'],
+      script: "s.sh",
       inputs: ["spec", "text", "diff"], optionalInputs: ["reference"], outputs: { passed: "text" }, outputRules: { passed: { file: "title.txt" } },
     });
     const input: CommandRun["inputs"] = [
@@ -146,7 +146,9 @@ describe("command nodes", () => {
       { type: "text", content: 'first\n"second"\n' },
       { type: "diff", content: "+change\n" },
     ];
-    const r = await runCommandNode(ctx(n, { inputs: input }));
+    const run: CommandRun = ctx(n, { inputs: input, remote: true });
+    run.node = { ...n, probe: ["/bin/sh", "-c", `jq -e 'has("spec")' >/dev/null`] };
+    const r = await runCommandNode(run);
     expect(r).toMatchObject({ kind: "completed", outcome: "passed", outputs: [{ type: "text", content: "Fix it" }] });
     expect(r.log).toContain(JSON.stringify({ spec: { criteria: [], tests: [], interfaces: [] }, text: 'first\n"second"\n', diff: "+change\n" }));
     await expect(stat(join(wd, ".pecore", "inputs"))).rejects.toMatchObject({ code: "ENOENT" });
@@ -169,7 +171,9 @@ describe("command nodes", () => {
   it("skips the command when the probe says done, waits when it cannot tell", async () => {
     const { project, ctx } = await setup();
     const marker = join(project, "ran");
-    const n = (probe: string[]) => node({ command: ["touch", marker], probe, outputs: { passed: "reference" }, outputRules: { passed: { stdoutLastLine: "url" } } });
+    const n = (probe: string[]): CommandRun["node"] & Pick<CommandNode, "outputs" | "outputRules"> => ({
+      ...node({ command: ["touch", marker], outputs: { passed: "reference" }, outputRules: { passed: { stdoutLastLine: "url" } } }), probe,
+    });
     expect(await runCommandNode(ctx(n(["echo", "https://x/pr/1"])))).toMatchObject({ kind: "completed", outcome: "passed", fromProbe: true, outputs: [{ type: "reference", content: '{"url":"https://x/pr/1"}' }] });
     expect(await runCommandNode(ctx(n(["false"])))).toMatchObject({ kind: "waiting", reason: "network" });
     await expect(readFile(marker)).rejects.toThrow();

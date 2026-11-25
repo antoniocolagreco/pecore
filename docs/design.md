@@ -23,7 +23,7 @@ Terms used throughout:
 *   **ACP:** Agent Client Protocol, an open protocol between a client and a coding agent: JSON-RPC 2.0 over the agent's stdin and stdout. Zed uses it for its external agents. <PE/CORE> is an ACP client.
 *   **Connector:** the program <PE/CORE> starts to talk ACP with a harness: the harness itself in ACP mode (for example `opencode acp`), or an ACP adapter that drives the harness (for example `claude-agent-acp` for Claude Code). A connector file (section 5) describes how to start it.
 *   **Forge:** a git hosting service (GitHub, GitLab, Bitbucket, AWS CodeCommit, a private git server).
-*   **App user:** the OS user that runs <PE/CORE>. `runsAs: engine` means "runs as the app user".
+*   **App user:** the OS user that runs <PE/CORE>.
 *   **Project user:** the OS user agents and checks run as. In normal mode (the default) it is the app user, as when the user runs Claude Code or Codex by hand. In protected mode it is `pecore-agent`, one OS user created by <PE/CORE> for all projects, the Assistant and the Project Managers, which cannot read the app user's files and logins (section 8).
 *   **Workdir:** the job's git worktree, `work/<job-id>/`. "Work tree" appears only in git command contexts.
 *   **Base branch** (a branch name, for example `dev`) and **base commit** (the commit a job branch starts from, `{job.base}`).
@@ -80,7 +80,7 @@ What none of them offers together:
 *   **G9. Stacked jobs.** An order larger than one ticket becomes a set of tickets with dependencies. A child ticket starts from its parent's last commit when the parent job completes, without waiting for the parent's merge. When the parent changes, the recipe's rebase node realigns the child, and the recipe decides which nodes run again. Verified by a test with a chain of three jobs in which the parent gets a new commit and then is merged.
 *   **G10. No secrets kept by <PE/CORE>.** Each tool keeps its own login: harnesses (`claude`, `codex`, `agy`, ...), forge CLIs (`gh`, `glab`, AWS CLI) and git credential helpers. <PE/CORE> stores only references to those accounts. In protected mode, agents cannot read the app user's home, where forge logins live.
 *   **G11. Rules live in recipes.** Recipes define checks, reviews, model selection and what runs again after a rebase. A recipe can include a human review. The empty recipe is valid.
-*   **G12. Crash safety.** After a crash, or after the app quits during a delivery, no `runsAs: engine` node repeats an action its probe reports as done, and every job that existed before is present afterwards: `queued` jobs stay `queued`, the others are `paused` or in a final state. Verified by killing the engine during each delivery node in a test.
+*   **G12. Crash safety.** After a crash, or after the app quits during a delivery, no shipped delivery node repeats an action its repeat check reports as done, and every job that existed before is present afterwards: `queued` jobs stay `queued`, the others are `paused` or in a final state. Verified by killing the engine during each delivery node in a test.
 *   **G13. Diagnosis in under a minute.** For any job, the user can see in the GUI or the CLI which node is running, why the job waits, and open the raw harness log, in under one minute.
 *   **G14. Zero configuration.** First launch creates `PECORE_HOME`, finds existing harness logins and sets up accounts, profiles, tiers and the Assistant and Default Agent cards. When no account works, the app shows the next step to connect one.
 *   **G15. Pluggable services runtime.** The container runtime for job services (Postgres, Kafka) is a setting: Podman, Docker, or on macOS Podman machine, Colima or OrbStack. Each needs Compose v2. When the setting is empty, the app looks for a runtime at start, in the background: Docker with Compose and a running daemon (named OrbStack or Colima when the Docker context says so), then Podman. It saves the first one found and tells the user in a notification; it never changes a runtime the user chose.
@@ -273,8 +273,8 @@ Global configuration extends `chats.db` to reuse the engine's database connectio
 Node and recipe definitions use field columns and child rows for outcomes, outputs, commands, reads, edges and other lists. Shipped templates seed the global catalog on first start and when the catalog format changes. Updated or retired shipped rows are replaced or removed, and user rows stay. A project selects shared templates or keeps its own definitions in its database. The editor and definition tools use named API resources. Zod validates all changes.
 
 `pecore.db` runs in WAL mode. Each event and the view it updates are written in one transaction. Each attempt log row is available as soon as it is written and stays until its job or project is deleted. Legacy attempt logs are unavailable in the app.
-*   When a project is created and its remote does not exist yet, `repo.git` starts as an empty local repository with one empty initial commit on `baseBranch`. The engine then runs the project's repo creation node (`createRepo` in the project definition, for example an instance of `gitlab-create-repo`) once, outside any job. The node creates the remote and pushes `baseBranch` to it; the engine then sets it as `origin`. The node has a probe, so running it again is safe.
-*   Clone and fetch are engine operations: the engine runs them as the app user with `--git-dir=repo.git`, with the project's account selected by `forge-env.ts` as for `credentials` (3.1). It clones at project creation, fetches the job's base branch before every job starts, and fetches on merge detection (4.6).
+*   When a project is created and its remote does not exist yet, `repo.git` starts as an empty local repository with one empty initial commit on `baseBranch`. The engine then runs the project's repo creation node (`createRepo` in the project definition, for example an instance of `gitlab-create-repo`) once, outside any job. The node creates the remote and pushes `baseBranch` to it; the engine then sets it as `origin`. The shipped node checks whether creation and push already succeeded before it changes anything.
+*   Clone and fetch are engine operations: the engine runs them as the app user with `--git-dir=repo.git`, with the project's account selected by `forge-env.ts` as for Repository nodes (3.1). It clones at project creation, fetches the job's base branch before every job starts, and fetches on merge detection (4.6).
 *   `knowledge/` holds Markdown documents about the project: architecture, conventions, domain terms. Knowledge exists only inside a project; there is no global knowledge. The directory is flat: `.md` files only, all at the same level, no subfolders. A file links to another by its bare name, for example `[naming](naming.md)`, never by an absolute or nested path.
 *   Files come from four places: the user writes a new file in the GUI, uploads a `.md` file, asks the Project Manager or the Assistant to write or improve one, or a project bootstrap or wizard writes them. Job agents never write there.
 *   An agent node receives each selected knowledge document and every document it links to, including indirect links. The prompt includes each document under a heading with its file name.
@@ -293,32 +293,33 @@ Fields common to every node:
 | `name` | unique among the templates or in its project |
 | `description` | what the node does; the Assistant and the Project Manager read it to pick and build recipes |
 | `icon` | optional SVG icon name from `templates/icons/`, without the file extension |
-| `kind` | `agent`, `command`, `human` or `tracker` (section 7) |
+| `kind` | `agent`, `command`, `human`, `repository` or `tracker` |
 | `params` | JSON Schema of the values a recipe can set |
 | `outcomes` | the outcome names the node can produce |
 | `outputs` | at most one artifact type (3.3) per outcome, for example `{ "accepted": "spec", "rejected": "text" }`; an outcome not listed produces nothing. The nodes that read this node (3.2) receive it |
 | `failOutcomes` | the outcomes that mean failure (for example `failed`); with no edge, they end the job as `failed` (4.2) |
 | `changesFiles` | whether a command or agent may modify the workdir (see 4.4) |
 | `scratchPaths` | glob patterns of files the node may create and that are thrown away after it (for example `coverage/**`, `**/*.tmp`); default empty |
-| `timeoutSec` | hard time limit for one command, agent or tracker attempt |
+| `timeoutSec` | hard time limit for one Command, Agent, Repository or Tracker attempt |
 | `retry` | extra attempts after a process failure (not after a `failed` outcome), default 1 |
 
 Fields by kind:
 
 *   **`command`**
-    *   `inputs` lists required artifact types and `optionalInputs` lists optional types. The recipe selects the source steps (3.2). The command and its probe each receive one JSON object on stdin. Keys are artifact types. Structured types are JSON values, `text` and `diff` are strings, and absent optional inputs are omitted. With no inputs, stdin carries `{}`. A delivery merge check receives the saved `reference` on stdin.
-    *   `runsAs`: `project-user` (default) or `engine`. `engine` runs the command as the app user, where forge and service logins live.
+    *   `inputs` lists required artifact types and `optionalInputs` lists optional types. The recipe selects the source steps (3.2). Each script or command receives one JSON object on stdin. Keys are artifact types. Structured types are JSON values, `text` and `diff` are strings, and absent optional inputs are omitted. With no inputs, stdin carries `{}`. A delivery merge check receives the saved `reference` on stdin.
     *   `command`: an argument array, run without a shell; placeholders are substituted into single arguments.
-    *   Project-user commands run in the job's workdir.
+    *   Command nodes run in the job's workdir as the project user. The app passes no Git hosting or tracker credentials.
     *   Every project-user command also gets `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME` and `GIT_COMMITTER_EMAIL` from the app user's global git config, or "PeCore <pecore@localhost>" when it has none, so commits work as `pecore-agent` too.
     *   `script`: instead of `command`, the name of a saved shell body. The engine runs it with `/bin/sh -c`. Use it when the logic needs conditions. Placeholders are not substituted into the script; they are passed as environment variables named after the placeholder in upper case with dots as underscores (`{job.branch}` becomes `PECORE_JOB_BRANCH`), so ticket text is never inserted into the script source; scripts must quote these variables. A node has exactly one of `command` and `script`.
-    *   `credentials`: only for `runsAs: engine`; names of accounts the node uses, or `project.account` for the project's own account. The engine selects that account in the tool through environment variables (for example `GH_TOKEN` from `gh auth token --user <login>`, `GITLAB_HOST`, `AWS_PROFILE`).
     *   `outcomeRules`: how the outcome is computed: by exit code, or by a field of JSON printed on stdout.
     *   `outputRules`: for each outcome that has an output, how it is read: `{ "file": "<path>" }`, `{ "stdoutJson": "<field>" }`, or `{ "stdoutLastLine": "<name>" }` (the last line of stdout, saved in the artifact under that name, for example `url`). The engine checks the result against the structure of its type and fails the node with `INVALID_OUTPUT` when it does not match.
-    *   `probe`: a command that reports whether the action already happened (see 4.8): an argument array, or `{ "script": "<name>" }` for a saved shell body, run like `script`. Every `runsAs: engine` node acts outside the machine, so the validator requires a probe on it. `mergedCheck` takes the same two forms.
-    *   `probeRules`: how the probe result is read. Default: exit code 0 and non-empty stdout means `done`, and stdout is read with `outputRules`; exit code 0 and empty stdout means `not_done`; any other exit code means `unknown`. A rule can instead read a JSON field on stdout, mapping its values to `done` and `not_done`.
-    *   In the node editor, Use source control credentials reveals Check command. A saved script check appears as Check script name. The editor explains that the check reads remote state before the main command runs.
-    *   `mergedCheck`: for delivery nodes; a command that reports whether the delivery was merged (for example `gh pr view <url> --json state --jq 'select(.state=="MERGED") | .state'`, which prints `MERGED` only when merged). Read like a probe: `done` means merged. The engine runs it periodically on `succeeded` jobs that have children (4.6).
+*   **Repository**
+    *   Choose one Git hosting account on the node template. Shipped templates use the project's account. Jobs resolve and record the account before they start. A missing account blocks the job.
+    *   Enter one shell script in the node editor. It runs as the app user in an empty directory, with the selected account in both normal and protected mode. Inputs, outcome rules and output rules work as for Command. Scripts read values from the same environment variables.
+    *   The shipped repeat and merge checks are internal (4.8 and 4.6). Custom Repository nodes need only their action script.
+    *   The migration converts old credentialed commands to Repository nodes and carries over their first account. If the old node named none, it uses the project account.
+*   **Tracker** (section 7)
+    *   Choose an account and write one shell script in the node editor. Inputs, outcomes and outputs work as for Repository.
 *   **`agent`**
     *   `prompt`: name of the saved Markdown prompt.
     *   `agent`: legacy tier, profile and provider fields remain readable in existing definitions. The template uses Default Agent. The recipe can assign a different card to a step.
@@ -333,7 +334,7 @@ Fields by kind:
     *   Both reviews have the outcomes `approve`, `changes` and `reject`. For a decision, the outcomes are the buttons the user sees.
     *   `outputs`: only `text`. An outcome with `text` shows a Note field; the note becomes the output of that outcome (for example `{ "changes": "text" }`).
 
-Placeholders in `command`, `probe` and prompts use plain substitution. They include `{params.<name>}`, `{job.id}`, `{job.title}`, `{job.branch}`, `{job.base}` (the required base commit), `{job.oldBase}` (the previous base commit), `{job.target}` (the delivery branch, see 4.6), `{job.commit}` (the SHA of the latest `reference` with a `sha`), `{ticket.id}` (the ticket ID at its source, if present), `{workdir}`, `{project.repoDir}`, `{project.repo.url}`, `{project.repo.owner}` and `{project.repo.name}`.
+Placeholders in executable argument arrays and prompts use plain substitution. They include `{params.<name>}`, `{job.id}`, `{job.title}`, `{job.branch}`, `{job.base}` (the required base commit), `{job.oldBase}` (the previous base commit), `{job.target}` (the delivery branch, see 4.6), `{job.commit}` (the SHA of the latest `reference` with a `sha`), `{ticket.id}` (the ticket ID at its source, if present), `{workdir}`, `{project.repoDir}`, `{project.repo.url}`, `{project.repo.owner}` and `{project.repo.name}`.
 
 Example instance of a delivery node. It runs after a `git-push` node, which pushes the job branch from `repo.git`:
 
@@ -341,24 +342,22 @@ Example instance of a delivery node. It runs after a `git-push` node, which push
 {
   "name": "github-pr",
   "description": "Open a pull request on GitHub for the pushed job branch, or move an existing one to the job's target branch",
-  "kind": "command",
-  "runsAs": "engine",
-  "credentials": ["project.account"],
+  "kind": "repository",
+  "account": "project.account",
   "inputs": ["spec"],
   "optionalInputs": ["document"],
   "outcomes": ["opened", "failed"],
   "outputs": { "opened": "reference" },
   "failOutcomes": ["failed"],
   "changesFiles": false,
-  "script": "github-pr.sh",
+  "script": "gh pr create --repo \"$PECORE_PROJECT_REPO_OWNER/$PECORE_PROJECT_REPO_NAME\" --head \"$PECORE_JOB_BRANCH\"",
   "outcomeRules": [{ "exitCode": 0, "outcome": "opened" }, { "exitCode": "other", "outcome": "failed" }],
   "outputRules": { "opened": { "stdoutLastLine": "url" } },
-  "probe": ["gh", "pr", "list", "--repo", "{project.repo.owner}/{project.repo.name}", "--head", "{job.branch}", "--base", "{job.target}", "--json", "url", "--jq", ".[0].url // empty"],
   "timeoutSec": 120
 }
 ```
 
-`nodes/github-pr.sh`, next to the node file:
+The shipped `github-pr` template has a longer inline script:
 
 ```sh
 repo="$PECORE_PROJECT_REPO_OWNER/$PECORE_PROJECT_REPO_NAME"
@@ -644,8 +643,8 @@ A job waiting for a human, a quota or a login releases its pool units (4.7) and 
 
 #### 4.8 External effects and crash safety
 
-*   Every `runsAs: engine` node acts outside the machine (push, PR/MR, ticket comment, repo creation) and has a probe (3.1). It is recorded in two steps: `effect.requested` before the command runs, `effect.completed` or `effect.failed` after.
-*   Before running a node that has a `probe`, the engine always runs the probe first and reads it with `probeRules`. `done`: the node completes with the probe output and its command does not run. `not_done`: the command runs. `unknown` (for example the forge is unreachable): the node run waits with reason `network` and the probe is retried with the backoff of 4.7 (1, 2, 4, then every 8 minutes) until it gives `done` or `not_done`, or the user stops the job. The command never runs blind. This covers both a crash between `effect.requested` and its outcome, and a node that runs again after a rebase.
+*   Repository and Tracker actions record `effect.requested` before the script runs and `effect.completed` or `effect.failed` after it runs.
+*   Shipped delivery nodes with a repeat check run it first. If the action is complete, the node uses the check's output and ends. If the action is still needed, the script runs. If the check cannot tell, the node waits and retries with the backoff of 4.7 (1, 2, 4, then every 8 minutes), or until the user stops the job. This covers crashes and reruns after a rebase.
 *   Delete removes the job's local branch, worktree, logs, services and rows in `pecore.db`, including artifacts. The user can close the job's PRs or MRs and delete remote branches on the forge.
 *   Project delete stops unfinished jobs, shuts down their services and removes the project directory, including `pecore.db` and its attempt logs. The GUI asks the user to stop running jobs first. The user can remove `pecore-agent` when turning protected mode off.
 
@@ -824,16 +823,16 @@ Recipes can perform the external actions they define. Outside a recipe, an exter
 *   Normal mode (the default) works like running Claude Code or Codex by hand: agents run as the app user, with access to its files and logins and to `pecore.db`. The rest of this section applies to protected mode. The GUI shows which mode is on and offers protected mode.
 *   Protected mode: agents, checks, the Assistant and the Project Managers run as `pecore-agent`, which cannot read the app user's files unless those files are readable by others (see the check below). All projects share this user, so protected mode separates agents from the user, not projects from each other.
 *   The app user owns the project directory. The project user writes to `work/` and `repo.git/` through a shared group. The global and project databases, including their configurations, definitions and attempt logs, are private to the app user. Project knowledge is private too.
-*   Inside `repo.git/`, only `objects/`, `refs/`, `logs/`, `worktrees/` and `packed-refs` are group-writable. `config`, `hooks/` and `info/` belong to the app user and are read-only for the group. Otherwise an agent could add a hook or a config key such as `core.fsmonitor` or `core.sshCommand`, and the next git command run as the app user (for example in `git-push`) would execute it. As a second barrier, every git command the engine or a `runsAs: engine` node runs gets `-c core.hooksPath=/dev/null`. `extensions.worktreeConfig` stays off, so per-worktree config files are ignored.
-*   The agent controls the worktree's `.git` file and `repo.git/worktrees/<id>/`, so it can point git at a config file it wrote. Therefore the app user never runs git with a work tree under `work/`. Git work in a workdir runs as the project user and returns plain values (a tree hash, a commit SHA). The app user runs git only with `--git-dir=<project>/repo.git` and no work tree (for example `git push` in `git-push`). `runsAs: engine` nodes start in an empty temporary directory, never in a workdir.
+*   Inside `repo.git/`, only `objects/`, `refs/`, `logs/`, `worktrees/` and `packed-refs` are group-writable. `config`, `hooks/` and `info/` belong to the app user and are read-only for the group. Otherwise a Git call run as the app user could execute a hook or a command set by an agent. App-managed Git calls and Repository scripts disable hooks and fsmonitor. `extensions.worktreeConfig` stays off, so per-worktree config files are ignored.
+*   The project user controls the worktree's `.git` file and `repo.git/worktrees/<id>/`. In protected mode the app user runs Git with `--git-dir=<project>/repo.git` and no worktree. Repository and Tracker nodes start in an empty temporary directory.
 *   The engine uses the project user for workdir file operations so an agent cannot use a symlink to reach files private to the app user. These operations include copying attachments, reading `outputRules.file` and deleting `scratchPaths`. They use `cat` and `find -P ... -type f -delete` through `runners/process.ts` and reject symlinks with `test -L`. The engine stores artifact content in `pecore.db` as the app user.
 *   The project user gets traverse-only access (execute, no read) on the directories on the path to `work/`, through ACLs (`setfacl` on Linux, `chmod +a` on macOS). It can reach `work/` but cannot list the app user's home.
 *   At project creation and at every app start, <PE/CORE> checks that the app user's home and the tools' login files are not readable by others, and offers to fix the permissions.
 *   In protected mode, harness logins (subscriptions and API keys) live in `pecore-agent`'s home, stored by each harness. All of them belong to the same OS user, so an agent can read every protected login, not only the one of the harness it runs in: a prompt-injected agent in one project can take the logins of every account used in protected mode. Protected mode protects the app user's files and logins, not the protected logins from each other.
 *   `PECORE_HOME/adapters/` holds only code shipped with the app. It is readable by every user, so `pecore-agent` can run the adapters and the shipped Node; it gets traverse-only access on the directories on the path to it, like `work/`, and on the directories on the path to the harness program (5.7). Only the app user can write any of them.
 *   The Claude Code connector keeps the MCP connectors of the user's claude.ai account out of agents' sessions (5.6), because those act with the user's account outside the project user's reach.
-*   Forge and service logins live in the app user's home, stored by their tools. Only `command` nodes with `runsAs: engine` run as the app user, and the engine selects only the accounts they declare.
-*   Credentialed commands and Tracker nodes run as the app user in an empty directory. Recipes cannot override engine node `params` (3.2). Saving and running recipes, nodes and Compose files requires no technical approval, including agent edits and custom repository creation nodes. Schema validation, recipe-defined human reviews and destructive-action confirmations still apply.
+*   Forge and service tools store their logins in the app user's home. Only Repository and Tracker nodes receive those accounts from the app. In normal mode a process running as the app user can still reach that user's own logins.
+*   Recipes cannot override Repository node `params` (3.2). Saving and running recipes, nodes and Compose files requires no technical approval, including agent edits and custom repository creation nodes. Schema validation, recipe-defined human reviews and destructive-action confirmations still apply.
 *   The human queue holds reviews declared in a recipe, agent questions and round limits.
 *   The GUI opens a native save dialog at `<project id>.tar.zst` in the system's downloads folder (Electron `app.getPath("downloads")`, which follows the XDG user directories on Linux, so `~/Scaricati` on an Italian desktop). The app passes that folder to the engine in `PECORE_DOWNLOADS`, and the Assistant saves there; without it the engine uses `~/Downloads`. Both can include history and exclude raw logs. When history is included, the engine scans artifacts with its own list of common token formats (`share/secrets.ts`: GitHub, GitLab, AWS, Slack, Stripe, Anthropic, OpenAI, Google, npm, PyPI, Hugging Face, Atlassian, JWT, private keys); nothing needs to be installed. Both show the findings before "Export anyway" accepts the displayed fingerprints. History export requires the project's queued, running, waiting and paused jobs to be stopped or archived.
 *   History exports include artifacts in the SQLite snapshot. The CLI can include attempt log rows with history. The engine scans those rows for secrets when included. Otherwise it removes the rows from the snapshot and rebuilds the snapshot to clear their bytes.
@@ -915,7 +914,7 @@ Each entry: option, status (Rejected or Deferred, with the decision if any), rea
 | Risk | Category | Impact | Mitigation | Where |
 |---|---|---|---|---|
 | An agent reaches the app user's forge logins through git config or symlinks in its workdir | security | forge account takeover | the app user never runs git with a work tree under `work/` and never touches files there; file operations run as the project user | 4.5, 8 |
-| An Assistant edit changes a recipe or engine node | security | unreviewed code can run with the user's account | validation of definitions and fixed parameters for engine nodes | 3.2, 6, 8 |
+| An Assistant edit changes a recipe or Repository node | security | unreviewed code can run with the user's account | validation of definitions and fixed parameters for Repository nodes | 3.2, 6, 8 |
 | An agent reads the login of the harness it runs in | security | subscription token theft by a prompt-injected agent | accepted; in protected mode the damage stays within that harness account | 8 |
 | Normal mode: agents run as the app user | security | a prompt-injected agent can read the user's files and forge logins, as when the user runs a harness by hand | author decision: normal mode is the default, for zero setup; the GUI shows the mode and offers protected mode in one step | 8 |
 | Protected mode: all protected harness logins share `pecore-agent` | security | a prompt-injected agent can read the protected logins of every account | accepted: the app user's files and logins stay out of reach; per-account OS users would multiply logins (D9) | 8 |
@@ -926,7 +925,7 @@ Each entry: option, status (Rejected or Deferred, with the decision if any), rea
 | The claude.ai account's MCP connectors (mail, calendar, drive) join an agent's session | security | a prompt-injected agent acts on the user's mail or files with the user's account, outside the project user's reach | `ENABLE_CLAUDEAI_MCP_SERVERS=false` in the Claude Code connector (5.6), checked in phase 0 | 5, 8 |
 | Anthropic treats automated use of a Claude subscription as a breach of its consumer terms | policy | the user's Claude account is restricted | the unmodified Claude Code binary, logged in by the user through Anthropic's flow; <PE/CORE> never handles tokens; API key accounts are supported. Anthropic's legal page allows an end user to sign in to the unmodified binary, says that developers of products, including those built on the Agent SDK, "should use API key authentication", and does not name automation; the consumer terms forbid automated access except where Anthropic permits it ([ACP spike](spikes/acp.md), Terms). Before the public release, ask Anthropic, or make API keys the default for Claude | 3.4, 5 |
 | A crash during a git operation | failure mode | inconsistent repo state | recorded branch, HEAD and stash; abort and reset on interruption | 4.4 |
-| A crash during a delivery | failure mode | double PR or push | probe before every engine node | 4.8 |
+| A crash during a delivery | failure mode | double PR or push | repeat checks in shipped delivery nodes | 4.8 |
 | Parent changes re-run every descendant | cost | tokens, quota and repeated human reviews | base change requests merged while a job works; `skipWhenUnchanged` | 4.2, 3.2 |
 | Forge outages or expired logins during long jobs | failure mode | lost work | waits with reasons `network` and `auth` instead of failures; resume control | 4.3, G17 |
 
@@ -1143,7 +1142,7 @@ V8 measures statements, branches, functions and lines under `packages/*/src` wit
 | `workdir/fs-as.test.ts` | symlinks at every engine file path | CI (Linux, with a test user) |
 | `workdir/git-as.test.ts` | hooks, `core.fsmonitor`, `core.sshCommand` and a forged `commondir` do not run as the app user | CI (Linux, test user) |
 | `workdir/content-state.test.ts` | `READ_ONLY_VIOLATION` restore; `requires` gives `stale`; interrupted rebase is undone | CI |
-| `definitions/engine-node.test.ts` | engine nodes run with the current scripts without approval | CI |
+| `definitions/engine-node.test.ts` | Repository nodes run with the current scripts without approval | CI |
 | `agents: src/connectors.test.ts` | for each built-in connector, the incoming messages of each fixture go through the reader and the classifier, and the result must equal `<case>.expected.json`: auth, quota and rate limit errors (synthetic until recorded, 5.4), usage, account (G7) | CI |
 | `agents: src/session.test.ts` | ACP session with the fake agent: options applied in order and checked, a mismatching `currentValue`, permission answered, resume and fallback to a new session, a request past 30 seconds, connector exit without answer | CI |
 | `engine: runners/agent.test.ts` | agent node with the fake agent: the order of 5.4, invalid output corrected twice then `INVALID_OUTPUT`, timeout with cancel then stop, `retry` use, quota and auth waits, resume lookup (5.5) | CI |
@@ -1180,7 +1179,7 @@ Every file exports a Zod schema and the TypeScript type inferred from it. The en
 
 | File | What and why |
 |---|---|
-| `src/node.ts` | node schema of 3.1: common fields, fields by kind (including Tracker), `failOutcomes`, `probeRules`, `mergedCheck`, `scratchPaths`, placeholder syntax check |
+| `src/node.ts` | node schema of 3.1: common fields, fields by kind, `failOutcomes`, internal repeat and merge checks, `scratchPaths`, placeholder syntax check |
 | `src/recipe.ts` | recipe schema of 3.2: `start`, `onBaseChanged`, `successOutcomes`, nodes, edges, `requires`, `optional`, `skipWhenUnchanged`, `maxRounds` |
 | `src/project.ts` | `project.json` of 3.5 |
 | `src/accounts.ts` | account schema with the kinds `model`, `forge`, `service` |
@@ -1274,7 +1273,7 @@ Everything that knows ACP or a harness lives here (section 5). It imports only `
 | `src/jobs/stacked.ts` | `parentJobId`, `dependsOn`, base and old base, `job.base_changed` for children |
 | `src/jobs/merge-watch.ts` | runs `mergedCheck` of every job with a delivery not yet merged every `mergeCheckSec`; on merge, notifies the children (4.6) |
 | `src/jobs/delete.ts` | removes the local branch, worktree, artifacts, logs, services and rows of a job; project delete calls it for every job, then removes the project directory and definitions; never acts on the forge (4.8) |
-| `src/jobs/effects.ts` | writes the events `effect.requested`, `effect.completed`, `effect.failed` around engine nodes (4.8) |
+| `src/jobs/effects.ts` | writes the events `effect.requested`, `effect.completed`, `effect.failed` around Repository and Tracker actions (4.8) |
 | **osuser/** | |
 | `src/osuser/script.ts` | builds the privileged script that creates or removes `pecore-agent` (user, group, sudo rule); the same text is shown in the guided procedure |
 | `src/osuser/protected-mode.ts` | turns protected mode on and off (Fixed choices): admin prompt, group and ACLs on every project, logins of `pecore-agent` |
@@ -1296,6 +1295,7 @@ Everything that knows ACP or a harness lives here (section 5). It imports only `
 | `src/chat/mcp-server.ts` | MCP over streamable HTTP on `127.0.0.1` with its own token; the tools of section 6 only |
 | `src/chat/tools.ts` | tool handlers; the `write_*` handlers validate input before saving; `read_artifact` returns at most 200 KB, the end of a log when it is longer; `answer_question` resolves a question an agent asked through the chat (an `agent-question` item), never a review or confirmation |
 | `src/chat/session.ts` | connector sessions, model and effort selection, streamed replies, resumption and compaction for the Assistant and Project Manager (section 6) |
+| `src/runners/repository.ts` | Resolves Repository accounts and the Git environment for scripts and merge checks |
 | `src/runners/tracker.ts` | Resolves Tracker accounts and runs inline scripts for recipes and chat |
 | **share/** | |
 | `src/share/export.ts` | `.tar.zst` project archive. History and its attempt logs are optional. Included artifacts and log messages are scanned for secrets (section 8) |
@@ -1366,11 +1366,11 @@ Stored in the repository under `packages/app/resources/` and bundled with the ap
 | `templates/nodes/human-review.json` | buttons `approve`, `changes`, `reject` |
 | `templates/nodes/git-commit.json` | commit; `done` also when there is nothing to commit |
 | `templates/nodes/git-rebase.json` + `.sh` | `git stash push --include-untracked`, `git rebase --onto {job.base} {job.oldBase}`, `git stash pop` |
-| `templates/nodes/git-push.json` + `.sh` | push of Fixed choices; probe script: `h=$(git --git-dir="$PECORE_PROJECT_REPODIR" ls-remote origin "refs/heads/$PECORE_JOB_BRANCH" \| cut -f1); [ "$h" = "$PECORE_JOB_COMMIT" ] && echo "$h"; exit 0` |
-| `templates/nodes/github-pr.json` + `.sh` | 3.1 example; `mergedCheck`: `gh pr view <url> --json state --jq 'select(.state=="MERGED") \| .state'` |
-| `templates/nodes/github-issue-comment.json`, `github-create-repo.json` | comment with `gh issue comment {ticket.id} --body-file`; probe `gh issue view --json comments` searching the PR URL. Repo creation with `gh repo create {project.repo.owner}/{project.repo.name} --private`, then push of `baseBranch`; probe `gh repo view` |
+| `templates/nodes/git-push.json` | push of Fixed choices; probe script: `h=$(git --git-dir="$PECORE_PROJECT_REPODIR" ls-remote origin "refs/heads/$PECORE_JOB_BRANCH" \| cut -f1); [ "$h" = "$PECORE_JOB_COMMIT" ] && echo "$h"; exit 0` |
+| `templates/nodes/github-pr.json` | 3.1 example; `mergedCheck`: `gh pr view <url> --json state --jq 'select(.state=="MERGED") \| .state'` |
+| `templates/nodes/github-create-repo.json` | Repo creation with `gh repo create {project.repo.owner}/{project.repo.name} --private`, then push of `baseBranch`; probe `gh repo view` |
 | `templates/nodes/gitlab-mr.json` + `.sh` | probe `glab mr list --source-branch <b> --target-branch <t> -R <repo> --output json`; create `glab mr create --source-branch --target-branch --title --description -R --yes`; retarget `glab mr update <id> --target-branch <t> -R`; `mergedCheck` `glab mr view <id> -R --output json` with a JSON rule on `state == "merged"`. Flags verified against the pinned glab version in phase 4 |
-| `templates/nodes/gitlab-issue-comment.json`, `gitlab-create-repo.json` | `glab issue note`, `glab repo create`, each with a probe |
+| `templates/nodes/gitlab-create-repo.json` | `glab repo create`, with an internal repeat check |
 | `templates/nodes/typecheck.json`, `eslint.json`, `vitest.json`, `tests-fail-check.json` | TypeScript project checks in the job's workdir |
 | `templates/nodes/cargo-check.json`, `cargo-clippy.json`, `cargo-test.json` | Rust project checks in the job's workdir (G2) |
 | `templates/nodes/*-ticket-search.json`, `*-ticket-read.json`, `*-issue-comment.json` | Tracker nodes for GitHub, GitLab and Jira |
@@ -1387,7 +1387,7 @@ Stored in the repository under `packages/app/resources/` and bundled with the ap
 | `docs/design.md` (exists) | this design |
 | `docs/ui-design.md` (exists) | UI inventory and layout |
 | `docs/orginal_design.md` | original design for historical reference |
-| `docs/nodes.md` | how to write a node: fields, placeholders, probe, `runsAs` |
+| `docs/nodes.md` | how to write a node: fields and placeholders |
 | `docs/recipes.md` | how to write a recipe: edges, rounds, optional nodes, `onBaseChanged` |
 | `docs/connectors.md` | how to add a bundled connector file for a harness with an ACP mode or adapter, and how to record its fixtures |
 
@@ -1423,7 +1423,7 @@ Each line closes one entry gate of phase 4 and overrides the earlier text it con
 1.  **Rebase checkpoint.** `git-rebase.sh` never uses `refs/stash`, which all worktrees of `repo.git` share. With uncommitted changes it makes a checkpoint commit on the job branch (`git add -A`, `git commit --no-verify -m "pecore checkpoint"`), runs `git rebase --onto {job.base} {job.oldBase}`, then `git reset --mixed HEAD~1` to turn the checkpoint back into uncommitted changes. A conflict runs `git rebase --abort`, `git reset --mixed` to the recorded head, and gives `conflict`. The engine no longer records or restores `refs/stash`.
 2.  **Push probe.** The `git-push` probe prints JSON `{"state": "absent" | "same" | "other", "head": "<sha or empty>"}` and exits non-zero when `ls-remote` fails (`unknown`). `probeRules`: `done` on `same`, `not_done` on `absent` and `other`. The engine passes the probe's stdout to the command as `PECORE_PROBE_STDOUT`; the push script uses its `head` as the expected value of `--force-with-lease`, so a remote branch moved by someone else after the probe makes the push fail instead of overwriting it.
 3.  **Repo creation probe.** `done` only when the remote repository exists and has `baseBranch`. The creation script creates the repository if missing, then pushes `baseBranch`; running it on an existing empty repository only pushes.
-4.  **Auth versus network.** When a probe gives `unknown` or a `runsAs: engine` command fails with no matching outcome rule, the engine runs the account tool's identity check (`gh auth token --user <login> --hostname <host>`, `glab config get token --host <host>`). A failed check makes the node run wait with reason `auth` (kind `tool`); a passing check means `network`.
+4.  **Auth versus network.** When a probe gives `unknown` or a Repository script fails with no matching outcome rule, the engine runs the account tool's identity check (`gh auth token --user <login> --hostname <host>`, `glab config get token --host <host>`). A failed check makes the node run wait with reason `auth` (kind `tool`); a passing check means `network`.
 5.  **Compose.** Allowed service keys: `image`, `environment`, `ports` (only `127.0.0.1::<port>`), `healthcheck`, `command`, `entrypoint`, `tmpfs`, `depends_on`, and `volumes` with named volumes only; any other key refuses the file. The check runs on the output of `compose config --format json` of the validated copy, so anchors, `extends` and variables are resolved before the check. Before that command runs, the engine parses the file with the `yaml` package (one document, no duplicate keys, merge keys resolved, no parse warnings) and refuses `include`, `services.*.env_file`, `services.*.label_file` and `services.*.extends.file`, because `compose config` would already read the files they name. The engine is the only owner of services: on quit it runs `compose stop` (data kept), not `down -v`, and the main process runs nothing; a final job state runs `down -v`; Play starts stopped services with `compose start`; the start-up sweep removes `pecore-*` projects whose job is final or missing.
 6.  **Protected `repo.git`.** `repo.git/` is mode 3775 (setgid and sticky) with group `pecore-agent`: the project user can create `packed-refs` and lock files but cannot rename or delete the app user's `config`, `HEAD`, `hooks/` and `info/`, which stay owned by the app user and not group-writable. An ACL (`u:<app user>:rwX`, also as default ACL) on all of `repo.git` lets the app user read and update what `pecore-agent` writes there, because the running app gets the `pecore-agent` group only after the next login. Protected mode is switched only when no job is `running`; running jobs are paused first. The admin prompt that switches also changes the owner of every `work/<job>/` to the new project user. Turning protected mode off gives every file in `repo.git` back to the app user, including those `pecore-agent` created.
 7.  **Technical approvals.** The engine saves and runs definitions without an approval store (section 8).

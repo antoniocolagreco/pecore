@@ -161,11 +161,9 @@ function requiredAccounts(loaded: LoadedProject): Map<string, "forge" | "service
   const aliases: Record<string, string> = loaded.project.credentials ?? {};
   for (const node of loaded.nodes.values()) {
     if (node.kind === "tracker" && node.account !== "project.account") ids.set(aliases[node.account] ?? node.account, node.provider === "jira" ? "service" : "forge");
-    if (node.kind !== "command") continue;
-    for (const credential of node.credentials) {
-      if (credential !== "project.account") ids.set(aliases[credential] ?? credential, "forge");
-      else if (!loaded.project.repo) throw new InvalidArchive(`node ${node.name} needs a project Git hosting account`);
-    }
+    if (node.kind !== "repository") continue;
+    if (node.account !== "project.account") ids.set(aliases[node.account] ?? node.account, "forge");
+    else if (!loaded.project.repo) throw new InvalidArchive(`node ${node.name} needs a project Git hosting account`);
   }
   for (const id of Object.values(aliases)) if (!ids.has(id)) ids.set(id, "forge");
   return ids;
@@ -247,8 +245,8 @@ export async function beginImport(home: string, input: ImportProjectBody, option
       ...Object.entries(aliases).map(([key, account]) => [key, accounts[account]!]),
       ...[...loaded.nodes.values()].flatMap((node) => {
         if (node.kind === "tracker" && node.account !== "project.account") return [[node.account, accounts[aliases[node.account] ?? node.account]!]];
-        if (node.kind !== "command") return [];
-        return node.credentials.filter((name) => name !== "project.account").map((name) => [name, accounts[Object.hasOwn(aliases, name) ? aliases[name]! : name]!]);
+        if (node.kind === "repository" && node.account !== "project.account") return [[node.account, accounts[aliases[node.account] ?? node.account]!]];
+        return [];
       }),
     ]);
     if (Object.keys(mapped).length > 0) project.credentials = mapped;

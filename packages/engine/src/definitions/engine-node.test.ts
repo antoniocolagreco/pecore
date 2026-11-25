@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { monotonicFactory } from "ulid";
 import { describe, expect, it } from "vitest";
 import { Node, Recipe } from "@pecore/schemas";
+import { setTestConfiguration } from "../../test/configuration";
 import { createProjectWithRecipes } from "../../test/project";
 import { shippedTemplates, tempDir } from "../../test/tmp";
 import { Engine } from "../main";
@@ -18,10 +19,10 @@ async function setup() {
     join(lib, "nodes", "notify.json"),
     JSON.stringify({
       name: "notify",
-      description: "an engine node",
-      kind: "command",
-      runsAs: "engine",
-      script: "notify.sh",
+      description: "a repository node",
+      kind: "repository",
+      account: "git-fixture",
+      script: `echo first >> ${marker(root)}`,
       probe: ["/bin/sh", "-c", "exit 0"],
       outcomes: ["done", "failed"],
       failOutcomes: ["failed"],
@@ -33,9 +34,9 @@ async function setup() {
       timeoutSec: 30,
     }),
   );
-  await writeFile(join(lib, "nodes", "notify.sh"), `echo first >> ${marker(root)}\n`);
-  await writeFile(join(lib, "recipes", "notify.json"), JSON.stringify({ name: "notify", description: "one engine node", start: "n", successOutcomes: ["n:done"], nodes: { n: { use: "notify" } } }));
+  await writeFile(join(lib, "recipes", "notify.json"), JSON.stringify({ name: "notify", description: "one repository node", start: "n", successOutcomes: ["n:done"], nodes: { n: { use: "notify" } } }));
   const home: string = join(root, "home");
+  await setTestConfiguration(home, "accounts", { accounts: [{ id: "git-fixture", kind: "forge", forge: "git", tool: "git", host: "forge.example.com", user: "", author: { name: "", email: "" } }] });
   const engine = await Engine.start({ home, templates: lib });
   await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["notify"]);
   return { root, home, lib, engine, p: engine.project("demo") };
@@ -51,7 +52,7 @@ async function until<T>(fn: () => T | undefined | false, ms = 10000): Promise<T>
   }
 }
 
-describe("engine nodes", () => {
+describe("repository nodes", () => {
   it("closes obsolete approval items on restart without starting a queued draft", async () => {
     const { home, lib, engine, p } = await setup();
     const ulid = monotonicFactory();
@@ -82,7 +83,7 @@ describe("engine nodes", () => {
     try {
       const first: string = await engine.createJob("demo", { title: "First", ticket: { text: "x" } });
       await until(() => p.executor.job(first).state === "succeeded");
-      engine.catalog.saveContent("notify.sh", `echo second >> ${marker(root)}\n`);
+      engine.catalog.saveNode(Node.parse({ ...engine.catalog.node("notify"), script: `echo second >> ${marker(root)}` }));
       await engine.reloadProject("demo");
       const second: string = await engine.createJob("demo", { title: "Second", ticket: { text: "x" } });
       await until(() => p.executor.job(second).state === "succeeded");
@@ -100,7 +101,7 @@ describe("engine nodes", () => {
       await engine.pauseAll();
       first = await engine.createJob("demo", { title: "First", ticket: { text: "x" } });
       expect(p.executor.job(first).state).toBe("queued");
-      engine.catalog.saveContent("notify.sh", `echo second >> ${marker(root)}\n`);
+      engine.catalog.saveNode(Node.parse({ ...engine.catalog.node("notify"), script: `echo second >> ${marker(root)}` }));
     } finally {
       await engine.shutdown();
     }
@@ -129,7 +130,8 @@ describe("engine nodes", () => {
       delete legacy.recipes;
       await mkdir(join(dir, "nodes"));
       await mkdir(join(dir, "recipes"));
-      await cp(join(p.ctx.defs.nodeDir, "notify.json"), join(dir, "nodes", "notify.json"));
+      await writeFile(join(dir, "nodes", "notify.json"), JSON.stringify({ ...engine.catalog.node("notify"), kind: "command", account: undefined,
+        runsAs: "engine", credentials: ["git-fixture"], script: "notify.sh" }));
       await cp(join(p.ctx.templates, "recipes", "notify.json"), join(dir, "recipes", "notify.json"));
       await writeFile(join(dir, "nodes", "notify.sh"), `echo migrated >> ${marker(root)}\n`);
       await writeFile(join(dir, "project.json"), JSON.stringify(legacy));
@@ -146,7 +148,7 @@ describe("engine nodes", () => {
       const job: string = await reopened.createJob("demo", { title: "Legacy", ticket: { text: "x" } });
       await until(() => project.executor.job(job).state === "succeeded");
       expect((await readFile(marker(root), "utf8")).trim()).toBe("first");
-      expect(reopened.catalog.content("notify.sh")).toContain("echo first");
+      expect(reopened.catalog.node("notify")).toHaveProperty("script", `echo first >> ${marker(root)}`);
     } finally {
       await reopened.shutdown();
     }

@@ -18,13 +18,14 @@ import { fetchBase, jobArtifacts, jobCommit, latestReference, reentryPending } f
 import type { JobArtifact } from "../jobs/stacked";
 import { outcomeOutputs, runCommandNode, runMergedCheck } from "../runners/command";
 import type { CommandInput, CommandRun } from "../runners/command";
-import { forgeEnv, identityOk, toolAccounts, ToolAuthError } from "../runners/forge-env";
+import { identityOk, ToolAuthError } from "../runners/forge-env";
 import { humanArtifacts, humanItem, humanResult, subjectHash } from "../runners/human";
 import { paramsWithDefaults } from "../runners/placeholders";
 import { appUser, killJobProcesses, signalGroup, stopGroup } from "../runners/process";
 import { enoughDisk } from "../scheduler/disk";
 import type { Pools } from "../scheduler/pools";
 import type { NewEvent, ProjectDb } from "../store/project-db";
+import { repositoryAccount, repositoryEnv } from "../runners/repository";
 import { runTrackerNode, trackerLogin } from "../runners/tracker";
 import { contentState, deleteScratch, recordGit, restoreState, undoInterrupted } from "../workdir/content-state";
 import type { GitRecord } from "../workdir/content-state";
@@ -359,10 +360,14 @@ export class JobExecutor {
     }
     if (job.waiting_reason === "confirmation") this.setState(job.id, "queued", null);
     if (job.id !== setupJobId && this.ctx.held?.()) return false;
-    for (const { definition: node } of Object.values(jobDefinitions(this.ctx.db, job.id)?.nodes ?? {})) {
-      if (node.kind !== "tracker") continue;
+    const definitions: JobDefinitions | null = jobDefinitions(this.ctx.db, job.id);
+    const nodes: Map<string, Node> = jobNodes(definitions, this.ctx.defs.nodes);
+    for (const use of new Set(Object.values(this.recipe(job).nodes).map((step) => step.use))) {
+      const node: Node | undefined = nodes.get(use);
+      if (node?.kind !== "tracker" && node?.kind !== "repository") continue;
       try {
-        await trackerLogin(this.ctx, node);
+        if (node.kind === "repository") repositoryAccount(this.ctx, node);
+        else await trackerLogin(this.ctx, node);
       } catch (error) {
         this.setState(job.id, "queued", "auth", undefined, (error as Error).message);
         return false;
@@ -439,7 +444,7 @@ export class JobExecutor {
   async createSetupJob(createRepo: string): Promise<void> {
     if (this.ctx.db.db.prepare("SELECT 1 FROM jobs WHERE id = ?").get(setupJobId)) return;
     const node = this.ctx.defs.nodes.get(createRepo);
-    if (!node || node.kind !== "command") throw new Error(`repo creation node ${createRepo} not found`);
+    if (!node || node.kind !== "repository") throw new Error(`repo creation node ${createRepo} not found`);
     const recipe = Recipe.parse({
       name: setupJobId,
       description: "Create the remote repository",
@@ -450,7 +455,7 @@ export class JobExecutor {
     const baseBranch = this.ctx.project.baseBranch;
     const base = await branchHead(join(this.ctx.dir, "repo.git"), baseBranch);
     if (!base) throw new Error(`branch ${baseBranch} not found`);
-    const definitions: JobDefinitions = await snapshotDefinitions(recipe, new Map([[createRepo, node]]), this.ctx.defs.nodeDir, this.ctx.defs.sidecars);
+    const definitions: JobDefinitions = await snapshotDefinitions(recipe, new Map([[createRepo, { ...node, account: repositoryAccount(this.ctx, node).id }]]), this.ctx.defs.nodeDir, this.ctx.defs.sidecars);
     this.ctx.db.append([{ jobId: setupJobId, type: "job.created", payload: { title: "Create the remote repository", recipe, definitions, ticket: null, parentJobId: null, baseBranch, base, target: baseBranch, branch: jobBranch(setupJobId) } }]);
     this.ctx.changed(setupJobId);
     void this.tick(setupJobId);
@@ -666,14 +671,13 @@ export class JobExecutor {
     const delivered = latestReference(this.ctx.db, jobArtifacts(this.ctx.db.events(parent.id)), (reference, id) => {
       if (id === null || !recipe.nodes[id] || (reference.url === undefined && reference.ref === undefined)) return false;
       const node: Node = this.nodeFor(recipe, id, nodes);
-      return node.kind === "command" && node.mergedCheck !== undefined;
+      return node.kind === "repository" && node.mergedCheck !== undefined;
     });
     if (!delivered) return null;
     const nodeId: string = delivered.node!;
     const node = this.nodeFor(recipe, nodeId, nodes);
-    if (node.kind !== "command" || !node.mergedCheck) return null;
-    const env: Record<string, string> = {};
-    for (const a of toolAccounts(node.credentials, this.ctx.project.repo?.account, this.ctx.forgeAccount, this.ctx.project.credentials)) Object.assign(env, await forgeEnv(a));
+    if (node.kind !== "repository" || !node.mergedCheck) return null;
+    const env: Record<string, string> = await repositoryEnv(this.ctx, repositoryAccount(this.ctx, node));
     const result = await runMergedCheck({
       node,
       nodeDir: this.ctx.defs.nodeDir,
@@ -766,12 +770,20 @@ export class JobExecutor {
       this.waitForHuman(job, run, item, `${run.node} waits for your ${node.interface === "decision" ? "decision" : "review"}`);
       return false;
     }
-    const previousCi: CiCheck | null = recipe.ci && node.kind === "command" && node.name === "git-push" ? this.ciCheck(job.id) : null;
+    let repository: ForgeAccount | undefined;
+    if (node.kind === "repository") {
+      try {
+        repository = repositoryAccount(this.ctx, node);
+      } catch (error) {
+        this.fail(job, run.id, "HARNESS_ERROR", (error as Error).message);
+        return false;
+      }
+    }
+    const previousCi: CiCheck | null = recipe.ci && node.kind === "repository" && node.name === "git-push" ? this.ciCheck(job.id) : null;
     const repo: Project["repo"] = this.ctx.project.repo;
-    const account: ForgeAccount | undefined = previousCi && repo ? this.ctx.forgeAccount(repo.account) : undefined;
-    if (previousCi && repo && account?.forge === "github") {
+    if (previousCi && repo && repository?.forge === "github") {
       const updated: string | null = jobCommit(this.ctx.db, this.ctx.db.events(job.id));
-      const actual: string | null = await githubHead({ account, url: repo.url, dir: this.ctx.dir, pullRequest: previousCi.pullRequest, timeoutMs: 15_000 }).catch(() => null);
+      const actual: string | null = await githubHead({ account: repository, url: repo.url, dir: this.ctx.dir, pullRequest: previousCi.pullRequest, timeoutMs: 15_000 }).catch(() => null);
       if (actual && actual !== updated && actual !== previousCi.commit) {
         this.holdCiHead(job, previousCi, actual);
         return false;
@@ -811,10 +823,9 @@ export class JobExecutor {
       if (this.job(job.id).state === "waiting") this.setState(job.id, "running", null);
     }
 
-    const tools: ForgeAccount[] = node.kind === "command" ? toolAccounts(node.credentials, this.ctx.project.repo?.account, this.ctx.forgeAccount, this.ctx.project.credentials) : [];
-    const toolEnv: Record<string, string> = {};
+    let toolEnv: Record<string, string> = {};
     try {
-      for (const a of tools) Object.assign(toolEnv, await forgeEnv(a));
+      if (repository) toolEnv = await repositoryEnv(this.ctx, repository);
     } catch (e) {
       if (!(e instanceof ToolAuthError)) throw e;
       this.waitAuth(job, run.id, e.account);
@@ -844,7 +855,7 @@ export class JobExecutor {
         ]);
         const context = this.placeholderContext(this.job(job.id));
         const read: JobArtifact[] = this.readArtifacts(job.id, recipeNode.reads);
-        const commandInputs: CommandInput[] = node.kind !== "command" && node.kind !== "tracker" ? [] : [...node.inputs, ...node.optionalInputs].flatMap((type) => {
+        const commandInputs: CommandInput[] = !("inputs" in node) ? [] : [...node.inputs, ...node.optionalInputs].flatMap((type) => {
           const found: JobArtifact | undefined = read.find(({ artifact }) => artifact.type === type);
           return found ? [{ type, content: this.ctx.db.requireArtifact(found.artifact).toString("utf8") }] : [];
         });
@@ -862,9 +873,10 @@ export class JobExecutor {
         };
         this.running.set(job.id, null);
         const result: Attempt =
-          node.kind === "command"
+          node.kind === "command" || node.kind === "repository"
             ? await runCommandNode({
                 node,
+                ...(node.kind === "repository" ? { inlineScript: node.script, remote: true } : {}),
                 outputs: outcomeOutputs(node),
                 nodeDir: this.ctx.defs.nodeDir,
                 sidecars,
@@ -921,8 +933,7 @@ export class JobExecutor {
           end(result.reason);
           await undoInterrupted(this.ctx.user, wd, job.id, attemptGit, resumed?.questionTree ?? before);
           if (result.reason === "network") {
-            const expired = (await Promise.all(tools.map(async (a) => ((await identityOk(a)) ? null : a.id)))).find((id) => id !== null);
-            if (expired) this.waitAuth(job, run.id, expired);
+            if (repository && !(await identityOk(repository))) this.waitAuth(job, run.id, repository.id);
             else {
               const delay = this.backoff(run.id);
               this.setRun(job.id, run.id, "waiting", "network", { resetAt: Date.now() + delay });
@@ -957,7 +968,7 @@ export class JobExecutor {
           this.fail(job, run.id, "READ_ONLY_VIOLATION");
           return false;
         }
-        const artifacts: Artifact[] = node.kind === "command" ? [this.saveArtifact(job.id, runDir, "text", result.log, after, "log")] : [];
+        const artifacts: Artifact[] = node.kind === "command" || node.kind === "repository" ? [this.saveArtifact(job.id, runDir, "text", result.log, after, "log")] : [];
         let committed: string | null = null;
         for (const o of result.outputs) {
           let content = o.content;

@@ -403,3 +403,9 @@
 - Decision: Add one-script Tracker nodes for GitHub, GitLab and Jira, with templates to search, read and comment. Choose the account on the template. Shipped templates use the project Git account or the active Jira CLI login. Existing chat read and comment actions use the same runner. Questions stay in the app.
 - Why: The Source node was an integration disguised as a node. Its four scripts were hard to understand.
 - Replaces: The Source node, automatic ticket polling and tracker replies as answers.
+
+## 2026-11-25: Repository nodes own Git hosting actions
+
+- Decision: A Repository node runs one inline shell script with a Git hosting account chosen on the node template. Shipped templates use the project account and keep their internal repeat and merge checks. A job needs the account before it starts. Command nodes receive no Git hosting or tracker credentials from the app.
+- Why: An experienced developer could not understand the credentials checkbox.
+- Replaces: Use source control credentials, its Check command field and credentialed Command nodes for repository actions.

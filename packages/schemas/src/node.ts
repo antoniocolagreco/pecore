@@ -79,16 +79,10 @@ export const CommandNode = z
     kind: z.literal("command"),
     inputs: z.array(ArtifactType).default([]),
     optionalInputs: z.array(ArtifactType).default([]),
-    runsAs: z.enum(["project-user", "engine"]).default("project-user"),
     command: Argv.optional(),
     script: z.string().regex(/^[A-Za-z0-9._-]+\.sh$/).optional(),
-    credentials: z.array(z.string()).default([]),
     outcomeRules: z.array(OutcomeRule).min(1),
     outputRules: z.record(Outcome, OutputRule).default({}),
-    probe: CommandOrScript.optional(),
-    probeRules: JsonRule.optional(),
-    mergedCheck: CommandOrScript.optional(),
-    mergedCheckRules: JsonRule.optional(),
   })
   .strict();
 
@@ -151,6 +145,43 @@ export const TrackerNode = CommandNode.pick({
 }).strict();
 export type TrackerNode = z.infer<typeof TrackerNode>;
 
+export const RepositoryNode = TrackerNode.omit({ provider: true, repeatCheck: true }).extend({
+  kind: z.literal("repository"),
+  account: z.string({ error: "Choose a Git hosting account." }).trim().min(1, "Choose a Git hosting account."),
+  script: z.string().trim().min(1, "Enter a repository script."),
+  probe: CommandOrScript.optional(),
+  probeRules: JsonRule.optional(),
+  mergedCheck: CommandOrScript.optional(),
+  mergedCheckRules: JsonRule.optional(),
+});
+export type RepositoryNode = z.infer<typeof RepositoryNode>;
+
+export function argvShellScript(argv: readonly string[]): string {
+  return "exec " + argv.map((arg) => "'" + arg.replaceAll("'", "'\\''").replace(placeholderToken, (whole: string, key: string) =>
+    unknownPlaceholders(whole).length ? whole : "'\"${" + placeholderEnvName(key) + "}\"'",
+  ) + "'").join(" ");
+}
+
+export function upgradeLegacyNode(value: unknown, sidecars: Readonly<Record<string, string>>): unknown {
+  if (!value || typeof value !== "object" || !("kind" in value) || value.kind !== "command") return value;
+  const node: Record<string, unknown> = { ...value };
+  if (node.runsAs !== undefined && node.runsAs !== "project-user" && node.runsAs !== "engine") return value;
+  if (node.runsAs === "engine") {
+    const account: unknown = Array.isArray(node.credentials) ? node.credentials[0] : undefined;
+    node.kind = "repository";
+    node.account = account ?? "project.account";
+    node.changesFiles = false;
+    node.script = typeof node.script === "string" ? sidecars[node.script]
+      : Array.isArray(node.command) && node.command.every((arg) => typeof arg === "string") ? argvShellScript(node.command) : undefined;
+    delete node.command;
+  } else {
+    for (const key of ["probe", "probeRules", "mergedCheck", "mergedCheckRules"]) delete node[key];
+  }
+  delete node.runsAs;
+  delete node.credentials;
+  return node;
+}
+
 type Issue = { path: (string | number)[]; message: string };
 
 function argvPlaceholders(argv: string[] | undefined, path: (string | number)[]): Issue[] {
@@ -158,7 +189,7 @@ function argvPlaceholders(argv: string[] | undefined, path: (string | number)[])
   return argv.flatMap((arg, i) => unknownPlaceholders(arg).map((p) => ({ path: [...path, i], message: `unknown placeholder ${p}` })));
 }
 
-function checkNode(node: z.infer<typeof CommandNode> | z.infer<typeof AgentNode> | HumanNode | TrackerNode): Issue[] {
+function checkNode(node: z.infer<typeof NodeShape>): Issue[] {
   const issues: Issue[] = [];
   for (const [i, o] of node.failOutcomes.entries()) {
     if (!node.outcomes.includes(o)) issues.push({ path: ["failOutcomes", i], message: `${o} is not in outcomes` });
@@ -169,13 +200,9 @@ function checkNode(node: z.infer<typeof CommandNode> | z.infer<typeof AgentNode>
   }
   if (node.kind === "command") {
     if ((node.command === undefined) === (node.script === undefined)) issues.push({ path: ["command"], message: "exactly one of command and script" });
-    if (node.runsAs !== "engine" && node.credentials.length > 0) issues.push({ path: ["credentials"], message: "Turn on Use source control credentials to use the accounts saved on this node." });
-    if (node.runsAs === "engine" && !node.probe) issues.push({ path: ["probe"], message: "Enter a check command that can tell whether the remote action already happened." });
-    if (node.runsAs === "engine" && node.changesFiles) issues.push({ path: ["changesFiles"], message: "Turn off Can edit files when using source control credentials." });
-    if (node.probeRules && !node.probe) issues.push({ path: ["probeRules"], message: "probeRules without probe" });
-    if (node.mergedCheckRules && !node.mergedCheck) issues.push({ path: ["mergedCheckRules"], message: "mergedCheckRules without mergedCheck" });
+    issues.push(...argvPlaceholders(node.command, ["command"]));
   }
-  if (node.kind === "command" || node.kind === "tracker") {
+  if (node.kind !== "agent" && node.kind !== "human") {
     for (const [i, r] of node.outcomeRules.entries()) {
       if (!node.outcomes.includes(r.outcome)) issues.push({ path: ["outcomeRules", i, "outcome"], message: `${r.outcome} is not in outcomes` });
     }
@@ -188,11 +215,6 @@ function checkNode(node: z.infer<typeof CommandNode> | z.infer<typeof AgentNode>
     for (const [i, type] of node.optionalInputs.entries()) {
       if (node.inputs.includes(type)) issues.push({ path: ["optionalInputs", i], message: `${type} is already a required input` });
     }
-  }
-  if (node.kind === "command") {
-    issues.push(...argvPlaceholders(node.command, ["command"]));
-    if (Array.isArray(node.probe)) issues.push(...argvPlaceholders(node.probe, ["probe"]));
-    if (Array.isArray(node.mergedCheck)) issues.push(...argvPlaceholders(node.mergedCheck, ["mergedCheck"]));
   }
   if (node.kind === "agent" && (node.agent.tier === undefined) === (node.agent.profiles === undefined)) {
     issues.push({ path: ["agent"], message: "exactly one of tier and profiles" });
@@ -209,7 +231,7 @@ function checkNode(node: z.infer<typeof CommandNode> | z.infer<typeof AgentNode>
   return issues;
 }
 
-const NodeShape = z.discriminatedUnion("kind", [CommandNode, AgentNode, HumanNode, TrackerNode]);
+const NodeShape = z.discriminatedUnion("kind", [CommandNode, AgentNode, HumanNode, TrackerNode, RepositoryNode]);
 const NodeDefinition = NodeShape.superRefine((node, ctx) => {
   for (const issue of checkNode(node)) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
 });
@@ -242,5 +264,5 @@ export function isHumanNode(node: Node): node is HumanNode {
 
 export function automaticOutputs(node: Node): ArtifactType[] {
   if (node.kind === "human") return [];
-  return [...(node.changesFiles ? ["diff" as const] : []), ...((node.kind === "command" || node.kind === "tracker") ? ["text" as const] : [])];
+  return [...(node.changesFiles ? ["diff" as const] : []), ...(node.kind !== "agent" ? ["text" as const] : [])];
 }

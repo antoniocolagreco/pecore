@@ -1,6 +1,7 @@
 import { cp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { setTestConfiguration } from "../../test/configuration";
 import { createProjectWithRecipes } from "../../test/project";
 import { shippedTemplates, tempDir } from "../../test/tmp";
 import { Engine } from "../main";
@@ -22,9 +23,9 @@ const nodes = (marker: string): Record<string, object> => ({
   deliver: {
     name: "deliver",
     description: "pretends to open a pull request",
-    kind: "command",
-    runsAs: "engine",
-    command: ["/bin/sh", "-c", 'echo "https://forge.example.com/pr/$PECORE_JOB_ID"'],
+    kind: "repository",
+    account: "git-fixture",
+    script: 'echo "https://forge.example.com/pr/$PECORE_JOB_ID"',
     probe: ["/bin/sh", "-c", "exit 0"],
     mergedCheck: ["/bin/sh", "-c", `test -f ${marker} && echo MERGED || true`],
     outcomes: ["opened"],
@@ -99,7 +100,9 @@ async function setup() {
   await cp(shippedTemplates, lib, { recursive: true });
   for (const [name, n] of Object.entries(nodes(marker))) await writeFile(join(lib, "nodes", `${name}.json`), JSON.stringify(n));
   for (const [name, r] of Object.entries(recipes)) await writeFile(join(lib, "recipes", `${name}.json`), JSON.stringify(r));
-  const engine = await Engine.start({ home: join(root, "home"), templates: lib });
+  const home: string = join(root, "home");
+  await setTestConfiguration(home, "accounts", { accounts: [{ id: "git-fixture", kind: "forge", forge: "git", tool: "git", host: "forge.example.com", user: "", author: { name: "", email: "" } }] });
+  const engine = await Engine.start({ home, templates: lib });
   await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, Object.keys(recipes));
   const p = engine.project("demo");
   const repo = join(p.ctx.dir, "repo.git");

@@ -350,7 +350,7 @@ describe("project import (share/, CUJ 7)", () => {
     const f = await forgeProject();
     const { ctx } = f.engine.project("shop");
     const pr: Node = f.engine.catalog.node("github-pr")!;
-    f.engine.catalog.saveNode(Node.parse({ ...pr, name: "pr-explicit", credentials: [forgeAccount.id], inputs: [], optionalInputs: [] }));
+    f.engine.catalog.saveNode(Node.parse({ ...pr, name: "pr-explicit", account: forgeAccount.id, inputs: [], optionalInputs: [] }));
     f.engine.catalog.saveRecipe(Recipe.parse({
       name: "explicit", description: "PR with an explicit account", start: "commit", successOutcomes: ["finish:opened"],
       nodes: { commit: { use: "git-commit" }, finish: { use: "pr-explicit" } },
@@ -375,8 +375,8 @@ describe("project import (share/, CUJ 7)", () => {
     expect(project.folder).toBeNull();
     expect(project.credentials?.[forgeAccount.id]).toBe("gh-mine");
     const installed = b.engine.project("shop").ctx.defs.nodes;
-    expect(installed.get("pr-explicit")).toMatchObject({ credentials: [forgeAccount.id] });
-    expect(installed.get("github-pr")).toMatchObject({ credentials: ["project.account"] });
+    expect(installed.get("pr-explicit")).toMatchObject({ account: forgeAccount.id });
+    expect(installed.get("github-pr")).toMatchObject({ account: "project.account" });
     expect(items(b.engine, "shop", "import")).toEqual([]);
     expect(execFileSync("git", ["--git-dir", join(nd, "repo.git"), "config", "--get", "remote.origin.url"], { encoding: "utf8" }).trim()).toBe("https://github.com/acme/shop.git");
     expect(execFileSync("git", ["--git-dir", join(nd, "repo.git"), "rev-parse", "--verify", "main"], { encoding: "utf8" }).trim()).toMatch(/^[a-f\d]{40}$/);

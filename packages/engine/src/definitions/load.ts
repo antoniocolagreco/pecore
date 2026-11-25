@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { z } from "zod";
-import { Node, Project, Recipe, unknownPlaceholders } from "@pecore/schemas";
+import { Node, Project, Recipe, unknownPlaceholders, upgradeLegacyNode } from "@pecore/schemas";
 import type { Accounts, AgentDefinitions, Profiles, Settings, Tiers } from "@pecore/schemas";
 import { checkRecipe } from "./recipe-check";
 import type { Catalog } from "../store/catalog";
@@ -47,16 +47,25 @@ async function parseFile<S extends z.ZodType>(file: string, schema: S, prepare?:
 export function nodeSidecars(node: Node): [string, string][] {
   const sidecars: [string, string][] = [];
   if (node.kind === "agent") sidecars.push(["prompt", node.prompt]);
-  if (node.kind === "command") {
-    if (node.script) sidecars.push(["script", node.script]);
-    if (node.probe && !Array.isArray(node.probe)) sidecars.push(["probe.script", node.probe.script]);
-    if (node.mergedCheck && !Array.isArray(node.mergedCheck)) sidecars.push(["mergedCheck.script", node.mergedCheck.script]);
+  if (node.kind === "command" && node.script) sidecars.push(["script", node.script]);
+  if (node.kind === "repository") {
+    if (node.probe && !Array.isArray(node.probe)) sidecars.push(["repeat check", node.probe.script]);
+    if (node.mergedCheck && !Array.isArray(node.mergedCheck)) sidecars.push(["merge check", node.mergedCheck.script]);
   }
   return sidecars;
 }
 
 export async function loadNodeFile(file: string): Promise<Loaded<Node>> {
-  const loaded = await parseFile(file, Node);
+  const { value, error } = await readJson(file);
+  if (error) return { value: null, errors: [error] };
+  const sidecars: Record<string, string> = {};
+  if (value && typeof value === "object" && "runsAs" in value && value.runsAs === "engine" &&
+      "script" in value && typeof value.script === "string" && /^[A-Za-z0-9._-]+\.sh$/.test(value.script)) {
+    const body: string | undefined = await readFile(join(dirname(file), value.script), "utf8").catch(() => undefined);
+    if (body !== undefined) sidecars[value.script] = body;
+  }
+  const result = Node.safeParse(upgradeLegacyNode(value, sidecars));
+  const loaded: Loaded<Node> = result.success ? { value: result.data, errors: [] } : { value: null, errors: zodErrors(file, result.error) };
   const node = loaded.value;
   if (!node) return loaded;
   const errors: DefinitionError[] = [];
