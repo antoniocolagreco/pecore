@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { call } from "../api/client";
 import { useData } from "../api/hooks";
-import { BoxIcon, BookIcon } from "../ds/icons";
+import { BoxIcon, BookIcon, selectableAppIcons } from "../ds/icons";
 import type { IconSize } from "../ds/icons";
 import { IconSelect } from "../ds/select";
 import type { IconOption } from "../ds/select";
@@ -42,10 +42,10 @@ export function DefinitionIcon({ icons, type, name, selected, size = "md" }: {
 }) {
   const icon: string = selected || definitionIconName(icons, type, name);
   const image: string | undefined = icons?.get(icon);
-  const Fallback = type === "node" ? BoxIcon : BookIcon;
+  const Glyph = selectableAppIcons.get(icon) ?? (type === "node" ? BoxIcon : BookIcon);
   const glyphSize: IconSize = size === "lg" ? "md" : size;
   const glyph = image ? <span aria-hidden="true" className={s.icon} data-icon={glyphSize} style={{ "--icon-image": image } as CSSProperties} />
-    : <Fallback size={glyphSize} />;
+    : <Glyph size={glyphSize} />;
   return type === "node" ? <NodeIconTile size={size}>{glyph}</NodeIconTile> : glyph;
 }
 
@@ -60,11 +60,12 @@ export function DefinitionIconField({ icons, type, name, value, disabled, labelA
 }) {
   const defaultIcon: string = defaultDefinitionIcon[type];
   const selected: string = value || definitionIconName(icons, type, name);
+  const available: Set<string> = new Set([...(icons?.keys() ?? []), ...selectableAppIcons.keys()]);
+  available.delete(defaultIcon);
+  if (value && value !== defaultIcon) available.add(value);
   const options: IconOption[] = [
     { value: defaultIcon, label: type === "node" ? "Box" : "Book", icon: <DefinitionIcon icons={icons} type={type} name={name} selected={defaultIcon} /> },
-    ...[...(icons?.keys() ?? [])].filter((icon) => icon !== defaultIcon)
-      .map((icon) => ({ value: icon, label: icon, icon: <DefinitionIcon icons={icons} type={type} name={name} selected={icon} /> })),
+    ...[...available].map((icon) => ({ value: icon, label: icon, icon: <DefinitionIcon icons={icons} type={type} name={name} selected={icon} /> })),
   ];
-  if (value && value !== defaultIcon && !icons?.has(value)) options.push({ value, label: value, icon: <DefinitionIcon icons={icons} type={type} name={name} selected={value} /> });
   return <IconSelect label="Icon" labelAction={labelAction} value={selected} options={options} disabled={disabled} onValueChange={onChange} />;
 }
