@@ -461,7 +461,7 @@ Recipe fields:
 | `nodes.<id>.skipWhenUnchanged` | after a base change, if the rebase was clean and the job's own changes are identical to before (same `git patch-id` of the job's diff), the node ends at once with its previous outcome instead of running, and that outcome is bound to the new content state (4.4): an approval of the same patch carries over. Used to avoid repeating reviews and human approvals; checks never use it |
 | `edges` | `from`, `on` (outcome), `to`, optional `maxRounds` |
 
-The editor routes arrows from live card positions. It divides the canvas into channels at card boundaries and reserves distinct tracks for each arrow. An orthogonal A* search avoids cards and prefers facing sides, then fewer turns and shorter paths. Crossings are allowed. The tracks, sides and attachment points are computed in memory. The recipe migration drops old side fields from the catalog and job history.
+The editor routes arrows from live card positions. An orthogonal A* search uses padded card boundaries and reserves each occupied track for the length of its segment. At 100% zoom it leaves at least 10 px of visible clearance from cards and between parallel shafts. The short ends can touch their own cards. Crossings are allowed. Connections prefer facing sides, with centered ports when free and distinct ports when shared. Labels reserve rectangles against cards, other labels and every other arrow. Tracks, ports and labels are computed in memory. The recipe migration drops old side fields from the catalog and job history.
 
 Notes on the example:
 

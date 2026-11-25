@@ -1,29 +1,26 @@
 import { BaseEdge } from "@xyflow/react";
-import type { Edge, EdgeProps, XYPosition } from "@xyflow/react";
+import type { Edge, EdgeProps } from "@xyflow/react";
+import { useId } from "react";
 import type { RecipeRoute } from "./recipeRouting";
 
 export type RoutedRecipeEdge = Edge<{ outcome: string; route: RecipeRoute }, "routed">;
 
-function centre(points: XYPosition[]): XYPosition {
-  let start: XYPosition = points[0]!;
-  let end: XYPosition = points[1]!;
-  let longest: number = 0;
-  for (let index: number = 1; index < points.length; index++) {
-    const a: XYPosition = points[index - 1]!;
-    const b: XYPosition = points[index]!;
-    const length: number = Math.abs(b.x - a.x) + Math.abs(b.y - a.y);
-    if (length <= longest) continue;
-    longest = length;
-    start = a;
-    end = b;
-  }
-  return { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
-}
-
-export function RecipeEdge({ id, label, markerEnd, style, data, interactionWidth }: EdgeProps<RoutedRecipeEdge>) {
+export function RecipeEdge({ id, label, style, data, interactionWidth }: EdgeProps<RoutedRecipeEdge>) {
+  const marker: string = useId();
   if (!data) return null;
-  const { points } = data.route;
+  const { points, label: box } = data.route;
   const path: string = points.map(({ x, y }, index) => `${index ? "L" : "M"} ${x},${y}`).join(" ");
-  const { x, y }: XYPosition = centre(points);
-  return <BaseEdge id={id} path={path} label={label} labelX={x} labelY={y} markerEnd={markerEnd} style={style} interactionWidth={interactionWidth} />;
+  return <>
+    <defs><marker id={marker} markerUnits="userSpaceOnUse" markerWidth={12} markerHeight={10} refX={12} refY={5} orient="auto">
+      <path d="M 0,0 L 12,5 L 0,10 Z" fill={style?.stroke} />
+    </marker></defs>
+    <BaseEdge id={id} path={path} markerEnd={`url(#${marker})`} style={style} interactionWidth={interactionWidth} />
+    {box && <g className="react-flow__edge-textwrapper">
+      {box.leader && <line x1={box.leader[0].x} y1={box.leader[0].y} x2={box.leader[1].x} y2={box.leader[1].y}
+        stroke={style?.stroke} strokeWidth={1.5} strokeDasharray="3 3" />}
+      <rect className="react-flow__edge-textbg" x={box.x} y={box.y} width={box.width} height={box.height} rx={4} />
+      <text className="react-flow__edge-text" textAnchor="middle" dominantBaseline="central"
+        x={box.x + box.width / 2} y={box.y + box.height / 2}>{label}</text>
+    </g>}
+  </>;
 }

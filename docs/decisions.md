@@ -445,3 +445,9 @@
 - Decision: Drag from any side of a card and drop anywhere on the destination, including End. Reconnecting keeps the outcome. Dropping the destination on empty canvas removes the arrow. Arrows reroute during dragging on separate orthogonal tracks around cards. Their endpoints follow the facing sides when possible. Recipes store only the connections and card positions.
 - Why: Dragging to End could fail, and saved sides forced awkward bends and overlapping arrows.
 - Replaces: Saved connection sides, bottom exits for failures, and fixed lanes for returns and End.
+
+## 2026-11-25: Give recipe arrows visible clearance
+
+- Decision: Leave a minimum visible gap of 10 px at 100% zoom between parallel shafts and around cards. Center free ports and spread busy ports. Place labels in clear space on or beside their own arrow. Draw a wider stroke and a visible arrowhead.
+- Why: Distinct coordinates still looked like overlapping lines. Labels hid nearby outcomes, and arrowheads were hard to see.
+- Replaces: Tracks squeezed into narrow channels and labels centered on the longest segment without checking for collisions.

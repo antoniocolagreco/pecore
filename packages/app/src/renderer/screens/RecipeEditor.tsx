@@ -195,6 +195,7 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
     const showStepTitle: boolean = stepTitle !== title && stepTitle.toLowerCase() !== kind;
     return {
       id,
+      caption: showStepTitle ? stepTitle : undefined,
       label: <>
         <NodeCard icon={<DefinitionIcon icons={icons.data} type="node" name={name} selected={string(definitionValue.icon)} size="lg" />} title={title} kind={kind} agent={agents?.find(({ id }) => id === agentId)} />
         {showStepTitle && <small className={s.stepCaption} title={stepTitle}>{stepTitle}</small>}

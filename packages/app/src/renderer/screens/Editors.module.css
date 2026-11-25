@@ -352,7 +352,7 @@
 }
 
 .graph :global(.react-flow__edge.selected .react-flow__edge-path) {
-  stroke-width: 3;
+  stroke-width: 4;
 }
 
 .graph :global(.react-flow__edge.selected .react-flow__edgeupdater) {
@@ -363,10 +363,12 @@
 
 .graph :global(.react-flow__edge-textbg) {
   fill: var(--surface);
+  stroke: var(--border);
 }
 
 .graph :global(.react-flow__edge-text) {
   fill: var(--text);
+  font-family: var(--mono);
   font-size: 14px;
 }
 
