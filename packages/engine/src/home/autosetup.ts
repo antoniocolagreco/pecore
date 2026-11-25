@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { harnessVersion, listOptions, satisfies } from "@pecore/agents";
 import type { ResolvedConnector, Spawn } from "@pecore/agents";
-import { BuiltInHarness, ModelAccount, TierName } from "@pecore/schemas";
-import type { Profile, Profiles, SetupView, Tiers } from "@pecore/schemas";
+import { BuiltInHarness, Compaction, ModelAccount, TierName, roleProfile } from "@pecore/schemas";
+import type { NodeAgent, Profile, Profiles, SetupView, Tiers } from "@pecore/schemas";
 import { spawnFor } from "../accounts/agents";
 import type { AgentServices, LoginInfo } from "../accounts/agents";
 import { validateGlobal } from "../definitions/load";
@@ -139,7 +139,6 @@ export async function autoSetup(configuration: Configuration, agents: AgentServi
   const findings: Finding[] = await Promise.all(BuiltInHarness.options.map((name) => findHarness(agents, name, accounts)));
   const harnesses: Harness[] = findings.map((finding) => finding.harness);
   const eligible: Finding[] = findings.filter(({ harness, account }) => harness.loggedIn && (account || !accounts.accounts.some((a) => a.id === harness.connector)));
-  if (!eligible.length) return { harnesses, changes: null };
   const tracking: Profiles = configuration.autoSetupProfiles();
   const lastWritten: Map<string, Profile> = new Map(tracking.profiles.map((profile) => [profile.id, profile]));
   const newAccounts: ModelAccount[] = [];
@@ -184,6 +183,19 @@ export async function autoSetup(configuration: Configuration, agents: AgentServi
     for (const tier of TierName.options) if (additions[tier].length) entries[tier] = [...tiers.tiers[tier], ...additions[tier]];
     changes.tiers = { tiers: entries };
   }
+  const agentId: string = "agent-default";
+  const agentName: string = "Default";
+  const profileId: string | null = roleProfile(current.settings, "assistant", (changes.tiers ?? tiers).tiers.standard);
+  const defaultProfile: Profile | undefined = (changes.profiles ?? profiles).profiles.find(({ id }) => id === profileId);
+  if (defaultProfile && !current.agents.agents.some((agent) =>
+    agent.id === agentId || (agent.kind === "agent" && agent.name.toLowerCase() === agentName.toLowerCase()))) {
+    const { account, model, effort } = defaultProfile;
+    const agent: NodeAgent = {
+      id: agentId, kind: "agent", name: agentName, color: "#FFFFFF",
+      model: { account, model, effort }, compaction: Compaction.parse({}),
+    };
+    changes.agents = { agents: [agent, ...current.agents.agents] };
+  }
   const changed: (keyof Global)[] = Object.keys(changes) as (keyof Global)[];
   if (!changed.length) return { harnesses, changes: null };
   if (!isDeepStrictEqual(configuration.read(), current) || !isDeepStrictEqual(configuration.autoSetupProfiles(), tracking)) {
@@ -195,7 +207,7 @@ export async function autoSetup(configuration: Configuration, agents: AgentServi
   const profileSummary: string[] = [];
   if (newProfiles.length) profileSummary.push(`${newProfiles.length} ${newProfiles.length === 1 ? "profile" : "profiles"} added`);
   if (refreshedProfiles.size) profileSummary.push(`${refreshedProfiles.size} ${refreshedProfiles.size === 1 ? "profile" : "profiles"} updated`);
-  const summary: string = profileSummary.length ? profileSummary.join(", ") : newAccounts.length ? `${newAccounts.length} model ${newAccounts.length === 1 ? "account" : "accounts"}` : "Assistant profile";
-  const message: string = `Set up ${new Intl.ListFormat("en").format([...titles])}: ${summary}`;
+  const summary: string = profileSummary.length ? profileSummary.join(", ") : `${newAccounts.length} model ${newAccounts.length === 1 ? "account" : "accounts"}`;
+  const message: string = titles.size ? `Set up ${new Intl.ListFormat("en").format([...titles])}: ${summary}` : "Added the Default agent.";
   return { harnesses, changes: { message, changed } };
 }

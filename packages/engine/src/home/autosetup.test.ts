@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "@pecore/schemas";
-import type { LiveMessage } from "@pecore/schemas";
+import type { LiveMessage, NodeAgent } from "@pecore/schemas";
 import { setTestConfiguration, testConfiguration } from "../../test/configuration";
 import { fakeHarnesses } from "../../test/fake-harness";
 import type { FakeHarness } from "../../test/fake-harness";
@@ -150,6 +150,32 @@ describe("auto-setup", () => {
     expect(s.notices).toHaveLength(1);
   });
 
+  it("keeps an edited Default agent and recreates it at startup after deletion", async () => {
+    const s = await setup();
+    await s.harnesses.set("codex", codex);
+    const app = await s.start();
+    const catalog = await app.call("getAgents");
+    const agent: NodeAgent = catalog.value.agents[0]!;
+    expect(catalog.value.agents).toHaveLength(1);
+    expect(agent).toMatchObject({
+      name: "Default", color: "#FFFFFF", model: { account: "codex", model: "gpt-9", effort: "medium" },
+    });
+    expect(agent.model).toEqual(app.engine.chatAgent()?.model);
+    const edited: NodeAgent = { ...agent, name: "My agent", color: "#224466", model: { account: "codex", model: "gpt-9-mini", effort: "low" } };
+    await app.call("putAgents", { body: { value: { agents: [edited] }, baseSha256: catalog.sha256 } });
+    await app.close();
+
+    const reopened = await s.start();
+    const saved = await reopened.call("getAgents");
+    expect(saved.value.agents).toEqual([edited]);
+    await reopened.call("putAgents", { body: { value: { agents: [] }, baseSha256: saved.sha256 } });
+    await reopened.close();
+
+    const afterDeletion = await s.start();
+    expect((await afterDeletion.call("getAgents")).value.agents).toEqual([agent]);
+    await afterDeletion.close();
+  });
+
   it("refreshes the profiles it wrote when the harness offer changes; profiles the user changed or removed stay as they are", async () => {
     const s = await setup();
     await s.harnesses.set("claude-code", claude);
@@ -203,6 +229,7 @@ describe("auto-setup", () => {
       tracking: { profiles: [] },
     });
     expect(s.notices).toEqual([]);
+    expect((await app.call("getAgents")).value.agents).toEqual([]);
     expect(await app.call("getSetup")).toEqual({
       harnesses: [
         { connector: "claude-code", installed: true, version: "2.1.400", loggedIn: false },
@@ -221,6 +248,7 @@ describe("auto-setup", () => {
     expect(messages).toContainEqual(expect.objectContaining({ type: "login.progress", loginId, url: "https://login.example.test/device" }));
     expect((await s.records()).accounts).toEqual({ accounts: [expect.objectContaining({ id: "claude-code", connector: "claude-code" })] });
     expect((((await s.records()).profiles) as { profiles: unknown[] }).profiles).toHaveLength(4);
+    expect((await app.call("getAgents")).value.agents).toEqual([expect.objectContaining({ name: "Default", color: "#FFFFFF" })]);
     expect(s.notices).toEqual([{ kind: "auto-setup", title: "<PE/CORE> setup", body: "Set up Claude Code: 4 profiles added" }]);
     expect(await app.call("getSetup")).toEqual({
       harnesses: [
