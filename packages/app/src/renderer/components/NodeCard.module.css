@@ -76,7 +76,7 @@
 }
 
 .repository {
-  --recipe-node-kind: light-dark(#0f6f6a, #5fd4c8);
+  --recipe-node-kind: var(--status-success);
 }
 
 .start {
