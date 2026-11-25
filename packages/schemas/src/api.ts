@@ -2,7 +2,7 @@ import { z } from "zod";
 import { Accounts } from "./accounts";
 import { Artifact } from "./artifacts";
 import { Profiles } from "./profiles";
-import { ChatAgent, NodeAgentCatalog } from "./agent";
+import { ChatAgent, NodeAgentCatalog, ProjectManagerAgent } from "./agent";
 import { Settings } from "./settings";
 import { Tiers } from "./tiers";
 import { KnowledgeFileName, Name } from "./common";
@@ -631,7 +631,7 @@ export const routes = {
   getAgents: agentsFile.get,
   putAgents: agentsFile.put,
   getChatAgentSettings: { method: "GET", path: "/chat-agent-settings", query: chatAgentQuery, response: z.object({ value: ChatAgent, effectiveModel: ChatAgent.options[0].shape.model, sha256: Sha }) },
-  putChatAgentSettings: { method: "PUT", path: "/chat-agent-settings", query: chatAgentQuery, body: z.strictObject({ value: ChatAgent, baseSha256: Sha }), response: z.object({ sha256: Sha }) },
+  putChatAgentSettings: { method: "PUT", path: "/chat-agent-settings", query: z.object({ project: ProjectId }), body: z.strictObject({ value: ProjectManagerAgent.extend({ cardId: Name.optional() }), baseSha256: Sha }), response: z.object({ sha256: Sha }) },
   getAgentContext: { method: "GET", path: "/agents/:id/context", params: z.object({ id: Name }), response: z.object({ content: z.string(), sha256: Sha }) },
   putAgentContext: { method: "PUT", path: "/agents/:id/context", params: z.object({ id: Name }), body: z.strictObject({ content: z.string().max(1_000_000), baseSha256: Sha }), bodyLimit: 6_001_024, response: z.object({ sha256: Sha }) },
   getAccounts: accountsFile.get,

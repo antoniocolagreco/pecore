@@ -59,7 +59,7 @@
 }
 
 .agent {
-  --recipe-node-kind: light-dark(#68389a, #d3a9fc);
+  --recipe-node-kind: var(--agent-kind-color);
 }
 
 .command {
@@ -93,11 +93,26 @@
 }
 
 .kindBadge {
-  flex: none;
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .kindBadge > span {
   --tone: var(--recipe-node-kind);
   --tag-h: 20px;
+  min-width: 0;
+  max-width: 100%;
   padding: 0 6px;
+}
+
+.kindBadge > span > span:first-child {
+  flex: none;
+}
+
+.badgeLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

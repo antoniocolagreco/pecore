@@ -7,7 +7,7 @@ import { call } from "../api/client";
 import { useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { DefinitionIcon, useDefinitionIcons } from "./DefinitionIcon";
-import { BoundaryCard, NodeCard, recipeNodeKind } from "./NodeCard";
+import { BoundaryCard, NodeCard, recipeNodeKind, useDefaultNodeAgent } from "./NodeCard";
 import { templateTitle } from "./templateTitle";
 import { nodeRunState, StateLabel, toneColor } from "./states";
 import type { Tone } from "./states";
@@ -102,6 +102,7 @@ export function JobGraph({ recipe, definitions, runs, selected, onSelect }: {
 }) {
   const connected: boolean = useConnected();
   const icons = useDefinitionIcons();
+  const defaultAgent = useDefaultNodeAgent();
   const { back, positions } = useMemo(() => arrange(recipe), [recipe]);
   const latest: Map<string, NodeRunView> = latestRuns(runs);
   const backTargets = new Set<string>([...back].map((index) => recipe.edges[index]!.to));
@@ -125,7 +126,7 @@ export function JobGraph({ recipe, definitions, runs, selected, onSelect }: {
       position: recipe.layout?.[id] ?? positions.get(id)!,
       data: { label: <>
         <NodeCard icon={<DefinitionIcon icons={icons.data} type="node" name={definition.use} selected={node?.icon} size="lg" />}
-          title={templateTitle(definition.use)} kind={recipeNodeKind(node?.kind)} />
+          title={templateTitle(definition.use)} kind={recipeNodeKind(node?.kind)} agent={defaultAgent} />
         <div className={s.caption}>
           <StateLabel info={info} />
           {templateTitle(id) !== templateTitle(definition.use) && <small title={templateTitle(id)}>{templateTitle(id)}</small>}

@@ -204,9 +204,9 @@ export function validateGlobal(g: Global): DefinitionError[] {
     if (!accountIds.has(p.account)) errors.push({ file: "profiles", path: `profiles.${i}.account`, message: `account ${p.account} not found` });
     else if (acc?.kind !== "model") errors.push({ file: "profiles", path: `profiles.${i}.account`, message: `account ${p.account} is not a model account` });
   }
-  for (const [i, { model }] of g.agents.agents.entries()) {
-    if (model && !g.accounts.accounts.some(({ id, kind }) => id === model.account && kind === "model")) {
-      errors.push({ file: "agents", path: `agents.${i}.model.account`, message: `model account ${model.account} not found` });
+  for (const [i, agent] of g.agents.agents.entries()) {
+    if (agent.kind === "agent" && agent.model && !g.accounts.accounts.some(({ id, kind }) => id === agent.model?.account && kind === "model")) {
+      errors.push({ file: "agents", path: `agents.${i}.model.account`, message: `model account ${agent.model.account} not found` });
     }
   }
   for (const [tier, list] of Object.entries(g.tiers.tiers)) {

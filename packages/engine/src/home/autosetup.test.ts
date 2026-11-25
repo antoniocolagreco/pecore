@@ -119,10 +119,8 @@ describe("auto-setup", () => {
         cheap: ["claude-code-cheap", "codex-cheap", "opencode-cheap"],
       },
     });
-    expect(app.engine.global().settings.assistant.profile).toBeNull();
     const standard = app.engine.global().profiles.profiles.find(({ id }) => id === "claude-code-standard")!;
     expect(app.engine.chatAgent()?.model).toEqual({ account: standard.account, model: standard.model, effort: standard.effort });
-    expect(app.engine.global().settings.pm.profile).toBeNull();
     expect(app.engine.global().profiles.profiles).toHaveLength(12);
     expect(s.notices).toEqual([{ kind: "auto-setup", title: "<PE/CORE> setup", body: "Set up Claude Code, Codex, and OpenCode: 12 profiles added" }]);
     expect(await app.call("listNotifications")).toContainEqual(expect.objectContaining({ kind: "auto-setup", body: "Set up Claude Code, Codex, and OpenCode: 12 profiles added" }));
@@ -150,30 +148,33 @@ describe("auto-setup", () => {
     expect(s.notices).toHaveLength(1);
   });
 
-  it("keeps an edited Default agent and recreates it at startup after deletion", async () => {
+  it("creates and protects both cards, then preserves edits across restarts", async () => {
     const s = await setup();
     await s.harnesses.set("codex", codex);
     const app = await s.start();
     const catalog = await app.call("getAgents");
-    const agent: NodeAgent = catalog.value.agents[0]!;
-    expect(catalog.value.agents).toHaveLength(1);
-    expect(agent).toMatchObject({
-      name: "Default", color: "#FFFFFF", model: { account: "codex", model: "gpt-9", effort: "medium" },
-    });
-    expect(agent.model).toEqual(app.engine.chatAgent()?.model);
-    const edited: NodeAgent = { ...agent, name: "My agent", color: "#224466", model: { account: "codex", model: "gpt-9-mini", effort: "low" } };
-    await app.call("putAgents", { body: { value: { agents: [edited] }, baseSha256: catalog.sha256 } });
+    expect(catalog.value.agents).toMatchObject([
+      { id: "assistant", name: "Assistant", color: "#68389A", model: { account: "codex", model: "gpt-9", effort: "medium" } },
+      { id: "agent-default", name: "Default Agent", color: "#68389A", model: { account: "codex", model: "gpt-9", effort: "medium" } },
+    ]);
+    for (const card of catalog.value.agents) {
+      const others: NodeAgent[] = catalog.value.agents.filter(({ id }) => id !== card.id);
+      await expect(app.call("putAgents", { body: { value: { agents: others }, baseSha256: catalog.sha256 } })).rejects.toThrow("cannot be renamed or deleted");
+      await expect(app.call("putAgents", { body: { value: { agents: [...others, { ...card, name: "Renamed" }] }, baseSha256: catalog.sha256 } })).rejects.toThrow("cannot be renamed or deleted");
+    }
+    const agents: NodeAgent[] = catalog.value.agents.map((card) => ({ ...card, color: "#224466", model: { account: "codex", model: "gpt-9-mini", effort: "low" } }));
+    await app.call("putAgents", { body: { value: { agents }, baseSha256: catalog.sha256 } });
+    expect(app.engine.chatAgent()?.model).toEqual(agents[0]?.model);
     await app.close();
 
     const reopened = await s.start();
-    const saved = await reopened.call("getAgents");
-    expect(saved.value.agents).toEqual([edited]);
-    await reopened.call("putAgents", { body: { value: { agents: [] }, baseSha256: saved.sha256 } });
+    expect((await reopened.call("getAgents")).value.agents).toEqual(agents);
     await reopened.close();
 
-    const afterDeletion = await s.start();
-    expect((await afterDeletion.call("getAgents")).value.agents).toEqual([agent]);
-    await afterDeletion.close();
+    await setTestConfiguration(s.home, "agents", { agents: [] });
+    const recovered = await s.start();
+    expect((await recovered.call("getAgents")).value.agents).toEqual(catalog.value.agents);
+    await recovered.close();
   });
 
   it("refreshes the profiles it wrote when the harness offer changes; profiles the user changed or removed stay as they are", async () => {
@@ -229,7 +230,7 @@ describe("auto-setup", () => {
       tracking: { profiles: [] },
     });
     expect(s.notices).toEqual([]);
-    expect((await app.call("getAgents")).value.agents).toEqual([]);
+    expect((await app.call("getAgents")).value.agents).toMatchObject([{ name: "Assistant", color: "#68389A", model: null }, { name: "Default Agent", color: "#68389A", model: null }]);
     expect(await app.call("getSetup")).toEqual({
       harnesses: [
         { connector: "claude-code", installed: true, version: "2.1.400", loggedIn: false },
@@ -248,7 +249,7 @@ describe("auto-setup", () => {
     expect(messages).toContainEqual(expect.objectContaining({ type: "login.progress", loginId, url: "https://login.example.test/device" }));
     expect((await s.records()).accounts).toEqual({ accounts: [expect.objectContaining({ id: "claude-code", connector: "claude-code" })] });
     expect((((await s.records()).profiles) as { profiles: unknown[] }).profiles).toHaveLength(4);
-    expect((await app.call("getAgents")).value.agents).toEqual([expect.objectContaining({ name: "Default", color: "#FFFFFF" })]);
+    expect((await app.call("getAgents")).value.agents).toMatchObject([{ name: "Assistant", model: { account: "claude-code" } }, { name: "Default Agent", model: { account: "claude-code" } }]);
     expect(s.notices).toEqual([{ kind: "auto-setup", title: "<PE/CORE> setup", body: "Set up Claude Code: 4 profiles added" }]);
     expect(await app.call("getSetup")).toEqual({
       harnesses: [
@@ -267,7 +268,7 @@ describe("auto-setup", () => {
     await mkdir(s.home, { recursive: true });
     await setTestConfiguration(s.home, "accounts", { accounts: [{ id: "work", kind: "model", provider: "openai", connector: "codex", login: "subscription" }] });
     await setTestConfiguration(s.home, "profiles", { profiles: [{ id: "mine", account: "work", model: "gpt-9" }] });
-    await setTestConfiguration(s.home, "settings", { assistant: { profile: "mine" } });
+    await setTestConfiguration(s.home, "agents", { agents: [{ id: "assistant", kind: "agent", name: "Assistant", color: "#FFFFFF", model: { account: "work", model: "gpt-9", effort: null }, compaction: { auto: 131_072, max: 262_144 } }] });
     const app = await s.start();
 
     expect((await s.records()).accounts).toEqual({ accounts: [{ id: "work", kind: "model", provider: "openai", connector: "codex", login: "subscription", email: null, maxParallel: 2 }] });
@@ -280,7 +281,7 @@ describe("auto-setup", () => {
         { id: "codex-cheap", account: "work", model: "gpt-9", effort: "low" },
       ],
     });
-    expect((await s.records()).settings).toMatchObject({ assistant: { profile: "mine" } });
+    expect(app.engine.chatAgent()?.model).toEqual({ account: "work", model: "gpt-9", effort: null });
     expect(s.notices.at(-1)?.body).toBe("Set up Codex: 4 profiles added");
     await app.close();
   });

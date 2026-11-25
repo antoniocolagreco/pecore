@@ -63,7 +63,7 @@ export async function updateProject(engine: Engine, { project, changes }: z.infe
     const query = { role: "pm" as const, project };
     const file = await getChatAgentSettings({ query, params: undefined, body: undefined });
     const pm: ProjectManagerIdentity = engine.projectManagerFor(changes.pm, project);
-    await putChatAgentSettings({ query, params: undefined, body: { value: { ...file.value, ...pm }, baseSha256: file.sha256 } });
+    await putChatAgentSettings({ query, params: undefined, body: { value: { id: file.value.id, kind: "pm", name: pm.name, color: pm.color }, baseSha256: file.sha256 } });
   }
   if (JSON.stringify(current) !== JSON.stringify(next)) {
     await definitions.saveDefinition({ params: { path }, query: undefined, body: { content: JSON.stringify(next, null, 2) + "\n", baseSha256: file.sha256 } });

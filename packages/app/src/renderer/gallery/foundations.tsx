@@ -112,6 +112,7 @@ const colorGroups: { title: string; kind: "fill" | "text" | "line" | "shadow"; t
       { name: "--accent-fill", use: "primary buttons, selected items, your chat bubble" },
       { name: "--accent-fill-hover", use: "hover of accent fills" },
       { name: "--on-accent", use: "text on accent fills" },
+      { name: "--agent-kind-color", use: "Agent node badge and built-in agent cards" },
     ],
   },
   {
@@ -316,7 +317,7 @@ export function Icons() {
 }
 
 const sampleAgent: NodeAgent = {
-  id: "developer", name: "Developer", kind: "agent",
+  id: "developer", name: "Developer", kind: "agent", color: "#D97757",
   model: { account: "claude", model: "opus", effort: "high" }, compaction: { auto: 262144, max: 524288 },
 };
 

@@ -136,7 +136,7 @@ export function Showcase() {
   const [color, setColor] = useState("#DC2626");
   const [mode, setMode] = useState("ask");
   const [all, setAll] = useState<boolean[]>([true, false, true]);
-  const [traits, setTraits] = useState<string[]>(["Concise"]);
+  const [filters, setFilters] = useState<string[]>(["Running"]);
   const someChecked = all.some(Boolean);
   const allChecked = all.every(Boolean);
 
@@ -256,9 +256,9 @@ export function Showcase() {
           </div>
         </Example>
         <Example caption="Chips">
-          <Chips label="Personality">
-            {["Concise", "Formal", "Playful"].map((trait) => (
-              <Chip key={trait} pressed={traits.includes(trait)} onClick={() => setTraits(traits.includes(trait) ? traits.filter((t) => t !== trait) : [...traits, trait])}>{trait}</Chip>
+          <Chips label="Job status">
+            {["Running", "Waiting", "Failed"].map((status) => (
+              <Chip key={status} pressed={filters.includes(status)} onClick={() => setFilters(filters.includes(status) ? filters.filter((value) => value !== status) : [...filters, status])}>{status}</Chip>
             ))}
             <Chip pressed={false} aria-disabled>Blocked</Chip>
           </Chips>

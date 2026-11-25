@@ -25,6 +25,7 @@ export type AgentRun = {
   inputs: AgentInput[];
   attachments?: string[];
   knowledge: { rel: string; abs: string }[];
+  agentContext?: string;
   development?: boolean;
   connector: ResolvedConnector;
   login: Login;
@@ -165,7 +166,9 @@ export async function runAgentNode(r: AgentRun): Promise<AgentOutcome> {
   const values = placeholderValues({ ...r.context, params: r.params, workdir: r.workdir });
   const template: string | undefined = r.sidecars ? r.sidecars[r.node.prompt] : await readFile(join(r.nodeDir, r.node.prompt), "utf8");
   if (template === undefined) throw new Error(`${r.node.name}: missing saved prompt ${r.node.prompt}`);
-  let text = buildPrompt(substitute(template, values), r.node, r.inputs, knowledge, r.attachments, r.development);
+  const prompt: string = substitute(template, values);
+  const context: string = r.agentContext?.trim() ?? "";
+  let text = buildPrompt(context ? `${prompt}\n\n## Initial context from the user\n\n${context}` : prompt, r.node, r.inputs, knowledge, r.attachments, r.development);
 
   let pgid: number | null = null;
   const spawn: Spawn = async (p) => {

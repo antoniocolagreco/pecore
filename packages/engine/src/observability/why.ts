@@ -79,6 +79,10 @@ export function whyJob(ctx: ProjectContext, job: JobRow, globalPause: boolean): 
   if (job.state === "queued") reasons.push(queuedReason(ctx, job, globalPause));
   if (job.state === "paused")
     reasons.push(job.waiting_reason === "quit" ? reason({ reason: "quit", text: "Paused when the app quit: press Play to continue" }) : reason({ reason: "user", text: "Paused by you: press Play to continue" }));
+  if (job.state === "stopped" && job.failure_reason === "AGENT_UNAVAILABLE") {
+    const stopped = ctx.db.events(job.id).findLast((event) => event.type === "job.state_changed");
+    reasons.push(reason({ reason: "AGENT_UNAVAILABLE", text: stopped?.payload.detail ?? "Agent unavailable." }));
+  }
   if (job.state === "waiting") {
     if (job.waiting_reason === "ci") reasons.push(reason({ reason: "ci", text: "Waits for CI on the published commit" }));
     if (job.waiting_reason === "ci_head") {

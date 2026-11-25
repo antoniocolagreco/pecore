@@ -20,7 +20,6 @@ import { SidebarItem, SidebarSection } from "../shell/sidebar";
 import { builtInThemes, themePrefs } from "../theme/themes";
 import type { ThemePrefs } from "../theme/themes";
 import { settingUrl } from "./NodeEditor";
-import { ChatAgentSettings } from "./Agents";
 import s from "./Settings.module.css";
 
 type Snapshot<T> = { value: T; sha256: string };
@@ -30,8 +29,6 @@ type Progress = { lines: string[]; url: string | null; done: boolean };
 const sections: { id: string; title: string }[] = [
   { id: "you", title: "You" },
   { id: "accounts", title: "Accounts" },
-  { id: "assistant", title: "Assistant" },
-  { id: "pm", title: "Project Manager" },
   { id: "projects", title: "Projects" },
   { id: "limits", title: "Limits" },
   { id: "protectedMode", title: "Protected mode" },
@@ -386,12 +383,6 @@ export function Settings() {
           onAdd={(account) => { if (accounts.value) void accounts.commit({ ...accounts.value, accounts: [...accounts.value.accounts, account] }); }} />
 
         {settings.feedback}
-        <Section id="assistant" title="Assistant" plain>
-          <ChatAgentSettings role="assistant" />
-        </Section>
-        <Section id="pm" title="Project Manager Default" description="Used by projects until their Project Manager is customized." plain>
-          <ChatAgentSettings role="pm" />
-        </Section>
         {value && <>
 
           <Section id="projects" title="Projects" description="Where the code of new projects goes.">

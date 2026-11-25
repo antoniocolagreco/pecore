@@ -5,7 +5,7 @@ import type { XYPosition } from "@xyflow/react";
 import { SearchField } from "../ds/field";
 import { Card, Spinner } from "../ds/feedback";
 import { NodeCard, nodeKindLabels } from "../components/NodeCard";
-import type { RecipeNodeKind } from "../components/NodeCard";
+import type { NodeAgentBadge, RecipeNodeKind } from "../components/NodeCard";
 import s from "./Editors.module.css";
 
 export type PaletteNode = { name: string; title: string; tags: string[]; icon: ReactNode; kind: RecipeNodeKind };
@@ -18,8 +18,9 @@ type Gesture = {
   mode?: "scroll" | "node";
 };
 
-export function RecipePalette({ nodes, disabled, loading, onAdd, children }: {
+export function RecipePalette({ nodes, defaultAgent, disabled, loading, onAdd, children }: {
   nodes: PaletteNode[];
+  defaultAgent?: NodeAgentBadge;
   disabled: boolean;
   loading: boolean;
   onAdd(name: string, point: XYPosition): void;
@@ -88,7 +89,7 @@ export function RecipePalette({ nodes, disabled, loading, onAdd, children }: {
         onPointerUp={(event) => finish(event, true)} onPointerCancel={(event) => finish(event, false)}
         onLostPointerCapture={(event) => finish(event, false)} onDragStart={(event) => event.preventDefault()}>
         {filtered.map(({ name, title, icon, kind }) => <li key={name} data-node-template={name}>
-          <NodeCard icon={icon} title={title} kind={kind} />
+          <NodeCard icon={icon} title={title} kind={kind} agent={defaultAgent} />
         </li>)}
         {!filtered.length && <li className={s.paletteEmpty} role="status">
           {loading ? <Spinner /> : nodes.length ? "No matching nodes" : "No nodes available"}
@@ -98,7 +99,7 @@ export function RecipePalette({ nodes, disabled, loading, onAdd, children }: {
     </div>
     {preview && dragged && createPortal(
       <div className={s.nodePreview} style={{ left: preview.point.x, top: preview.point.y }} aria-hidden="true">
-        <NodeCard icon={dragged.icon} title={dragged.title} kind={dragged.kind} />
+        <NodeCard icon={dragged.icon} title={dragged.title} kind={dragged.kind} agent={defaultAgent} />
       </div>, document.body,
     )}
   </Card>;

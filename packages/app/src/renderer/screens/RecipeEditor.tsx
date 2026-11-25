@@ -21,7 +21,7 @@ import { DefinitionErrors, DeleteTemplateButton, definitionUrl, object, parseDra
 import type { NewDefinition } from "./NodeEditor";
 import { RecipeGraph } from "./RecipeGraph";
 import type { RecipeCanvas, RecipeGraphLink, RecipeGraphNode } from "./RecipeGraph";
-import { BoundaryCard, NodeCard, RecipeNodeKindBadge, recipeNodeKind } from "../components/NodeCard";
+import { BoundaryCard, NodeCard, RecipeNodeKindBadge, recipeNodeKind, useDefaultNodeAgent } from "../components/NodeCard";
 import { RecipePalette } from "./RecipePalette";
 import type { PaletteNode } from "./RecipePalette";
 import { arrangeRecipe, freeRecipeSlot, recipeEnd, recipeLayout, recipeStart, snapRecipePosition, withRecipeBoundaries } from "./recipeLayout";
@@ -61,6 +61,7 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
     ? call("listDefinitions", { query: { dir: knowledgeDir } }) : Promise.resolve([]),
   [knowledgeDir], (event) => event.type === "definition.changed" && event.path.startsWith(knowledgeDir + "/"));
   const icons = useDefinitionIcons();
+  const defaultAgent = useDefaultNodeAgent();
   const duplicate = useAction(async () => {
     const source = parseDraft(file.content);
     if (!source || file.dirty) return;
@@ -170,7 +171,7 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
     return {
       id,
       label: <>
-        <NodeCard icon={<DefinitionIcon icons={icons.data} type="node" name={name} selected={string(definitionValue.icon)} size="lg" />} title={title} kind={kind} />
+        <NodeCard icon={<DefinitionIcon icons={icons.data} type="node" name={name} selected={string(definitionValue.icon)} size="lg" />} title={title} kind={kind} agent={defaultAgent} />
         {showStepTitle && <small className={s.stepCaption} title={stepTitle}>{stepTitle}</small>}
       </>,
       invalid: highlight("nodes." + id),
@@ -313,7 +314,7 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
     </div><ErrorText error={recipeTemplates.error ?? importRecipe.error} /></Card>}
     {file.ready && <div className={s.recipePanel}>
       {draft ? <>
-        {!knowledgeMode && <RecipePalette nodes={paletteNodes} disabled={!editable} loading={definitions.loading} onAdd={add}>
+        {!knowledgeMode && <RecipePalette nodes={paletteNodes} defaultAgent={defaultAgent} disabled={!editable} loading={definitions.loading} onAdd={add}>
           <ErrorText error={definitions.error} />
           {project && <div className={s.projectPalette}>
             <div className={s.importRow}>
@@ -346,7 +347,7 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
               {selected ? <>
                 <div className={s.inspectorMeta}>
                   <DefinitionIcon icons={icons.data} type="node" name={string(selectedNode.use)} selected={string(nodeValue.icon)} size="sm" />
-                  {selectedKind && <RecipeNodeKindBadge kind={selectedKind} />}
+                  {selectedKind && <RecipeNodeKindBadge kind={selectedKind} agent={defaultAgent} />}
                   {humanInterface && <span>{humanInterfaces[humanInterface].label}</span>}
                   {definition && file.editable && <Link to={definitionUrl("node", definition.path)}>Edit definition</Link>}
                 </div>

@@ -23,6 +23,7 @@ const reasonText: Record<string, string> = {
   round_limit: "Round limit",
   budget: "Budget limit",
   auth: "Login needed",
+  AGENT_UNAVAILABLE: "Agent unavailable",
 };
 
 export function reasonLabel(reason: string | null, until?: number | null): string | null {
@@ -53,7 +54,7 @@ export function jobState(job: Pick<JobView, "state" | "waitingReason" | "failure
     case "failed":
       return { label: "Failed", tone: "failed", icon: "✕", detail: job.failureReason, pulse: false };
     case "stopped":
-      return { label: "Stopped", tone: "inactive", icon: "■", detail: null, pulse: false };
+      return { label: "Stopped", tone: "inactive", icon: "■", detail: reasonLabel(job.failureReason), pulse: false };
   }
 }
 
@@ -70,7 +71,7 @@ export function nodeRunState(run: Pick<NodeRunView, "state" | "outcome" | "waiti
     case "waiting":
       return { label: needsYouRun.has(run.waitingReason ?? "") ? "Needs you" : "Waiting", tone: "warning", icon: "◷", detail: reasonLabel(run.waitingReason), pulse: false };
     case "failed":
-      return { label: "Failed", tone: "failed", icon: "✕", detail: run.failureReason, pulse: false };
+      return { label: "Failed", tone: "failed", icon: "✕", detail: reasonLabel(run.failureReason), pulse: false };
     case "interrupted":
       return { label: "Interrupted", tone: "inactive", icon: "■", detail: null, pulse: false };
     case "skipped":

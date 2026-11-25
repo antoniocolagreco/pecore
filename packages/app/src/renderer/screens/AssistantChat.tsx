@@ -801,7 +801,7 @@ function Chat({ project }: { project: string | null }) {
       </div>
       {ready === false && connected && (
         <div className={s.footnote}>
-          <Alert tone="warning" title={`No model for ${agent}`} actions={<Link to={project === null ? "/settings?section=assistant" : `/projects/${project}?tab=project-manager`}>Open settings</Link>}>
+          <Alert tone="warning" title={`No model for ${agent}`} actions={<Link to={project === null ? "/agents/edit/assistant" : `/agents/edit/${encodeURIComponent(configured?.kind === "pm" ? configured.cardId : "agent-default")}`}>Open agent card</Link>}>
             Choose a provider and model.
           </Alert>
         </div>

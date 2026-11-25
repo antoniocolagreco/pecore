@@ -1,9 +1,12 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Artifact } from "@pecore/schemas";
+import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { tempDir } from "../../test/tmp";
 import { ChatsDb, assistantChat, notificationsKept } from "./chats-db";
+import { Configuration } from "./configuration";
 import { ProjectDb } from "./project-db";
 
 const job = "01JOB";
@@ -133,9 +136,43 @@ describe("pecore.db", () => {
 });
 
 describe("chats.db", () => {
+  it("migrates the saved Assistant and PM identity while dropping personality traits", async () => {
+    const file: string = join(await tempDir(), "chats.db");
+    const old: Database.Database = new Database(file);
+    for (const name of ["chats-009-agent-contexts.sql", "chats-010-configuration.sql"]) {
+      old.exec(await readFile(new URL(`./migrations/${name}`, import.meta.url), "utf8"));
+    }
+    old.exec(`CREATE TABLE schema_version (version INTEGER PRIMARY KEY);
+      INSERT INTO schema_version VALUES (13);
+      INSERT INTO agents VALUES
+        ('assistant', 0, 'assistant', 'Old Name', 'account', 'saved-model', 'high', 65536, 131072, NULL, 0),
+        ('pm-project', 1, 'pm', 'Chris', 'old-account', 'old-model', NULL, 131072, 262144, '#DC2626', 1),
+        ('custom', 2, 'agent', 'Reviewer', NULL, NULL, NULL, 131072, 262144, NULL, 0),
+        ('coloured', 3, 'agent', 'Builder', NULL, NULL, NULL, 131072, 262144, '#123456', 1);
+      INSERT INTO agent_traits VALUES ('assistant', 0, 'critical');
+      INSERT INTO assistant_traits VALUES (0, 'bold');
+      INSERT INTO agent_contexts VALUES ('assistant', 'Assistant context'), ('pm-default', 'Default context');`);
+    old.close();
+    const db: ChatsDb = new ChatsDb(file);
+    try {
+      const configuration = new Configuration(db.db);
+      expect(configuration.agents().agents).toEqual([
+        { id: "assistant", kind: "agent", name: "Assistant", color: "#68389A", model: { account: "account", model: "saved-model", effort: "high" }, compaction: { auto: 65_536, max: 131_072 } },
+        { id: "pm-project", kind: "pm", name: "Chris", color: "#DC2626", cardId: "agent-default" },
+        { id: "custom", kind: "agent", name: "Reviewer", color: "#FFFFFF", model: null, compaction: { auto: 131_072, max: 262_144 } },
+        { id: "coloured", kind: "agent", name: "Builder", color: "#123456", model: null, compaction: { auto: 131_072, max: 262_144 } },
+      ]);
+      expect(db.agentContext("assistant")).toBe("Assistant context");
+      expect(db.agentContext("agent-default")).toBe("Default context");
+      expect(db.db.prepare("SELECT count(*) FROM sqlite_schema WHERE name IN ('agent_traits', 'assistant_traits')").pluck().get()).toBe(0);
+    } finally {
+      db.close();
+    }
+  });
+
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.version()).toBe(13);
+    expect(db.version()).toBe(17);
     for (let i = 0; i < notificationsKept + 3; i++) db.addNotification({ kind: "job", title: `n${i}`, body: "" }, 1000 + i);
     const kept = db.notifications();
     expect(kept).toHaveLength(notificationsKept);
@@ -152,12 +189,12 @@ describe("chats.db", () => {
       old.db.exec(`DROP TABLE "${name}"`);
     }
     old.db.exec(`DROP TABLE agent_contexts; DROP TABLE settings; DROP TABLE ui_preferences; DROP TABLE harness_colors;
-      DROP TABLE assistant_traits; DROP TABLE agent_traits; DROP TABLE agents; DROP TABLE tier_profiles;
+      DROP TABLE agents; DROP TABLE tier_profiles;
       DROP TABLE profiles; DROP TABLE accounts; DROP TABLE auto_setup_profiles; DROP TABLE theme_tokens; DROP TABLE themes;
       UPDATE schema_version SET version = 5`);
     old.close();
     const db = new ChatsDb(file);
-    expect(db.version()).toBe(13);
+    expect(db.version()).toBe(17);
     expect(db.messages(assistantChat)).toEqual([]);
     db.close();
   });
@@ -166,14 +203,14 @@ describe("chats.db", () => {
     const path: string = join(await tempDir(), "chats.db");
     const db: ChatsDb = new ChatsDb(path);
     db.setAgentContext("assistant", "# Small changes");
-    db.setAgentContext("pm-default", "# Check dependencies");
+    db.setAgentContext("agent-default", "# Check dependencies");
     db.setAgentContext("assistant", "# Ask before changing scope");
     db.close();
 
     const reopened: ChatsDb = new ChatsDb(path);
     try {
       expect(reopened.agentContext("assistant")).toBe("# Ask before changing scope");
-      expect(reopened.agentContext("pm-default")).toBe("# Check dependencies");
+      expect(reopened.agentContext("agent-default")).toBe("# Check dependencies");
       expect(reopened.agentContext("unknown")).toBe("");
     } finally {
       reopened.close();

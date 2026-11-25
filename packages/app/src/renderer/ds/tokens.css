@@ -42,6 +42,7 @@
   --danger: #c8261c;
   --warning: #965200;
   --success: #1f7a37;
+  --agent-kind-color: light-dark(#68389a, #d3a9fc);
 
   --bg: #ececef;
   --surface: #f6f6f8;

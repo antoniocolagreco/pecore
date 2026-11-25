@@ -1,7 +1,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Accounts, ChatAgent, Settings as SettingsSchema } from "@pecore/schemas";
-import type { RouteInput, Theme } from "@pecore/schemas";
+import { Accounts, Settings as SettingsSchema } from "@pecore/schemas";
+import type { Theme } from "@pecore/schemas";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Settings } from "./Settings";
@@ -13,20 +13,12 @@ vi.mock("../api/live", () => ({ useConnected: () => true, onLive: () => () => un
 
 beforeEach(() => {
   api.call.mockReset();
-  api.call.mockImplementation(async (route: string, input?: RouteInput<"getChatAgentSettings">) => {
+  api.call.mockImplementation(async (route: string, input?: unknown) => {
     if (route === "getSettings") return { value: SettingsSchema.parse({}), sha256: "settings-v1" };
     if (route === "getAccounts") return { value: Accounts.parse({}), sha256: "accounts-v1" };
     if (route === "getStatus") return { homeFindings: [], globalPause: false, notifications: 0, interrupted: 0, version: "test" };
     if (route === "listThemes") return [];
-    if (route === "getChatAgentSettings") {
-      const defaults: { model: null; compaction: { auto: number; max: number } } = { model: null, compaction: { auto: 131_072, max: 262_144 } };
-      const value: ChatAgent = ChatAgent.parse(input?.query.role === "assistant"
-        ? { ...defaults, id: "assistant", kind: "assistant", name: "Assistant" }
-        : { ...defaults, id: "pm-default", kind: "pm", name: "Project Manager", color: "#445566" });
-      return { value, effectiveModel: null, sha256: "agent-v1" };
-    }
     if (route === "putSettings") return { sha256: "settings-v2" };
-    if (route === "getAgentContext") return { sha256: "context-v1", content: "" };
     if (route === "putTheme") return input;
     throw new Error(`Unexpected route ${route}`);
   });
@@ -38,6 +30,8 @@ it("loads preferences and saves the updated name with its current revision", asy
   const user: ReturnType<typeof userEvent.setup> = userEvent.setup();
   render(<MemoryRouter><Settings /></MemoryRouter>);
   const name: HTMLElement = await screen.findByRole("textbox", { name: "Your name" });
+  expect(screen.queryByRole("button", { name: "Assistant" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Project Manager" })).toBeNull();
   await user.type(name, "Antonio");
 
   await waitFor(() => expect(api.call).toHaveBeenCalledWith("putSettings", {

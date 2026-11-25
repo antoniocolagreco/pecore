@@ -1,62 +1,55 @@
-import type { Project } from "@pecore/schemas";
+import type { NodeAgent, Project } from "@pecore/schemas";
 import { ProjectDb } from "../store/project-db";
-import { setTestConfiguration } from "../../test/configuration";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { forgeHome } from "../../test/forge-project";
+import { setTestConfiguration } from "../../test/configuration";
 import { Engine } from "../main";
 import { globalFileHandlers } from "../api/routes/settings";
 
 describe("Project Manager names and colours per project", () => {
-  it("saves Assistant and Project Manager Default independently and rejects a stale edit to the same role", async () => {
+  it("saves a separate card per Project Manager and falls back to Default when a card is deleted", async () => {
     const { home, templates } = await forgeHome();
-    const engine = await Engine.start({ home, templates });
+    await setTestConfiguration(home, "accounts", { accounts: [
+      { id: "codex", kind: "model", provider: "openai", connector: "codex", login: "subscription" },
+    ] });
+    let engine: Engine = await Engine.start({ home, templates });
     try {
       const handlers = globalFileHandlers(engine);
-      const assistant = { query: { role: "assistant" as const }, params: undefined };
-      const pm = { query: { role: "pm" as const }, params: undefined };
-      const first = await handlers.getChatAgentSettings({ ...assistant, body: undefined });
-      const second = await handlers.getChatAgentSettings({ ...pm, body: undefined });
-      const editAssistant = { ...assistant, body: { value: { ...first.value, name: "Nova" }, baseSha256: first.sha256 } };
-      const editPm = { ...pm, body: { value: { ...second.value, traits: ["pragmatic" as const], compaction: { auto: 65536, max: 131072 } }, baseSha256: second.sha256 } };
-      const [updatedAssistant] = await Promise.all([handlers.putChatAgentSettings(editAssistant), handlers.putChatAgentSettings(editPm)]);
-      const saved = await handlers.getChatAgentSettings({ ...assistant, body: undefined });
-      expect(saved).toMatchObject({ value: { name: "Nova" }, sha256: updatedAssistant.sha256 });
-      expect(engine.chatAgent(undefined, "pm")?.compaction).toEqual({ auto: 65536, max: 131072 });
-      expect(engine.chatAgent(undefined, "pm")?.traits).toEqual([]);
-      await expect(handlers.putChatAgentSettings(editAssistant)).rejects.toThrow("changed since it was loaded");
-    } finally {
-      await engine.shutdown();
-    }
-  });
-
-  it("uses the default for new projects and keeps project overrides out of the agent catalog", async () => {
-    const { home, templates } = await forgeHome();
-    await setTestConfiguration(home, "agents", { agents: [
-      { id: "developer", name: "Developer", kind: "agent", model: null, compaction: { auto: 131072, max: 262144 } },
-    ] });
-    const engine = await Engine.start({ home, templates });
-    try {
-      const agents = globalFileHandlers(engine);
-      const save = async (query: { role: "pm"; project?: string }, name: string, compaction: { auto: number; max: number }): Promise<void> => {
-        const file = await agents.getChatAgentSettings({ query, params: undefined, body: undefined });
-        await agents.putChatAgentSettings({ query, params: undefined, body: { value: { ...file.value, name, compaction }, baseSha256: file.sha256 } });
-      };
+      const catalog = await handlers.getAgents();
+      const reviewer: NodeAgent = { id: "reviewer", kind: "agent", name: "Reviewer", color: "#FFFFFF",
+        model: { account: "codex", model: "review-model", effort: "high" }, compaction: { auto: 65_536, max: 131_072 } };
+      const builder: NodeAgent = { id: "builder", kind: "agent", name: "Builder", color: "#123456",
+        model: { account: "codex", model: "build-model", effort: "low" }, compaction: { auto: 262_144, max: 524_288 } };
+      const value = { agents: [...catalog.value.agents, reviewer, builder] };
+      await handlers.putAgents({ params: undefined, query: undefined, body: { value, baseSha256: catalog.sha256 } });
       await engine.createProject({ id: "one", name: "One", repo: null });
       await engine.createProject({ id: "two", name: "Two", repo: null });
-      expect(engine.projectManagerIdentity("one")).toMatchObject({ name: "Chris" });
-      expect(engine.projectManagerIdentity("two")).toMatchObject({ name: "Amber" });
-      await save({ role: "pm" }, "Project Manager Default", { auto: 65536, max: 131072 });
-      expect(engine.chatAgent("one")?.compaction).toEqual({ auto: 65536, max: 131072 });
-      expect(engine.chatAgent("two")?.compaction).toEqual({ auto: 65536, max: 131072 });
-      await save({ role: "pm", project: "one" }, "Evelyn", { auto: 262144, max: 524288 });
-      expect(engine.chatAgent("one")).toMatchObject({ name: "Evelyn", compaction: { auto: 262144, max: 524288 } });
-      expect(engine.chatAgent("two")).toMatchObject({ name: "Amber", compaction: { auto: 65536, max: 131072 } });
-      await expect(save({ role: "pm", project: "one" }, "Amber", { auto: 65536, max: 131072 })).rejects.toThrow("already uses this name");
-      const catalog = await agents.getAgents();
-      expect(catalog.value.agents.map(({ name, kind }) => ({ name, kind }))).toEqual([{ name: "Developer", kind: "agent" }]);
-      await agents.putAgents({ params: undefined, query: undefined, body: { value: { agents: [] }, baseSha256: catalog.sha256 } });
-      expect(engine.chatAgent("one")?.name).toBe("Evelyn");
+      expect(engine.chatAgent("one")).toMatchObject({ name: "Chris", cardId: "agent-default" });
+      expect(engine.chatAgent("two")).toMatchObject({ name: "Amber", cardId: "agent-default" });
+      const assign = async (project: string, cardId: string): Promise<void> => {
+        const file = await handlers.getChatAgentSettings({ query: { role: "pm", project }, params: undefined, body: undefined });
+        if (file.value.kind !== "pm") throw new Error("Missing Project Manager.");
+        const { id, name, color } = file.value;
+        await handlers.putChatAgentSettings({ query: { project }, params: undefined, body: {
+          value: { id, kind: "pm", name, color, cardId }, baseSha256: file.sha256,
+        } });
+      };
+      await expect(assign("one", "assistant")).rejects.toThrow("Choose an agent card");
+      await expect(assign("one", "missing")).rejects.toThrow("Choose an agent card");
+      await assign("one", reviewer.id);
+      await assign("two", builder.id);
+      await engine.shutdown();
+      engine = await Engine.start({ home, templates });
+      expect(engine.chatAgent("one")).toMatchObject({ name: "Chris", color: "#DC2626", cardId: reviewer.id, model: reviewer.model, compaction: reviewer.compaction });
+      expect(engine.chatAgent("two")).toMatchObject({ name: "Amber", cardId: builder.id, model: builder.model, compaction: builder.compaction });
+      const reopened = globalFileHandlers(engine);
+      const saved = await reopened.getAgents();
+      await reopened.putAgents({ params: undefined, query: undefined, body: {
+        value: { agents: saved.value.agents.filter(({ id }) => id !== reviewer.id) }, baseSha256: saved.sha256,
+      } });
+      expect(engine.chatAgent("one")).toMatchObject({ name: "Chris", cardId: "agent-default" });
+      expect(engine.chatAgent("two")).toMatchObject({ name: "Amber", cardId: builder.id });
     } finally {
       await engine.shutdown();
     }

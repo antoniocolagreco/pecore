@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { builtInAgentNames } from "@pecore/schemas";
 import type { Artifact, AttemptView, JobDetail, NodeRunView } from "@pecore/schemas";
 import { useConnected } from "../api/live";
 import { artifactKey, ArtifactView, latestFindings } from "./ArtifactView";
@@ -55,7 +56,7 @@ export function NodeRunDetail({ detail, run, nodeName, icon, onSelect }: {
           <dt>Duration</dt><dd>{run.startedAt === null ? "—" : duration((run.endedAt ?? now) - run.startedAt)}</dd>
           <dt>State</dt><dd>{run.state}</dd>
           {run.outcome && <><dt>Outcome</dt><dd>{run.outcome}</dd></>}
-          {run.failureReason && <><dt>Failure</dt><dd>{run.failureReason}</dd></>}
+          {run.failureReason && <><dt>Failure</dt><dd>{reasonLabel(run.failureReason)}</dd></>}
           {run.waitingReason && <><dt>Waiting</dt><dd>{reasonLabel(run.waitingReason, run.resetAt)}</dd></>}
         </Details>
         {!!earlier.length && (
@@ -75,7 +76,7 @@ export function NodeRunDetail({ detail, run, nodeName, icon, onSelect }: {
             <section key={attempt.id}>
               <strong>Attempt {attempts.length - attemptPage * pageSize - index}</strong>
               <Details>
-                <dt>Profile</dt><dd>{attempt.profile ?? "—"}</dd>
+                <dt>Profile</dt><dd>{builtInAgentNames.get(attempt.profile?.split(":", 1)[0] ?? "") ?? attempt.profile ?? "—"}</dd>
                 <dt>Model</dt><dd>{attempt.model ?? "—"}</dd>
                 <dt>Tokens</dt><dd>{attempt.tokens.input.toLocaleString()} in · {attempt.tokens.output.toLocaleString()} out · {attempt.tokens.cacheRead.toLocaleString()} cache read · {attempt.tokens.cacheWrite.toLocaleString()} cache write</dd>
                 <dt>Cost</dt><dd>{attempt.cost === null ? "—" : `$${attempt.cost.toLocaleString(undefined, { maximumFractionDigits: 6 })}`}</dd>

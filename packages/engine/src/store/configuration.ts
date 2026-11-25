@@ -12,12 +12,7 @@ type SettingsRow = {
   merge_check_sec: number;
   projects_folder: string;
   protected_mode: number;
-  assistant_profile: string | null;
-  assistant_compaction_auto: number;
-  assistant_compaction_max: number;
-  pm_profile: string | null;
-  pm_compaction_auto: number;
-  pm_compaction_max: number;
+
 };
 
 type AccountRow = {
@@ -46,8 +41,8 @@ type AgentRow = {
   effort: string | null;
   compaction_auto: number;
   compaction_max: number;
-  color: string | null;
-  has_color: number;
+  color: string;
+  card_id: string | null;
 };
 
 export class Configuration {
@@ -60,7 +55,6 @@ export class Configuration {
   settings(): Settings {
     const row: SettingsRow | undefined = this.db.prepare<[], SettingsRow>("SELECT * FROM settings WHERE id = 1").get();
     if (!row) return Settings.parse({});
-    const traits: string[] = this.db.prepare<[], string>("SELECT trait FROM assistant_traits ORDER BY position").pluck().all();
     const colors: { harness: string; color: string }[] = this.db.prepare<[], { harness: string; color: string }>("SELECT harness, color FROM harness_colors ORDER BY harness").all();
     const ui: { name: string; value: string }[] = this.db.prepare<[], { name: string; value: string }>("SELECT name, value FROM ui_preferences ORDER BY name").all();
     return Settings.parse({
@@ -71,8 +65,6 @@ export class Configuration {
       mergeCheckSec: row.merge_check_sec,
       projectsFolder: row.projects_folder,
       protectedMode: !!row.protected_mode,
-      assistant: { profile: row.assistant_profile, compaction: { auto: row.assistant_compaction_auto, max: row.assistant_compaction_max }, traits },
-      pm: { profile: row.pm_profile, compaction: { auto: row.pm_compaction_auto, max: row.pm_compaction_max } },
       harnessColors: Object.fromEntries(colors.map(({ harness, color }) => [harness, color])),
       ui: Object.fromEntries(ui.map(({ name, value }) => [name, JSON.parse(value)])),
     });
@@ -103,16 +95,14 @@ export class Configuration {
 
   agents(): AgentDefinitions {
     const rows: AgentRow[] = this.db.prepare<[], AgentRow>("SELECT * FROM agents ORDER BY position").all();
-    const traits: Database.Statement<[string], string> = this.db.prepare<[string], string>("SELECT trait FROM agent_traits WHERE agent = ? ORDER BY position").pluck();
     return AgentDefinitions.parse({ agents: rows.map((row) => {
-      const common: Pick<AgentDefinition, "id" | "name" | "model" | "compaction"> = {
-        id: row.id, name: row.name,
+      if (row.kind === "pm") return { id: row.id, name: row.name, kind: row.kind, color: row.color, cardId: row.card_id ?? undefined };
+      return {
+        id: row.id, name: row.name, kind: row.kind,
         model: row.account && row.model ? { account: row.account, model: row.model, effort: row.effort } : null,
         compaction: { auto: row.compaction_auto, max: row.compaction_max },
+        color: row.color,
       };
-      if (row.kind === "agent") return { ...common, kind: row.kind, ...(row.has_color ? { color: row.color } : {}) };
-      if (row.kind === "pm") return { ...common, kind: row.kind, color: row.color, traits: traits.all(row.id) };
-      return { ...common, kind: row.kind, traits: traits.all(row.id) };
     }) });
   }
 
@@ -145,14 +135,11 @@ export class Configuration {
   }
 
   private writeSettings(value: Settings): void {
-    this.db.exec("DELETE FROM settings; DELETE FROM assistant_traits; DELETE FROM harness_colors; DELETE FROM ui_preferences");
-    const { user, limits, servicesRuntime, minFreeDiskGb, mergeCheckSec, projectsFolder, protectedMode, assistant, pm, harnessColors, ui } = value;
-    this.db.prepare("INSERT INTO settings VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+    this.db.exec("DELETE FROM settings; DELETE FROM harness_colors; DELETE FROM ui_preferences");
+    const { user, limits, servicesRuntime, minFreeDiskGb, mergeCheckSec, projectsFolder, protectedMode, harnessColors, ui } = value;
+    this.db.prepare("INSERT INTO settings VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)").run(
       user.name, limits.jobs, limits.agents, servicesRuntime, minFreeDiskGb, mergeCheckSec, projectsFolder, Number(protectedMode),
-      assistant.profile, assistant.compaction.auto, assistant.compaction.max, pm.profile, pm.compaction.auto, pm.compaction.max,
     );
-    const trait: Database.Statement<[number, string]> = this.db.prepare("INSERT INTO assistant_traits (position, trait) VALUES (?, ?)");
-    for (const [i, value] of assistant.traits.entries()) trait.run(i, value);
     const color: Database.Statement<[string, string]> = this.db.prepare("INSERT INTO harness_colors (harness, color) VALUES (?, ?)");
     for (const [harness, value] of Object.entries(harnessColors)) color.run(harness, value);
     const preference: Database.Statement<[string, string]> = this.db.prepare("INSERT INTO ui_preferences (name, value) VALUES (?, ?)");
@@ -192,13 +179,12 @@ export class Configuration {
   private writeAgents(value: AgentDefinitions): void {
     this.db.exec("DELETE FROM agents");
     const insert: Database.Statement = this.db.prepare(`INSERT INTO agents
-      (id, position, kind, name, account, model, effort, compaction_auto, compaction_max, color, has_color)
+      (id, position, kind, name, account, model, effort, compaction_auto, compaction_max, color, card_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-    const trait: Database.Statement<[string, number, string]> = this.db.prepare("INSERT INTO agent_traits (agent, position, trait) VALUES (?, ?, ?)");
     for (const [i, agent] of value.agents.entries()) {
-      insert.run(agent.id, i, agent.kind, agent.name, agent.model?.account ?? null, agent.model?.model ?? null, agent.model?.effort ?? null,
-        agent.compaction.auto, agent.compaction.max, "color" in agent ? agent.color ?? null : null, Number("color" in agent && agent.color !== undefined));
-      if (agent.kind !== "agent") for (const [position, value] of agent.traits.entries()) trait.run(agent.id, position, value);
+      if (agent.kind === "pm") insert.run(agent.id, i, agent.kind, agent.name, null, null, null, null, null, agent.color, agent.cardId);
+      else insert.run(agent.id, i, agent.kind, agent.name, agent.model?.account ?? null, agent.model?.model ?? null, agent.model?.effort ?? null,
+        agent.compaction.auto, agent.compaction.max, agent.color, null);
     }
   }
 }

@@ -217,12 +217,4 @@ describe("global configuration", () => {
     expect(validateGlobal(g).map((e) => e.message)).toEqual(["account nobody not found", "profile sonnet not found"]);
   });
 
-  it("loads Project Manager settings from the database", async () => {
-    const home = await tempDir();
-    await setTestConfiguration(home, "settings", { pm: { profile: "manager", compaction: { auto: 131_072, max: 262_144 } } });
-    const g = await testConfiguration(home, (config) => config.read());
-    expect(validateGlobal(g)).toEqual([]);
-    expect(g.settings.pm).toEqual({ profile: "manager", compaction: { auto: 131_072, max: 262_144 } });
-    expect(g.settings).not.toHaveProperty("orchestrator");
-  });
 });

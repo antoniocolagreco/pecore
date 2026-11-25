@@ -69,10 +69,6 @@
   color: var(--text-2);
 }
 
-.traits {
-  margin-top: 8px;
-}
-
 .rows {
   display: flex;
   flex-direction: column;

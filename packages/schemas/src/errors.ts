@@ -31,6 +31,7 @@ export type WaitingReason = z.infer<typeof WaitingReason>;
 
 export const FailureReason = z.enum([
   "HARNESS_ERROR",
+  "AGENT_UNAVAILABLE",
   "TIMEOUT",
   "INVALID_OUTPUT",
   "READ_ONLY_VIOLATION",

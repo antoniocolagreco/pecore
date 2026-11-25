@@ -92,7 +92,7 @@ it("opens a project chat and links to its Project Manager settings when a model 
   model = false;
   render(<MemoryRouter initialEntries={["/projects/demo"]}><ChatPanel /></MemoryRouter>);
   expect(await screen.findByText("No model for Project Manager")).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Open settings" }).getAttribute("href")).toBe("/projects/demo?tab=project-manager");
+  expect(screen.getByRole("link", { name: "Open agent card" }).getAttribute("href")).toBe("/agents/edit/agent-default");
   expect(screen.getByRole("button", { name: "Send" }).hasAttribute("disabled")).toBe(true);
   expect(api.call).toHaveBeenCalledWith("getProjectChat", { params: { id: "demo" } });
 });

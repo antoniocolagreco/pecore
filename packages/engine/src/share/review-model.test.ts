@@ -8,7 +8,7 @@ import type { ReviewInput } from "./review-model";
 vi.mock("@pecore/agents", () => ({ startSession: vi.fn() }));
 
 const engine = {
-  global: () => ({ settings: { assistant: { profile: "reviewer" } }, profiles: { profiles: [{ id: "reviewer", account: "claude", model: "test", effort: null }] }, tiers: { tiers: { standard: [] } } }),
+  chatAgent: () => ({ model: { account: "claude", model: "test", effort: null } }),
   agents: {
     account: () => ({ id: "claude", connector: "claude-code" }),
     connector: () => ({ name: "claude-code", harness: { program: "claude" } }),

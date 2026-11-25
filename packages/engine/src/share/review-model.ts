@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startSession } from "@pecore/agents";
 import type { ResolvedConnector, Session, TurnResult } from "@pecore/agents";
-import { ArchiveRisk, roleProfile } from "@pecore/schemas";
+import { ArchiveRisk } from "@pecore/schemas";
 import { z } from "zod";
 import type { Engine } from "../main";
 
@@ -20,9 +20,8 @@ const instructions: string = [
 ].join("\n");
 
 export async function reviewWithModel(engine: Engine, files: ReviewInput[]): Promise<ModelReview> {
-  const { settings, profiles, tiers } = engine.global();
   const agents = engine.agents;
-  const profile = profiles.profiles.find(({ id }) => id === roleProfile(settings, "assistant", tiers.tiers.standard));
+  const profile = engine.chatAgent()?.model;
   const account = profile && agents?.account(profile.account);
   const configured = account && agents?.connector(account.connector);
   if (!agents || !profile || !account || configured?.name !== "claude-code" || configured.harness.program !== "claude" || !Object.hasOwn(agents.paths.adapters, adapter) || files.length === 0) return { status: "unavailable" };

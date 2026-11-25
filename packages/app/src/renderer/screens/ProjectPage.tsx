@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { appName } from "@pecore/schemas";
 import type { DefinitionEntry, ForgeAccount, Project, ProjectView } from "@pecore/schemas";
-import { ChatAgentSettings } from "./Agents";
+import { ProjectManagerSettings } from "./Agents";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
@@ -434,7 +434,7 @@ function ProjectDetails({ id }: { id: string }) {
               { value: "variables", label: "Variables", content: <Card padded className={s.narrow}><ProjectVariables id={id} onSaved={data.reload} /></Card> },
               { value: "recipes", label: "Recipes", content: <Card padded className={s.narrow}><Recipes id={id} /></Card> },
               { value: "knowledge", label: "Knowledge", content: <KnowledgeBase id={id} /> },
-              { value: "project-manager", label: "PM", content: <div className={s.narrow}><ChatAgentSettings role="pm" project={id} /></div> },
+              { value: "project-manager", label: "PM", content: <div className={s.narrow}><ProjectManagerSettings project={id} /></div> },
             ]}
           />
           <Dialog

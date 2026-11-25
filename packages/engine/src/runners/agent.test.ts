@@ -2,7 +2,7 @@ import { cp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { setTestConfiguration } from "../../test/configuration";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Project } from "@pecore/schemas";
+import type { NodeAgent, Project } from "@pecore/schemas";
 import { describe, expect, it } from "vitest";
 import { createProjectWithRecipes } from "../../test/project";
 import { shippedTemplates, tempDir } from "../../test/tmp";
@@ -34,7 +34,7 @@ const agentNode = (extra: object = {}) => ({
 });
 
 async function setup(scripts: object[][], node: object = agentNode(), recipeExtra: object = {}, knowledge: Record<string, string> = {},
-  recipeKnowledge?: Project["recipeKnowledge"]) {
+  recipeKnowledge?: Project["recipeKnowledge"], configureAgent: boolean = true) {
   const root = await tempDir();
   const home = join(root, "home");
   const lib = join(root, "templates");
@@ -59,9 +59,16 @@ async function setup(scripts: object[][], node: object = agentNode(), recipeExtr
   );
   await mkdir(home, { recursive: true });
   await setTestConfiguration(home, "accounts", { accounts: [{ id: "fake", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" }] });
-  await setTestConfiguration(home, "profiles", { profiles: [{ id: "p1", account: "fake", model: "m1" }] });
-  await setTestConfiguration(home, "tiers", { tiers: { strong: ["p1"] } });
+  if (configureAgent) {
+    await setTestConfiguration(home, "profiles", { profiles: [{ id: "p1", account: "fake", model: "m1" }] });
+    await setTestConfiguration(home, "tiers", { tiers: { strong: ["p1"], standard: ["p1"] } });
+    await setTestConfiguration(home, "agents", { agents: [{
+      id: "agent-default", kind: "agent", name: "Default Agent", color: "#68389A",
+      model: { account: "fake", model: "m-default" }, compaction: { auto: 131_072, max: 262_144 },
+    }] });
+  }
   const engine = await Engine.start({ home, templates: lib, agents: { connectorsDir: connectors, adaptersDir: join(root, "adapters"), adapters: {} }, checkLogins: false });
+  engine.setAgentContext("agent-default", "# Shared agent context");
   await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, recipeKnowledge }, ["one-agent"]);
   const p = engine.project("demo");
   for (const [name, content] of Object.entries(knowledge)) await writeFile(join(p.ctx.dir, "knowledge", name), content);
@@ -81,24 +88,46 @@ async function until<T>(fn: () => T | undefined | false, ms = 20000): Promise<T>
 
 const final = (p: Awaited<ReturnType<typeof setup>>["p"], id: string) => () => {
   const j = p.executor.job(id);
-  return ["succeeded", "failed", "waiting", "not_delivered"].includes(j.state) ? j : undefined;
+  return ["succeeded", "failed", "waiting", "not_delivered", "stopped"].includes(j.state) ? j : undefined;
 };
 
 describe("agent nodes with the fake agent (5.4)", () => {
+  it("stops at an unconfigured agent and runs the same step after Resume", async () => {
+    const { engine, p, id } = await setup([[
+      ...init, ...newSession, prompt, output({ outcome: "done" }), usageAnswer,
+    ]], agentNode(), {}, {}, undefined, false);
+    try {
+      expect(await until(final(p, id))).toMatchObject({ state: "stopped", failure_reason: "AGENT_UNAVAILABLE" });
+      expect(engine.why(id).reasons).toContainEqual(expect.objectContaining({ reason: "AGENT_UNAVAILABLE", text: "Choose a provider and model on the Default Agent card." }));
+      expect(p.ctx.db.db.prepare("SELECT count(*) FROM attempts").pluck().get()).toBe(0);
+      const cards: NodeAgent[] = engine.agentCatalog().agents.map((agent) => agent.id === "agent-default"
+        ? { ...agent, model: { account: "fake", model: "m-after-setup", effort: null } } : agent);
+      engine.configuration.write({ agents: { agents: cards } });
+      await engine.reloadGlobal();
+      expect(p.executor.job(id).state).toBe("stopped");
+      await p.executor.resume(id);
+      expect(await until(final(p, id))).toMatchObject({ state: "succeeded", failure_reason: null });
+    } finally {
+      await engine.shutdown();
+    }
+  });
+
   it("completes on end_turn with a valid output, records session, tokens and the prompt", async () => {
     const { engine, p, id } = await setup([[
       ...init, ...newSession, prompt, message("I will make the change.", "progress"),
       { write: { path: "done.txt", content: "x" } }, message("```json\n{"), message('"outcome":"done"}\n```'), usageAnswer,
     ]]);
+    expect(p.ctx.defaultAgent()?.model?.model).toBe("m-default");
     const j = await until(final(p, id));
     expect(j.state).toBe("succeeded");
     const a = p.ctx.db.db.prepare("SELECT profile, account, session_id, resumed, tokens_in, tokens_out, cache_read, cache_write, end_reason FROM attempts").get();
-    expect(a).toEqual({ profile: "p1", account: "fake", session_id: "S1", resumed: 0, tokens_in: 10, tokens_out: 20, cache_read: 30, cache_write: 40, end_reason: "done" });
+    expect(a).toEqual({ profile: expect.stringMatching(/^agent-default:[a-f0-9]{64}$/), account: "fake", session_id: "S1", resumed: 0, tokens_in: 10, tokens_out: 20, cache_read: 30, cache_write: 40, end_reason: "done" });
     const attemptId: string = p.ctx.db.db.prepare<[], string>("SELECT id FROM attempts").pluck().get()!;
     const raw = p.ctx.db.logs.read(attemptId);
     await expect(stat(join(p.ctx.dir, "logs"))).rejects.toMatchObject({ code: "ENOENT" });
     const sent = raw.find((l) => l.dir === "out" && (l.msg as { method?: string }).method === "session/prompt") as { msg: { params: { prompt: { text: string }[] } } };
     expect(sent.msg.params.prompt[0]!.text).toContain("Do the task Fix it.");
+    expect(sent.msg.params.prompt[0]!.text).toContain("# Shared agent context");
     expect(sent.msg.params.prompt[0]!.text).toContain("### the job's ticket");
     expect(sent.msg.params.prompt[0]!.text).toContain('"body": "x"');
     await expect(stat(join(p.ctx.dir, "work", id, ".pecore", "inputs"))).rejects.toMatchObject({ code: "ENOENT" });

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { basename, join } from "node:path";
 import { monotonicFactory } from "ulid";
 import type { RawLine, Usage } from "@pecore/agents";
-import type { AgentNode, Artifact, ArtifactType, FailureReason, ForgeAccount, JobDefinitions, JobState, Node, Profiles, Project, Settings, Tiers, WaitingReason } from "@pecore/schemas";
+import type { AgentNode, Artifact, ArtifactType, FailureReason, ForgeAccount, JobDefinitions, JobState, Node, NodeAgent, Project, Settings, WaitingReason } from "@pecore/schemas";
 import { artifactTypes, DocumentArtifact, isHumanNode, Recipe, ReferenceArtifact, SpecArtifact } from "@pecore/schemas";
 import { spawnFor } from "../accounts/agents";
 import type { AgentServices } from "../accounts/agents";
@@ -19,8 +19,6 @@ import type { JobArtifact } from "../jobs/stacked";
 import { outcomeOutputs, runCommandNode, runMergedCheck } from "../runners/command";
 import type { CommandInput, CommandRun } from "../runners/command";
 import { forgeEnv, identityOk, toolAccounts, ToolAuthError } from "../runners/forge-env";
-import { candidateProfiles, pickProfile } from "../scheduler/tiers";
-import type { ProfileChoice } from "../scheduler/tiers";
 import { humanArtifacts, humanItem, humanResult, subjectHash } from "../runners/human";
 import { paramsWithDefaults } from "../runners/placeholders";
 import { appUser, killJobProcesses, signalGroup, stopGroup } from "../runners/process";
@@ -94,7 +92,8 @@ export type ProjectContext = {
   forgeAccount(id: string): ForgeAccount | undefined;
   setupEnded?: (state: JobState) => void;
   held?: () => boolean;
-  global(): { profiles: Profiles; tiers: Tiers };
+  defaultAgent(): NodeAgent | undefined;
+  defaultAgentContext(): string;
   live?: (attemptId: string, line: RawLine) => void;
   orderAttachments?: (orderId: string, attachmentIds: string[]) => Promise<JobAttachment[]>;
   agentQuestion?: (itemId: string) => void;
@@ -108,7 +107,7 @@ type Attempt =
   | (AttemptExtra & { kind: "failed"; reason: FailureReason; retry?: false })
   | (AttemptExtra & { kind: "waiting"; reason: "network" | "quota" | "rate_limit" | "auth"; resetAt?: number });
 
-type AgentProfile = Extract<ProfileChoice, { kind: "profile" }>;
+type AgentProfile = NonNullable<NodeAgent["model"]> & { profile: string };
 type QuestionSubject = AgentQuestion & {
   attemptId: string;
   nodeRunId: string;
@@ -194,11 +193,11 @@ export class JobExecutor {
     return this.ctx.db.db.prepare("SELECT * FROM node_runs WHERE job_id = ? ORDER BY rowid").all(jobId) as NodeRunRow[];
   }
 
-  private setState(jobId: string, state: JobState, reason: string | null, cause?: "resume" | "base_change"): void {
+  private setState(jobId: string, state: JobState, reason: string | null, cause?: "resume" | "base_change", detail?: string): void {
     const job = this.job(jobId);
     if (job.state === state && job.waiting_reason === reason) return;
     if (job.state !== state) assertTransition(job.state, state, { archived: job.archived === 1, ...(cause ? { cause } : {}) });
-    this.ctx.db.append([{ jobId, type: "job.state_changed", payload: { state, reason } }]);
+    this.ctx.db.append([{ jobId, type: "job.state_changed", payload: { state, reason, ...(detail ? { detail } : {}) } }]);
     this.ctx.changed(jobId);
     const log = (e: unknown) => console.error(`services of job ${jobId}:`, e);
     if (state === "paused") void this.services.stop(jobId).catch(log);
@@ -768,6 +767,27 @@ export class JobExecutor {
       }
     }
 
+    let profile: AgentProfile | null = null;
+    let pools: string[] = ["jobs"];
+    if (node.kind === "agent") {
+      const agents = this.ctx.agents;
+      const card: NodeAgent | undefined = this.ctx.defaultAgent();
+      const model: NodeAgent["model"] = card?.model ?? null;
+      profile = continuation?.profile ?? (card && model
+        ? { ...model, profile: `${card.id}:${createHash("sha256").update(JSON.stringify(model)).digest("hex")}` } : null);
+      if (!profile || !agents) {
+        const detail: string = !profile ? "Choose a provider and model on the Default Agent card." : "No harness service is available.";
+        this.fail(job, run.id, "AGENT_UNAVAILABLE", detail);
+        return false;
+      }
+      const cooling = agents.cooling(profile.account);
+      if (cooling) {
+        this.waitUntil(job.id, run.id, cooling.kind, cooling.until);
+        return false;
+      }
+      pools = ["jobs", "agents", `account:${profile.account}`];
+    }
+
     let servicesEnv: Record<string, string> = {};
     if (job.id !== setupJobId) {
       servicesEnv = await this.services.ensure(job.id, job.base, () => {
@@ -785,33 +805,6 @@ export class JobExecutor {
       if (!(e instanceof ToolAuthError)) throw e;
       this.waitAuth(job, run.id, e.account);
       return false;
-    }
-
-    let profile: AgentProfile | null = null;
-    let pools: string[] = ["jobs"];
-    if (node.kind === "agent") {
-      const agents = this.ctx.agents;
-      if (!agents) throw new Error("agents are not configured");
-      const g = this.ctx.global();
-      const cooling = continuation && agents.cooling(continuation.profile.account);
-      const choice: ProfileChoice = continuation ? (cooling ? { kind: "wait", reason: cooling.kind, until: cooling.until } : continuation.profile) : pickProfile({
-        candidates: candidateProfiles(node, recipeNode.agent, g.tiers),
-        profiles: g.profiles,
-        providerOf: (acc) => agents.account(acc)?.provider,
-        excludedProviders: this.providersOf(job.id, recipeNode.agent?.providerNot ?? node.agent.providerNot),
-        cooling: (acc) => agents.cooling(acc),
-      });
-      if (choice.kind === "none") {
-        this.saveArtifact(job.id, runDir, "text", choice.why, before, "log");
-        this.fail(job, run.id, "HARNESS_ERROR");
-        return false;
-      }
-      if (choice.kind === "wait") {
-        this.waitUntil(job.id, run.id, choice.reason, choice.until);
-        return false;
-      }
-      profile = choice;
-      pools = ["jobs", "agents", `account:${choice.account}`];
     }
 
     if (!this.ctx.pools.tryTake(pools)) {
@@ -935,7 +928,7 @@ export class JobExecutor {
           await undoInterrupted(this.ctx.user, wd, job.id, git, before);
           if (attempt + 1 < attempts && result.reason !== "INVALID_OUTPUT" && !("retry" in result && result.retry === false)) continue;
           this.saveArtifact(job.id, runDir, "text", result.log, before, "log");
-          this.fail(job, run.id, result.reason);
+          this.fail(job, run.id, result.reason, result.reason === "AGENT_UNAVAILABLE" ? result.log : undefined);
           return false;
         }
         end(result.outcome);
@@ -1009,19 +1002,6 @@ export class JobExecutor {
     this.timers.set(job.id, setTimeout(() => void this.retryWait(job.id, nodeRunId, "auth"), delay));
   }
 
-  private providersOf(jobId: string, nodeIds: string[]): Set<string> {
-    const out = new Set<string>();
-    if (nodeIds.length === 0 || !this.ctx.agents) return out;
-    const rows = this.ctx.db.db
-      .prepare(`SELECT a.account FROM attempts a JOIN node_runs n ON a.node_run_id = n.id WHERE n.job_id = ? AND n.node IN (${nodeIds.map(() => "?").join(",")}) AND a.account IS NOT NULL`)
-      .all(jobId, ...nodeIds) as { account: string }[];
-    for (const r of rows) {
-      const p = this.ctx.agents.account(r.account)?.provider;
-      if (p) out.add(p);
-    }
-    return out;
-  }
-
   private resumeSession(jobId: string, node: string, profile: string, resume: boolean, group: string | null): string | null {
     if (!resume && group === null) return null;
     const row = this.ctx.db.db
@@ -1089,7 +1069,7 @@ export class JobExecutor {
   ): Promise<Attempt> {
     const agents = this.ctx.agents!;
     const account = agents.account(profile.account);
-    if (!account) return { kind: "failed", reason: "HARNESS_ERROR", log: `account ${profile.account} not found` };
+    if (!account) return { kind: "failed", reason: "AGENT_UNAVAILABLE", retry: false, log: `Model account ${profile.account} is unavailable.` };
     if (x.continuation && (x.continuation.osUser !== this.ctx.user || x.continuation.connector !== account.connector)) {
       return { kind: "failed", reason: "HARNESS_ERROR", retry: false, log: "the project user or connector changed while the question was open" };
     }
@@ -1097,9 +1077,12 @@ export class JobExecutor {
     try {
       connector = await agents.resolve(account.connector);
     } catch (e) {
-      return { kind: "failed", reason: "COMMAND_NOT_FOUND", log: (e as Error).message };
+      return { kind: "failed", reason: "AGENT_UNAVAILABLE", retry: false, log: `${account.connector}: ${(e as Error).message}` };
     }
     const login = await agents.login(account.id);
+    if (login.state.state === "logged_out") {
+      return { kind: "failed", reason: "AGENT_UNAVAILABLE", retry: false, log: `Log in to ${account.connector} with account ${account.id}.` };
+    }
     const spawn = spawnFor(this.ctx.user, { ...x.env, PECORE_JOB_ID: job.id });
     const resumeId = this.resumeSession(job.id, run.node, profile.profile, node.resume, sessionGroup);
     const attachments: string[] = await this.copyAttachments(job.id, x.wd);
@@ -1115,6 +1098,7 @@ export class JobExecutor {
       attachments,
       knowledge: await this.knowledgeFiles(x.knowledge && Object.hasOwn(x.knowledge, run.node) ? x.knowledge[run.node]! : node.knowledge),
       development: this.ctx.development ?? false,
+      agentContext: this.ctx.defaultAgentContext(),
       connector,
       login,
       spawn,
@@ -1154,10 +1138,11 @@ export class JobExecutor {
     this.ctx.changed(jobId);
   }
 
-  private fail(job: JobRow, nodeRunId: string, reason: FailureReason): void {
+  private fail(job: JobRow, nodeRunId: string, reason: FailureReason, detail?: string): void {
     this.ctx.db.append([{ jobId: job.id, type: "node_run.failed", payload: { nodeRunId, reason } }]);
-    this.setState(job.id, "failed", reason);
-    this.ctx.notify({ kind: "job-finished", title: job.title, body: `failed: ${reason}`, jobId: job.id });
+    const unavailable: boolean = reason === "AGENT_UNAVAILABLE";
+    this.setState(job.id, unavailable ? "stopped" : "failed", reason, undefined, detail);
+    this.ctx.notify({ kind: "job-finished", title: job.title, body: unavailable ? `Agent unavailable. ${detail ?? ""}`.trim() : `failed: ${reason}`, jobId: job.id });
     this.ended(job.id);
   }
 

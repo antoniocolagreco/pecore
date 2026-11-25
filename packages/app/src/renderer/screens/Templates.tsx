@@ -14,13 +14,14 @@ import { SidebarItem, SidebarSection } from "../shell/sidebar";
 import { Card, EmptyState, Spinner } from "../ds/feedback";
 import { AlertIcon, PlusIcon } from "../ds/icons";
 import { definitionUrl, object, string } from "./NodeEditor";
-import { NodeCard, nodeKindLabels, recipeNodeKind } from "../components/NodeCard";
+import { NodeCard, nodeKindLabels, recipeNodeKind, useDefaultNodeAgent } from "../components/NodeCard";
 import type { RecipeNodeKind } from "../components/NodeCard";
 import { templateTitle } from "../components/templateTitle";
 import s from "./Templates.module.css";
 
 function TemplateList({ type, icons }: { type: DefinitionType; icons: ReadonlyMap<string, string> | undefined }) {
   const connected: boolean = useConnected();
+  const defaultAgent = useDefaultNodeAgent();
   const [filter, setFilter] = useState("");
   const dir: string = `templates/${type}s`;
   const templates = useData(() => call("listDefinitions", { query: { dir } }), [dir],
@@ -58,7 +59,7 @@ function TemplateList({ type, icons }: { type: DefinitionType; icons: ReadonlyMa
           const icon = <DefinitionIcon icons={icons} type={type} name={name} selected={string(definition.icon)} size={type === "node" ? "lg" : "md"} />;
           const contents = <>
             {type === "node"
-              ? <NodeCard icon={icon} title={title} kind={kind ?? (source ? "source" : undefined)} />
+              ? <NodeCard icon={icon} title={title} kind={kind ?? (source ? "source" : undefined)} agent={defaultAgent} />
               : <Card className={s.card}>
                 <span className={s.glyph}>{icon}</span>
                 <strong title={title}><span>{title}</span></strong>

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { appName, ArchiveReviewBody, ChatForm, Compaction, InstantiateBody, Name, NodeAgent, NodeAgentCatalog, OrderPlan, ProjectExportOptions, TicketReply, TicketSnapshot } from "@pecore/schemas";
+import { appName, ArchiveReviewBody, ChatForm, Compaction, InstantiateBody, Name, NodeAgent, NodeAgentCatalog, OrderPlan, ProjectExportOptions, TicketReply, TicketSnapshot, builtInAgentNames, defaultAgentColor } from "@pecore/schemas";
 import type { ExportProjectResult, ImportProjectPreview, StoredEvent } from "@pecore/schemas";
 import { definitionOperations } from "../api/routes/definitions";
 import { globalFileHandlers } from "../api/routes/settings";
@@ -237,13 +237,13 @@ export function chatTools(engine: Engine): {
       if (!engine.global().accounts.accounts.some((entry) => entry.id === account && entry.kind === "model")) throw new NotFoundError(`Model account ${account} not found.`);
       return { value: await engine.accountOptions(account, model, refresh) };
     }),
-    create_agent: tool("Create a reusable agent in Agents. Use a model account from list_agents. Omit compaction for default thresholds and color for the harness colour. To add initial Markdown, use get_agent then write_agent_context with its hash.", catalogAgentFields.partial({ compaction: true }), async (fields) => {
+    create_agent: tool("Create a reusable agent in Agents. Use a model account from list_agents. Omit model to create an unconfigured card, compaction for default thresholds and color for white. To add initial Markdown, use get_agent then write_agent_context with its hash.", catalogAgentFields.partial({ model: true, compaction: true, color: true }), async (fields) => {
       const file = await settings.getAgents();
-      const agent: NodeAgent = { ...fields, id: `agent-${randomUUID()}`, kind: "agent", compaction: fields.compaction ?? Compaction.parse({}) };
+      const agent: NodeAgent = { ...fields, id: `agent-${randomUUID()}`, kind: "agent", model: fields.model ?? null, color: fields.color ?? defaultAgentColor, compaction: fields.compaction ?? Compaction.parse({}) };
       await saveAgents({ ...file.value, agents: [...file.value.agents, agent] }, file.sha256);
       return { value: agent, target: { agentId: agent.id, agentName: agent.name } };
     }),
-    update_agent: tool("Edit an existing agent by catalog ID. Omit unchanged fields. Supply the full model selection or both compaction thresholds when changing them. Set color to null to use the harness colour.", catalogAgentFields.partial().extend(catalogAgentId.shape), async ({ id, ...fields }) => {
+    update_agent: tool("Edit an existing agent by catalog ID. Omit unchanged fields. Supply the full model selection or both compaction thresholds when changing them.", catalogAgentFields.partial().extend(catalogAgentId.shape), async ({ id, ...fields }) => {
       const file = await settings.getAgents();
       const agent: NodeAgent = { ...findAgent(file.value, id), ...fields };
       await saveAgents({ ...file.value, agents: file.value.agents.map((entry) => entry.id === id ? agent : entry) }, file.sha256);
@@ -254,9 +254,10 @@ export function chatTools(engine: Engine): {
       const value = await settings.putAgentContext({ params: { id }, query: undefined, body });
       return { value, target: { agentId: id, agentName: agent.name } };
     }),
-    delete_agent: tool("Propose deleting a catalog agent by ID. The agent is deleted when the user confirms on the chat card.", catalogAgentId, async ({ id }) => {
+    delete_agent: tool("Propose deleting a custom catalog agent by ID. The agent is deleted when the user confirms on the chat card.", catalogAgentId, async ({ id }) => {
       const file = await settings.getAgents();
       const agent: NodeAgent = findAgent(file.value, id);
+      if (builtInAgentNames.has(id)) throw new Error(`${agent.name} cannot be deleted.`);
       return {
         value: { state: "awaiting_confirmation" },
         target: { state: "awaiting_confirmation", settings: agent, rows: [{ label: "Agent", value: agent.name }] },

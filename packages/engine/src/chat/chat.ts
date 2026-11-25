@@ -5,7 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import { monotonicFactory } from "ulid";
 import { errorMessage, probeImageSupport, startSession } from "@pecore/agents";
 import type { McpServer, PromptContent, Session, Spawn, SpawnedProcess } from "@pecore/agents";
-import { appName, ChatConfirmationRow, ChatForm, ChatImageMime, ExportFinding, NodeAgent, assistantTraits, chatFormProblem, ImportProjectPreview, ProjectExportOptions, ProjectId, chatAttachmentMaxBytes, chatCompactCommand } from "@pecore/schemas";
+import { appName, ChatConfirmationRow, ChatForm, ChatImageMime, ExportFinding, NodeAgent, defaultAgentId, chatFormProblem, ImportProjectPreview, ProjectExportOptions, ProjectId, chatAttachmentMaxBytes, chatCompactCommand } from "@pecore/schemas";
 import type { ChatAttachmentView, ChatDetail, ChatFormAnswer, ChatFormAnswers, ChatMessageView, ExportProjectResult, ImportProjectSelection, LiveMessage, Role, SendChatMessageBody } from "@pecore/schemas";
 import { z } from "zod";
 import { protectedUser, spawnFor } from "../accounts/agents";
@@ -172,11 +172,7 @@ export class AgentChats {
     lines.push(`Your name is ${agent.name}.`);
     if (user.name) lines.push(`The user's name is ${user.name}.`);
     else if (role === "assistant") lines.push("You do not know the user's name yet. Ask for it once, briefly, and save it with set_user_name.");
-    if (agent.traits.length) {
-      const traits = assistantTraits.filter(({ id }) => agent.traits.includes(id));
-      lines.push(`Apply these personality traits in every reply. Traits change how you talk and work, never what you are allowed to do:\n${traits.map(({ label, description }) => `- ${label}: ${description}`).join("\n")}`);
-    }
-    const context: string = this.engine.agentContext(agent.id) || (role === "pm" ? this.engine.agentContext("pm-default") : "");
+    const context: string = [agent.kind === "pm" ? this.engine.agentContext(agent.cardId) : "", this.engine.agentContext(agent.id)].filter((text) => text.trim()).join("\n\n");
     if (context.trim()) lines.push(`Initial context from the user:\n${context}`);
     return lines.join("\n");
   }
@@ -299,13 +295,17 @@ export class AgentChats {
     if (!agent || !profile || !account || !agents) return null;
     const user: string = agents.osUser();
     const key: string = JSON.stringify([user, account.connector, agents.connector(account.connector)]);
-    const sessionKey: string = JSON.stringify([user, account.id, account.connector, ...(agent.kind === "pm" && agent.id !== `legacy-${project}` ? [agent.id] : [])]);
+    const sessionKey: string = JSON.stringify([
+      user, account.id, account.connector,
+      ...(agent.kind === "pm" && agent.id !== `legacy-${project}` ? [agent.id] : []),
+      ...(agent.kind === "pm" && agent.cardId !== defaultAgentId ? [agent.cardId] : []),
+    ]);
     return { agent, profile, account, agents, user, key, sessionKey };
   }
 
   private requiredConfiguration(project?: string | null): NonNullable<ReturnType<AgentChats["configuration"]>> {
     const configuration = this.configuration(project);
-    if (!configuration) throw new HttpError("conflict", `choose a model for ${roleNames[project == null ? "assistant" : "pm"]} in its settings`);
+    if (!configuration) throw new HttpError("conflict", `choose a model on the ${project == null ? "Assistant" : "Project Manager’s"} agent card`);
     if (this.closed) throw new HttpError("conflict", "the chat is shutting down");
     return configuration;
   }
@@ -731,7 +731,7 @@ export class AgentChats {
       const digest: string = createHash("sha256").update(instructions).digest("hex");
       const sent: string | null = this.db.instructions(chatId);
       const lines: string[] = !session.resumed || sent === null ? [instructions]
-        : sent !== digest ? [`Your instructions changed. They replace all earlier ones, including any earlier personality:\n${instructions}`] : [];
+        : sent !== digest ? [`Your instructions changed. They replace all earlier ones:\n${instructions}`] : [];
       const reports: ChatTurn[] = role === "assistant" ? this.db.reportsSince(chatId) : [];
       if (!session.resumed) {
         const history = this.db.messages(chatId).filter((entry) => entry.id !== id && entry.state === "completed" && entry.text.trim() !== chatCompactCommand);

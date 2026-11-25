@@ -193,7 +193,7 @@ function Loaded({ detail, error, reasons, whyError, reload }: { detail: JobDetai
       <ErrorText error={merge.error} />
       <ErrorText error={whyError} />
       {reasons.length > 0 && (
-        <Alert tone="warning" title="Why it is waiting">
+        <Alert tone="warning" title={job.state === "stopped" ? "Agent unavailable" : "Why it is waiting"}>
           {reasons.map((reason) => <WhyLine key={`${reason.reason}:${reason.nodeRunId ?? ""}`} reason={reason} detail={detail} />)}
         </Alert>
       )}

@@ -108,7 +108,7 @@ export class ProjectDb {
       }
       case "job.state_changed": {
         const { state, reason } = e.payload;
-        const failed = state === "failed" || state === "not_delivered";
+        const failed = state === "failed" || state === "not_delivered" || state === "stopped";
         const waiting = state === "queued" || state === "waiting" || state === "paused";
         run("UPDATE jobs SET state = @state, waiting_reason = @w, failure_reason = @f, updated_at = @at WHERE id = @id", {
           id: e.jobId,

@@ -7,10 +7,10 @@ import { join, relative } from "node:path";
 import { removeAs } from "./workdir/fs-as";
 import { definitionOperations } from "./api/routes/definitions";
 import { globalFileHandlers } from "./api/routes/settings";
-import { appName, BuiltInHarness, defaultJobLimit, freeProjectManager, projectManagerClash, projectManagers, roleProfile, withForgeHosts } from "@pecore/schemas";
+import { appName, assistantAgentId, BuiltInHarness, defaultAgentId, defaultJobLimit, freeProjectManager, projectManagerClash, projectManagers, withForgeHosts } from "@pecore/schemas";
 import { listOptions, satisfies } from "@pecore/agents";
 import type { LoginState } from "@pecore/agents";
-import type { Account, AccountOptions, Accounts, AgentDefinition, AgentDefinitions, ChatAgent, ForgeAccount, JobState, LiveMessage, LoginView, NodeAgentCatalog, NotificationTarget, Profiles, ProjectInput, ProjectManagerIdentity, Role, Settings, SetupView, Tiers, WhyView } from "@pecore/schemas";
+import type { Account, AccountOptions, Accounts, AgentDefinitions, ChatAgent, ForgeAccount, JobState, LiveMessage, LoginView, NodeAgent, NodeAgentCatalog, NotificationTarget, ProjectManagerAgent, Profiles, ProjectInput, ProjectManagerIdentity, Settings, SetupView, Tiers, WhyView } from "@pecore/schemas";
 import { HttpError } from "./api/server";
 import type { CompleteProjectImportBody, ExportProjectBody, ExportProjectResult, ImportProjectBody, ImportProjectPreview, ImportProjectResult } from "@pecore/schemas";
 import { AgentServices, protectedUser, spawnFor } from "./accounts/agents";
@@ -32,7 +32,7 @@ import type { CreateJob } from "./jobs/create";
 import type { TicketOrder } from "./jobs/plan";
 import { homePaths, initHome } from "./home/layout";
 import { closeHome, moveLegacyFolders } from "./home/legacy";
-import { autoSetup, openCodeModels } from "./home/autosetup";
+import { autoSetup, ensureBuiltInAgents, openCodeModels } from "./home/autosetup";
 import { takeLock } from "./home/lock";
 import { beginProject, cancelCreation, finishProject, prepareRepo, readCreation, repoCreated, setupJobId } from "./projects/create";
 import type { CreateOptions } from "./projects/create";
@@ -125,6 +125,7 @@ export class Engine extends EventEmitter {
       global = this.configuration.read();
       const errors: DefinitionError[] = validateGlobal(global);
       if (errors.length) throw new EngineStartError(errors);
+      if (ensureBuiltInAgents(this.configuration, false)) global = this.configuration.read();
     } catch (error) {
       this.chats?.close();
       await this.releaseLock();
@@ -141,7 +142,7 @@ export class Engine extends EventEmitter {
       return null;
     });
     this.agentChats = new AgentChats(this, this.chats, (message) => this.live(message));
-    if (this.opts.checkLogins !== false) await this.runAutoSetup();
+    await this.runAutoSetup();
     if (this.opts.detectRuntime && this.settings.servicesRuntime === null) {
       this.runtimeDetection = this.detectServicesRuntime(this.opts.detectRuntime).catch((error: unknown) => console.error("services runtime detection:", error));
     }
@@ -181,7 +182,7 @@ export class Engine extends EventEmitter {
         .then(async () => {
           if (this.shuttingDown) return;
           const reads: Promise<unknown>[] = this.accounts.accounts.filter(({ kind }) => kind === "model").map(({ id }) => this.accountOptions(id));
-          const chats: (ChatAgent | undefined)[] = [this.chatAgent(), this.chatAgent(undefined, "pm"), ...Array.from(this.projects.keys(), (id) => this.chatAgent(id))];
+          const chats: (ChatAgent | undefined)[] = [this.chatAgent(), ...Array.from(this.projects.keys(), (id) => this.chatAgent(id))];
           for (const { model } of [...this.agentCatalog().agents, ...chats.filter((agent) => agent !== undefined)]) {
             if (model) reads.push(this.accountOptions(model.account, model.model));
           }
@@ -201,44 +202,32 @@ export class Engine extends EventEmitter {
     return { settings: this.settings, agents: this.agentDefinitions, accounts: this.accounts, profiles: this.profiles, tiers: this.tiers };
   }
 
-  private profileModel(role: Role): AgentDefinition["model"] {
-    const profile = this.profiles.profiles.find(({ id }) => id === roleProfile(this.settings, role, this.global().tiers.tiers.standard));
-    return profile ? { account: profile.account, model: profile.model, effort: profile.effort } : null;
-  }
-
   agentCatalog(): NodeAgentCatalog {
     return { ...this.agentDefinitions, agents: this.agentDefinitions.agents.filter((agent) => agent.kind === "agent") };
   }
 
-  chatAgentSettings(project?: string | null, role: Role = project == null ? "assistant" : "pm"): ChatAgent | undefined {
-    const saved: AgentDefinition[] = this.agentDefinitions.agents;
-    if (project == null && role === "assistant") {
-      const { compaction, traits } = this.settings.assistant;
-      return saved.find((agent) => agent.kind === "assistant")
-        ?? { id: "assistant", kind: "assistant", name: "Assistant", model: null, compaction, traits };
-    }
-    const defaultPm = saved.find((agent): agent is Extract<ChatAgent, { kind: "pm" }> => agent.kind === "pm" && agent.id === "pm-default");
-    const defaults: Extract<ChatAgent, { kind: "pm" }> = defaultPm ? { ...defaultPm, traits: [] }
-      : { id: "pm-default", kind: "pm", name: "Project Manager Default", color: "#808080", model: null, compaction: this.settings.pm.compaction, traits: [] };
-    if (project == null) return defaults;
-    const pm: ProjectManagerIdentity | null | undefined = this.projects.get(project)?.ctx.project.pm;
-    if (!pm) return undefined;
-    const id: string = this.managerId(project, pm);
-    return saved.find((agent): agent is Extract<ChatAgent, { kind: "pm" }> => agent.kind === "pm" && agent.id === id)
-      ?? { ...defaults, id, name: pm.name, color: pm.color, model: null };
+  private catalogAgent(id: string): NodeAgent | undefined {
+    return this.agentDefinitions.agents.find((agent): agent is NodeAgent => agent.kind === "agent" && agent.id === id);
   }
 
   managerId(project: string, pm: ProjectManagerIdentity): string {
     return pm.agentId ?? `legacy-${project}`;
   }
 
-  chatAgent(project?: string | null, role: Role = project == null ? "assistant" : "pm"): ChatAgent | undefined {
-    const agent: ChatAgent | undefined = this.chatAgentSettings(project, role);
-    if (!agent || agent.model) return agent;
-    const model: ChatAgent["model"] = role === "assistant" ? this.profileModel("assistant")
-      : project != null ? this.chatAgent(undefined, "pm")?.model ?? null
-        : (this.settings.pm.profile ? this.profileModel("pm") : this.chatAgent()?.model ?? null);
-    return { ...agent, model };
+  chatAgent(project?: string | null): ChatAgent | undefined {
+    if (project == null) {
+      const card: NodeAgent | undefined = this.catalogAgent(assistantAgentId);
+      return card && { ...card, kind: "assistant" };
+    }
+    const pm: ProjectManagerIdentity | null | undefined = this.projects.get(project)?.ctx.project.pm;
+    if (!pm) return undefined;
+    const id: string = this.managerId(project, pm);
+    const identity: ProjectManagerAgent | undefined = this.agentDefinitions.agents.find((agent): agent is ProjectManagerAgent => agent.kind === "pm" && agent.id === id);
+    const selected: NodeAgent | undefined = identity && this.catalogAgent(identity.cardId);
+    const card: NodeAgent | undefined = selected ?? this.catalogAgent(defaultAgentId);
+    if (!card) return undefined;
+    return { id, kind: "pm", name: identity?.name ?? pm.name, color: identity?.color ?? pm.color, cardId: card.id,
+      model: card.model, compaction: card.compaction };
   }
 
   agentContext(id: string): string {
@@ -257,15 +246,21 @@ export class Engine extends EventEmitter {
 
   private async runAutoSetup(): Promise<void> {
     const agents: AgentServices | null = this.agents;
-    if (!agents || this.shuttingDown) return;
+    if (this.shuttingDown) return;
     await this.withConfiguration(async () => {
-      const { harnesses, changes } = await autoSetup(this.configuration, agents);
-      this.setupHarnesses = harnesses;
-      if (!changes) return;
+      const result = agents && this.opts.checkLogins !== false
+        ? await autoSetup(this.configuration, agents).catch((error: unknown) => { console.error("auto-setup:", error); return null; }) : null;
+      if (result) this.setupHarnesses = result.harnesses;
+      const cardsChanged: boolean = ensureBuiltInAgents(this.configuration, true);
+      const changes = result?.changes;
+      if (!changes && !cardsChanged) return;
       await this.reloadGlobal();
-      this.notify({ kind: "auto-setup", title: `${appName} setup`, body: changes.message });
-      for (const kind of changes.changed) this.configurationChanged(kind);
-    }).catch((error: unknown) => console.error("auto-setup:", error));
+      if (changes) {
+        this.notify({ kind: "auto-setup", title: `${appName} setup`, body: changes.message });
+        for (const kind of changes.changed) this.configurationChanged(kind);
+      }
+      if (cardsChanged) this.configurationChanged("agents");
+    });
   }
 
   private async detectServicesRuntime(detect: () => Promise<Settings["servicesRuntime"]>): Promise<void> {
@@ -559,7 +554,8 @@ export class Engine extends EventEmitter {
       },
       setupEnded: (state) => this.setupEnded(id, state),
       forgeAccount: (accountId) => this.accounts.accounts.find((a): a is ForgeAccount => a.kind === "forge" && a.id === accountId),
-      global: () => ({ profiles: this.profiles, tiers: this.tiers }),
+      defaultAgent: () => this.catalogAgent(defaultAgentId),
+      defaultAgentContext: () => this.agentContext(defaultAgentId),
       live: (attemptId, line) => {
         this.emit("log", { projectId: id, attemptId, line });
         for (const event of logEvents(line)) this.live({ type: "log.line", attemptId, event });

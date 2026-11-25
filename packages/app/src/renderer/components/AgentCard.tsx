@@ -1,4 +1,4 @@
-import { harnessColor, harnesses } from "@pecore/schemas";
+import { builtInAgentColor, builtInAgentNames, harnesses } from "@pecore/schemas";
 import type { ModelAccount, NodeAgent } from "@pecore/schemas";
 import type { CSSProperties } from "react";
 import { Link } from "react-router";
@@ -6,14 +6,14 @@ import { Badge, Card } from "../ds/feedback";
 import { SparkIcon } from "../ds/icons";
 import s from "./AgentCard.module.css";
 
-export function AgentCard({ agent, account, harnessColors = {}, to }: {
+export function AgentCard({ agent, account, to }: {
   agent: NodeAgent;
   account?: ModelAccount;
-  harnessColors?: Readonly<Record<string, string>>;
   to?: string;
 }) {
   const harness: string = harnesses.find(({ id }) => id === account?.connector)?.name ?? account?.connector ?? "No harness";
-  const style: CSSProperties = { "--agent-color": agent.color ?? harnessColor(account?.connector ?? "", harnessColors) } as CSSProperties;
+  const color: string = builtInAgentNames.has(agent.id) && agent.color === builtInAgentColor ? "var(--agent-kind-color)" : agent.color;
+  const style: CSSProperties = { "--agent-color": color } as CSSProperties;
   const contents = <Card className={s.card}>
     <header className={s.header}>
       <h2 title={agent.name}>{agent.name}</h2>

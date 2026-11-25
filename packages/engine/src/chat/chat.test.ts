@@ -128,13 +128,15 @@ async function setup(build: (root: string) => object[][], extra: { source?: bool
       { id: "background", kind: "model", provider: "fakeco", connector: "fake-background", login: "subscription" },
     ] });
     await setTestConfiguration(home, "profiles", { profiles: [{ id: "p1", account: "fake", model: "m1" }, { id: "p2", account: "background", model: "m2" }] });
-    await setTestConfiguration(home, "settings", { assistant: { profile: "p1" }, pm: { profile: "p2", ...extra.compaction && { compaction: extra.compaction } } });
+    await setTestConfiguration(home, "agents", { agents: [{
+      id: "agent-default", name: "Default", kind: "agent", color: "#FFFFFF",
+      model: { account: "background", model: "m2" }, compaction: extra.compaction ?? { auto: 131_072, max: 262_144 },
+    }] });
   } else {
     await setTestConfiguration(home, "accounts", { accounts: [{ id: "fake", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" }, ...(forge ? [forgeAccount] : [])] });
     await setTestConfiguration(home, "profiles", { profiles: [{ id: "p1", account: "fake", model: "m1" }] });
-    await setTestConfiguration(home, "settings", { assistant: { profile: "p1" } });
   }
-  await setTestConfiguration(home, "tiers", { tiers: { strong: ["p1"] } });
+  await setTestConfiguration(home, "tiers", { tiers: { strong: ["p1"], standard: ["p1"] } });
   const agents = { connectorsDir: connectors, adaptersDir: join(root, "adapters"), adapters: {} };
   const open = async () => {
     const engine = await Engine.start({ home, templates, agents, checkLogins: false, development: extra.development ?? false });
@@ -361,7 +363,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "compact.json") }, ...replyWith("")],
     ]);
     const home: string = join(t.root, "home");
-    await setTestConfiguration(home, "settings", { assistant: { profile: "p1", compaction: { auto: 524_288, max: 1_048_576 } } });
+    await setTestConfiguration(home, "agents", { agents: [{ id: "assistant", kind: "agent", name: "Assistant", color: "#FFFFFF", model: { account: "fake", model: "m1" }, compaction: { auto: 524_288, max: 1_048_576 } }] });
     await t.close();
     const first = await t.open();
     expect((await first.call("getChat")).supportsImages).toBe(false);
@@ -370,7 +372,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     await new Promise((r) => setTimeout(r, 300));
     expect(existsSync(join(t.root, "compact.json"))).toBe(false);
     await first.close();
-    await setTestConfiguration(home, "settings", { assistant: { profile: "p1" } });
+    await setTestConfiguration(home, "agents", { agents: [] });
     const again = await t.open();
     try {
       await until(() => existsSync(join(t.root, "compact.json")));
@@ -562,7 +564,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     }
   }, 60000);
 
-  it("asks the user's name, saves it, and passes it with the chosen traits in the instructions", async () => {
+  it("asks the user's name, saves it, and passes it in the instructions", async () => {
     const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
     const t = await setup((root) => [
       [...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "first.json") }, { waitFile: join(root, "named") }, ...replyWith("Nice to meet you, Antonio.")],
@@ -574,13 +576,11 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       await until(() => existsSync(join(t.root, "first.json")));
       const first: string = await readFile(join(t.root, "first.json"), "utf8");
       expect(first).toContain("You do not know the user's name yet");
-      expect(first).not.toContain("Active personality");
       expect(first).not.toContain("Your instructions changed");
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       expect((await m.tool("set_user_name", { name: " Antonio " })).result?.isError).toBeUndefined();
       const settings = await t.call("getSettings");
       expect(settings.value.user).toEqual({ name: "Antonio" });
-      await t.call("putSettings", { body: { value: { ...settings.value, assistant: { ...settings.value.assistant, traits: ["pragmatic", "critical"] } }, baseSha256: settings.sha256 } });
       await writeFile(join(t.root, "named"), "");
       await until(async () => (await t.call("getChat")).messages.some(({ text }) => text === "Nice to meet you, Antonio."));
       await t.call("sendChatMessage", { body: { text: "Thanks" } });
@@ -589,9 +589,6 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect(second).toContain("The user's name is Antonio.");
       expect(second).not.toContain("You do not know the user's name yet");
       expect(second).toContain("Your instructions changed. They replace all earlier ones");
-      expect(second).toContain(JSON.stringify("Apply these personality traits in every reply. Traits change how you talk and work, never what you are allowed to do:\n- Pragmatic: Answers with the concrete next step, such as the change to make or the job to start, and skips background unless asked.\n- Critical: Points out weak assumptions, risks and contradictions in your orders before passing them on.").slice(1, -1));
-      const conflict = await t.call("getSettings");
-      await expect(t.call("putSettings", { body: { value: { ...conflict.value, assistant: { ...conflict.value.assistant, traits: ["minimalist", "mentor"] } }, baseSha256: conflict.sha256 } })).rejects.toThrow();
     } finally {
       m.close();
       await t.close();
@@ -608,7 +605,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       await t.call("sendChatMessage", { body: { text: "Manage Reviewer." } });
       await until(() => existsSync(join(t.root, "manage-agent.json")));
       const run = (name: string, input: unknown = {}) => m.tool(name, input);
-      const catalog = async () => (await t.call("getAgents")).value.agents;
+      const catalog = async () => (await t.call("getAgents")).value.agents.filter(({ id }) => id !== "assistant" && id !== "agent-default");
       const model = { account: "fake", model: "m1", effort: null };
       expect((await run("list_agents")).result?.content?.[0]?.text).toContain('"provider":"fakeco","harness":"fake"');
       expect((await run("agent_model_options", { account: "missing" })).result?.isError).toBe(true);
@@ -617,13 +614,16 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect(created).toMatchObject({ kind: "agent", name: "Reviewer", model, compaction: { auto: 131_072, max: 262_144 } });
       expect((await run("create_agent", { name: "reviewer", model })).result?.isError).toBe(true);
       const params = { id: created!.id };
-      expect(created?.color).toBeUndefined();
+      expect(created?.color).toBe("#FFFFFF");
       expect((await run("update_agent", { ...params, color: "red" })).result?.isError).toBe(true);
+      expect((await run("update_agent", { ...params, color: null })).result?.isError).toBe(true);
       expect((await run("update_agent", { ...params, color: "#D97757" })).result?.isError).toBeUndefined();
       expect((await catalog())[0]?.color).toBe("#D97757");
       const { sha256 } = await t.call("getAgentContext", { params });
       expect((await run("get_agent", params)).result?.content?.[0]?.text).toContain(sha256);
-      expect((await run("get_agent", { id: "assistant" })).result?.isError).toBe(true);
+      expect((await run("get_agent", { id: "assistant" })).result?.isError).toBeUndefined();
+      expect((await run("delete_agent", { id: "assistant" })).result?.isError).toBe(true);
+      expect((await run("update_agent", { id: "agent-default", name: "Renamed" })).result?.isError).toBe(true);
       expect((await run("write_agent_context", { ...params, content: "# Review", baseSha256: sha256 })).result?.isError).toBeUndefined();
       expect((await t.call("getAgentContext", { params })).content).toBe("# Review");
       expect((await run("write_agent_context", { ...params, content: "Stale", baseSha256: sha256 })).result?.isError).toBe(true);
@@ -639,10 +639,10 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       await answer(cancelled, "cancel");
       await expect(answer(cancelled, "approve")).rejects.toThrow("no longer pending");
       const stale: string = await propose("Reviewer");
-      expect((await run("update_agent", { ...params, name: "Code Reviewer", color: null, compaction: { auto: 262_144, max: 524_288 } })).result?.isError).toBeUndefined();
+      expect((await run("update_agent", { ...params, name: "Code Reviewer", color: "#D97757", compaction: { auto: 262_144, max: 524_288 } })).result?.isError).toBeUndefined();
       await answer(stale, "approve");
       expect((await t.call("getChat")).actions.find(({ id }) => id === stale)?.target).toMatchObject({ state: "failed" });
-      expect(await catalog()).toEqual([{ ...created, name: "Code Reviewer", color: null, compaction: { auto: 262_144, max: 524_288 } }]);
+      expect(await catalog()).toEqual([{ ...created, name: "Code Reviewer", color: "#D97757", compaction: { auto: 262_144, max: 524_288 } }]);
       const approved: string = await propose("Code Reviewer");
       expect(await catalog()).toHaveLength(1);
       await answer(approved, "approve");
@@ -975,7 +975,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     }
   }, 60000);
 
-  it("compacts a Project Manager chat with the Project Manager's own thresholds", async () => {
+  it("compacts a Project Manager chat with the Default card thresholds", async () => {
     const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
     const t = await setup(() => [init()], {
       source: true,
@@ -988,7 +988,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     try {
       await until(() => existsSync(join(t.root, "compact.json")));
       expect((JSON.parse(await readFile(join(t.root, "compact.json"), "utf8")) as { params: { prompt: unknown } }).params.prompt).toEqual([{ type: "text", text: "/compact" }]);
-      expect(t.engine.global().settings.assistant.compaction.max).toBe(262_144);
+      expect(t.engine.chatAgent()?.compaction.max).toBe(262_144);
     } finally {
       await t.close();
     }
@@ -1130,7 +1130,8 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
 
       const query = { role: "pm" as const, project: "demo" };
       const file = await t.call("getChatAgentSettings", { query });
-      await t.call("putChatAgentSettings", { query, body: { value: { ...file.value, name: "Evelyn", traits: ["pragmatic"] }, baseSha256: file.sha256 } });
+      if (file.value.kind !== "pm") throw new Error("Missing Project Manager.");
+      await t.call("putChatAgentSettings", { query: { project: "demo" }, body: { value: { id: file.value.id, kind: "pm", color: file.value.color, name: "Evelyn" }, baseSha256: file.sha256 } });
       const params = { id: file.value.id };
       const context = await t.call("getAgentContext", { params });
       await t.call("putAgentContext", { params, body: { content: "# Keep a decision log", baseSha256: context.sha256 } });
@@ -1139,7 +1140,6 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       const renamedPrompt: string = await readFile(join(t.root, "renamed.json"), "utf8");
       expect(renamedPrompt).toContain("You do not write code yourself");
       expect(renamedPrompt).toContain("Your name is Evelyn.");
-      expect(renamedPrompt).toContain("Pragmatic");
       expect(renamedPrompt).toContain("# Keep a decision log");
     } finally {
       await t.close();

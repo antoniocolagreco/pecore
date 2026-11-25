@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import type { ChatAgent } from "@pecore/schemas";
+import { assistantAgentId, builtInAgentNames, defaultAgentId } from "@pecore/schemas";
+import type { ChatAgent, ProjectManagerAgent } from "@pecore/schemas";
 import { validateGlobal } from "../../definitions/load";
 import type { DefinitionError, Global } from "../../definitions/load";
 import type { Engine } from "../../main";
@@ -12,13 +13,13 @@ function sha256(bytes: string): string {
 
 export function globalFileHandlers(engine: Engine) {
   function chatSettings({ project, role }: { project?: string; role: "assistant" | "pm" }): ChatAgent {
-    const value: ChatAgent | undefined = engine.chatAgentSettings(project, role);
+    const value: ChatAgent | undefined = (role === "assistant" || project ? engine.chatAgent(project) : undefined);
     if (!value) throw new HttpError("not_found", "Project Manager not found.");
     return value;
   }
 
   function knownAgent(id: string): boolean {
-    return id === "assistant" || id === "pm-default" || engine.agentCatalog().agents.some((agent) => agent.id === id)
+    return engine.agentCatalog().agents.some((agent) => agent.id === id)
       || engine.projectManagers().some(({ agentId }) => agentId === id);
   }
 
@@ -53,21 +54,35 @@ export function globalFileHandlers(engine: Engine) {
     getAgents: () => engine.withConfiguration(async () => ({ value: engine.agentCatalog(), sha256: sha256(JSON.stringify(engine.global().agents)) })),
     putAgents: ({ body }) => put("agents", body.value, body.baseSha256, () => {
       const saved = engine.global().agents;
-      return { ...body.value, agents: [...saved.agents.filter(({ kind }) => kind !== "agent"), ...body.value.agents] };
+      for (const [id, name] of builtInAgentNames) {
+        if (body.value.agents.find((agent) => agent.id === id)?.name !== name) throw new HttpError("bad_request", `${name} cannot be renamed or deleted.`);
+        if (body.value.agents.some((agent) => agent.id !== id && agent.name.toLowerCase() === name.toLowerCase())) {
+          throw new HttpError("bad_request", `The name ${name} is reserved.`);
+        }
+      }
+      const ids: Set<string> = new Set(body.value.agents.map(({ id }) => id));
+      const managers: ProjectManagerAgent[] = saved.agents.filter((agent) => agent.kind === "pm")
+        .map((manager) => ids.has(manager.cardId) ? manager : { ...manager, cardId: defaultAgentId });
+      return { ...body.value, agents: [...managers, ...body.value.agents] };
     }),
     getChatAgentSettings: ({ query }) => engine.withConfiguration(async () => {
       const value: ChatAgent = chatSettings(query);
-      return { value, effectiveModel: engine.chatAgent(query.project, query.role)?.model ?? null, sha256: sha256(JSON.stringify(value)) };
+      return { value, effectiveModel: value.model, sha256: sha256(JSON.stringify(value)) };
     }),
     putChatAgentSettings: ({ query, body }) => put("agents", engine.global().agents, body.baseSha256, () => {
-      const current: ChatAgent = chatSettings(query);
+      const current: ChatAgent = chatSettings({ ...query, role: "pm" });
       const { value } = body;
-      if (current.id !== value.id || current.kind !== value.kind) throw new HttpError("bad_request", "The chat agent's identity changed.");
-      if (query.project && value.kind === "pm") engine.projectManagerFor(value, query.project);
+      if (current.kind !== "pm" || current.id !== value.id) throw new HttpError("bad_request", "The Project Manager's identity changed.");
+      const identity = engine.projectManagerFor(value, query.project);
+      const cardId: string = value.cardId ?? current.cardId;
+      if (cardId === assistantAgentId || !engine.agentCatalog().agents.some(({ id }) => id === cardId)) {
+        throw new HttpError("bad_request", "Choose an agent card for this Project Manager.");
+      }
+      const agent: ProjectManagerAgent = { id: current.id, kind: "pm", name: identity.name, color: identity.color, cardId };
       const saved = engine.global().agents;
-      if (saved.agents.some(({ id, kind }) => id === value.id && kind !== value.kind)) throw new HttpError("conflict", "The agent ID is already in use.");
-      return { ...saved, agents: [...saved.agents.filter(({ id }) => id !== value.id), value.id === "pm-default" ? { ...value, traits: [] } : value] };
-    }, () => sha256(JSON.stringify(chatSettings(query)))),
+      if (saved.agents.some(({ id, kind }) => id === agent.id && kind !== agent.kind)) throw new HttpError("conflict", "The agent ID is already in use.");
+      return { ...saved, agents: [...saved.agents.filter(({ id }) => id !== agent.id), agent] };
+    }, () => sha256(JSON.stringify(chatSettings({ ...query, role: "pm" })))),
     getAgentContext: ({ params }) => engine.withConfiguration(async () => {
       if (!knownAgent(params.id)) throw new HttpError("not_found", "Agent not found.");
       const content: string = engine.agentContext(params.id);
