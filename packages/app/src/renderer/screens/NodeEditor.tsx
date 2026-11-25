@@ -389,6 +389,7 @@ const nodeKinds: { value: Node["kind"]; label: string }[] = [
   { value: "agent", label: nodeKindLabels.agent },
   { value: "command", label: nodeKindLabels.command },
   { value: "human", label: nodeKindLabels.human },
+  { value: "source", label: nodeKindLabels.source },
 ];
 const interfaceOptions: { value: HumanInterface; label: string }[] = HumanInterface.options.map((value) => ({ value, label: humanInterfaces[value].label }));
 const humanFields: Record<HumanInterface, Record<string, unknown>> = {
@@ -591,7 +592,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
             <TextField label="Name" required value={string(draft.name)} disabled={sidecarDirty}
               labelAction={help("Name", "Recipes use this name to refer to the node template.")}
               description="Lowercase letters, digits and hyphens. Start with a letter." onValueChange={(name) => update("name", name)} />
-            <Select label="Kind" labelAction={help("Kind", "Agent gives a task to an AI model. Run command runs a program or script. Human pauses the job for a person to respond.")}
+            <Select label="Kind" labelAction={help("Kind", "Agent gives a task to an AI model. Run command runs a program or script. Human pauses the job for a person to respond. Source reads tickets and sends replies.")}
               options={nodeKinds} value={kind || null} disabled={sidecarDirty} onValueChange={(value) => {
               const next: Node["kind"] | undefined = nodeKinds.find((option) => option.value === value)?.value;
               if (!next) return;
@@ -602,7 +603,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
               }, null, 2) + "\n");
             }} />
           </> : <TextField label="Kind" readOnly description="Chosen when the node was created."
-            value={kind === "source" ? nodeKindLabels.source : nodeKinds.find((option) => option.value === kind)?.label ?? kind} />}
+            value={nodeKinds.find((option) => option.value === kind)?.label ?? kind} />}
           {human && <>
             <Select label="Interface" options={interfaceOptions} value={iface ?? null}
               description={iface ? humanInterfaces[iface].description : undefined}
