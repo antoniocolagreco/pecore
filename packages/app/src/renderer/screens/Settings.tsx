@@ -100,7 +100,7 @@ function HarnessColorButton({ harness, colors, onColor }: HarnessColors & { harn
   const color: string = harnessColor(harness.id, colors);
   return <>
     <Button size="sm" icon={<span className={s.dot} style={{ "--harness": color } as CSSProperties} />} disabled={!connected} onClick={() => setOpen(true)}>Colour</Button>
-    <Dialog open={open} onOpenChange={setOpen} title={`${harness.name} colour`} description="Used on agent cards and wherever this AI tool is shown." width={400}
+    <Dialog open={open} onOpenChange={setOpen} title={`${harness.name} colour`} description="Used on agent cards and wherever this AI tool is shown." width={304}
       footer={<Button variant="primary" onClick={() => setOpen(false)}>Done</Button>}>
       <ColorPicker label="Colour" value={color} disabled={!connected} onValueChange={(next) => onColor(harness.id, next)} />
     </Dialog>
