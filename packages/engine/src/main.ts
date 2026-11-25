@@ -94,6 +94,7 @@ export class Engine extends EventEmitter {
   private readonly options = new Map<string, Promise<AccountOptions | null>>();
   private startupReads: Promise<void> = Promise.resolve();
   private runtimeDetection: Promise<void> = Promise.resolve();
+  setupDone: Promise<void> = Promise.resolve();
   private setupHarnesses: SetupView["harnesses"] = BuiltInHarness.options.map((connector) => ({ connector, installed: false, version: null, loggedIn: false }));
   globalPause = false;
   private readonly loginRunner = new LoginRunner((p) => this.live({ type: "login.progress", ...p }));
@@ -143,7 +144,7 @@ export class Engine extends EventEmitter {
       return null;
     });
     this.agentChats = new AgentChats(this, this.chats, (message) => this.live(message));
-    await this.runAutoSetup(this.opts.discoverForges === true);
+    this.setupDone = this.runAutoSetup(this.opts.discoverForges === true).catch((error: unknown) => console.error("auto-setup:", error));
     if (this.opts.detectRuntime && this.settings.servicesRuntime === null) {
       this.runtimeDetection = this.detectServicesRuntime(this.opts.detectRuntime).catch((error: unknown) => console.error("services runtime detection:", error));
     }
@@ -163,7 +164,7 @@ export class Engine extends EventEmitter {
       const live = (jobId: string) => [...this.projects.values()].some(({ executor }) => executor.jobs().some((j) => j.id === jobId && !isFinal(j.state)));
       await new ServicesRuntimeController(this.settings.servicesRuntime).sweep((jobId) => !live(jobId)).catch((e: unknown) => console.error("services sweep:", e));
     }
-    this.kick();
+    void this.setupDone.then(() => this.kick());
     this.stopMergeWatch = startWatch(
       () => this.settings.mergeCheckSec * 1000,
       async () => {
@@ -179,7 +180,7 @@ export class Engine extends EventEmitter {
     this.stopCiWatch = ciWatch.stop;
     this.wakeCiWatch = ciWatch.wake;
     if (this.agents && this.opts.checkLogins !== false) {
-      this.startupReads = this.checkAllLogins().then(() => this.emit("logins")).catch((error: unknown) => console.error("login check:", error))
+      this.startupReads = this.setupDone.then(() => this.checkAllLogins()).then(() => this.emit("logins")).catch((error: unknown) => console.error("login check:", error))
         .then(async () => {
           if (this.shuttingDown) return;
           const reads: Promise<unknown>[] = this.accounts.accounts.filter(({ kind }) => kind === "model").map(({ id }) => this.accountOptions(id));
@@ -285,6 +286,7 @@ export class Engine extends EventEmitter {
   }
 
   async setupView(): Promise<SetupView> {
+    await this.setupDone;
     const logins: LoginView[] = await this.loginViews().catch(() => []);
     const modelAccountWorks: boolean = logins.some((login) => {
       const harness: SetupView["harnesses"][number] | undefined = this.setupHarnesses.find((item) => item.connector === login.connector);
@@ -921,6 +923,7 @@ export class Engine extends EventEmitter {
     await Promise.all([...this.projects.values()].map(({ sourcePolling }) => sourcePolling?.close()));
     await chats;
     await this.loginRunner.stopAll();
+    await this.setupDone;
     await this.startupReads;
     await this.runtimeDetection;
     await Promise.allSettled(this.options.values());

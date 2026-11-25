@@ -71,6 +71,7 @@ async function setup() {
       agents: { connectorsDir: harnesses.connectorsDir, adaptersDir: join(root, "adapters"), adapters: {} },
       notify: (n) => notices.push(n),
     });
+    await engine.setupDone;
     const api = await startApi(engine, { handlers: handlers("0.0.0-test"), validateResponses: true });
     const call = apiClient({ port: api.port, token: api.token });
     return { engine, call, close: async () => { await api.close(); await engine.shutdown(); } };

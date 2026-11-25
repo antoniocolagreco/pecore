@@ -85,6 +85,7 @@ it("adds missing accounts on engine startup, preserves matches and uses the conf
   await setTestConfiguration(home, "accounts", { accounts: existing });
   const options = { home, templates: shippedTemplates, discoverForges: true };
   const engine: Engine = await Engine.start(options);
+  await engine.setupDone;
   try {
     const accounts = engine.global().accounts.accounts;
     expect(accounts.slice(0, 3)).toEqual(existing);
@@ -97,6 +98,7 @@ it("adds missing accounts on engine startup, preserves matches and uses the conf
     await engine.shutdown();
   }
   const reopened: Engine = await Engine.start(options);
+  await reopened.setupDone;
   try {
     expect(reopened.global().accounts.accounts).toHaveLength(6);
   } finally {
