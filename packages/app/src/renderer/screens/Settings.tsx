@@ -282,7 +282,7 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
     </ul>}
     {children}
   </>;
-  if (title) return <Card title={title} actions={<div className={s.panelActions}>{checkButton}{actions}</div>}>{rows}</Card>;
+  if (title) return <Card title={title} actions={<div className={s.panelActions}>{actions}{checkButton}</div>}>{rows}</Card>;
   return <>{visible.length > 0 && <div className={s.sectionActions}>{checkButton}</div>}{rows}</>;
 }
 
