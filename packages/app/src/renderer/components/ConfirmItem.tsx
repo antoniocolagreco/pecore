@@ -22,7 +22,7 @@ export const queueKindLabel: Record<QueueItemView["kind"], string> = {
   "human-node": "Human step",
   "ci-head": "Pull request head changed",
   "engine-node": "Engine node",
-  "source-node": "Source node",
+  "source-node": "Retired ticket integration",
   "recipe-change": "Recipe change",
   import: "Import",
   services: "Services",

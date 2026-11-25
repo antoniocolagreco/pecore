@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { z } from "zod";
-import { appName, JsonSchemaObject, Name, Project, ProjectId, ProjectManagerIdentity } from "@pecore/schemas";
+import { appName, JsonSchemaObject, Name, Project, ProjectId, ProjectManagerIdentity, TrackerProvider } from "@pecore/schemas";
 import type { ChatConfirmationRow } from "@pecore/schemas";
 import { definitionOperations } from "../api/routes/definitions";
 import { globalFileHandlers } from "../api/routes/settings";
@@ -21,7 +21,7 @@ export const ProjectUpdate = ProjectSelection.extend({
     recipes: z.array(Name).optional(),
     variables: JsonSchemaObject.optional(),
     credentials: z.record(z.string(), text).optional(),
-    source: z.strictObject({ node: Name, account: text.optional(), params: JsonSchemaObject.default({}) }).nullable().optional(),
+    tracker: z.strictObject({ provider: TrackerProvider, account: text.optional() }).nullable().optional(),
   }).refine((changes) => Object.keys(changes).length > 0, "Provide at least one setting to change."),
 });
 
@@ -44,7 +44,7 @@ export async function projectUpdateRows(engine: Engine, { project, changes }: z.
     ...(changes.recipes !== undefined ? [{ label: "Recipes", value: changes.recipes.join(", ") || "None" }] : []),
     ...(changes.variables !== undefined ? [{ label: "Variables", value: JSON.stringify(changes.variables) }] : []),
     ...(changes.credentials !== undefined ? [{ label: "Account bindings", value: JSON.stringify(changes.credentials) }] : []),
-    ...(changes.source !== undefined ? [{ label: "Ticket source", value: changes.source ? JSON.stringify(changes.source) : "None" }] : []),
+    ...(changes.tracker !== undefined ? [{ label: "Tracker", value: changes.tracker?.provider ?? "None" }] : []),
   ];
 }
 

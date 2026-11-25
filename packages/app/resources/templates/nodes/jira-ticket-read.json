@@ -1,0 +1,45 @@
+{
+  "provider": "jira",
+  "kind": "tracker",
+  "account": "project.account",
+  "tags": [
+    "issue tracker"
+  ],
+  "outcomes": [
+    "done",
+    "failed"
+  ],
+  "failOutcomes": [
+    "failed"
+  ],
+  "outcomeRules": [
+    {
+      "exitCode": 0,
+      "outcome": "done"
+    },
+    {
+      "exitCode": "other",
+      "outcome": "failed"
+    }
+  ],
+  "timeoutSec": 120,
+  "name": "jira-ticket-read",
+  "description": "Read a Jira ticket by ID or link.",
+  "params": {
+    "type": "object",
+    "properties": {
+      "ticket": {
+        "type": "string"
+      }
+    }
+  },
+  "script": "set -e\nid=${PECORE_PARAMS_TICKET:-$PECORE_TICKET_ID}\ncase \"$id\" in \"https://$PECORE_JIRA_SITE/browse/\"*) id=${id##*/} ;; esac\ncase \"$id\" in \"\"|-*|*[!a-zA-Z0-9-]*) echo \"Enter a valid Jira ticket ID or link.\" >&2; exit 1 ;; esac\nacli jira workitem view \"$id\" --fields summary,description,reporter,attachment --json | jq -e '\n  def text: if type == \"object\" then [.. | objects | select(.type == \"text\") | .text] | join(\"\\n\") else . // \"\" end;\n  .fields | {title: .summary, body: (.description | text), author: .reporter.accountId, attachments: [(.attachment // [])[] | .content]}'",
+  "outputs": {
+    "done": "document"
+  },
+  "outputRules": {
+    "done": {
+      "stdoutJson": ""
+    }
+  }
+}

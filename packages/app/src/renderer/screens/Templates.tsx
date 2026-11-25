@@ -55,11 +55,10 @@ function TemplateList({ type, icons }: { type: DefinitionType; icons: ReadonlyMa
           const title: string = templateTitle(name);
           const description: string = string(definition.description);
           const kind: RecipeNodeKind | undefined = type === "node" ? recipeNodeKind(definition.kind) : undefined;
-          const source: boolean = type === "node" && definition.kind === "source";
           const icon = <DefinitionIcon icons={icons} type={type} name={name} selected={string(definition.icon)} size={type === "node" ? "lg" : "md"} />;
           const contents = <>
             {type === "node"
-              ? <NodeCard icon={icon} title={title} kind={kind ?? (source ? "source" : undefined)} agent={defaultAgent} />
+              ? <NodeCard icon={icon} title={title} kind={kind} agent={defaultAgent} />
               : <Card className={s.card}>
                 <span className={s.glyph}>{icon}</span>
                 <strong title={title}><span>{title}</span></strong>

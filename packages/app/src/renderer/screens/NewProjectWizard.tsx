@@ -104,7 +104,7 @@ export function NewProjectWizard() {
         createRepo,
         services: null,
         pm: inputs.pm,
-        source: null,
+        tracker: null,
       },
     };
     for (let index: number = 1; ; index++) {

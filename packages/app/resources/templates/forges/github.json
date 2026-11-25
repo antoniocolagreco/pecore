@@ -4,6 +4,5 @@
   "credentialHelper": "!gh auth git-credential",
   "delivery": "github-pr",
   "comment": "github-issue-comment",
-  "createRepo": "github-create-repo",
-  "source": "github-issues"
+  "createRepo": "github-create-repo"
 }

@@ -54,7 +54,6 @@ async function copyTemplates(ctx: Pick<ProjectContext, "project" | "defs">, dir:
     await writeFile(join(dir, "recipes", `${name}.json`), JSON.stringify(recipe, null, 2) + "\n");
     for (const { use } of Object.values(recipe.nodes)) nodes.add(use);
   }
-  if (ctx.project.source) nodes.add(ctx.project.source.node);
   if (ctx.project.createRepo) nodes.add(ctx.project.createRepo);
   const bodies: Set<string> = new Set();
   for (const name of nodes) {

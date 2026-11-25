@@ -116,7 +116,7 @@ export function JobGraph({ recipe, definitions, runs, selected, onSelect }: {
         if (result === "failed") return "failed";
         return result === "not_delivered" ? "inactive" : "none";
       }
-      if (outcome === "stale" || (node && node.kind !== "source" && node.failOutcomes.includes(outcome))) return "failed";
+      if (outcome === "stale" || (node && node.failOutcomes.includes(outcome))) return "failed";
       if (recipe.successOutcomes.includes(`${id}:${outcome}`)) return "success";
       return recipe.edges.some((edge) => edge.from === id && edge.on === outcome) ? "none" : "inactive";
     };

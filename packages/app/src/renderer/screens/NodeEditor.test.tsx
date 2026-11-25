@@ -52,41 +52,45 @@ it("shows the required check and saves the command with source control credentia
   });
 });
 
-it("creates a Source node through the normal template editor", async () => {
+it("creates a Tracker node with a shell script and an account", async () => {
+  const rect = new DOMRect();
+  Object.defineProperty(Range.prototype, "getClientRects", { configurable: true, value: () => [rect] });
+  Object.defineProperty(Range.prototype, "getBoundingClientRect", { configurable: true, value: () => rect });
   api.call.mockImplementation(async (route: string, input?: RouteInput<"validateDefinition"> | RouteInput<"saveDefinition">) => {
     if (route === "listDefinitions") return [];
     if (route === "validateDefinition") {
       const parsed = Node.safeParse(JSON.parse(input?.body.content ?? ""));
       return { errors: parsed.success ? [] : parsed.error.issues.map(({ path, message }) => ({ path: path.join("."), message })), warnings: [] };
     }
-    if (route === "saveDefinition") return { sha256: "source-v1" };
+    if (route === "getAccounts") return { value: { accounts: [{ id: "gh-alice", kind: "forge", forge: "github", host: "github.com", user: "alice" }] } };
+    if (route === "saveDefinition") return { sha256: "tracker-v1" };
     throw new Error(`Unexpected route ${route}`);
   });
   const router = createMemoryRouter([
     { path: "/templates/nodes/new", element: <NodeEditor newTemplate /> },
-    { path: "/edit/node/*", element: <span>Saved Source</span> },
+    { path: "/edit/node/*", element: <span>Saved Tracker</span> },
   ], { initialEntries: ["/templates/nodes/new"] });
   render(<RouterProvider router={router} />);
   const user = userEvent.setup();
-  await user.type(await screen.findByRole("textbox", { name: "Name" }), "issue-source");
+  await user.type(await screen.findByRole("textbox", { name: "Name" }), "issue-tracker");
   await user.click(screen.getByRole("combobox", { name: "Kind" }));
-  await user.click(await screen.findByRole("option", { name: "Source" }));
+  await user.click(await screen.findByRole("option", { name: "Tracker" }));
   await user.type(screen.getByRole("textbox", { name: "Description" }), "Read test issues");
-  const commands: Record<string, string> = { List: "list", Read: "read", Comment: "comment", Replies: "replies" };
-  for (const [label, command] of Object.entries(commands)) {
-    await user.type(screen.getByRole("textbox", { name: `${label} command` }), `fixture-cli ${command}`);
-  }
+  await user.click(screen.getByRole("combobox", { name: "Account" }));
+  await user.click(await screen.findByRole("option", { name: "alice · github.com" }));
+  const script = screen.getByRole("group", { name: "Tracker script" }).querySelector<HTMLElement>(".cm-content")!;
+  await user.click(script);
+  await user.paste("echo checked");
   const save = screen.getByRole<HTMLButtonElement>("button", { name: "Save" });
   await waitFor(() => expect(save.disabled).toBe(false));
   await user.click(save);
-  await screen.findByText("Saved Source");
+  await screen.findByText("Saved Tracker");
   await waitFor(() => expect(api.call).toHaveBeenCalledWith("saveDefinition", {
-    params: { path: "templates/nodes/issue-source.json" }, body: { content: expect.any(String), baseSha256: null },
+    params: { path: "templates/nodes/issue-tracker.json" }, body: { content: expect.any(String), baseSha256: null },
   }));
   const saved: RouteInput<"saveDefinition"> = api.call.mock.calls.find(([route]) => route === "saveDefinition")?.[1];
   expect(Node.parse(JSON.parse(saved.body.content))).toMatchObject({
-    kind: "source", list: { command: ["fixture-cli", "list"] }, read: { command: ["fixture-cli", "read"] },
-    comment: { command: ["fixture-cli", "comment"] }, replies: { command: ["fixture-cli", "replies"] },
+    kind: "tracker", provider: "github", account: "gh-alice", script: "echo checked",
   });
 });
 

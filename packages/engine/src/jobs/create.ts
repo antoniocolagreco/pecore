@@ -5,6 +5,7 @@ import { definitionHash, jobDefinitions, jobNodes, snapshotDefinitions } from ".
 import type { JobRow, ProjectContext } from "../graph/executor";
 import { ProjectLocationConflict, withProjectLocation } from "../projects/location";
 import { jobBranch } from "../workdir/repo";
+import { trackerLogin } from "../runners/tracker";
 import { fetchBase, jobCommit } from "./stacked";
 
 const ulid = monotonicFactory();
@@ -69,6 +70,15 @@ async function createJobInProject(ctx: ProjectContext, req: CreateJob): Promise<
   const recipeHash: string = definitionHash(ctx.defs.recipes.get(recipe.name));
   const definitions: JobDefinitions = await snapshotDefinitions(recipe, ctx.defs.nodes, ctx.defs.nodeDir, ctx.defs.sidecars).catch(fail);
   definitions.recipeHash = recipeHash;
+  for (const entry of Object.values(definitions.nodes)) {
+    const node = entry.definition;
+    if (node.kind === "tracker") {
+      const login = await trackerLogin(ctx, node).catch(fail);
+      const definition = { ...node, account: login.id };
+      entry.definition = definition;
+      entry.hash = definitionHash({ definition, sidecars: entry.sidecars });
+    }
+  }
   const knowledgeByRecipe = ctx.project.recipeKnowledge;
   if (knowledgeByRecipe && Object.hasOwn(knowledgeByRecipe, recipe.name)) definitions.knowledgeByStep = knowledgeByRecipe[recipe.name];
   const parent = req.parentJobId ? (ctx.db.db.prepare("SELECT * FROM jobs WHERE id = ?").get(req.parentJobId) as JobRow | undefined) : null;

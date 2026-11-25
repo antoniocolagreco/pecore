@@ -16,7 +16,6 @@ import { startApi } from "../api/server";
 import { Engine } from "../main";
 import { readCreation } from "../projects/create";
 import { ProjectDb } from "../store/project-db";
-import type { OrderSink } from "../sources/poll";
 import { beginImport } from "./import";
 
 const secret = "ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8";
@@ -106,11 +105,11 @@ function reviewedDefinitions(dir: string): RawEntry[] {
 
 const manifest = (history: boolean, logs: boolean = false) => ({ name: "manifest.json", body: JSON.stringify({ format: 1, projectId: "demo", exportedAt: "2026-11-19T10:00:00.000Z", history, logs }) });
 
-async function secondHome(templates: string, orders?: OrderSink) {
+async function secondHome(templates: string) {
   const home = join(await tempDir(), "home");
   await mkdir(home, { recursive: true });
   await setTestConfiguration(home, "accounts", { accounts: [{ ...forgeAccount, id: "gh-mine" }] });
-  const engine = await Engine.start({ home, templates, ...(orders ? { orders } : {}) });
+  const engine = await Engine.start({ home, templates });
   const api = await startApi(engine, { handlers: handlers("0.0.0-test"), validateResponses: true });
   const call = apiClient({ port: api.port, token: api.token });
   const close = async () => {
@@ -458,37 +457,6 @@ describe("project import (share/, CUJ 7)", () => {
     await engine.shutdown();
   }, 60000);
 
-  it("starts the configured source on import without creating an approval item", async () => {
-    const p = await apiProject();
-    const fakeSource = {
-      name: "fake-source",
-      description: "one ticket",
-      kind: "source",
-      params: { type: "object", properties: { trusted: { type: "array", items: { type: "string" }, default: [] }, pollSec: { type: "integer", default: 300 } } },
-      list: { command: ["/bin/sh", "-c", `printf '[{"id":"1","title":"One"}]'`] },
-      read: { command: ["/bin/sh", "-c", `printf '{"title":"One","body":"b","author":"alice"}'`] },
-      comment: { command: ["/bin/true"] },
-      replies: { command: ["/bin/sh", "-c", "printf '[]'"] },
-      timeoutSec: 10,
-    };
-    const { ctx } = p.engine.project("demo");
-    p.engine.catalog.saveNode(Node.parse(fakeSource));
-    ctx.db.definition.write({ ...ctx.project, source: { node: "fake-source", params: { trusted: ["alice"], pollSec: 1 } } });
-    await p.engine.reloadProject("demo");
-    const out = join(await tempDir(), "demo.tar.zst");
-    await p.call("exportProject", { params: { id: "demo" }, body: { path: out } });
-    const templates = join(dirname(p.home), "templates");
-    await p.close();
-
-    const hands: string[] = [];
-    const b = await secondHome(templates, { hand: async (_p, order) => void hands.push(order.ticket.id) });
-    await b.call("importProject", { body: { path: out } });
-    expect(items(b.engine, "demo", "import")).toEqual([]);
-    expect(items(b.engine, "demo", "source-node")).toEqual([]);
-    await until(() => hands.length === 1, 10000);
-    expect(hands).toEqual(["1"]);
-    await b.close();
-  }, 60000);
 });
 
 describe("project import and export from the app and the Assistant (decisions 85-86)", () => {

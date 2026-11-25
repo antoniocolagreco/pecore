@@ -19,7 +19,6 @@ describe("project defaults (decision 8)", () => {
       "github-pr": "gitlab-mr",
       "github-issue-comment": "gitlab-issue-comment",
       "github-create-repo": "gitlab-create-repo",
-      "github-issues": "gitlab-issues",
       "gitlab-mr": "gitlab-mr",
     });
   });
@@ -32,7 +31,7 @@ describe("project defaults (decision 8)", () => {
 
   it("a private Git server project delivers the pushed branch, skips the ticket comment, and has no repo creation or ticket source", async () => {
     const forge = await loadForgeDefaults(shippedTemplates, "git");
-    expect(forge).toEqual({ forge: "git", tool: "git", credentialHelper: null, delivery: "git-delivery", comment: null, createRepo: null, source: null });
+    expect(forge).toEqual({ forge: "git", tool: "git", credentialHelper: null, delivery: "git-delivery", comment: null, createRepo: null });
     const d = await projectDefaults(shippedTemplates, { url: "git@git.example.com:team/app.git", account: "git-dev" }, "git");
     expect(d.rename).toMatchObject({ "github-pr": "git-delivery", "gitlab-mr": "git-delivery" });
     expect(d.rename).not.toHaveProperty("github-issue-comment");

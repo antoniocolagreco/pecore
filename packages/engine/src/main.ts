@@ -31,7 +31,6 @@ import { createJob } from "./jobs/create";
 import { startWatch } from "./jobs/merge-watch";
 import { resumeOrders } from "./jobs/plan";
 import type { CreateJob } from "./jobs/create";
-import type { TicketOrder } from "./jobs/plan";
 import { homePaths, initHome } from "./home/layout";
 import { closeHome, moveLegacyFolders } from "./home/legacy";
 import { ensureBuiltInAgents, findHarness, openCodeModels, registerHarnessAccount, saveHarnessProfiles } from "./home/autosetup";
@@ -47,16 +46,13 @@ import { ChatsDb } from "./store/chats-db";
 import { Catalog } from "./store/catalog";
 import { Configuration } from "./store/configuration";
 import { ProjectDb } from "./store/project-db";
-import { startSourcePolling } from "./sources/poll";
-import type { OrderSink } from "./sources/poll";
 import { AgentChats } from "./chat/chat";
-import { intakeSink } from "./chat/intake";
 import { exportProject } from "./share/export";
 import { InvalidArchive } from "./share/archive";
 import { beginImport, previewImport } from "./share/import";
 import { reviewProjectContents } from "./share/review";
 
-export type EngineOptions = { home: string; templates: string; downloads?: string; development?: boolean; agents?: AgentPaths; checkLogins?: boolean; discoverForges?: boolean; detectRuntime?: () => Promise<Settings["servicesRuntime"]>; admin?: (script: string) => Promise<void>; orders?: OrderSink; notify?: (notification: Pick<Notification, "kind" | "title" | "body">) => void };
+export type EngineOptions = { home: string; templates: string; downloads?: string; development?: boolean; agents?: AgentPaths; checkLogins?: boolean; discoverForges?: boolean; detectRuntime?: () => Promise<Settings["servicesRuntime"]>; admin?: (script: string) => Promise<void>; notify?: (notification: Pick<Notification, "kind" | "title" | "body">) => void };
 
 export class EngineStartError extends Error {
   constructor(readonly errors: DefinitionError[]) {
@@ -66,7 +62,7 @@ export class EngineStartError extends Error {
 
 export class NotFoundError extends Error {}
 
-type LoadedProject = { ctx: ProjectContext; executor: JobExecutor; sourcePolling?: ReturnType<typeof startSourcePolling>; deleting?: boolean };
+type LoadedProject = { ctx: ProjectContext; executor: JobExecutor; deleting?: boolean };
 
 export class Engine extends EventEmitter {
   readonly projects = new Map<string, LoadedProject>();
@@ -83,7 +79,6 @@ export class Engine extends EventEmitter {
   private chats!: ChatsDb;
   configuration!: Configuration;
   catalog!: Catalog;
-  private intake: OrderSink | null = null;
   private stoppingAgentChats: Promise<void> | null = null;
   private releaseLock!: () => Promise<void>;
   private stopMergeWatch: () => void = () => undefined;
@@ -161,11 +156,7 @@ export class Engine extends EventEmitter {
       if (creation) this.creating.set(id, { step: creation.step, error: "the app quit during project creation" });
     }
     for (const { executor } of this.projects.values()) await executor.recoverAfterRestart();
-    const resumedOrders: Map<LoadedProject, TicketOrder[]> = new Map();
-    for (const project of this.projects.values()) {
-      const resumed: TicketOrder[] = await resumeOrders(project.ctx);
-      if (this.opts.orders && !this.creating.has(project.ctx.id)) resumedOrders.set(project, resumed);
-    }
+    for (const { ctx } of this.projects.values()) await resumeOrders(ctx);
     if (this.settings.servicesRuntime !== null && this.projects.size > 0) {
       const live = (jobId: string) => [...this.projects.values()].some(({ executor }) => executor.jobs().some((j) => j.id === jobId && !isFinal(j.state)));
       await new ServicesRuntimeController(this.settings.servicesRuntime).sweep((jobId) => !live(jobId)).catch((e: unknown) => console.error("services sweep:", e));
@@ -196,9 +187,6 @@ export class Engine extends EventEmitter {
           }
           await Promise.allSettled(reads);
         });
-    }
-    if (this.opts.orders) {
-      for (const [project, resumed] of resumedOrders) project.sourcePolling = startSourcePolling(project.ctx, this.opts.orders, resumed);
     }
   }
 
@@ -340,36 +328,13 @@ export class Engine extends EventEmitter {
     return { harnesses: this.setupHarnesses, modelAccountWorks };
   }
 
-  private orderSink(project?: string): OrderSink | null {
-    return this.opts.orders ?? (this.chatAgent(project)?.model ? this.intake : null);
-  }
-
   async startAgentChats(url: string, token: string): Promise<void> {
     await this.agentChats.start(url, token);
-    this.intake = intakeSink(this.agentChats);
-    await this.refreshSourcePolling();
   }
 
   stopAgentChats(): Promise<void> {
     this.stoppingAgentChats ??= this.agentChats.close();
     return this.stoppingAgentChats;
-  }
-
-  private async refreshSourcePolling(): Promise<void> {
-    for (const project of this.projects.values()) {
-      const sink: OrderSink | null = this.orderSink(project.ctx.id);
-      if (!sink && project.sourcePolling) {
-        const existing = project.sourcePolling;
-        delete project.sourcePolling;
-        await existing.close();
-      }
-      if (sink && !project.sourcePolling && !this.creating.has(project.ctx.id)) {
-        const resumed: TicketOrder[] = await resumeOrders(project.ctx);
-        if (sink === this.orderSink(project.ctx.id) && !this.stoppingAgentChats && !project.sourcePolling) {
-          project.sourcePolling = startSourcePolling(project.ctx, sink, resumed);
-        }
-      }
-    }
   }
 
   async reloadProject(id: string): Promise<DefinitionError[]> {
@@ -379,11 +344,9 @@ export class Engine extends EventEmitter {
     if (loaded.project) {
       p.ctx.project = loaded.project;
       p.ctx.defs = loaded;
-      p.sourcePolling?.wake();
     }
     if (loaded.errors.length) this.projectErrors.set(id, loaded.errors);
     else this.projectErrors.delete(id);
-    await this.refreshSourcePolling();
     this.live({ type: "project.updated", projectId: id });
     return loaded.errors;
   }
@@ -394,7 +357,6 @@ export class Engine extends EventEmitter {
     if (errors.length) return errors;
     this.applyConfiguration(value);
     for (const { ctx } of this.projects.values()) ctx.settings = this.settings;
-    await this.refreshSourcePolling();
     this.kick();
     return [];
   }
@@ -623,6 +585,7 @@ export class Engine extends EventEmitter {
       },
       setupEnded: (state) => this.setupEnded(id, state),
       forgeAccount: (accountId) => this.accounts.accounts.find((a): a is ForgeAccount => a.kind === "forge" && a.id === accountId),
+      trackerTemplate: (name) => this.catalog.node(name),
       agentCard: (agentId) => this.catalogAgent(agentId),
       agentContext: (agentId) => this.agentContext(agentId),
       live: (attemptId, line) => {
@@ -635,9 +598,6 @@ export class Engine extends EventEmitter {
         if (e.type.startsWith("node_run.") && e.jobId !== null && "nodeRunId" in e.payload) this.live({ type: "node_run.updated", projectId: id, jobId: e.jobId, nodeRunId: e.payload.nodeRunId });
         if (e.type.startsWith("job.") && e.jobId !== null) this.live({ type: "job.updated", projectId: id, jobId: e.jobId });
         if (e.type === "queue.added" || e.type === "queue.resolved") this.live({ type: "queue.updated", projectId: id, itemId: e.payload.itemId });
-        if (e.type === "queue.resolved" && e.jobId === null && e.payload.choice === "confirm") {
-          this.projects.get(id)?.sourcePolling?.wake();
-        }
       }
     };
     this.projects.set(id, { ctx, executor: new JobExecutor(ctx) });
@@ -852,8 +812,6 @@ export class Engine extends EventEmitter {
         return;
       }
       const findings = await finishProject(dir, this.createOptions());
-      const sink: OrderSink | null = this.orderSink(id);
-      if (sink && !loaded.sourcePolling) loaded.sourcePolling = startSourcePolling(ctx, sink, []);
       this.setCreating(id, null);
       for (const f of findings) {
         const body = `${f.path} can be read by other users; run: ${f.fix.join(" ")}`;
@@ -870,7 +828,6 @@ export class Engine extends EventEmitter {
     if (!(await readCreation(dir))) throw new Error(`project ${id} is not being created`);
     const p = this.projects.get(id);
     if (p) {
-      await p.sourcePolling?.close();
       await p.executor.close();
       p.ctx.db.close();
       this.projects.delete(id);
@@ -886,7 +843,6 @@ export class Engine extends EventEmitter {
     if (running.length > 0) throw new Error(`stop the running jobs first: ${running.map((j) => j.title).join(", ")}`);
     p.deleting = true;
     try {
-      await p.sourcePolling?.close();
       const jobs = p.executor.jobs();
       for (const j of jobs) if (!isFinal(j.state)) await p.executor.stop(j.id);
       for (const j of jobs) await p.executor.services.down(j.id).catch((e: unknown) => console.error("services:", e));
@@ -964,7 +920,6 @@ export class Engine extends EventEmitter {
     this.stopMergeWatch();
     this.stopCiWatch();
     const chats: Promise<void> = this.stopAgentChats();
-    await Promise.all([...this.projects.values()].map(({ sourcePolling }) => sourcePolling?.close()));
     await chats;
     await this.loginRunner.stopAll();
     await this.setupDone;
@@ -979,4 +934,4 @@ export class Engine extends EventEmitter {
   }
 }
 
-export type { CreateJob, OrderSink };
+export type { CreateJob };

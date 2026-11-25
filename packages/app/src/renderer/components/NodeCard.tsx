@@ -6,12 +6,12 @@ import { useData } from "../api/hooks";
 import { Badge, Card } from "../ds/feedback";
 import s from "./NodeCard.module.css";
 
-export type RecipeNodeKind = "agent" | "command" | "human";
+export type RecipeNodeKind = "agent" | "command" | "human" | "tracker";
 
-export const nodeKindLabels: Record<Node["kind"], string> = { agent: "Agent", command: "Command", human: "Human", source: "Source" };
+export const nodeKindLabels: Record<Node["kind"], string> = { agent: "Agent", command: "Command", human: "Human", tracker: "Tracker" };
 
 export function recipeNodeKind(kind: unknown): RecipeNodeKind | undefined {
-  if (kind === "agent" || kind === "command" || kind === "human") return kind;
+  if (kind === "agent" || kind === "command" || kind === "human" || kind === "tracker") return kind;
   if (kind === "human-decision" || kind === "human-review") return "human";
   return undefined;
 }
@@ -34,11 +34,11 @@ export function RecipeNodeKindBadge({ kind, agent }: { kind: RecipeNodeKind; age
   return <span className={`${s.kindBadge} ${s[kind]}`} style={style} title={label}><Badge><span className={s.badgeLabel}>{label}</span></Badge></span>;
 }
 
-export function NodeCard({ icon, title, kind, badge, agent }: { icon: ReactNode; title: string; kind?: RecipeNodeKind | "source"; badge?: ReactNode; agent?: NodeAgentBadge }) {
+export function NodeCard({ icon, title, kind, badge, agent }: { icon: ReactNode; title: string; kind?: RecipeNodeKind; badge?: ReactNode; agent?: NodeAgentBadge }) {
   return <Card className={[s.card, kind && s[kind]].filter(Boolean).join(" ")}>
     <span className={s.glyph}>{icon}</span>
     <strong title={title}><span>{title}</span></strong>
-    {(badge || kind) && <div className={s.kind}>{badge ?? (kind === "source" ? <Badge tone="success">Source</Badge> : kind && <RecipeNodeKindBadge kind={kind} agent={agent} />)}</div>}
+    {(badge || kind) && <div className={s.kind}>{badge ?? (kind && <RecipeNodeKindBadge kind={kind} agent={agent} />)}</div>}
   </Card>;
 }
 

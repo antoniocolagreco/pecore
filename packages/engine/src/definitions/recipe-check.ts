@@ -25,7 +25,6 @@ export function recipeParameterIssues(recipe: Recipe, nodes: Map<string, Node>):
 }
 
 export function nodeOutcomes(recipe: Recipe, id: string, node: Node): string[] {
-  if (node.kind === "source") return [];
   const r = recipe.nodes[id];
   const out = [...node.outcomes];
   if (r && r.requires.length > 0) out.push("stale");
@@ -35,7 +34,7 @@ export function nodeOutcomes(recipe: Recipe, id: string, node: Node): string[] {
 }
 
 export function producedOn(recipe: Recipe, id: string, node: Node, outcome: string): ArtifactType[] {
-  if (node.kind === "source" || outcome === "stale" || outcome === "skipped") return [];
+  if (outcome === "stale" || outcome === "skipped") return [];
   if (recipe.ci?.after === id && outcome.startsWith("ci_")) return [...new Set([...producedOn(recipe, id, node, recipe.ci.on), "text" as const])];
   const declared: ArtifactType | undefined = node.outputs[outcome];
   return [...new Set([...(declared ? [declared] : []), ...automaticOutputs(node)])];
@@ -87,13 +86,13 @@ function readIssues(recipe: Recipe, resolved: Map<string, Node>, live: Set<strin
   const issues: RecipeIssue[] = [];
   const avail = availableOutputs(recipe, resolved);
   for (const [id, node] of resolved) {
-    if (!live.has(id) || node.kind === "source") continue;
+    if (!live.has(id)) continue;
     const reads: string[] = recipe.nodes[id]!.reads;
     for (const read of reads) {
       const source: Node | undefined = resolved.get(read);
       if (source && producedTypes(recipe, read, source).length === 0) issues.push({ path: `nodes.${id}.reads`, message: `${read} produces nothing to read` });
     }
-    if (node.kind !== "command") continue;
+    if ((node.kind !== "command" && node.kind !== "tracker")) continue;
     for (const type of [...node.inputs, ...node.optionalInputs]) {
       const providers: string[] = reads.filter((read) => {
         const source: Node | undefined = resolved.get(read);
@@ -138,10 +137,6 @@ export function checkRecipe(recipe: Recipe, nodes: Map<string, Node>, remote: bo
       issues.push({ path: `nodes.${id}.use`, message: `node ${r.use} not found` });
       continue;
     }
-    if (node.kind === "source") {
-      issues.push({ path: `nodes.${id}.use`, message: `${r.use} is a source node; recipes cannot use it` });
-      continue;
-    }
     resolved.set(id, node);
     if (r.params && node.kind === "command" && node.runsAs === "engine") issues.push({ path: `nodes.${id}.params`, message: "Recipes cannot change parameters for nodes that use source control credentials." });
     if (r.agent && node.kind !== "agent") issues.push({ path: `nodes.${id}.agent`, message: `${r.use} is not an agent node` });
@@ -172,7 +167,7 @@ export function checkRecipe(recipe: Recipe, nodes: Map<string, Node>, remote: bo
   for (const [i, s] of recipe.successOutcomes.entries()) {
     const [id, outcome] = s.split(":") as [string, string];
     const node = resolved.get(id);
-    if (!node || node.kind === "source") continue;
+    if (!node) continue;
     if (!nodeOutcomes(recipe, id, node).includes(outcome)) issues.push({ path: `successOutcomes.${i}`, message: `${outcome} is not an outcome of ${id}` });
     if (recipe.ci?.after === id && [recipe.ci.on, "ci_failed", "ci_timeout", "ci_exhausted"].includes(outcome)) {
       issues.push({ path: `successOutcomes.${i}`, message: "use ci_passed for a successful CI result" });
@@ -219,6 +214,6 @@ export function checkRecipe(recipe: Recipe, nodes: Map<string, Node>, remote: bo
 export function hasCommitNode(recipe: Recipe, nodes: Map<string, Node>): boolean {
   return Object.values(recipe.nodes).some((r) => {
     const n = nodes.get(r.use);
-    return n !== undefined && n.kind !== "source" && Object.values(n.outputs).includes("reference");
+    return n !== undefined && Object.values(n.outputs).includes("reference");
   });
 }

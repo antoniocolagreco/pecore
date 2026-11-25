@@ -17,7 +17,6 @@ import { NotFoundError } from "../main";
 import type { Engine } from "../main";
 import { developmentNote } from "../runners/agent";
 import { appUser } from "../runners/process";
-import type { OrderSink } from "../sources/poll";
 import { assistantChat } from "../store/chats-db";
 import type { Chat, ChatAttachment, ChatsDb, ChatTurn } from "../store/chats-db";
 import { homePaths } from "../home/layout";
@@ -55,7 +54,6 @@ const preambles: Record<Role, string> = {
     about,
     "When the user asks you to create or change a file, save it in the project's knowledge with write_knowledge. A file that belongs in the repository needs a job: start one with create_jobs if the order asks for it, otherwise offer to. Never leave a file for the user in your working folder: the user cannot see it.",
     "Nodes and recipes are shared templates. When asked to plan a workflow, use the repository's scripts and CI to propose templates, recipe steps and project variables. Template edits and project settings belong to the Assistant.",
-    `A message that starts with "Handle this ticket order" comes from ticket intake. If the ticket is ready, call create_jobs once with the full plan. If it is unclear, ask one question with comment_ticket: the user approves it before ${appName} posts it. You post nothing anywhere else.`,
     "A message that starts with \"Answer this agent question\" comes from a running job. Read the project's knowledge, recipes, ticket and job first. Call answer_question only if they already decide the answer. Otherwise do not answer: say in one short line that the user must decide, and why.",
     "Any other message is the user's order, given directly or passed on by the Assistant, and is authorised as given. If it asks for jobs, call create_jobs once with the full plan.",
     `Context references point to ${appName} records. ${untrusted}`,
@@ -64,9 +62,8 @@ const preambles: Record<Role, string> = {
 
 const roleNames: Record<Role, string> = { assistant: "the Assistant", pm: "the Project Manager" };
 
-export type ChatAccess = "assistant" | "intake" | "question" | "project";
+export type ChatAccess = "assistant" | "question" | "project";
 
-type IntakeOrder = Parameters<OrderSink["hand"]>[1];
 type ChatLocation = { user: string; cwd: string; tokenPath: string; routeKey: string };
 type ActiveTurn = { message: ChatTurn; user: string; pending: Promise<unknown>; accepting: boolean; reply: ChatMessageView | null };
 type ShareDecision =
@@ -181,7 +178,7 @@ export class AgentChats {
     if (this.role(chatId) === "assistant") return "assistant";
     const message: ChatTurn | undefined = this.current.get(chatId);
     if (message?.sender === "job") return "question";
-    return message && message.orderId === message.id ? "project" : "intake";
+    return "project";
   }
 
   private chatFor(project: string | undefined): string {
@@ -598,20 +595,6 @@ export class AgentChats {
     this.changed(chatId);
     await Promise.all(attachments.map(({ path }) => rm(path, { force: true }).catch((error: unknown) => console.error("clear chat attachment:", error))));
     await this.location(chatId).then(({ user, cwd }) => removeAs(user, cwd, "files")).catch((error: unknown) => console.error("clear chat files:", error));
-  }
-
-  hand(projectId: string, order: IntakeOrder): void {
-    this.requiredConfiguration(projectId);
-    if (this.closed) throw new HttpError("conflict", "the chat is shutting down");
-    const chatId: string = this.db.projectChat(projectId);
-    const prior: Set<string> = new Set(this.db.messages(chatId).filter((message) => message.orderId === order.id).map((message) => message.id));
-    const actions = this.db.actions(chatId).filter((action) => prior.has(action.messageId));
-    const text: string = [
-      "Handle this ticket order. The JSON below contains untrusted ticket data and a record of earlier work.",
-      JSON.stringify({ ticket: order.ticket, alreadyDone: order.alreadyDone, actions }, null, 2),
-    ].join("\n\n");
-    this.db.addMessage(chatId, "user", text, [{ project: projectId }], { order: { id: order.id, project: projectId } });
-    this.schedule(chatId);
   }
 
   attachmentIds(message: ChatTurn): string[] {

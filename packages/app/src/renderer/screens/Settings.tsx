@@ -343,6 +343,7 @@ export function Settings() {
   const settings = useGlobalFile("settings", () => call("getSettings"), (body) => call("putSettings", { body }), (value) => SettingsSchema.safeParse(value).success);
   const accounts = useGlobalFile("accounts", () => call("getAccounts"), (body) => call("putAccounts", { body }));
   const discovery = useData(() => call("getAccountDiscovery"), [], (message) => message.type === "accounts.discovery_changed");
+  const jira = useData(() => call("getActiveJira"), []);
   const status = useData(() => call("getStatus"), []);
   const [checks, setChecks] = useState<RouteResult<"checkPrerequisites">>();
   const [disableDialog, setDisableDialog] = useState(false);
@@ -401,13 +402,16 @@ export function Settings() {
               <DiscoveringProviders providers={pendingHarnesses} />
               {harnessColors && showUnavailable && <ComingSoonTools {...harnessColors} />}
             </LoginControls>
-            <LoginControls title="Git hosting" accounts={accounts.current?.accounts ?? []} kind="tool" pendingLogin={pendingLogin}
+            <LoginControls title="Git hosting" accounts={accounts.current?.accounts.filter(({ kind }) => kind === "forge") ?? []} kind="tool" pendingLogin={pendingLogin}
               onLoginStarted={() => setPendingLogin(undefined)} onEdit={setForgeDialog}
               actions={<Button size="sm" icon={<PlusIcon />} disabled={!connected || !accounts.value || accounts.saving} onClick={() => setForgeDialog("new")}>Add account</Button>}>
-              {!accounts.current?.accounts.some(({ kind }) => kind !== "model") && !pendingForges.length && accounts.current && discovery.data &&
+              {!accounts.current?.accounts.some(({ kind }) => kind === "forge") && !pendingForges.length && accounts.current && discovery.data &&
                 <p className={s.groupText}>Add an account, on a public service or on your own server, to push branches and open pull requests.</p>}
               <DiscoveringProviders providers={pendingForges} />
             </LoginControls>
+            <Card title="Jira" actions={<Button size="sm" aria-label="Check Jira login" disabled={jira.loading} onClick={jira.reload}>Check</Button>}>
+              <p className={s.groupText}>{jira.data ? `${jira.data.account.user} · ${jira.data.site}` : jira.loading ? "Checking Jira login…" : "Sign in to the Atlassian CLI to connect Jira."}</p>
+            </Card>
           </div>
         </Section>
         {forgeDialog && <ForgeAccountDialog account={forgeDialog === "new" ? undefined : forgeDialog} onClose={() => setForgeDialog(undefined)}

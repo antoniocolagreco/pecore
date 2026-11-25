@@ -4,13 +4,6 @@ import { hasCommitNode } from "../definitions/recipe-check";
 import type { ProjectContext } from "../graph/executor";
 import { createJob, JobCreateError, jobRecipeName, recipeForJob } from "./create";
 
-export type TicketOrder = {
-  order_id: string;
-  source: string;
-  ticket_id: string;
-  state: "received" | "confirming" | "handed" | "asking" | "planned" | "done" | "dropped";
-};
-
 export type OrderPlanResult = { accepted: boolean; plan: OrderPlan; jobIds: Record<string, string> };
 
 type PlannedOrder = Extract<StoredEvent, { type: "order.planned" }>["payload"];
@@ -19,10 +12,6 @@ const creating: WeakMap<ProjectContext, Map<string, Promise<void>>> = new WeakMa
 function orderJobs(ctx: ProjectContext, orderId: string): Map<string, string> {
   const rows = ctx.db.db.prepare("SELECT id, order_key FROM jobs WHERE order_id = ?").all(orderId) as { id: string; order_key: string }[];
   return new Map(rows.map(({ id, order_key }) => [order_key, id]));
-}
-
-function ticketOrder(ctx: ProjectContext, orderId: string): TicketOrder | undefined {
-  return ctx.db.db.prepare("SELECT order_id, source, ticket_id, state FROM tickets_seen WHERE order_id = ?").get(orderId) as TicketOrder | undefined;
 }
 
 function validatePlan(ctx: ProjectContext, plan: OrderPlan): PlannedOrder["plan"] {
@@ -43,7 +32,6 @@ function validatePlan(ctx: ProjectContext, plan: OrderPlan): PlannedOrder["plan"
 
 async function createMissing(ctx: ProjectContext, { orderId, plan }: PlannedOrder): Promise<void> {
   const ids: Map<string, string> = orderJobs(ctx, orderId);
-  const ticket: TicketOrder | undefined = ticketOrder(ctx, orderId);
   try {
     for (const entry of plan) {
       if (ids.has(entry.key)) continue;
@@ -54,7 +42,7 @@ async function createMissing(ctx: ProjectContext, { orderId, plan }: PlannedOrde
       if (attachmentIds.length && !ctx.orderAttachments) throw new JobCreateError("order attachments are unavailable");
       const id: string = await createJob(ctx, {
         title: entry.title,
-        ticket: { text: entry.ticketText, source: ticket?.source, id: ticket?.ticket_id },
+        ticket: { text: entry.ticketText },
         recipe: entry.recipe,
         baseBranch: entry.baseBranch,
         parentJobId,
@@ -63,7 +51,6 @@ async function createMissing(ctx: ProjectContext, { orderId, plan }: PlannedOrde
         ...(attachmentIds.length ? { attachments: await ctx.orderAttachments!(orderId, attachmentIds) } : {}),
       });
       ids.set(entry.key, id);
-      if (ticket) ctx.notify({ kind: "ticket-job-started", title: entry.title, body: `Job created from ticket ${ticket.ticket_id}`, jobId: id });
     }
     const existing: Map<string, string> = orderJobs(ctx, orderId);
     if (!plan.every((entry) => existing.has(entry.key))) throw new JobCreateError(`order ${orderId} is missing jobs`);
@@ -102,12 +89,17 @@ export async function planOrder(ctx: ProjectContext, orderId: string, plan: Orde
   return { accepted: true, plan: validated, jobIds: Object.fromEntries(orderJobs(ctx, orderId)) };
 }
 
-export async function resumeOrders(ctx: ProjectContext): Promise<TicketOrder[]> {
-  const orders = ctx.db.db.prepare("SELECT order_id, source, ticket_id, state FROM tickets_seen WHERE state IN ('received', 'handed', 'planned') AND order_id IS NOT NULL ORDER BY order_id").all() as TicketOrder[];
-  for (const order of orders) {
-    if (order.state !== "planned") continue;
-    const planned = ctx.db.orderEvents(order.order_id).find((event) => event.type === "order.planned");
-    if (planned) await finishPlan(ctx, planned.payload).catch((error: unknown) => console.error(`order ${order.order_id}:`, error));
+export async function resumeOrders(ctx: ProjectContext): Promise<void> {
+  const orderIds: string[] = ctx.db.db.prepare<[], string>(`
+    SELECT DISTINCT json_extract(payload, '$.orderId') FROM events
+    WHERE type = 'order.planned' AND json_extract(payload, '$.orderId') NOT IN
+      (SELECT order_id FROM tickets_seen WHERE order_id IS NOT NULL)
+  `).pluck().all();
+  for (const id of orderIds) {
+    const events: StoredEvent[] = ctx.db.orderEvents(id);
+    const planned = events.find((event) => event.type === "order.planned");
+    if (planned && !events.some((event) => event.type === "order.done")) {
+      await finishPlan(ctx, planned.payload).catch((error: unknown) => console.error(`order ${id}:`, error));
+    }
   }
-  return orders.filter((order) => order.state !== "planned");
 }

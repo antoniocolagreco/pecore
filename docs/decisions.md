@@ -397,3 +397,9 @@
 - Decision: Remove Clean checkout. Run build, lint and test commands in the job's workdir.
 - Why: Repository CI catches checks that pass only because of local files Git ignores.
 - Replaces: The Clean checkout option, the temporary worktree it created and the extra dependency install in the Vitest checks.
+
+## 2026-11-25: Tracker nodes replace ticket intake
+
+- Decision: Add one-script Tracker nodes for GitHub, GitLab and Jira, with templates to search, read and comment. Choose the account on the template. Shipped templates use the project Git account or the active Jira CLI login. Existing chat read and comment actions use the same runner. Questions stay in the app.
+- Why: The Source node was an integration disguised as a node. Its four scripts were hard to understand.
+- Replaces: The Source node, automatic ticket polling and tracker replies as answers.

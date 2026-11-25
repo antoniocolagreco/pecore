@@ -388,7 +388,6 @@ const readTools: Record<string, string> = {
   get_project: "project settings",
   list_recipes: "recipes",
   read_ticket: "ticket",
-  read_replies: "ticket replies",
   job_status: "job status",
   read_artifact: "job output",
   list_templates: "templates",

@@ -232,7 +232,7 @@ export function definitionOperations(engine: Engine) {
     }
     for (const { ctx } of engine.projects.values()) {
       if (ctx.project.recipes !== undefined) {
-        if (ctx.project.source?.node === name || ctx.project.createRepo === name) users.push(`project ${ctx.id}`);
+        if (ctx.project.createRepo === name) users.push(`project ${ctx.id}`);
       } else {
         for (const recipe of ctx.defs.recipes.values()) {
           if (Object.values(recipe.nodes).some((step) => step.use === name)) users.push(`recipe ${recipe.name} in project ${ctx.id}`);
@@ -245,8 +245,8 @@ export function definitionOperations(engine: Engine) {
     });
     for (const file of forges.filter((entry) => entry.endsWith(".json")).sort()) {
       const forge: string = basename(file, ".json");
-      const { delivery, comment, createRepo, source } = await loadForgeDefaults(engine.opts.templates, forge);
-      if ([delivery, comment, createRepo, source].includes(name)) users.push(`forge ${forge}`);
+      const { delivery, comment, createRepo } = await loadForgeDefaults(engine.opts.templates, forge);
+      if ([delivery, comment, createRepo].includes(name)) users.push(`forge ${forge}`);
     }
     return users;
   }
@@ -437,8 +437,6 @@ export function definitionOperations(engine: Engine) {
           if (next.folder !== current.folder) next.folder = absoluteProjectFolder(next.folder);
           if (next.repo?.url !== current.repo?.url) {
             next.createRepo = null;
-            const source = next.source && loaded.ctx.defs.nodes.get(next.source.node);
-            if (!next.source?.account && source?.kind === "source" && source.credentials.includes("project.account")) next.source = null;
           }
           await changeProjectLocation(loaded.ctx, current, next, engine.global().accounts, async () => {
             loaded.ctx.db.definition.write(next);

@@ -1,5 +1,6 @@
 import type { PrerequisiteView } from "@pecore/schemas";
 import { CommitAuthor } from "@pecore/schemas";
+import { activeJiraAccount } from "../../accounts/jira";
 import { codeCommitIdentity } from "../../accounts/forges";
 import { readGitAuthor } from "../../workdir/git-as";
 import { checkPrerequisites } from "../../home/prerequisites";
@@ -33,6 +34,7 @@ export function systemHandlers(engine: Engine) {
       return { ok: true };
     },
     listLogins: async () => engine.loginViews(),
+    getActiveJira: () => activeJiraAccount(),
     getForgeAccountDefaults: async ({ query }) => {
       const [git, codeCommit] = await Promise.all([readGitAuthor(), query.awsProfile ? codeCommitIdentity(query.awsProfile) : null]);
       return { author: CommitAuthor.safeParse(git).data ?? { name: git.name, email: "" }, codeCommit };

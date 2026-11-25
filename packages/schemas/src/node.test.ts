@@ -128,6 +128,15 @@ describe("node schema", () => {
   });
 });
 
+it("validates Tracker's provider, account and inline script", () => {
+  const input = { kind: "tracker", name: "read-ticket", description: "Read a ticket", provider: "github",
+    account: "project.account", script: "echo checked", outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }] };
+  expect(Node.parse(input)).toMatchObject({ kind: "tracker", changesFiles: false, account: "project.account", script: "echo checked" });
+  expect(Node.safeParse({ ...input, account: "" }).success).toBe(false);
+  expect(Node.safeParse({ ...input, script: "" }).success).toBe(false);
+  expect(Node.safeParse({ ...input, kind: "source" }).success).toBe(false);
+});
+
 describe("human node", () => {
   it("chooses an interface and removes kind tags", () => {
     expect(issues({ ...review, interface: undefined }).length).toBeGreaterThan(0);

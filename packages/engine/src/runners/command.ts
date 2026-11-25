@@ -23,7 +23,8 @@ export type CommandRun<Output extends string = ArtifactType> = {
   workdir: string;
   context: Omit<PlaceholderContext, "params" | "workdir">;
   inputs: CommandInput[];
-  comment?: string;
+  inlineScript?: string;
+  repeatCheck?: boolean;
   extraEnv?: Record<string, string>;
   onStart?: (pgid: number, user: string) => void;
   effect?: { requested(hash: string): void; done(ok: boolean, result: unknown): void };
@@ -79,13 +80,11 @@ async function argvOf(spec: string[] | { script: string } | undefined, inline: s
   return ["/bin/sh", "-c", body, label];
 }
 
-function commandInput(inputs: CommandInput[], comment?: string): string {
-  if (comment !== undefined && inputs.length === 0) return comment;
+function commandInput(inputs: CommandInput[]): string {
   const values: Record<string, unknown> = Object.fromEntries(inputs.map(({ type, content }) => {
     const value: unknown = type === "text" || type === "diff" ? content : JSON.parse(content);
     return [type, value];
   }));
-  if (comment !== undefined) values.comment = comment;
   return JSON.stringify(values);
 }
 
@@ -115,21 +114,23 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
       cwd = await mkdtemp(join(tmpdir(), "pecore-engine-"));
       temp.push(cwd);
     }
-    const input: string = commandInput(c.inputs, c.comment);
+    const input: string = commandInput(c.inputs);
     const values = placeholderValues({ ...c.context, params: c.params, workdir: cwd });
     const env = { ...(await baseEnv(user)), ...(await gitIdentityEnv()), ...placeholderEnv(values), ...c.extraEnv };
     const timeoutMs = c.node.timeoutSec * 1000;
     let log = "";
 
-    if (c.node.probe) {
-      const argv = await argvOf(c.node.probe, undefined, c, `${c.node.name}-probe`, values);
+    if (c.node.probe || c.repeatCheck) {
+      const label: string = `${c.node.name}-probe`;
+      const argv: string[] = c.repeatCheck ? ["/bin/sh", "-c", c.inlineScript!, label] : await argvOf(c.node.probe, undefined, c, label, values);
       const p = await runProbe({ argv, user, cwd, env, input, timeoutMs }, c.node.probeRules);
       env.PECORE_PROBE_STDOUT = p.stdout;
-      log += `$ probe\n${p.stdout}${p.stderr}probe: ${p.result}\n`;
+      const check: string = c.repeatCheck ? "Repeat check" : "probe";
+      log += `$ ${check}\n${p.stdout}${p.stderr}${check}: ${p.result}\n`;
       if (p.result === "unknown") return { kind: "waiting", reason: "network", log };
       if (p.result === "done") {
         const outcome = pickOutcome(c.node.outcomeRules, { code: 0, stdout: p.stdout });
-        if (outcome === null) return { kind: "failed", reason: "HARNESS_ERROR", log: log + "no outcome rule matched the probe output\n" };
+        if (outcome === null) return { kind: "failed", reason: "HARNESS_ERROR", log: log + `no outcome rule matched the ${check} output\n` };
         const outputs = [];
         for (const [type, rule] of c.outputs(outcome)) {
           if ("file" in rule) continue;
@@ -139,7 +140,7 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
       }
     }
 
-    const argv = await argvOf(c.node.command, c.node.script, c, c.node.name, values);
+    const argv: string[] = c.inlineScript === undefined ? await argvOf(c.node.command, c.node.script, c, c.node.name, values) : ["/bin/sh", "-c", c.inlineScript, c.node.name];
     const hash = commandHash(argv);
     if (engine) c.effect?.requested(hash);
     let r: RunResult;
@@ -150,7 +151,7 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
       if (e instanceof SpawnError && e.code === "not_found") return { kind: "failed", reason: "COMMAND_NOT_FOUND", log: log + `${argv[0]}: not found\n` };
       throw e;
     }
-    log += `$ ${c.node.script ?? argv.join(" ")}\n${r.stdout}${r.stderr}exit: ${r.code ?? r.signal}\n`;
+    log += `$ ${c.inlineScript === undefined ? c.node.script ?? argv.join(" ") : c.node.name}\n${r.stdout}${r.stderr}exit: ${r.code ?? r.signal}\n`;
     if (engine) c.effect?.done(r.code === 0, { code: r.code, stdout: r.stdout.slice(-4096) });
     if (r.timedOut) return { kind: "failed", reason: "TIMEOUT", log };
     if (r.code === null) return { kind: "failed", reason: "PROCESS_KILLED", log };

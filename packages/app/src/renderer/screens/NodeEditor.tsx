@@ -1,7 +1,7 @@
 import { cloneElement, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { ReactElement, ReactNode, Ref } from "react";
 import { Link, useBlocker, useNavigate, useParams } from "react-router";
-import { AgentSession, ApiError, ArtifactType, HumanInterface, humanInterfaces, isNodeKindTag, Name } from "@pecore/schemas";
+import { AgentSession, ApiError, ArtifactType, HumanInterface, humanInterfaces, isNodeKindTag, Name, TrackerProvider } from "@pecore/schemas";
 import type { DefinitionFile, Node, RouteResult } from "@pecore/schemas";
 import { basicSetup, EditorView, minimalSetup } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
@@ -392,7 +392,7 @@ const nodeKinds: { value: Node["kind"]; label: string }[] = [
   { value: "agent", label: nodeKindLabels.agent },
   { value: "command", label: nodeKindLabels.command },
   { value: "human", label: nodeKindLabels.human },
-  { value: "source", label: nodeKindLabels.source },
+  { value: "tracker", label: nodeKindLabels.tracker },
 ];
 const interfaceOptions: { value: HumanInterface; label: string }[] = HumanInterface.options.map((value) => ({ value, label: humanInterfaces[value].label }));
 const humanFields: Record<HumanInterface, Record<string, unknown>> = {
@@ -432,7 +432,10 @@ const initialNodeFields: Record<Node["kind"], Record<string, unknown>> = {
     outcomeRules: [{ exitCode: 0, outcome: "passed" }, { exitCode: "other", outcome: "failed" }],
   },
   human: humanFields.decision,
-  source: { list: {}, read: {}, comment: {}, replies: {} },
+  tracker: {
+    provider: "github", script: "", outcomes: ["done", "failed"], failOutcomes: ["failed"],
+    outcomeRules: [{ exitCode: 0, outcome: "done" }, { exitCode: "other", outcome: "failed" }],
+  },
 };
 
 function OutcomeOutputs({ kind, outcomes, outputs, rules, disabled, onChange }: {
@@ -450,7 +453,7 @@ function OutcomeOutputs({ kind, outcomes, outputs, rules, disabled, onChange }: 
     const nextRules = { ...typedRules };
     if (type) nextOutputs[outcome] = type;
     else delete nextOutputs[outcome];
-    if (kind === "command") {
+    if (kind === "command" || kind === "tracker") {
       if (!type) delete nextRules[outcome];
       else if (!nextRules[outcome]) nextRules[outcome] = type === "reference" ? { stdoutLastLine: "url" } : { file: "" };
     }
@@ -468,7 +471,7 @@ function OutcomeOutputs({ kind, outcomes, outputs, rules, disabled, onChange }: 
           ? <Checkbox label={`${outcome}: the person can write a note`} checked={type === "text"} disabled={disabled} onCheckedChange={(checked) => setType(outcome, checked ? "text" : undefined)} />
           : <Select label={`Output of ${outcome}`} options={typeOptions} value={type ?? ""} disabled={disabled}
             onValueChange={(value) => setType(outcome, ArtifactType.safeParse(value).data)} />}
-        {kind === "command" && type && <>
+        {(kind === "command" || kind === "tracker") && type && <>
           <Select label="Read it from" options={ruleKinds} value={ruleKind || null} disabled={disabled}
             onValueChange={(value) => value && setRule(outcome, { [value]: rule[ruleKind] ?? "" })} />
           {ruleKind && <TextField label={ruleHints[ruleKind] ?? "Value"} mono value={rule[ruleKind] ?? ""} disabled={disabled}
@@ -497,12 +500,6 @@ function CommandInputs({ inputs, optional, disabled, onChange }: { inputs: unkno
     {group("Optional inputs", extra, required, (next, rest) => onChange(rest, next))}
   </>;
 }
-const sourceCommands: { key: string; label: string }[] = [
-  { key: "list", label: "List command" },
-  { key: "read", label: "Read command" },
-  { key: "comment", label: "Comment command" },
-  { key: "replies", label: "Replies command" },
-];
 const newNodeTemplate: NewDefinition = {
   content: JSON.stringify({ name: "", description: "", icon: defaultDefinitionIcon.node }, null, 2) + "\n",
   path(content) {
@@ -528,6 +525,21 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   const draft = parseDraft(file.content);
   const kind: string = string(draft?.kind);
   const human: boolean = kind === "human";
+  const tracker: boolean = kind === "tracker";
+  const provider = TrackerProvider.safeParse(draft?.provider).data;
+  const accounts = useData(() => tracker ? call("getAccounts") : Promise.resolve(null), [tracker],
+    (event) => tracker && event.type === "configuration.changed" && event.kind === "accounts");
+  const jira = useData(() => tracker && provider === "jira" ? call("getActiveJira") : Promise.resolve(null), [tracker, provider]);
+  const options: { value: string; label: string }[] = provider === "jira"
+    ? jira.data ? [{ value: jira.data.account.id, label: `${jira.data.account.user} · ${jira.data.site}` }] : []
+    : (accounts.data?.value.accounts ?? []).flatMap((account) => account.kind === "forge" && account.forge === provider
+      ? [{ value: account.id, label: `${account.user || account.id} · ${account.host}` }] : []);
+  if (draft?.account === "project.account" || (provider && provider !== "jira")) {
+    options.unshift({ value: "project.account", label: provider === "jira" ? "Active Jira login" : "Project account" });
+  }
+  if (typeof draft?.account === "string" && !options.some(({ value }) => value === draft.account)) {
+    options.push({ value: draft.account, label: "Account unavailable" });
+  }
   const usesCredentials: boolean = kind === "command" && draft?.runsAs === "engine";
   const checkScript: string = string(object(draft?.probe).script);
   const checkLabel: string = checkScript ? "Check script name" : "Check command";
@@ -555,7 +567,8 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   }, null, 2) + "\n");
   const inlineKeys: string[] = [
     "description", "tags", "timeoutSec",
-    ...(kind === "source" ? ["credentials", ...sourceCommands.map(({ key }) => key)] : ["outcomes", "outputs", "changesFiles"]),
+    "outcomes", "outputs", "changesFiles",
+    ...(tracker ? ["provider", "account", "script", "inputs", "optionalInputs", "outputRules"] : []),
     ...(kind === "agent" ? ["prompt", "agentSession", "knowledge"] : []),
     ...(kind === "command" ? ["command", "script", "runsAs", "inputs", "optionalInputs", "outputRules",
       ...(usesCredentials || draft?.probe !== undefined ? ["probe"] : [])] : []),
@@ -601,7 +614,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
             <TextField label="Name" required value={string(draft.name)} disabled={sidecarDirty}
               labelAction={help("Name", "Recipes use this name to refer to the node template.")}
               description="Lowercase letters, digits and hyphens. Start with a letter." onValueChange={(name) => update("name", name)} />
-            <Select label="Kind" labelAction={help("Kind", "Agent gives a task to an AI model. Command runs a program or script. Human pauses the job for a person to respond. Source reads tickets and sends replies.")}
+            <Select label="Kind" labelAction={help("Kind", "Agent gives a task to an AI model. Command runs a program or script. Human pauses the job for a person to respond. Tracker works with tickets in GitHub, GitLab or Jira.")}
               options={nodeKinds} value={kind || null} disabled={sidecarDirty} onValueChange={(value) => {
               const next: Node["kind"] | undefined = nodeKinds.find((option) => option.value === value)?.value;
               if (!next) return;
@@ -634,13 +647,13 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
             onChange={(value) => update("icon", value)} />
           {kind && !human && field("timeoutSec", "Timeout (seconds)", <NumberField label="Timeout" fullWidth min={1} value={typeof draft.timeoutSec === "number" ? draft.timeoutSec : null} onValueChange={(value) => update("timeoutSec", value ?? undefined)} />,
             "Set how long one attempt can run before PeCore stops it.")}
-          {kind === "command" && <>
+          {(kind === "command" || tracker) && <>
             <CommandInputs inputs={draft.inputs} optional={draft.optionalInputs} disabled={!file.editable}
               onChange={(inputs, optionalInputs) => updateFields({ inputs: inputs.length ? inputs : undefined, optionalInputs: optionalInputs.length ? optionalInputs : undefined })} />
             <p className={ui.muted}>The recipe chooses where each input comes from. The script receives a JSON object on stdin with one key per input type, for example <code>jq '.spec'</code>.</p>
             {fieldErrors("inputs")}{fieldErrors("optionalInputs")}
           </>}
-          {kind && kind !== "source" && <>
+          {kind && <>
             {field("outcomes", iface === "decision" ? "Choices (comma separated)" : "Outcomes (comma separated)", <TextField label="Outcomes" value={Array.isArray(draft.outcomes) ? draft.outcomes.join(",") : ""} onValueChange={(value) => update("outcomes", value ? value.split(",").map((outcome) => outcome.trim()) : [])} />,
               iface === "decision" ? "Each choice is a button in Notifications and an outcome you can connect in the recipe. For example, yes can continue to the next node and no can go to End."
                 : human ? "Reviews use approve, changes and reject. Connect each result to the next node or End."
@@ -652,11 +665,11 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
               <OutcomeOutputs kind={kind} outcomes={outcomes} outputs={object(draft.outputs)} rules={object(draft.outputRules)} disabled={!file.editable}
                 onChange={(outputs, outputRules) => updateFields({
                   outputs: Object.keys(outputs).length ? outputs : undefined,
-                  ...(kind === "command" ? { outputRules: Object.keys(outputRules).length ? outputRules : undefined } : {}),
+                  ...(kind === "command" || tracker ? { outputRules: Object.keys(outputRules).length ? outputRules : undefined } : {}),
                 })} />
               {fieldErrors("outputs")}{fieldErrors("outputRules")}
             </div>
-            {!human && flag("changesFiles", "Can edit files", "Allow this node to edit the job's files. PeCore records those edits as a diff for the nodes that read it. If this is off, edits fail the step.")}
+            {!human && !tracker && flag("changesFiles", "Can edit files", "Allow this node to edit the job's files. PeCore records those edits as a diff for the nodes that read it. If this is off, edits fail the step.")}
           </>}
           {kind === "agent" && <>
             <AgentSessionField value={AgentSession.safeParse(draft.agentSession).data ?? "job"} disabled={!editable}
@@ -680,17 +693,19 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
               {fieldErrors("probe", checkLabel)}
             </div>}
           </>}
-          {kind === "source" && sourceCommands.map(({ key, label }) => {
-            const action = object(draft[key]);
-            return <div key={key}>
-              {typeof action.script === "string"
-                ? <TextField label={label.replace("command", "script")} mono value={action.script} onValueChange={(script) => update(key, { ...action, script })} />
-                : commandField(label, action.command, (command) => update(key, { ...action, command }))}
-              {fieldErrors(key)}
-            </div>;
-          })}
-          {kind === "source" && field("credentials", "Credentials (comma separated)", <TextField label="Credentials" value={Array.isArray(draft.credentials) ? draft.credentials.join(",") : ""} onValueChange={(value) => update("credentials", value ? value.split(",").map((name) => name.trim()) : [])} />,
-            "List the account names that this source needs to access its ticket system.")}
+          {tracker && <>
+            <Select label="Tracker" value={provider ?? null} options={[
+              { value: "github", label: "GitHub Issues" }, { value: "gitlab", label: "GitLab Issues" }, { value: "jira", label: "Jira" },
+            ]} onValueChange={(value) => updateFields({ provider: value, account: undefined })} />
+            {fieldErrors("provider", "Tracker")}
+            <Select label="Account" value={string(draft.account) || null} options={options} onValueChange={(value) => update("account", value ?? undefined)} />
+            {fieldErrors("account", "Account")}
+            <div role="group" aria-label="Tracker script">
+              <div className={s.fieldHeading}><span>Script</span></div>
+              <Sidecar content={string(draft.script)} disabled={!editable} change={(value) => update("script", value)} isMarkdown={false} />
+              {fieldErrors("script", "Script")}
+            </div>
+          </>}
         </fieldset>
       ) : <ErrorText error="Unable to read the node definition." />}
       <DefinitionErrors errors={draft ? file.errors?.filter(({ path }) => !inlineKeys.includes(path.split(".")[0] ?? "")) : file.errors} />

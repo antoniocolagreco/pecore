@@ -1,3 +1,4 @@
+import { activeJiraAccount } from "../accounts/jira";
 import { createHash } from "node:crypto";
 import { constants, createReadStream, lstatSync, renameSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, open, opendir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
@@ -153,30 +154,32 @@ async function loadImport(dir: string): Promise<LoadedProject> {
   return { ...loaded, project: loaded.project };
 }
 
-function requiredAccounts(loaded: LoadedProject): Set<string> {
-  const ids: Set<string> = new Set();
-  if (loaded.project.repo) ids.add(loaded.project.repo.account);
-  if (loaded.project.source?.account) ids.add(loaded.project.source.account);
-  for (const id of Object.values(loaded.project.credentials ?? {})) ids.add(id);
+function requiredAccounts(loaded: LoadedProject): Map<string, "forge" | "service"> {
+  const ids: Map<string, "forge" | "service"> = new Map();
+  if (loaded.project.repo) ids.set(loaded.project.repo.account, "forge");
+  if (loaded.project.tracker?.account) ids.set(loaded.project.tracker.account, loaded.project.tracker.provider === "jira" ? "service" : "forge");
+  const aliases: Record<string, string> = loaded.project.credentials ?? {};
   for (const node of loaded.nodes.values()) {
-    if (node.kind !== "command" && node.kind !== "source") continue;
+    if (node.kind === "tracker" && node.account !== "project.account") ids.set(aliases[node.account] ?? node.account, node.provider === "jira" ? "service" : "forge");
+    if (node.kind !== "command") continue;
     for (const credential of node.credentials) {
-      if (credential !== "project.account") ids.add(loaded.project.credentials && Object.hasOwn(loaded.project.credentials, credential) ? loaded.project.credentials[credential]! : credential);
-      else if (!loaded.project.repo && !(node.kind === "source" && loaded.project.source?.account)) {
-        throw new InvalidArchive(`node ${node.name} uses project.account without an account`);
-      }
+      if (credential !== "project.account") ids.set(aliases[credential] ?? credential, "forge");
+      else if (!loaded.project.repo) throw new InvalidArchive(`node ${node.name} needs a project Git hosting account`);
     }
   }
+  for (const id of Object.values(aliases)) if (!ids.has(id)) ids.set(id, "forge");
   return ids;
 }
 
-function accountChoices(ids: Set<string>, project: Project, accounts: Accounts): ImportProjectPreview["accounts"] {
+async function accountChoices(ids: Map<string, "forge" | "service">, project: Project, accounts: Accounts): Promise<ImportProjectPreview["accounts"]> {
   const repoAccount: string | undefined = project.repo?.account;
   const host: string | null = project.repo ? repoHost(project.repo.url) : null;
-  return [...ids].sort().map((id) => ({
+  const jira = [...ids.values()].includes("service") ? await activeJiraAccount() : null;
+  return [...ids].sort(([left], [right]) => left.localeCompare(right)).map(([id, kind]) => ({
     id,
-    choices: accounts.accounts.flatMap((account) => account.kind === "forge" && (repoAccount !== id || account.host === host)
-      ? [{ id: account.id, label: `${account.id} · ${account.host}` }] : []),
+    choices: kind === "service" ? (jira ? [{ id: jira.account.id, label: `${jira.account.user} · ${jira.site}` }] : [])
+      : accounts.accounts.flatMap((account) => account.kind === "forge" && (repoAccount !== id || account.host === host)
+        ? [{ id: account.id, label: `${account.id} · ${account.host}` }] : []),
   }));
 }
 
@@ -200,7 +203,7 @@ export async function previewImport(
 ): Promise<ImportProjectPreview> {
   return withProjectArchive(home, path, async (dir, manifest) => {
     const loaded: LoadedProject = await loadImport(dir);
-    const accounts: ImportProjectPreview["accounts"] = accountChoices(requiredAccounts(loaded), loaded.project, options.accounts);
+    const accounts: ImportProjectPreview["accounts"] = await accountChoices(requiredAccounts(loaded), loaded.project, options.accounts);
     const digest: string = await sourceDigest(dir);
     const projects: string = homePaths(home).projects;
     let suggestedId: string | null = null;
@@ -223,22 +226,28 @@ export async function beginImport(home: string, input: ImportProjectBody, option
     const id: string = body.id ?? manifest.projectId;
     const dest: string = join(homePaths(home).projects, id);
     checkId(dest, id, options.knownProject);
-    const ids: Set<string> = requiredAccounts(loaded);
+    const ids = requiredAccounts(loaded);
     const accounts: AccountMapping = body.accounts ?? {};
-    const missing: { id: string; kind: "forge" }[] = [...ids].filter((id) => !Object.hasOwn(accounts, id)).sort().map((id) => ({ id, kind: "forge" }));
+    const missing = [...ids].filter(([id]) => !Object.hasOwn(accounts, id)).sort().map(([id, kind]) => ({ id, kind }));
     if (missing.length > 0) return { state: "needs-accounts", accounts: missing };
-    for (const from of ids) {
-      const target: string = accounts[from]!;
-      if (!options.accounts.accounts.some((account) => account.id === target && account.kind === "forge")) throw new InvalidArchive(`forge account ${target} not found`);
+    const jira = [...ids.values()].includes("service") ? await activeJiraAccount() : null;
+    for (const [id, kind] of ids) {
+      const target: string = accounts[id]!;
+      if (kind === "service") {
+        if (jira?.account.id !== target) throw new InvalidArchive("Choose the active Jira account in Settings → Accounts.");
+      } else if (!options.accounts.accounts.some((account) => account.id === target && account.kind === "forge")) {
+        throw new InvalidArchive(`forge account ${target} not found`);
+      }
     }
     if (project.repo) project.repo.account = accounts[project.repo.account]!;
-    if (project.source?.account) project.source.account = accounts[project.source.account]!;
+    if (project.tracker?.account) project.tracker.account = accounts[project.tracker.account]!;
     forgeAccountOf(project, options.accounts);
     const aliases: Record<string, string> = project.credentials ?? {};
     const mapped: Record<string, string> = Object.fromEntries([
       ...Object.entries(aliases).map(([key, account]) => [key, accounts[account]!]),
       ...[...loaded.nodes.values()].flatMap((node) => {
-        if (node.kind !== "command" && node.kind !== "source") return [];
+        if (node.kind === "tracker" && node.account !== "project.account") return [[node.account, accounts[aliases[node.account] ?? node.account]!]];
+        if (node.kind !== "command") return [];
         return node.credentials.filter((name) => name !== "project.account").map((name) => [name, accounts[Object.hasOwn(aliases, name) ? aliases[name]! : name]!]);
       }),
     ]);

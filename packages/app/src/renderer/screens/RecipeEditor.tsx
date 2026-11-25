@@ -113,7 +113,7 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
   const entries = Object.entries(nodes);
   const edges: unknown[] = Array.isArray(draft?.edges) ? draft.edges : [];
   const selectedNode = object(nodes[selected]);
-  const palette = (definitions.data ?? []).filter((item) => item.path.endsWith(".json") && !item.errors.length && string(object(item.value).name) && object(item.value).kind !== "source");
+  const palette = (definitions.data ?? []).filter((item) => item.path.endsWith(".json") && !item.errors.length && string(object(item.value).name));
   const nodeDefinitions = new Map<string, DefinitionEntry>(palette.map((item) => [string(object(item.value).name), item]));
   const definition: DefinitionEntry | undefined = nodeDefinitions.get(string(selectedNode.use));
   const nodeValue = object(definition?.value);
@@ -150,7 +150,11 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
     }];
   });
   const stepOptions: Option[] = entries.map(([value]) => ({ value, label: templateTitle(value) }));
-  const questionParameter = object(object(object(nodeValue.params).properties).question);
+  const parameters = object(object(nodeValue.params).properties);
+  const questionParameter = object(parameters.question);
+  const trackerParameters: { key: string; label: string }[] = [
+    { key: "query", label: "Query" }, { key: "ticket", label: "Ticket ID or link" }, { key: "comment", label: "Comment" },
+  ];
   const update = (changes: Record<string, unknown>): void => file.update(JSON.stringify({ ...draft, ...changes }, null, 2) + "\n");
   const updateNode = (key: string, value: unknown): void => update({ nodes: { ...nodes, [selected]: { ...selectedNode, [key]: value } } });
   const highlight = (key: string): boolean => !!file.errors?.some(({ path: at }) => at === key || at.startsWith(key + "."));
@@ -376,12 +380,15 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
                 </div>}
                 <MultiCombobox label="Reads from" placeholder="Choose nodes" value={reads} disabled={!editable}
                   labelAction={<FieldHelp title="Reads from">The nodes whose latest output this step receives, for example the spec writer's spec or a check's log. Agents and people also always receive the ticket and the job's current changes.</FieldHelp>}
-                  description={nodeValue.kind === "command" && nodeInputs.length ? `This command takes ${nodeInputs.join(", ")}. Read one node for each.` : undefined}
+                  description={(nodeValue.kind === "command" || nodeValue.kind === "tracker") && nodeInputs.length ? `This command takes ${nodeInputs.join(", ")}. Read one node for each.` : undefined}
                   options={stepOptions.filter(({ value }) => value !== selected || reads.includes(value))}
                   onValueChange={(next) => updateNode("reads", next.length ? next : undefined)} />
                 {humanInterface === "decision" && questionParameter.type === "string" && <TextField label="Question"
                   value={string(object(selectedNode.params).question)} placeholder={string(questionParameter.default)} disabled={!editable}
                   onValueChange={(question) => updateNode("params", { ...object(selectedNode.params), question: question.trim() ? question : undefined })} />}
+                {selectedKind === "tracker" && trackerParameters.filter(({ key }) => object(parameters[key]).type === "string").map(({ key, label }) =>
+                  <TextField key={key} label={label} value={string(object(selectedNode.params)[key])} placeholder={string(object(parameters[key]).default)}
+                    disabled={!editable} onValueChange={(value) => updateNode("params", { ...object(selectedNode.params), [key]: value.trim() ? value : undefined })} />)}
                 <MultiCombobox label="Requires" placeholder="Choose nodes" value={required} disabled={!editable}
                   labelAction={<FieldHelp title="Requires">Steps that must have passed on the current code before this step runs. If the code changed after they passed, this step does not run and ends with stale, which you can connect, for example back to the checks. Commit uses it to commit only checked code.</FieldHelp>}
                   options={stepOptions.filter(({ value }) => value !== selected || required.includes(value))}
@@ -477,7 +484,7 @@ function useTemplates(section: "recipes" | "nodes", enabled: boolean) {
 function templateOptions(entries: DefinitionEntry[] | undefined): { value: string; label: string }[] {
   return (entries ?? []).flatMap(({ path, value, errors }) => {
     const name: string = string(object(value).name);
-    return path.endsWith(".json") && name && !errors.length && object(value).kind !== "source" ? [{ value: name, label: templateTitle(name) }] : [];
+    return path.endsWith(".json") && name && !errors.length ? [{ value: name, label: templateTitle(name) }] : [];
   });
 }
 

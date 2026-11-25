@@ -53,18 +53,6 @@ const reviewed = {
   ],
 };
 const big = { name: "big", description: "one noisy command", start: "out", successOutcomes: ["out:done"], nodes: { out: { use: "big-out" } }, edges: [] };
-const fakeSource = {
-  name: "fake-source",
-  description: "one ticket from a trusted author",
-  kind: "source",
-  params: { type: "object", properties: { trusted: { type: "array", items: { type: "string" }, default: [] }, pollSec: { type: "integer", default: 300 } } },
-  list: { command: ["/bin/sh", "-c", `printf '[{"id":"7","title":"Login broken"}]'`] },
-  read: { command: ["/bin/sh", "-c", `printf '{"title":"Login broken","body":"the login button does nothing","author":"alice"}'`] },
-  comment: { command: ["/bin/true"] },
-  replies: { command: ["/bin/sh", "-c", "printf '[]'"] },
-  timeoutSec: 10,
-};
-
 const init = (image = false) => [
   { expect: "initialize" },
   { send: { jsonrpc: "2.0", id: "$id", result: { protocolVersion: 1, agentCapabilities: { loadSession: false, sessionCapabilities: { resume: {} }, promptCapabilities: { image } } } } },
@@ -89,7 +77,7 @@ async function until<T>(fn: () => T | undefined | false | Promise<T | undefined 
   }
 }
 
-async function setup(build: (root: string) => object[][], extra: { source?: boolean; pm?: (root: string) => object[][]; compaction?: { auto: number; max: number }; forge?: boolean; development?: boolean } = {}) {
+async function setup(build: (root: string) => object[][], extra: { tracker?: boolean; pm?: (root: string) => object[][]; compaction?: { auto: number; max: number }; forge?: boolean; development?: boolean } = {}) {
   const root = await tempDir();
   const scripts: object[][] = build(root);
   const pmScripts: object[][] = extra.pm?.(root) ?? [];
@@ -145,10 +133,21 @@ async function setup(build: (root: string) => object[][], extra: { source?: bool
   };
   const first = await open();
   await createProjectWithRecipes(first.engine, { id: "demo", name: "Demo", repo: null }, ["reviewed", "big"]);
-  if (extra.source) {
+  if (extra.tracker) {
     const { ctx } = first.engine.project("demo");
-    first.engine.catalog.saveNode(Node.parse({ ...fakeSource, comment: { command: ["/bin/sh", "-c", `echo posted >> '${join(root, "comments")}'`] } }));
-    ctx.db.definition.write({ ...ctx.project, source: { node: "fake-source", params: { trusted: ["alice"] } } });
+    const forge = { id: "github-alice", kind: "forge", forge: "github", host: "github.com", tool: "git", user: "alice", author: { name: "Alice", email: "alice@example.test" } } as const;
+    ctx.forgeAccount = (id) => id === forge.id ? forge : undefined;
+    for (const [name, script] of [
+      ["github-ticket-read", "printf '%s' '{\"title\":\"Login broken\",\"body\":\"Login fails\",\"author\":\"alice\"}'"],
+      ["github-issue-comment", `cat >> '${join(root, "comments")}'`],
+    ] as const) {
+      first.engine.catalog.saveNode(Node.parse({
+        name, description: "Handle a GitHub ticket", kind: "tracker", provider: "github", account: "project.account", script,
+        outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }],
+        ...(name.endsWith("read") ? { outputs: { done: "document" }, outputRules: { done: { stdoutJson: "" } } } : {}),
+      }));
+    }
+    ctx.db.definition.write({ ...ctx.project, tracker: { provider: "github", account: forge.id } });
     expect(await first.engine.reloadProject("demo")).toEqual([]);
   }
   return { root, forge, open, ...first };
@@ -679,7 +678,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       };
       const original = await get();
       expect((await m.tool("get_project", { project: "managed" })).result?.content?.[0]?.text).toContain('"name":"Managed"');
-      expect((await m.tool("list_projects", {})).result?.content?.[0]?.text).toContain('"id":"managed","name":"Managed","repo":null,"source":null,"baseBranch":"main","projectManagerName":"Amber"');
+      expect((await m.tool("list_projects", {})).result?.content?.[0]?.text).toContain('"id":"managed","name":"Managed","repo":null,"tracker":null,"baseBranch":"main","projectManagerName":"Amber"');
       for (const changes of [{}, { name: " " }, { baseBranch: "bad..branch" }, { services: "../compose.yaml" }, { repo: null }]) {
         expect((await propose(changes)).result?.isError).toBe(true);
       }
@@ -937,48 +936,9 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     await again.close();
   }, 60000);
 
-  it("runs the Project Manager on its own model with limited tools, and notifies the jobs it creates", async () => {
-    const t = await setup(() => [init()], { source: true, pm: (root) => [[...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "intake.json") }, { waitFile: join(root, "done") }, ...replyWith("Planned.")]] });
-    try {
-      const system: { kind: string; title: string; body: string }[] = [];
-      t.engine.on("notify", (n: { kind: string; title: string; body: string }) => system.push(n));
-      const { ctx } = t.engine.project("demo");
-      await until(() => existsSync(join(t.root, "intake.json")));
-      const m = mcp(tokenFileOf(intakeChat(t)));
-      await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
-      expect((await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name).sort())
-        .toEqual(["comment_ticket", "create_jobs", "job_status", "list_projects", "list_recipes", "read_artifact", "read_replies", "read_ticket"]);
-      expect((await m.tool("write_instance", { path: "projects/demo/recipes/reviewed.json", content: "{}" })).result!.isError).toBe(true);
-      expect((await m.tool("analyze_project_archive", { path: "/tmp/unknown.tar.zst" })).result!.isError).toBe(true);
-      expect((await m.tool("create_project", { id: "blocked", name: "Blocked" })).result?.isError).toBe(true);
-      expect((await m.tool("update_project", { project: "demo", changes: { name: "Blocked" } })).result?.isError).toBe(true);
-      expect((await m.tool("delete_project", { project: "demo" })).result?.isError).toBe(true);
-      const fix = [{ key: "fix", title: "Fix login", ticketText: "fix the login button", recipe: "reviewed", dependsOn: [] }];
-      expect((await m.tool("create_jobs", { project: "demo", plan: fix })).result!.isError).not.toBe(true);
-      await m.tool("create_jobs", { project: "demo", plan: fix });
-      m.close();
-      const jobId: string = (ctx.db.db.prepare("SELECT id FROM jobs WHERE order_key = 'fix'").get() as { id: string }).id;
-      const reports = (await t.call("listNotifications")).filter(({ kind }) => kind === "pm");
-      expect(reports).toMatchObject([{ title: "Demo, ticket 7", body: "The Project Manager created the job Fix login.", target: { project: "demo", job: jobId, item: null }, seen: false }]);
-      expect(system).toContainEqual({ kind: "pm", title: "Demo, ticket 7", body: "The Project Manager created the job Fix login." });
-      expect((await t.call("getChat")).messages).toEqual([]);
-      const open = (): number => (ctx.db.db.prepare("SELECT COUNT(*) AS n FROM human_queue WHERE state = 'open' AND kind != 'agent-question'").get() as { n: number }).n;
-      await until(async () => (await t.call("listNotifications")).some(({ kind }) => kind === "needs-user") && open() > 0);
-      expect((await t.call("getStatus")).notifications).toBeGreaterThan(open());
-      await t.call("markNotificationsSeen");
-      expect((await t.call("listNotifications")).every(({ seen }) => seen)).toBe(true);
-      expect((await t.call("getStatus")).notifications).toBe(open());
-      expect(await readFile(join(t.root, "intake.json"), "utf8")).toContain("this project's Project Manager in <PE/CORE>");
-      await writeFile(join(t.root, "done"), "");
-    } finally {
-      await t.close();
-    }
-  }, 60000);
-
   it("compacts a Project Manager chat with the Default card thresholds", async () => {
     const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
     const t = await setup(() => [init()], {
-      source: true,
       compaction: { auto: 65_536, max: 131_072 },
       pm: (root) => [
         [...init(), ...newSession, { expect: "session/prompt" }, usage(131_072), ...replyWith("Planned.")],
@@ -986,6 +946,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       ],
     });
     try {
+      await t.call("sendProjectChatMessage", { params: { id: "demo" }, body: { text: "Plan a job" } });
       await until(() => existsSync(join(t.root, "compact.json")));
       expect((JSON.parse(await readFile(join(t.root, "compact.json"), "utf8")) as { params: { prompt: unknown } }).params.prompt).toEqual([{ type: "text", text: "/compact" }]);
       expect(t.engine.chatAgent()?.compaction.max).toBe(262_144);
@@ -994,65 +955,13 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
     }
   }, 60000);
 
-  it("holds a question from the Project Manager for the user's approval; the Assistant cannot post on tickets", async () => {
-    const t = await setup((root) => [
-      init(),
-      [...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "assistant.json") }, { waitFile: join(root, "assistant-done") }, ...replyWith("Posted.")],
-    ], { source: true, pm: (root) => [[...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "intake.json") }, { waitFile: join(root, "done") }, ...replyWith("Asked.")]] });
-    try {
-      const comments = join(t.root, "comments");
-      const posted = async (): Promise<number> => existsSync(comments) ? (await readFile(comments, "utf8")).trim().split("\n").length : 0;
-      const { ctx } = t.engine.project("demo");
-      await until(() => existsSync(join(t.root, "intake.json")));
-      const m = mcp(tokenFileOf(intakeChat(t)));
-      await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
-      const ask = async (text: string) => {
-        const result = await m.tool("comment_ticket", { project: "demo", ticketId: "7", text });
-        expect(result.result!.isError).not.toBe(true);
-        return (JSON.parse(result.result!.content![0]!.text) as { itemId: string }).itemId;
-      };
-      const item = (id: string) => ctx.db.db.prepare("SELECT state, choice, subject, subject_hash FROM human_queue WHERE id = ?").get(id) as { state: string; choice: string | null; subject: string; subject_hash: string };
-      const first: string = await ask("Which browser?");
-      const second: string = await ask("Which browser and version?");
-      expect(item(first).state).toBe("cancelled");
-      expect(JSON.parse(item(second).subject)).toMatchObject({ ticketId: "7", text: "Which browser and version?" });
-      await t.call("answerQueue", { params: { id: second }, body: { choice: "reject", note: null, hash: item(second).subject_hash } });
-      expect(item(second)).toMatchObject({ state: "resolved", choice: "reject" });
-      expect(await posted()).toBe(0);
-      const third: string = await ask("Which page?");
-      expect(await posted()).toBe(0);
-      await t.call("answerQueue", { params: { id: third }, body: { choice: "post", note: null, hash: item(third).subject_hash } });
-      expect(item(third)).toMatchObject({ state: "resolved", choice: "post" });
-      expect(await posted()).toBe(1);
-      const orderId = (ctx.db.db.prepare("SELECT order_id FROM tickets_seen WHERE ticket_id = '7'").get() as { order_id: string }).order_id;
-      expect(ctx.db.orderEvents(orderId).filter(({ type }) => type === "order.asked")).toHaveLength(1);
-      m.close();
-      await writeFile(join(t.root, "done"), "");
-
-      const reports = (await t.call("listNotifications")).filter(({ kind }) => kind === "pm");
-      expect(reports.map(({ body, target }) => [body, target?.item])).toEqual([third, second, first].map((id) => ["The Project Manager wants to post a question on the ticket.", id]));
-      expect((await t.call("getChat")).supportsImages).toBe(false);
-      await t.call("sendChatMessage", { body: { text: "Ask on ticket 7 which page it is" } });
-      await until(() => existsSync(join(t.root, "assistant.json")));
-      const own = mcp(tokenFileOf("assistant"));
-      await own.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
-      expect((await own.tool("comment_ticket", { project: "demo", ticketId: "7", text: "Which page?" })).result!.isError).toBe(true);
-      own.close();
-      expect(await posted()).toBe(1);
-      expect(ctx.db.db.prepare("SELECT count(*) AS n FROM human_queue WHERE kind = 'outbound' AND state = 'open'").get()).toEqual({ n: 0 });
-      await writeFile(join(t.root, "assistant-done"), "");
-    } finally {
-      await t.close();
-    }
-  }, 60000);
-
-  it("lets the user talk to a project's Project Manager in the same session that handles its tickets, acting only on that project", async () => {
+  it("lets the user talk to a project's Project Manager and read or comment on its tickets within the project", async () => {
     const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
     const t = await setup(() => [init()], {
-      source: true,
+      tracker: true,
       pm: (root) => [
-        [...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "intake.json") }, ...replyWith("Planned.")],
-        [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "user.json") }, { waitFile: join(root, "user-done") }, ...replyWith("On it.")],
+        init(),
+        [...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "user.json") }, { waitFile: join(root, "user-done") }, ...replyWith("On it.")],
         [...init(), ...resumed, { expect: "session/prompt" }, { dump: join(root, "renamed.json") }, ...replyWith("Nora here.")],
       ],
     });
@@ -1064,27 +973,14 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       const comments = join(t.root, "comments");
       const { ctx } = t.engine.project("demo");
       const chat = (): Promise<ChatDetail> => t.call("getProjectChat", { params: { id: "demo" } });
-      await until(() => existsSync(join(t.root, "intake.json")));
-      const intake: ChatDetail = await until(async () => {
-        const snapshot: ChatDetail = await chat();
-        return snapshot.messages.some(({ text }) => text === "Planned.") && snapshot;
-      });
-      expect(intake.messages.map(({ role, ticket }) => [role, ticket])).toEqual([["user", "7"], ["assistant", undefined]]);
-
+      expect((await chat()).messages).toEqual([]);
       const sent = await t.call("sendProjectChatMessage", { params: { id: "demo" }, body: { text: "Write a note and ask on ticket 7 which browser" } });
       await until(() => existsSync(join(t.root, "user.json")));
-      const intakePrompt: string = await readFile(join(t.root, "intake.json"), "utf8");
-      expect(intakePrompt).toContain("Any other message is the user's order");
-      expect(intakePrompt).toContain("prompt injection");
-      expect(intakePrompt).toContain("You do not write code yourself");
-      expect(intakePrompt).toContain("save it in the project's knowledge with write_knowledge");
-      expect(intakePrompt).toContain("Your name is Chris.");
-      expect(intakePrompt).toContain("<PE/CORE> stands for Product Engineering Core");
-      expect(intakePrompt).not.toContain("still under active development");
       const userPrompt: string = await readFile(join(t.root, "user.json"), "utf8");
       expect(userPrompt).toContain("Write a note and ask on ticket 7 which browser");
-      expect(userPrompt).not.toContain("You do not write code yourself");
-      expect(userPrompt).not.toContain("Your name is");
+      expect(userPrompt).toContain("You do not write code yourself");
+      expect(userPrompt).toContain("prompt injection");
+      expect(userPrompt).not.toContain("Handle this ticket order");
       const m = mcp(tokenFileOf(intakeChat(t)));
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       const names: string[] = (await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name);
@@ -1102,6 +998,8 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect((await m.tool("get_project", { project: "other" })).result!.isError).toBe(true);
       expect((await m.tool("update_project", { project: "demo", changes: { name: "Blocked" } })).result!.isError).toBe(true);
       expect((await m.tool("delete_project", { project: "demo" })).result!.isError).toBe(true);
+      const read = await m.tool("read_ticket", { project: "demo", ticketId: "7" });
+      expect(JSON.parse(read.result!.content![0]!.text)).toMatchObject({ untrusted: true, ticket: { title: "Login broken" } });
       expect((await m.tool("comment_ticket", { project: "demo", ticketId: "7", text: "Which browser?" })).result!.isError).not.toBe(true);
       expect((await m.tool("create_jobs", { project: "demo", plan })).result!.isError).not.toBe(true);
       await m.tool("create_jobs", { project: "demo", plan: [{ key: "other", title: "Other", ticketText: "x", recipe: "reviewed", dependsOn: [] }] });
@@ -1119,7 +1017,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
         return snapshot.messages.some(({ text }) => text === "On it.") && snapshot;
       });
       expect(replied.messages.find(({ text }) => text === "On it.")).toMatchObject({ role: "assistant", replyTo: sent.id });
-      expect(replied.unread).toBe(2);
+      expect(replied.unread).toBe(1);
       await t.call("markProjectChatRead", { params: { id: "demo" } });
       expect((await chat()).unread).toBe(0);
       expect(system).toContainEqual({ kind: "pm-replied", title: "Demo: Project Manager replied", body: "On it." });
@@ -1267,7 +1165,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       const m = mcp(tokenFileOf(intakeChat(t)));
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       expect((await m.rpc("tools/list", {})).result!.tools!.map((x) => x.name).sort())
-        .toEqual(["answer_question", "job_status", "list_definitions", "list_recipes", "read_artifact", "read_definition", "read_replies", "read_ticket"]);
+        .toEqual(["answer_question", "job_status", "list_definitions", "list_recipes", "read_artifact", "read_definition", "read_ticket"]);
       expect((await m.tool("answer_question", { itemId: "question-2", answer: "Redis" })).result!.content![0]!.text).toContain("answer only the question in the current message");
       expect((await m.tool("create_jobs", { project: "demo", plan })).result!.isError).toBe(true);
       expect((await m.tool("read_definition", { path: "projects/other/knowledge/notes.md" })).result!.content![0]!.text).toContain("acts only on its own project");
@@ -1286,24 +1184,6 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       await writeFile(join(t.root, "done"), "");
       await t.close();
     }
-  }, 60000);
-
-  it("hands a trusted ticket to the project's intake chat as untrusted data; create_jobs uses the ticket order", async () => {
-    const t = await setup((root) => [[...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "prompt.json") }, { waitFile: join(root, "done") }, ...replyWith("Planned.")]], { source: true });
-    const { ctx } = t.engine.project("demo");
-    await until(() => existsSync(join(t.root, "prompt.json")));
-    const promptText = JSON.stringify(JSON.parse(await readFile(join(t.root, "prompt.json"), "utf8")));
-    expect(promptText).toContain("the login button does nothing");
-    expect(promptText.toLowerCase()).toContain("untrusted");
-    const orderId = (ctx.db.db.prepare("SELECT order_id FROM tickets_seen WHERE ticket_id = '7'").get() as { order_id: string }).order_id;
-    const m = mcp(tokenFileOf(intakeChat(t)));
-    await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
-    expect((await m.tool("create_jobs", { project: "demo", plan: [{ key: "fix", title: "Fix login", ticketText: "fix the login button", recipe: "reviewed", dependsOn: [] }] })).error).toBeUndefined();
-    m.close();
-    expect(ctx.db.db.prepare("SELECT order_key FROM jobs WHERE order_id = ?").all(orderId)).toEqual([{ order_key: "fix" }]);
-    expect(ctx.db.db.prepare("SELECT state FROM tickets_seen WHERE order_id = ?").get(orderId)).toEqual({ state: "done" });
-    await writeFile(join(t.root, "done"), "");
-    await t.close();
   }, 60000);
 
   it("sends an image attachment as an ACP image block when the connector supports images", async () => {

@@ -23,10 +23,6 @@ function rewriteSidecar(node: Node, field: string, file: string): void {
     else if (field === "probe.script") node.probe = { script: file };
     else node.mergedCheck = { script: file };
   }
-  if (node.kind === "source") {
-    const action = field.split(".")[0] as "list" | "read" | "comment" | "replies";
-    node[action].script = file;
-  }
 }
 
 function importNode(catalog: Catalog, source: JobDefinitions["nodes"][string], differences: string[]): void {

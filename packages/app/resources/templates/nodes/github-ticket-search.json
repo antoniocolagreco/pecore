@@ -1,0 +1,49 @@
+{
+  "provider": "github",
+  "kind": "tracker",
+  "account": "project.account",
+  "tags": [
+    "issue tracker"
+  ],
+  "outcomes": [
+    "done",
+    "failed"
+  ],
+  "failOutcomes": [
+    "failed"
+  ],
+  "outcomeRules": [
+    {
+      "exitCode": 0,
+      "outcome": "done"
+    },
+    {
+      "exitCode": "other",
+      "outcome": "failed"
+    }
+  ],
+  "timeoutSec": 120,
+  "name": "github-ticket-search",
+  "description": "Search GitHub tickets using a query.",
+  "params": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "required": [
+      "query"
+    ]
+  },
+  "script": "set -e\nrepo=\"$PECORE_PROJECT_REPO_OWNER/$PECORE_PROJECT_REPO_NAME\"\nitems=$(gh issue list --repo \"$repo\" --search \"$PECORE_PARAMS_QUERY\" --state all --json number,title --limit 100 | jq -e 'map({id: (.number | tostring), title})')\nprintf '%s\\n' \"$items\" | jq -e '{title: \"Tickets\", body: tojson}'",
+  "outputs": {
+    "done": "document"
+  },
+  "outputRules": {
+    "done": {
+      "stdoutJson": ""
+    }
+  }
+}

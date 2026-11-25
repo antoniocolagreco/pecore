@@ -19,7 +19,7 @@ function roundOf(history: RunRecord[], nodeId: string): number {
 export function endOf(recipe: Recipe, byId: Map<string, Node>, nodeId: string, outcome: string): Decision & { kind: "end" } {
   const reason = `${nodeId}:${outcome}`;
   const node = byId.get(nodeId);
-  const failOutcomes = node && node.kind !== "source" ? node.failOutcomes : [];
+  const failOutcomes = node?.failOutcomes ?? [];
   const ciFailed: boolean = recipe.ci?.after === nodeId && ["ci_failed", "ci_exhausted", "ci_timeout"].includes(outcome);
   if (outcome === "stale" || failOutcomes.includes(outcome) || ciFailed) return { kind: "end", state: "failed", reason };
   if (recipe.successOutcomes.includes(reason)) return { kind: "end", state: "succeeded", reason };

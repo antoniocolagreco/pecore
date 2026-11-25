@@ -26,9 +26,23 @@ vi.mock("../api/live", async () => {
   };
 });
 
+it("shows the active Jira CLI identity and refreshes it independently", async () => {
+  const fallback = api.call.getMockImplementation()!;
+  let site: string = "first.atlassian.net";
+  api.call.mockImplementation(async (route: string) => route === "getActiveJira" ? {
+    site, account: { id: "jira-login", kind: "service", service: "Jira", tool: "acli", user: "alice@example.test" },
+  } : fallback(route));
+  render(<MemoryRouter><Settings /></MemoryRouter>);
+  await screen.findByText("alice@example.test · first.atlassian.net");
+  site = "second.atlassian.net";
+  await userEvent.setup().click(screen.getByRole("button", { name: "Check Jira login" }));
+  await screen.findByText("alice@example.test · second.atlassian.net");
+});
+
 beforeEach(() => {
   api.call.mockReset();
   api.call.mockImplementation(async (route: string) => {
+    if (route === "getActiveJira") return null;
     if (route === "getSettings") return { value: SettingsSchema.parse({}), sha256: "settings-v1" };
     if (route === "getAccounts") return { value: Accounts.parse({}), sha256: "accounts-v1" };
     if (route === "getAccountDiscovery") return [];

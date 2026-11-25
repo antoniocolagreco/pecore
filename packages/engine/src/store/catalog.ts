@@ -1,5 +1,5 @@
 import { Node, Recipe } from "@pecore/schemas";
-import type { CommandNode, OutcomeRule, OutputRule } from "@pecore/schemas";
+import type { CommandNode, OutcomeRule, OutputRule, TrackerNode } from "@pecore/schemas";
 import type Database from "better-sqlite3";
 
 type NodeRow = {
@@ -15,6 +15,10 @@ type NodeRow = {
   agent_session: string | null;
   human_interface: string | null;
   runs_as: string | null;
+  tracker_provider: string | null;
+  tracker_account: string | null;
+  tracker_script: string | null;
+  tracker_repeat_check: number | null;
 };
 
 type RecipeRow = {
@@ -58,10 +62,9 @@ type EdgeRow = {
   target_port: string | null;
 };
 
-type CommandAction = "command" | "probe" | "mergedCheck" | "list" | "read" | "comment" | "replies";
+type CommandAction = "command" | "probe" | "mergedCheck";
 type CommandRules = NonNullable<CommandNode["probeRules"]>;
 type CatalogTable = "nodes" | "recipes" | "node_content" | "icons";
-const sourceActions: readonly ("list" | "read" | "comment" | "replies")[] = ["list", "read", "comment", "replies"];
 
 export class Catalog {
   constructor(readonly db: Database.Database) {}
@@ -88,9 +91,6 @@ export class Catalog {
     };
     const timeout: { timeoutSec: number | null } = { timeoutSec: row.timeout_sec };
     const credentials: string[] = list("credentials");
-    if (row.kind === "source") {
-      return Node.parse({ ...base, ...timeout, credentials, ...Object.fromEntries(sourceActions.map((action) => [action, this.command(name, action)])) });
-    }
     const outputs: { outcome: string; type: string }[] = this.db.prepare<[string], { outcome: string; type: string }>(
       "SELECT outcome, type FROM catalog_node_outputs WHERE node = ? ORDER BY outcome",
     ).all(name);
@@ -117,9 +117,14 @@ export class Catalog {
       if (json_field === null) return { outcome, exitCode: exit_code ?? "other" };
       return json_value === null ? { outcome, stdoutJson: json_field, other: true } : { outcome, stdoutJson: json_field, value: JSON.parse(json_value) };
     });
+    const inputs = { inputs: list("inputs"), optionalInputs: list("optionalInputs"), outcomeRules };
+    if (row.kind === "tracker") return Node.parse({
+      ...common, ...inputs, provider: row.tracker_provider, account: row.tracker_account, script: row.tracker_script,
+      outputRules: command?.outputRules, ...(row.tracker_repeat_check ? { repeatCheck: true } : {}),
+    });
     return Node.parse({
       ...common, ...command, credentials, runsAs: row.runs_as,
-      inputs: list("inputs"), optionalInputs: list("optionalInputs"), outcomeRules,
+      ...inputs,
       probe: probe?.command ?? (probe?.script ? { script: probe.script } : undefined), probeRules: probe?.rules,
       mergedCheck: merged?.command ?? (merged?.script ? { script: merged.script } : undefined), mergedCheckRules: merged?.rules,
     });
@@ -150,34 +155,37 @@ export class Catalog {
     this.db.transaction(() => {
       this.delete("nodes", name);
       this.db.prepare(`INSERT INTO catalog_nodes
-        (name, description, icon, kind, shipped, timeout_sec, changes_files, retry, prompt, tier, agent_session, human_interface, runs_as)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        (name, description, icon, kind, shipped, timeout_sec, changes_files, retry, prompt, tier, agent_session, human_interface, runs_as, tracker_provider, tracker_account, tracker_script, tracker_repeat_check)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         name, node.description, node.icon ?? null, node.kind, Number(shipped),
         "timeoutSec" in node ? node.timeoutSec : null, "changesFiles" in node ? Number(node.changesFiles) : null,
         "retry" in node ? node.retry : null, node.kind === "agent" ? node.prompt : null,
         node.kind === "agent" ? node.agent.tier ?? null : null, node.kind === "agent" ? node.agentSession : null,
         node.kind === "human" ? node.interface : null, node.kind === "command" ? node.runsAs : null,
+        node.kind === "tracker" ? node.provider : null, node.kind === "tracker" ? node.account : null,
+        node.kind === "tracker" ? node.script : null, node.kind === "tracker" && node.repeatCheck ? 1 : null,
       );
       this.writeParams("INSERT INTO catalog_node_params (node, name, value) VALUES (?, ?, ?)", [name], node.params);
       this.writeLists("INSERT INTO catalog_node_lists (node, field, position, value) VALUES (?, ?, ?, ?)", [name], {
         tags: node.tags, ...("outcomes" in node ? { outcomes: node.outcomes, failOutcomes: node.failOutcomes, scratchPaths: node.scratchPaths } : {}),
         ...("credentials" in node ? { credentials: node.credentials } : {}),
         ...(node.kind === "agent" ? { knowledge: node.knowledge, profiles: node.agent.profiles, providerNot: node.agent.providerNot } : {}),
-        ...(node.kind === "command" ? { inputs: node.inputs, optionalInputs: node.optionalInputs } : {}),
+        ...(node.kind === "command" || node.kind === "tracker" ? { inputs: node.inputs, optionalInputs: node.optionalInputs } : {}),
       });
       if ("outputs" in node) {
         const insert: Database.Statement<[string, string, string]> = this.db.prepare("INSERT INTO catalog_node_outputs (node, outcome, type) VALUES (?, ?, ?)");
         for (const [outcome, type] of Object.entries(node.outputs)) insert.run(name, outcome, type);
       }
-      if (node.kind === "source") for (const action of sourceActions) this.saveCommand(name, action, node[action]);
-      if (node.kind === "command") this.saveCommandNode(node);
+      if (node.kind === "command" || node.kind === "tracker") this.saveCommandNode(node);
     })();
   }
 
-  private saveCommandNode(node: CommandNode): void {
-    this.saveCommand(node.name, "command", node);
-    if (node.probe) this.saveCommand(node.name, "probe", Array.isArray(node.probe) ? { command: node.probe } : node.probe, node.probeRules);
-    if (node.mergedCheck) this.saveCommand(node.name, "mergedCheck", Array.isArray(node.mergedCheck) ? { command: node.mergedCheck } : node.mergedCheck, node.mergedCheckRules);
+  private saveCommandNode(node: CommandNode | TrackerNode): void {
+    this.saveCommand(node.name, "command", node.kind === "tracker" ? { outputRules: node.outputRules } : node);
+    if (node.kind === "command") {
+      if (node.probe) this.saveCommand(node.name, "probe", Array.isArray(node.probe) ? { command: node.probe } : node.probe, node.probeRules);
+      if (node.mergedCheck) this.saveCommand(node.name, "mergedCheck", Array.isArray(node.mergedCheck) ? { command: node.mergedCheck } : node.mergedCheck, node.mergedCheckRules);
+    }
     const insert: Database.Statement<[string, number, string, number | null, string | null, string | null]> =
       this.db.prepare("INSERT INTO catalog_outcome_rules (node, position, outcome, exit_code, json_field, json_value) VALUES (?, ?, ?, ?, ?, ?)");
     for (const [i, rule] of node.outcomeRules.entries()) {

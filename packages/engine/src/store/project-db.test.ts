@@ -23,17 +23,17 @@ describe("pecore.db", () => {
   it("applies the migrations once, in WAL mode", async () => {
     const path = join(await tempDir(), "pecore.db");
     const db = new ProjectDb(path);
-    expect(db.version()).toBe(25);
+    expect(db.version()).toBe(27);
     expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_nodes') WHERE name = 'clean_checkout'").get()).toBeUndefined();
     expect(db.db.pragma("journal_mode", { simple: true })).toBe("wal");
     db.close();
     const again = new ProjectDb(path);
-    expect(again.version()).toBe(25);
+    expect(again.version()).toBe(27);
     const tables = again.db.prepare<[], string>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'catalog_%' ORDER BY name").pluck().all();
     expect(tables).toEqual([
       "artifacts", "attempt_logs", "attempts", "events", "human_queue", "jobs", "node_runs",
       "project_creation", "project_credentials", "project_definition", "project_knowledge_reads", "project_knowledge_recipes",
-      "project_knowledge_steps", "project_recipes", "project_source_params", "project_variables", "schema_version", "tickets_seen",
+      "project_knowledge_steps", "project_recipes", "project_variables", "schema_version", "tickets_seen",
     ]);
     again.close();
   });
@@ -89,7 +89,15 @@ describe("pecore.db", () => {
     old.exec(`INSERT INTO schema_version VALUES (21);
       INSERT INTO catalog_nodes (name, description, kind, shipped, timeout_sec, changes_files, retry, prompt, tier, agent_context)
         VALUES ('builder', 'Build', 'agent', 0, 60, 1, 0, 'builder.md', 'standard', 'shared'),
-               ('reviewer', 'Review', 'agent', 0, 60, 0, 0, 'reviewer.md', 'standard', 'isolated');
+               ('reviewer', 'Review', 'agent', 0, 60, 0, 0, 'reviewer.md', 'standard', 'isolated'),
+               ('github-issues', 'Old intake', 'source', 1, 60, NULL, NULL, NULL, NULL, NULL),
+               ('github-issue-comment', 'Post delivery', 'command', 0, 60, 0, 1, NULL, NULL, NULL);
+      INSERT INTO catalog_node_content VALUES ('delivery-comment.sh', 'shell', 'printf posted', 0);
+      INSERT INTO catalog_commands VALUES ('github-issue-comment', 'command', 'delivery-comment.sh', NULL);
+      INSERT INTO catalog_node_lists VALUES ('github-issue-comment', 'credentials', 0, 'gh-alice'), ('github-issue-comment', 'outcomes', 0, 'done');
+      INSERT INTO catalog_outcome_rules VALUES ('github-issue-comment', 0, 'done', 0, NULL, NULL);
+      INSERT INTO project_definition (id, name, base_branch, source_node, source_account, uses_templates, has_variables, has_credentials, has_recipe_knowledge)
+        VALUES ('demo', 'Demo', 'main', 'github-issues', 'gh-alice', 0, 0, 0, 0);
       INSERT INTO catalog_node_lists VALUES ('builder', 'outcomes', 0, 'done'), ('reviewer', 'outcomes', 0, 'done');
       INSERT INTO catalog_recipes (name, description, shipped, start, has_start_ports, has_ends, has_layout)
         VALUES ('build', 'Build', 0, 'build', 0, 0, 0);
@@ -132,6 +140,11 @@ describe("pecore.db", () => {
 
     const db: ProjectDb = new ProjectDb(path);
     try {
+      expect(db.catalog.node("github-issues")).toBeNull();
+      expect(db.catalog.node("github-issue-comment")).toMatchObject({
+        kind: "tracker", provider: "github", account: "gh-alice", script: "printf posted",
+      });
+      expect(db.definition.read()?.tracker).toEqual({ provider: "github", account: "gh-alice" });
       expect(db.catalog.node("builder")).toHaveProperty("agentSession", "job");
       expect(db.catalog.node("reviewer")).toHaveProperty("agentSession", "new");
       const recipe: Recipe = db.catalog.recipe("build")!;
@@ -296,7 +309,7 @@ describe("chats.db", () => {
 
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.version()).toBe(25);
+    expect(db.version()).toBe(26);
     for (let i = 0; i < notificationsKept + 3; i++) db.addNotification({ kind: "job", title: `n${i}`, body: "" }, 1000 + i);
     const kept = db.notifications();
     expect(kept).toHaveLength(notificationsKept);
@@ -318,7 +331,7 @@ describe("chats.db", () => {
       UPDATE schema_version SET version = 5`);
     old.close();
     const db = new ChatsDb(file);
-    expect(db.version()).toBe(25);
+    expect(db.version()).toBe(26);
     expect(db.messages(assistantChat)).toEqual([]);
     db.close();
   });

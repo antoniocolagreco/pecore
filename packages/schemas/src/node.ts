@@ -133,26 +133,23 @@ export const humanInterfaces: Readonly<Record<HumanInterface, { readonly label: 
 export const HumanNode = z.strictObject({ ...Base, ...Runnable, kind: z.literal("human"), interface: HumanInterface });
 export type HumanNode = z.infer<typeof HumanNode>;
 
-const SourceCommand = z
-  .object({
-    command: Argv.optional(),
-    script: z.string().regex(/^[A-Za-z0-9._-]+\.sh$/).optional(),
-    outputRules: z.record(z.string(), OutputRule).default({}),
-  })
-  .strict();
+export const TrackerProvider = z.enum(["github", "gitlab", "jira"]);
+export type TrackerProvider = z.infer<typeof TrackerProvider>;
 
-export const SourceNode = z
-  .object({
-    ...Base,
-    kind: z.literal("source"),
-    credentials: z.array(z.string()).default([]),
-    timeoutSec: z.number().int().positive().default(120),
-    list: SourceCommand,
-    read: SourceCommand,
-    comment: SourceCommand,
-    replies: SourceCommand,
-  })
-  .strict();
+export const TrackerNode = CommandNode.pick({
+  inputs: true, optionalInputs: true, outcomeRules: true, outputRules: true,
+}).extend({
+  ...Base,
+  ...Runnable,
+  kind: z.literal("tracker"),
+  timeoutSec: Timeout.default(120),
+  changesFiles: z.literal(false).default(false),
+  provider: TrackerProvider,
+  account: z.string({ error: "Choose an account for this tracker." }).trim().min(1, "Choose an account for this tracker."),
+  script: z.string().trim().min(1, "Enter a script for this tracker."),
+  repeatCheck: z.literal(true).optional(),
+}).strict();
+export type TrackerNode = z.infer<typeof TrackerNode>;
 
 type Issue = { path: (string | number)[]; message: string };
 
@@ -161,16 +158,8 @@ function argvPlaceholders(argv: string[] | undefined, path: (string | number)[])
   return argv.flatMap((arg, i) => unknownPlaceholders(arg).map((p) => ({ path: [...path, i], message: `unknown placeholder ${p}` })));
 }
 
-function checkNode(node: z.infer<typeof CommandNode> | z.infer<typeof AgentNode> | HumanNode | z.infer<typeof SourceNode>): Issue[] {
+function checkNode(node: z.infer<typeof CommandNode> | z.infer<typeof AgentNode> | HumanNode | TrackerNode): Issue[] {
   const issues: Issue[] = [];
-  if (node.kind === "source") {
-    for (const key of ["list", "read", "comment", "replies"] as const) {
-      const c = node[key];
-      if ((c.command === undefined) === (c.script === undefined)) issues.push({ path: [key], message: "exactly one of command and script" });
-      issues.push(...argvPlaceholders(c.command, [key, "command"]));
-    }
-    return issues;
-  }
   for (const [i, o] of node.failOutcomes.entries()) {
     if (!node.outcomes.includes(o)) issues.push({ path: ["failOutcomes", i], message: `${o} is not in outcomes` });
   }
@@ -185,6 +174,8 @@ function checkNode(node: z.infer<typeof CommandNode> | z.infer<typeof AgentNode>
     if (node.runsAs === "engine" && node.changesFiles) issues.push({ path: ["changesFiles"], message: "Turn off Can edit files when using source control credentials." });
     if (node.probeRules && !node.probe) issues.push({ path: ["probeRules"], message: "probeRules without probe" });
     if (node.mergedCheckRules && !node.mergedCheck) issues.push({ path: ["mergedCheckRules"], message: "mergedCheckRules without mergedCheck" });
+  }
+  if (node.kind === "command" || node.kind === "tracker") {
     for (const [i, r] of node.outcomeRules.entries()) {
       if (!node.outcomes.includes(r.outcome)) issues.push({ path: ["outcomeRules", i, "outcome"], message: `${r.outcome} is not in outcomes` });
     }
@@ -197,6 +188,8 @@ function checkNode(node: z.infer<typeof CommandNode> | z.infer<typeof AgentNode>
     for (const [i, type] of node.optionalInputs.entries()) {
       if (node.inputs.includes(type)) issues.push({ path: ["optionalInputs", i], message: `${type} is already a required input` });
     }
+  }
+  if (node.kind === "command") {
     issues.push(...argvPlaceholders(node.command, ["command"]));
     if (Array.isArray(node.probe)) issues.push(...argvPlaceholders(node.probe, ["probe"]));
     if (Array.isArray(node.mergedCheck)) issues.push(...argvPlaceholders(node.mergedCheck, ["mergedCheck"]));
@@ -216,7 +209,7 @@ function checkNode(node: z.infer<typeof CommandNode> | z.infer<typeof AgentNode>
   return issues;
 }
 
-const NodeShape = z.discriminatedUnion("kind", [CommandNode, AgentNode, HumanNode, SourceNode]);
+const NodeShape = z.discriminatedUnion("kind", [CommandNode, AgentNode, HumanNode, TrackerNode]);
 const NodeDefinition = NodeShape.superRefine((node, ctx) => {
   for (const issue of checkNode(node)) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
 });
@@ -242,13 +235,12 @@ export type Node = z.infer<typeof Node>;
 export type NodeInput = z.input<typeof NodeDefinition>;
 export type CommandNode = z.infer<typeof CommandNode>;
 export type AgentNode = z.infer<typeof AgentNode>;
-export type SourceNode = z.infer<typeof SourceNode>;
 
 export function isHumanNode(node: Node): node is HumanNode {
   return node.kind === "human";
 }
 
 export function automaticOutputs(node: Node): ArtifactType[] {
-  if (node.kind === "source" || node.kind === "human") return [];
-  return [...(node.changesFiles ? ["diff" as const] : []), ...(node.kind === "command" ? ["text" as const] : [])];
+  if (node.kind === "human") return [];
+  return [...(node.changesFiles ? ["diff" as const] : []), ...((node.kind === "command" || node.kind === "tracker") ? ["text" as const] : [])];
 }

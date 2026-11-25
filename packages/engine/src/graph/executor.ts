@@ -25,7 +25,7 @@ import { appUser, killJobProcesses, signalGroup, stopGroup } from "../runners/pr
 import { enoughDisk } from "../scheduler/disk";
 import type { Pools } from "../scheduler/pools";
 import type { NewEvent, ProjectDb } from "../store/project-db";
-import { resolveTicketOrder } from "../sources/poll";
+import { runTrackerNode, trackerLogin } from "../runners/tracker";
 import { contentState, deleteScratch, recordGit, restoreState, undoInterrupted } from "../workdir/content-state";
 import type { GitRecord } from "../workdir/content-state";
 import { gitAppResult, gitWork } from "../workdir/git-as";
@@ -91,6 +91,7 @@ export type ProjectContext = {
   released(): void;
   agents: AgentServices | null;
   forgeAccount(id: string): ForgeAccount | undefined;
+  trackerTemplate?(name: string): Node | null;
   setupEnded?: (state: JobState) => void;
   held?: () => boolean;
   agentCard(id: string): NodeAgent | undefined;
@@ -358,6 +359,15 @@ export class JobExecutor {
     }
     if (job.waiting_reason === "confirmation") this.setState(job.id, "queued", null);
     if (job.id !== setupJobId && this.ctx.held?.()) return false;
+    for (const { definition: node } of Object.values(jobDefinitions(this.ctx.db, job.id)?.nodes ?? {})) {
+      if (node.kind !== "tracker") continue;
+      try {
+        await trackerLogin(this.ctx, node);
+      } catch (error) {
+        this.setState(job.id, "queued", "auth", undefined, (error as Error).message);
+        return false;
+      }
+    }
     if (!(await enoughDisk(this.ctx.dir, this.ctx.settings.minFreeDiskGb))) {
       if (job.waiting_reason !== "disk") this.ctx.db.append([{ jobId: job.id, type: "job.state_changed", payload: { state: "queued", reason: "disk" } }]);
       return false;
@@ -756,7 +766,6 @@ export class JobExecutor {
       this.waitForHuman(job, run, item, `${run.node} waits for your ${node.interface === "decision" ? "decision" : "review"}`);
       return false;
     }
-    if (node.kind === "source") throw new Error("source nodes cannot run in a recipe");
     const previousCi: CiCheck | null = recipe.ci && node.kind === "command" && node.name === "git-push" ? this.ciCheck(job.id) : null;
     const repo: Project["repo"] = this.ctx.project.repo;
     const account: ForgeAccount | undefined = previousCi && repo ? this.ctx.forgeAccount(repo.account) : undefined;
@@ -835,7 +844,7 @@ export class JobExecutor {
         ]);
         const context = this.placeholderContext(this.job(job.id));
         const read: JobArtifact[] = this.readArtifacts(job.id, recipeNode.reads);
-        const commandInputs: CommandInput[] = node.kind !== "command" ? [] : [...node.inputs, ...node.optionalInputs].flatMap((type) => {
+        const commandInputs: CommandInput[] = node.kind !== "command" && node.kind !== "tracker" ? [] : [...node.inputs, ...node.optionalInputs].flatMap((type) => {
           const found: JobArtifact | undefined = read.find(({ artifact }) => artifact.type === type);
           return found ? [{ type, content: this.ctx.db.requireArtifact(found.artifact).toString("utf8") }] : [];
         });
@@ -868,6 +877,11 @@ export class JobExecutor {
                 onStart,
                 effect: effectRecorder(this.ctx.db, job.id, run.id, run.node),
               })
+            : node.kind === "tracker" ? await runTrackerNode(this.ctx, node, {
+                nodeDir: this.ctx.defs.nodeDir, params: paramsWithDefaults(node.params, recipeNode.params),
+                user: this.ctx.user, workdir: wd, context, inputs: commandInputs, onStart,
+                effect: effectRecorder(this.ctx.db, job.id, run.id, run.node),
+              }).catch((error: unknown) => ({ kind: "failed" as const, reason: "HARNESS_ERROR" as const, log: (error as Error).message }))
             : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, { id: agentId, session: agentSession! }, { wd, context, inputs: agentInputs, onStart, env: servicesEnv, continuation: resumed, sidecars, knowledge: definitions?.knowledgeByStep });
         this.running.delete(job.id);
         if (result.log) this.ctx.db.logs.write(attemptId, { dir: "cmd", text: result.log, at: Date.now() });
@@ -931,7 +945,7 @@ export class JobExecutor {
           await undoInterrupted(this.ctx.user, wd, job.id, git, before);
           if (attempt + 1 < attempts && result.reason !== "INVALID_OUTPUT" && !("retry" in result && result.retry === false)) continue;
           this.saveArtifact(job.id, runDir, "text", result.log, before, "log");
-          this.fail(job, run.id, result.reason, result.reason === "AGENT_UNAVAILABLE" ? result.log : undefined);
+          this.fail(job, run.id, result.reason, result.reason === "AGENT_UNAVAILABLE" || node.kind === "tracker" ? result.log : undefined);
           return false;
         }
         end(result.outcome);
@@ -1149,7 +1163,7 @@ export class JobExecutor {
     this.ctx.db.append([{ jobId: job.id, type: "node_run.failed", payload: { nodeRunId, reason } }]);
     const unavailable: boolean = reason === "AGENT_UNAVAILABLE";
     this.setState(job.id, unavailable ? "stopped" : "failed", reason, undefined, detail);
-    this.ctx.notify({ kind: "job-finished", title: job.title, body: unavailable ? `Agent unavailable. ${detail ?? ""}`.trim() : `failed: ${reason}`, jobId: job.id });
+    this.ctx.notify({ kind: "job-finished", title: job.title, body: unavailable ? `Agent unavailable. ${detail ?? ""}`.trim() : detail ?? `failed: ${reason}`, jobId: job.id });
     this.ended(job.id);
   }
 
@@ -1174,11 +1188,6 @@ export class JobExecutor {
     if (!item) throw new Error(`queue item ${itemId} not found`);
     if (item.state !== "open" || item.subject_hash !== hash) throw new Error("the item changed or was resolved");
     if (!(JSON.parse(item.choices) as string[]).includes(choice)) throw new Error(`${choice} is not a choice of this item`);
-    if (item.kind === "ticket") {
-      const { orderId } = JSON.parse(item.subject) as { orderId: string };
-      resolveTicketOrder(this.ctx, itemId, orderId, choice, note);
-      return;
-    }
     const jobId = item.job_id;
     await this.exclusive(jobId, async () => {
       const job = this.job(jobId);

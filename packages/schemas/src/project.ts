@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { agentColors } from "./colors";
 import { JsonSchemaObject, KnowledgeFileName, Name } from "./common";
+import { TrackerProvider } from "./node";
 
 export const ProjectId = z.string().regex(/^[a-z][a-z0-9-]{0,23}$/, "lower case letters, digits and dashes, starting with a letter, at most 24");
 
@@ -49,11 +50,10 @@ const ProjectDefinition = z
     credentials: z.record(z.string(), z.string().min(1)).optional(),
     services: z.string().min(1).nullable().default(null),
     pm: ProjectManagerIdentity.nullable().default(null),
-    source: z
+    tracker: z
       .object({
-        node: Name,
+        provider: TrackerProvider,
         account: z.string().min(1).optional(),
-        params: JsonSchemaObject.default({}),
       })
       .strict()
       .nullable()
@@ -63,9 +63,12 @@ const ProjectDefinition = z
   .superRefine((p, ctx) => {
     if (p.repo === null && p.createRepo !== null) ctx.addIssue({ code: "custom", path: ["createRepo"], message: "a local-only project has no createRepo" });
   });
-export const Project = z.preprocess((input: z.input<typeof ProjectDefinition> & { limits?: unknown; defaultRecipe?: unknown }) => {
-  if (!input || typeof input !== "object" || (!Object.hasOwn(input, "limits") && !Object.hasOwn(input, "defaultRecipe"))) return input;
+export const Project = z.preprocess((input: z.input<typeof ProjectDefinition> & { limits?: unknown; defaultRecipe?: unknown; source?: { node?: string; account?: string } | null }) => {
+  if (!input || typeof input !== "object" || (!Object.hasOwn(input, "limits") && !Object.hasOwn(input, "defaultRecipe") && !Object.hasOwn(input, "source"))) return input;
   const current = { ...input };
+  const provider: string | undefined = { "github-issues": "github", "gitlab-issues": "gitlab", jira: "jira" }[input.source?.node ?? ""];
+  if (current.tracker === undefined && provider) Object.assign(current, { tracker: { provider, account: input.source?.account } });
+  delete current.source;
   delete current.limits;
   delete current.defaultRecipe;
   return current;

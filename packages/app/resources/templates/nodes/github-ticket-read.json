@@ -1,0 +1,45 @@
+{
+  "provider": "github",
+  "kind": "tracker",
+  "account": "project.account",
+  "tags": [
+    "issue tracker"
+  ],
+  "outcomes": [
+    "done",
+    "failed"
+  ],
+  "failOutcomes": [
+    "failed"
+  ],
+  "outcomeRules": [
+    {
+      "exitCode": 0,
+      "outcome": "done"
+    },
+    {
+      "exitCode": "other",
+      "outcome": "failed"
+    }
+  ],
+  "timeoutSec": 120,
+  "name": "github-ticket-read",
+  "description": "Read a GitHub ticket by ID or link.",
+  "params": {
+    "type": "object",
+    "properties": {
+      "ticket": {
+        "type": "string"
+      }
+    }
+  },
+  "script": "set -e\nrepo=\"$PECORE_PROJECT_REPO_OWNER/$PECORE_PROJECT_REPO_NAME\"\nid=${PECORE_PARAMS_TICKET:-$PECORE_TICKET_ID}\ncase \"$id\" in \"https://$GH_HOST/$repo/issues/\"*) id=${id##*/} ;; esac\ncase \"$id\" in \"\"|*[!0-9]*) echo \"Enter a ticket ID or link for this repository.\" >&2; exit 1 ;; esac\ngh issue view \"$id\" --repo \"$repo\" --json title,body,author | jq -e '{title, body: (.body // \"\"), author: .author.login}'",
+  "outputs": {
+    "done": "document"
+  },
+  "outputRules": {
+    "done": {
+      "stdoutJson": ""
+    }
+  }
+}

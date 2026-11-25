@@ -13,7 +13,6 @@ const forgeDefaults = z.strictObject({
   delivery: Name,
   comment: Name.nullable(),
   createRepo: Name.nullable(),
-  source: Name.nullable(),
 });
 
 export type ForgeDefaults = z.infer<typeof forgeDefaults>;
@@ -42,7 +41,7 @@ export async function projectDefaults(templatesDir: string, repo: Project["repo"
     for (const file of files) {
       const name = basename(file, ".json");
       const defaults = name === forge.forge ? forge : await loadForgeDefaults(templatesDir, name);
-      for (const role of ["delivery", "comment", "createRepo", "source"] as const) {
+      for (const role of ["delivery", "comment", "createRepo"] as const) {
         const from: string | null = defaults[role];
         const to: string | null = forge[role];
         if (from !== null && to !== null) rename[from] = to;

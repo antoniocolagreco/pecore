@@ -74,7 +74,7 @@
 | IB5 | Unread marker | 6, 7 |
 | IB6 | Answers to agent questions (`agent-question` items) | 6 |
 | IB8 | Automatic compaction at two token thresholds | 6 |
-| IB9 | Project Manager chat inside each project and on each job page, with the tickets it handled, the orders passed on by the Assistant and its agents' questions; its reports on new tickets are notifications | 6 |
+| IB9 | Project Manager chat inside each project and on each job page, with the tickets it handled, the orders passed on by the Assistant and its agents' questions | 6 |
 
 ### C. Jobs
 
@@ -96,10 +96,8 @@
 | Id | Element | `human_queue.kind` | Source |
 |---|---|---|---|
 | ID1 | Human review | `human-node` | 3.1 |
-| ID6 | Untrusted ticket | `ticket` | 7 |
 | ID7 | Round limit reached | `round-limit` | 4.2 |
 | ID8 | Withdrawn: budget reached; projects have no budgets | | 4.7 |
-| ID9 | Request to post a question or comment outside a recipe | `outbound` | 6, 7 |
 
 ### E. Recipes and nodes
 
@@ -117,7 +115,7 @@
 |---|---|---|
 | IF1 | Project list | 3.5 |
 | IF2 | New project wizard | CUJ 6, "Project creation" |
-| IF3 | Project settings: recipes, services, ticket source, polling interval, trusted users | 3.5, 7 |
+| IF3 | Project settings: recipes, services, repository and folder | 3.5, 7 |
 | IF4 | Knowledge base editor (Markdown) | 2 |
 | IF5 | Export, and import as a new project | CUJ 7, 8 |
 | IF6 | Protected mode: on and off, harness logins of `pecore-agent` | 5, 8 |
@@ -233,7 +231,6 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 *   Every detail renders the item's `subject` snapshot, never a file read at decision time, and shows its sha256. The decision is sent with that hash. If `queue.updated` reports the open item resolved or cancelled (for example a review cancelled by a base change), the detail locks with a banner and a button that opens the new item, if any.
 *   Detail by kind:
     *   ID1: the title is the node's interface (Decision, Code review, Report review), and each interface has its own component, so new ones can be added. Code review: the diff in the unified view of the artifact viewer, risky hunks first, then the findings. Report review: the read outputs, documents and specs first, then findings and text. Decision: the read outputs, if any. One button per node outcome. A note field when an outcome takes a note; its description names those outcomes.
-    *   ID6: ticket text, author, start or discard.
     *   ID7 shows which edge reached its round limit. The user can allow one more round or end the job.
     *   ID9, "Comment to post": show the project, ticket and exact text proposed by the Project Manager. The ticket waits until the user chooses Post or Reject in Notifications.
 
@@ -244,7 +241,7 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 *   The chat header shows the Assistant's spark icon or the Project Manager's avatar beside the name. Compact frees context. Clear deletes the conversation after confirmation.
 *   An empty chat shows a welcome message centered above the composer. The Project Manager's welcome names the project.
 *   Each project gets the first free Project Manager name and colour from the 24 agent colours. Replies and reports in either chat use the Assistant's text style. The Project Manager has a coloured avatar with its initial and an author label such as "Aura - Project Manager". Reports in the Assistant's chat also show the project name.
-*   The Project Manager's chat also shows the tickets it handled on its own: each appears as "Ticket 42" with its reply, without the raw ticket data. Talking to it, the user can ask what it did on a ticket. It runs the project's work: jobs, recipes, nodes, knowledge, tickets and agent questions. It writes no code itself. Asked to create a file, it saves it in the project's Knowledge; a file for the repository needs a job, which it starts or offers. Project settings, creating, deleting, importing or exporting projects and editing the templates stay with the Assistant. What it does on new tickets also arrives as a notification, for example "Shop, ticket 42: The Project Manager created the job Fix login.".
+*   The Project Manager reads a ticket named in chat and can post a comment when the user asks. Questions for the user stay in the app.
 *   The Assistant reads every project but does no project work. Asked for it, for example "add a job to Shop to fix the login", it passes the order to Shop's Project Manager and says so in one line, never "done". The order appears in the Project Manager's chat from "Assistant". When the Project Manager finishes, fails or is interrupted, its final reply appears in the Assistant's chat from "Aura - Project Manager" of Shop, without starting a new Assistant reply.
 *   A failed message shows the provider's own error message under it, for example "You've hit your usage limit. ... try again at 6:23 PM.", never the raw error object.
 *   A job agent's question also appears in the Project Manager's chat as "Agent question" with a link to the job. The Project Manager answers it when the project's knowledge, recipes or ticket already decide it; otherwise it says the user must decide, and the question waits in Notifications.
@@ -255,13 +252,13 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 *   Files: the clip button, pasting into the message box (for example a screenshot just taken with Print Screen), or dropping files anywhere on the chat panel, which shows "Drop files to attach" while dragging. Any file type, up to 10 MB each. Each file shows above the message box in a 16:9 tile, 128 px wide, with a remove button in its corner: an image fits whole, never cropped; another file shows its name. The pasted text, if any, is not inserted. When the model cannot read images, an image is refused with the reason; other files still attach. A sent message keeps each image as the same 16:9 thumbnail, with its name and size as a tooltip, and lists other files by name and size.
 *   Compaction: the Compact button, or `/compact` typed as a message, sends the harness's own compaction command to the chat's session. The chat shows a divider ("Compacting the conversation…", then "Conversation compacted"), no reply.
 *   Chat compacts at the maximum threshold or after five idle minutes above the automatic threshold. The Assistant card sets Assistant thresholds. Each Project Manager uses the thresholds of its selected card.
-*   An order the user gives in the chat is authorised as given: if the user asks to comment on an issue, the Project Manager posts it. A question the Project Manager wants to ask while handling a new ticket still waits for approval in Notifications.
+*   An order the user gives in the chat is authorised as given: if the user asks to comment on an issue, the Project Manager posts it.
 *   The Assistant can change a project's name, base branch, services Compose path and Project Manager name and colour: a "Change project" card lists each change as "old → new" with Confirm and Reject, and nothing changes before Confirm. Sending a job or other frequent operations have no card. A deletion request shows the project and what will be removed in a card with Confirm and Reject. Confirm deletes <PE/CORE>'s data only, using the same operation as the project settings page.
 *   "Ask the AI" (IE5) puts the cursor in the chat with the current screen's object as context.
 *   Context chip: one at a time, a reference with its scope (for example "Job: Fix login timeout", "Recipe feature (project progetto-1)", "Template recipe feature"). It shows the object of the current screen and changes on navigation; pinning keeps it; removing it sends the next message with no context.
-*   What the Assistant did (IB4) appears under its reply, never under the user's message. Actions that change something (create jobs, answer a job's question, add a node or recipe to a project, comment on a ticket) get a card that links to the job, definition or item to decide. A tool call the engine refuses (wrong input, a project outside the agent's reach) shows no card: the agent gets the error and retries, and when it cannot recover it explains the problem in its reply. When an agent offers choices it shows a form card instead of listing them: radio buttons for one answer, checkboxes for several, a text field for short values, and "Other" with its own field on every choice question; the recommended option carries a "Recommended" badge. Send stays disabled until every question has an answer; it posts the answers as the user's message. An answered form shows the answers; a form the user skipped by writing a message shows "Not answered". An order passed to a Project Manager gets a card with the Project Manager's avatar, "Order sent to Mara", the project name and a link "Open Mara's chat". Reads (projects, recipes, ticket, ticket replies, job status, job output, templates, definitions, definition check) become one grey line: "Read: projects, job status".
+*   What the Assistant did (IB4) appears under its reply, never under the user's message. Actions that change something (create jobs, answer a job's question, add a node or recipe to a project, comment on a ticket) get a card that links to the job, definition or item to decide. A tool call the engine refuses (wrong input, a project outside the agent's reach) shows no card: the agent gets the error and retries, and when it cannot recover it explains the problem in its reply. When an agent offers choices it shows a form card instead of listing them: radio buttons for one answer, checkboxes for several, a text field for short values, and "Other" with its own field on every choice question; the recommended option carries a "Recommended" badge. Send stays disabled until every question has an answer; it posts the answers as the user's message. An answered form shows the answers; a form the user skipped by writing a message shows "Not answered". An order passed to a Project Manager gets a card with the Project Manager's avatar, "Order sent to Mara", the project name and a link "Open Mara's chat". Reads (projects, recipes, ticket, job status, job output, templates, definitions, definition check) become one grey line: "Read: projects, job status".
 *   Agent questions (IB6) appear in the conversation with an answer field.
-*   Replies to the user use the unread marker and a system notification when the window is not focused ("Assistant replied", "Shop: Project Manager replied"). Project Manager reports on new tickets appear in the Notifications log.
+*   Replies to the user use the unread marker and a system notification when the window is not focused ("Assistant replied", "Shop: Project Manager replied").
 
 ### Projects
 
@@ -326,16 +323,16 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 ### Node editor
 
-*   Opened from a recipe or from Templates. New Node offers Agent, Command, Human and Source. A Source node configures commands for listing, reading, commenting and reading replies. A Human node has an Interface select: Decision, Code review or Report review.
+*   Opened from a recipe or from Templates. New Node offers Agent, Command, Human and Tracker. Tracker shows the provider, an Account select and one shell script editor. A Human node has an Interface select: Decision, Code review or Report review.
 *   Under the outcomes, Outputs has one row per outcome: a select of the six types (Nothing by default). No text under the field. The info icon of Outputs explains, for a user who knows nothing of the app, that a job is a chain of nodes, that each outcome can hand a result to later nodes, and that they receive it only through Reads from, with the Spec Writer as example. It then explains each type in a short paragraph: what it is, an example, who writes it and who uses it. The menus show only the names. The info icons of Required inputs and Optional inputs explain inputs with an example and show the same paragraphs. For a command, a row with an output also asks where to read it: Last line of the output, Field of JSON output or File in the workdir, and the name, field or path. For a Human node the rows are checkboxes, "<outcome>: the person can write a note".
 *   Every select in the app opens its menu below the field, or above it when there is no room below, so the whole list is visible; it does not cover the field.
 *   A command shows Required inputs and Optional inputs as chip groups of the six types. Selecting a type in one group removes it from the other. The help says the recipe selects each source and the script reads a JSON object on stdin, for example `jq '.spec'`. Agents get labelled inputs inline in their prompts. Human review loads them from the project database.
 *   The node fields and its prompt or script are in one card. Node Context uses the Knowledge Markdown editor. The app manages the prompt name. Scripts use the code editor. Both save in the template catalog.
 *   Agent templates use Default Agent and expose Agent session. Job is the default. Node gives the agent a session for repeated runs of the same step within the job. New starts a fresh session on each run. Both editors explain all three options in the info popover. Can edit files controls whether a node may change the job's files.
-*   Creating and editing show the same fields. Description and Icon have no info popover. A command is one line written as in a terminal (`npx --no-install eslint .`, quotes around an argument with spaces); a command node shows Command or Script file, whichever it uses, and a source node shows the command or script of each action. Runs as is a checkbox, "Use source control credentials", off by default: on only for commands that act on GitHub or GitLab with the user's account, such as push, pull request or issue comment (`runsAs: engine`).
+*   Creating and editing show the same fields. Description and Icon have no info popover. A command is one line written as in a terminal (`npx --no-install eslint .`, quotes around an argument with spaces); a command node shows Command or Script file, whichever it uses. Runs as is a checkbox, "Use source control credentials", off by default: on only for commands that act on GitHub or GitLab with the user's account, such as push, pull request or issue comment (`runsAs: engine`).
 *   Validation errors next to the field. Save is disabled while the draft is invalid. The draft lives in memory until saved or discarded; leaving the page with an unsaved draft asks first.
 *   Use source control credentials reveals Check command. Enter a command that reads the remote state before the main command runs. Existing checks that use a saved script show Check script name. When a required check is missing, the editor explains what to enter next to the field.
-*   Build, lint and test commands run in the job's workdir. Repository CI checks the commit.
+*   Tracker recipe steps show the query, ticket ID or link, and comment fields when the node accepts them. A missing account blocks job creation and names the node. Build, lint and test commands run in the job's workdir. Repository CI checks the commit.
 *   Save in the page header writes the changed node fields and prompt or script.
 *   Saved changes affect new jobs. Existing jobs keep their saved definitions.
 
@@ -363,7 +360,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   The section list is in the main sidebar. Sections adapt to the window width, and each has a one-line description under its title.
 *   No text or JSON editing and no user-typed IDs; raw validation errors are never shown.
 *   A valid change saves in the global database after the last keystroke or when the page is left. An invalid value shows an error and stays unsaved.
-*   Accounts has two lists. Each panel header has one Check button for its accounts. Each pending provider shows Checking in its own row. Discovered accounts appear as soon as their provider finishes, and the other settings stay usable.
+*   Accounts shows AI tools, Git hosting and the active Jira CLI login. Each panel header has one Check button for its accounts. Each pending provider shows Checking in its own row. Discovered accounts appear as soon as their provider finishes, and the other settings stay usable.
     *   AI tools: every installed harness appears by itself. A row shows the tool, the account, its state and Log in only when needed. A working account shows "Logged in", OpenCode and a private Git server included. OpenCode is logged in when it lists at least one model; with none, the row says to set up a model provider in OpenCode. Each AI tool has a colour, shown on its row's initials, and a Colour button opens the colour picker; the choice is saved at once. Defaults: Claude Code terracotta, Codex slate, OpenCode ice. "Show unavailable" in the card header shows, and "Hide unavailable" hides again, the AI tools with no login found and the tools not supported yet; they are hidden when the page opens. Shown, greyed rows "Coming soon" list the tools not supported yet (Antigravity CLI, GitHub Copilot CLI, Cursor CLI, DeepSeek, Qwen, Kimi, Grok, Muse), each with its colour and Colour button and no other action.
     *   Git hosting lists discovered accounts and offers Add account. GitHub and GitLab show Server with the public host as the default. Adding one starts login and saves the username on success. CodeCommit shows AWS profile, initially `default`. Private Git requires Server and uses the user's Git credentials. Commit author name and email start with the app user's global Git settings or stay blank. Edit opens the account's settings, including its username and commit author.
 *   You: "Your name", empty by default. The Assistant and the Project Managers get it at the start of a conversation; when it is empty the Assistant asks for it in the chat and saves it here.

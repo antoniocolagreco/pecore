@@ -52,12 +52,6 @@ export function nodeSidecars(node: Node): [string, string][] {
     if (node.probe && !Array.isArray(node.probe)) sidecars.push(["probe.script", node.probe.script]);
     if (node.mergedCheck && !Array.isArray(node.mergedCheck)) sidecars.push(["mergedCheck.script", node.mergedCheck.script]);
   }
-  if (node.kind === "source") {
-    for (const key of ["list", "read", "comment", "replies"] as const) {
-      const s = node[key].script;
-      if (s) sidecars.push([`${key}.script`, s]);
-    }
-  }
   return sidecars;
 }
 
@@ -127,11 +121,15 @@ function catalogDefinitions(dir: string, catalog: Catalog, opts: { checkRecipes:
   return { nodeDir, nodes, recipes, sidecars, errors };
 }
 
-export async function loadDefinitions(dir: string, opts: { checkRecipes: boolean; remote: boolean }): Promise<Definitions> {
+export async function loadDefinitions(dir: string, opts: { checkRecipes: boolean; remote: boolean; legacyProject?: boolean }): Promise<Definitions> {
   const nodes = new Map<string, Node>();
   const recipes = new Map<string, Recipe>();
   const errors: DefinitionError[] = [];
   for (const file of await jsonFiles(join(dir, "nodes"))) {
+    if (opts.legacyProject) {
+      const { value } = await readJson(file);
+      if (value && typeof value === "object" && "kind" in value && value.kind === "source") continue;
+    }
     const r = await loadNodeFile(file);
     errors.push(...r.errors);
     if (r.value) nodes.set(r.value.name, r.value);
@@ -167,7 +165,7 @@ export async function loadProject(projectDir: string, templatesDir?: string, sto
   const options = { checkRecipes: !shared, remote: p.value?.repo !== null };
   const defs: Definitions = catalogs
     ? catalogDefinitions(root, shared ? catalogs.global : catalogs.project, options)
-    : await loadDefinitions(root, options);
+    : await loadDefinitions(root, { ...options, legacyProject: !shared });
   const errors = shared ? [...p.errors] : [...p.errors, ...defs.errors];
   const project = p.value;
   if (project) {
@@ -184,11 +182,6 @@ export async function loadProject(projectDir: string, templatesDir?: string, sto
     }
     if (project.id !== basename(projectDir)) errors.push({ file, path: "id", message: `id must match the directory name ${basename(projectDir)}` });
     if (project.createRepo !== null && !defs.nodes.has(project.createRepo)) errors.push({ file, path: "createRepo", message: `node ${project.createRepo} not found in the project` });
-    if (project.source !== null) {
-      const s = defs.nodes.get(project.source.node);
-      if (!s) errors.push({ file, path: "source.node", message: `node ${project.source.node} not found in the project` });
-      else if (s.kind !== "source") errors.push({ file, path: "source.node", message: `node ${project.source.node} is not a source node` });
-    }
   }
   return { ...defs, project, errors };
 }

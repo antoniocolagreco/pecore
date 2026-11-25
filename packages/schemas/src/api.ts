@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Accounts, CommitAuthor } from "./accounts";
+import { Accounts, CommitAuthor, ServiceAccount } from "./accounts";
 import { Artifact } from "./artifacts";
 import { Profiles } from "./profiles";
 import { ChatAgent, NodeAgentCatalog, ProjectManagerAgent } from "./agent";
@@ -614,6 +614,7 @@ export const routes = {
   putAgentContext: { method: "PUT", path: "/agents/:id/context", params: z.object({ id: Name }), body: z.strictObject({ content: z.string().max(1_000_000), baseSha256: Sha }), bodyLimit: 6_001_024, response: z.object({ sha256: Sha }) },
   getAccounts: accountsFile.get,
   putAccounts: accountsFile.put,
+  getActiveJira: { method: "GET", path: "/accounts/jira/active", response: z.strictObject({ account: ServiceAccount, site: z.string() }).nullable() },
   getForgeAccountDefaults: { method: "GET", path: "/forge-account-defaults", query: z.object({ awsProfile: z.string().trim().min(1).optional() }), response: z.object({ author: CommitAuthor, codeCommit: z.object({ host: z.string(), user: z.string() }).nullable() }) },
   getProfiles: profilesFile.get,
   putProfiles: profilesFile.put,
