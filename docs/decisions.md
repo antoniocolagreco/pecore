@@ -451,3 +451,9 @@
 - Decision: Leave a minimum visible gap of 10 px at 100% zoom between parallel shafts and around cards. Center free ports and spread busy ports. Place labels in clear space on or beside their own arrow. Draw a wider stroke and a visible arrowhead.
 - Why: Distinct coordinates still looked like overlapping lines. Labels hid nearby outcomes, and arrowheads were hard to see.
 - Replaces: Tracks squeezed into narrow channels and labels centered on the longest segment without checking for collisions.
+
+## 2026-11-25: Spread recipe arrows after their leads
+
+- Decision: At 100% zoom keep 20 px of visible gap between parallel shafts away from cards and 10 px near their leads. Use 26 px straight leads when space allows and double the arrowhead width. Route the latest position once per drag frame and reuse clear paths.
+- Why: Parallel runs still looked too close, short ends hid the direction, and routing the entire graph for each pointer event made dragging slow.
+- Replaces: The same minimum gap along the whole arrow and a full reroute on each pointer event.

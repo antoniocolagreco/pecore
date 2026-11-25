@@ -1,18 +1,20 @@
 import { BaseEdge } from "@xyflow/react";
 import type { Edge, EdgeProps } from "@xyflow/react";
-import { useId } from "react";
+import { memo, useId } from "react";
+import { arrowheadLength, arrowheadWidth } from "./recipeRouteGeometry";
 import type { RecipeRoute } from "./recipeRouting";
 
 export type RoutedRecipeEdge = Edge<{ outcome: string; route: RecipeRoute }, "routed">;
 
-export function RecipeEdge({ id, label, style, data, interactionWidth }: EdgeProps<RoutedRecipeEdge>) {
+export const RecipeEdge = memo(function RecipeEdge({ id, label, style, data, interactionWidth }: EdgeProps<RoutedRecipeEdge>) {
   const marker: string = useId();
   if (!data) return null;
   const { points, label: box } = data.route;
   const path: string = points.map(({ x, y }, index) => `${index ? "L" : "M"} ${x},${y}`).join(" ");
   return <>
-    <defs><marker id={marker} markerUnits="userSpaceOnUse" markerWidth={12} markerHeight={10} refX={12} refY={5} orient="auto">
-      <path d="M 0,0 L 12,5 L 0,10 Z" fill={style?.stroke} />
+    <defs><marker id={marker} markerUnits="userSpaceOnUse" markerWidth={arrowheadLength} markerHeight={arrowheadWidth}
+      refX={arrowheadLength} refY={arrowheadWidth / 2} orient="auto">
+      <path d={`M 0,0 L ${arrowheadLength},${arrowheadWidth / 2} L 0,${arrowheadWidth} Z`} fill={style?.stroke} />
     </marker></defs>
     <BaseEdge id={id} path={path} markerEnd={`url(#${marker})`} style={style} interactionWidth={interactionWidth} />
     {box && <g className="react-flow__edge-textwrapper">
@@ -23,4 +25,5 @@ export function RecipeEdge({ id, label, style, data, interactionWidth }: EdgePro
         x={box.x + box.width / 2} y={box.y + box.height / 2}>{label}</text>
     </g>}
   </>;
-}
+}, (before, after) => before.data?.route === after.data?.route && before.label === after.label
+  && before.style?.stroke === after.style?.stroke && before.interactionWidth === after.interactionWidth);

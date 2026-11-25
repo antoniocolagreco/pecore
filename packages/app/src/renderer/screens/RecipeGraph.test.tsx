@@ -83,7 +83,7 @@ it("deletes an arrow when its destination is dragged to empty canvas", async () 
   expect(onReconnect).not.toHaveBeenCalled();
 });
 
-it("reroutes on mouse movement before dropping a card", () => {
+it("reroutes on mouse movement before dropping a card", async () => {
   const { card, edge, onLayout } = setup();
   const path = (): string | null => edge.querySelector(".react-flow__edge-path")!.getAttribute("d");
   const before: string | null = path();
@@ -92,7 +92,7 @@ it("reroutes on mouse movement before dropping a card", () => {
   fireEvent(card("review"), down);
   fireEvent.mouseMove(document.defaultView!, { buttons: 1, clientX: 295, clientY: 20 });
   fireEvent.mouseMove(document.defaultView!, { buttons: 1, clientX: 130, clientY: 246 });
-  expect(path()).not.toBe(before);
+  await waitFor(() => expect(path()).not.toBe(before));
   expect(path()).toMatch(/^M [\d.]+,120 L/);
   expect(onLayout).not.toHaveBeenCalled();
   const up: MouseEvent = new MouseEvent("mouseup", { bubbles: true, clientX: 130, clientY: 246 });

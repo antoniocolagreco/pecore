@@ -1,4 +1,4 @@
-import { useImperativeHandle, useMemo, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode, Ref } from "react";
 import { Background, BackgroundVariant, Handle, Panel, Position, ReactFlow, useStore } from "@xyflow/react";
 import type { Connection, EdgeChange, Node, NodeChange, NodeProps, OnNodeDrag, ReactFlowInstance, Viewport, XYPosition } from "@xyflow/react";
@@ -73,14 +73,14 @@ function edgeCaption(link: RecipeGraphLink): string {
   return link.caption ?? (link.invalid ? link.on + " (invalid)" : link.on);
 }
 
-function graphRoutes(steps: RecipeGraphNode[], links: RecipeGraphLink[], positions: RecipeLayout): RecipeRoute[] | undefined {
+function graphRoutes(steps: RecipeGraphNode[], links: RecipeGraphLink[], positions: RecipeLayout, moved?: { card: string; routes: RecipeRoute[] }): RecipeRoute[] | undefined {
   const cards: RouteCard[] = steps.map(({ id, caption }) => {
     const { x, y }: XYPosition = positions[id]!;
     const width: number = Math.min(168, (caption?.length ?? 0) * 9);
     return { id, x, y, width: cardSize, height: cardSize,
       ...(caption ? { caption: { x: x + (cardSize - width) / 2, y: y + cardSize + 4, width, height: 18 } } : {}) };
   });
-  return routeRecipe(links.map((link) => ({ from: link.from, to: link.to, label: edgeCaption(link) })), cards);
+  return routeRecipe(links.map((link) => ({ from: link.from, to: link.to, label: edgeCaption(link) })), cards, moved);
 }
 
 export function RecipeGraph({ ref, steps, links, layout, automatic, start, editable, inspectable = false, selected, onSelect, onConnect, onReconnect, onDelete, onLayout }: {
@@ -104,6 +104,9 @@ export function RecipeGraph({ ref, steps, links, layout, automatic, start, edita
   const [selectedEdge, setSelectedEdge] = useState<string>();
   const canvas = useRef<HTMLDivElement>(null);
   const reconnectStart = useRef<XYPosition>(null);
+  const pendingDrag = useRef<{ id: string; position: XYPosition }>(null);
+  const dragFrame = useRef<number>(0);
+  useEffect(() => () => cancelAnimationFrame(dragFrame.current), []);
   const positions: RecipeLayout = useMemo(() => drag ? { ...layout, [drag.id]: drag.position } : layout, [layout, drag]);
   const valid: RecipeGraphLink[] = useMemo(() => links.filter(({ from, to }) => layout[from] && layout[to]), [links, layout]);
   const savedRoutes: RecipeRoute[] | undefined = useMemo(() => graphRoutes(steps, valid, layout), [steps, valid, layout]);
@@ -173,13 +176,23 @@ export function RecipeGraph({ ref, steps, links, layout, automatic, start, edita
 
   const move = (changes: NodeChange<StepNode>[]): void => {
     for (const change of changes) {
-      if (change.type === "position" && change.dragging && change.position && !blocksCard(layout, change.id, change.position)) {
-        const routes: RecipeRoute[] | undefined = graphRoutes(steps, valid, { ...layout, [change.id]: change.position });
-        if (routes) setDrag({ id: change.id, position: change.position, routes });
-      }
+      if (change.type === "position" && change.dragging && change.position) pendingDrag.current = { id: change.id, position: change.position };
     }
+    if (dragFrame.current || !pendingDrag.current) return;
+    dragFrame.current = requestAnimationFrame(() => {
+      dragFrame.current = 0;
+      const next = pendingDrag.current;
+      pendingDrag.current = null;
+      if (!next || blocksCard(layout, next.id, next.position)) return;
+      const routes: RecipeRoute[] | undefined = graphRoutes(steps, valid, { ...layout, [next.id]: next.position },
+        savedRoutes && { card: next.id, routes: savedRoutes });
+      if (routes) setDrag({ ...next, routes });
+    });
   };
   const stop: OnNodeDrag<StepNode> = (_, node) => {
+    cancelAnimationFrame(dragFrame.current);
+    dragFrame.current = 0;
+    pendingDrag.current = null;
     if (!blocksCard(layout, node.id, node.position)) place(node.id, node.position);
     setDrag(undefined);
   };

@@ -12,12 +12,15 @@ export type RoutePort = XYPosition & { side: RouteSide };
 export type RecipeRoute = { points: XYPosition[]; source: RoutePort; target: RoutePort; label?: RouteLabel };
 type Gateway = { port: RoutePort; lead: XYPosition; segment: RouteSegment };
 type End = { vertex: number; gate: Gateway; cost: number };
+type RouteSpacing = { track: number; lead: number };
 
 export const routeStroke: number = 3;
-export const edgeGap: number = 14;
+export const nearGap: number = 14;
 export const cardGap: number = 12;
-export const portGap: number = 18;
-const bendCost: number = 40;
+export const portGap: number = 20;
+const preferredSpacing: RouteSpacing = { track: 30, lead: 34 };
+const compactSpacing: RouteSpacing = { track: 24, lead: 26 };
+const bendCost: number = 360;
 const facingCost: number = 320;
 const sides: readonly RouteSide[] = ["left", "right", "top", "bottom"];
 
@@ -37,27 +40,33 @@ function facing(from: RouteCard, to: RouteCard): RouteSide {
   return Math.abs(dx) >= Math.abs(dy) ? dx < 0 ? "left" : "right" : dy < 0 ? "top" : "bottom";
 }
 
-function gateways(card: RouteCard, obstacles: RouteRect[], busy: boolean): Gateway[] {
+function gateways(card: RouteCard, obstacles: RouteRect[], degree: number, leadLength: number): Gateway[] {
   return sides.flatMap((side) => {
     const horizontal: boolean = side === "left" || side === "right";
     const span: number = horizontal ? card.height : card.width;
     const wall: number = side === "left" ? card.x : side === "right" ? card.x + card.width
       : side === "top" ? card.y : card.y + card.height;
-    const leadAxis: number = wall + (side === "left" || side === "top" ? -cardGap : cardGap);
+    const direction: number = side === "left" || side === "top" ? -1 : 1;
     const gates: Gateway[] = [];
-    const margin: number = span / 2 % (portGap / 2) + portGap / 2;
-    for (let offset: number = margin; offset <= span - margin; offset += busy ? portGap : portGap / 2) {
+    const pitch: number = degree > 20 ? portGap : degree >= 18 ? compactSpacing.track : portGap / 2;
+    const margin: number = degree > 20 ? pitch / 2 : (span / 2 % pitch || pitch);
+    for (let offset: number = margin; offset <= span - margin; offset += pitch) {
       const along: number = (horizontal ? card.y : card.x) + offset;
       const port: RoutePort = { ...(horizontal ? { x: wall, y: along } : { x: along, y: wall }), side };
-      const lead: XYPosition = horizontal ? { x: leadAxis, y: along } : { x: along, y: leadAxis };
-      const stem: RouteSegment = segment(port, lead);
-      if (!obstacles.some((rect) => crossesRect(stem, rect))) gates.push({ port, lead, segment: stem });
+      for (const length of [leadLength, cardGap]) {
+        const leadAxis: number = wall + direction * length;
+        const lead: XYPosition = horizontal ? { x: leadAxis, y: along } : { x: along, y: leadAxis };
+        const stem: RouteSegment = segment(port, lead);
+        if (obstacles.some((rect) => crossesRect(stem, rect))) continue;
+        gates.push({ port, lead, segment: stem });
+        break;
+      }
     }
     return gates;
   });
 }
 
-function tracks(critical: number[], extra: number): number[] {
+function tracks(critical: number[], extra: number, edgeGap: number): number[] {
   const cuts: number[] = [...new Set(critical)].sort((a, b) => a - b);
   const low: number = cuts[0]! - extra;
   const high: number = cuts.at(-1)! + extra;
@@ -81,7 +90,7 @@ function lowerBound(sorted: number[], value: number): number {
   return left;
 }
 
-function makeGrid(xs: number[], ys: number[], obstacles: RouteRect[]) {
+function makeGrid(xs: number[], ys: number[], obstacles: RouteRect[], edgeGap: number) {
   const width: number = xs.length;
   const size: number = width * ys.length;
   const horizontal: Uint8Array = new Uint8Array(size);
@@ -106,11 +115,15 @@ function makeGrid(xs: number[], ys: number[], obstacles: RouteRect[]) {
     mark("vertical", y, y + height, x, x + width);
   };
   for (const rect of obstacles) block(rect);
-  const reserve = (s: RouteSegment): void => mark(s.axis, s.low, s.high, s.line - edgeGap, s.line + edgeGap);
+  const reserve = (s: Shaft): void => {
+    const gap: number = s.near ? nearGap : edgeGap;
+    mark(s.axis, s.low, s.high, s.line - gap, s.line + gap);
+  };
   return { xs, ys, width, size, horizontal, vertical, vertex, point, reserve };
 }
 
-function search(grid: ReturnType<typeof makeGrid>, starts: End[], ends: End[], target: RouteCard): RecipeRoute | undefined {
+function search(grid: ReturnType<typeof makeGrid>, starts: End[], ends: End[], target: RouteCard, live: boolean): RecipeRoute | undefined {
+  if (!starts.length || !ends.length) return undefined;
   const { xs, ys, width, size, horizontal, vertical, point } = grid;
   const distances: Float64Array = new Float64Array(size * 2).fill(Infinity);
   const previous: Int32Array = new Int32Array(size * 2).fill(-1);
@@ -126,7 +139,8 @@ function search(grid: ReturnType<typeof makeGrid>, starts: End[], ends: End[], t
   const estimate = (vertex: number): number => {
     const x: number = xs[vertex % width]!;
     const y: number = ys[Math.floor(vertex / width)]!;
-    return Math.max(target.x - x, x - target.x - target.width, 0) + Math.max(target.y - y, y - target.y - target.height, 0);
+    const distance: number = Math.max(target.x - x, x - target.x - target.width, 0) + Math.max(target.y - y, y - target.y - target.height, 0);
+    return distance * (live ? 2 : 1);
   };
   for (const { vertex, gate, cost } of starts) {
     const state: number = vertex * 2 + toAxis(gate);
@@ -171,30 +185,81 @@ function search(grid: ReturnType<typeof makeGrid>, starts: End[], ends: End[], t
   return { points: collapse(points.reverse()), source: first.port, target: best.gate.port };
 }
 
-function conflict(a: RouteSegment, b: RouteSegment): boolean {
-  return a.axis === b.axis && Math.abs(a.line - b.line) < edgeGap && a.low < b.high && b.low < a.high;
+type Shaft = RouteSegment & { near: boolean };
+
+export function routeShafts(route: RecipeRoute): Shaft[] {
+  const leadLength: number = compactSpacing.lead;
+  const lengths: RouteSegment[] = routeSegments(route.points);
+  return lengths.flatMap((s, index) => {
+    let low: number = s.low;
+    let high: number = s.high;
+    if (index === 0) {
+      const port: number = s.axis === "horizontal" ? route.source.x : route.source.y;
+      if (port === s.low) low = Math.min(s.high, s.low + leadLength);
+      else high = Math.max(s.low, s.high - leadLength);
+    }
+    if (index === lengths.length - 1) {
+      const port: number = s.axis === "horizontal" ? route.target.x : route.target.y;
+      if (port === s.low) low = Math.min(high, s.low + leadLength);
+      else high = Math.max(low, s.high - leadLength);
+    }
+    return [
+      ...(s.low < low ? [{ ...s, high: low, near: true }] : []),
+      ...(low < high ? [{ ...s, low, high, near: false }] : []),
+      ...(high < s.high ? [{ ...s, low: high, near: true }] : []),
+    ];
+  });
 }
 
-function routeWithSpace(links: RouteLink[], cards: RouteCard[], outer: number, longestFirst: boolean): RecipeRoute[] | undefined {
+function conflict(a: Shaft, b: Shaft, edgeGap: number): boolean {
+  return a.axis === b.axis && Math.abs(a.line - b.line) < (a.near || b.near ? nearGap : edgeGap) && a.low < b.high && b.low < a.high;
+}
+
+function gatewayShafts({ port, segment: stem }: Gateway): Shaft[] {
+  const length: number = compactSpacing.lead;
+  if (stem.high - stem.low <= length) return [{ ...stem, near: true }];
+  const atStart: boolean = (stem.axis === "horizontal" ? port.x : port.y) === stem.low;
+  const split: number = atStart ? stem.low + length : stem.high - length;
+  return [{ ...stem, high: split, near: atStart }, { ...stem, low: split, near: !atStart }];
+}
+
+function routeWithSpace(links: RouteLink[], cards: RouteCard[], spacing: RouteSpacing, outer: number, longestFirst: boolean,
+  kept?: ReadonlyMap<number, RecipeRoute>): RecipeRoute[] | undefined {
   const padded: RouteRect[] = cards.map((card) => expand(card, cardGap));
   const obstacles: RouteRect[] = [...padded, ...cards.flatMap(({ caption }) => caption ? [expand(caption, 4)] : [])];
   const byId: Map<string, RouteCard> = new Map(cards.map((card) => [card.id, card]));
   const degrees: Map<string, number> = new Map();
   for (const { from, to } of links) for (const id of [from, to]) degrees.set(id, (degrees.get(id) ?? 0) + 1);
-  const gates: Map<string, Gateway[]> = new Map(cards.map((card, index) => [card.id,
-    gateways(card, obstacles.filter((rect) => rect !== padded[index]), (degrees.get(card.id) ?? 0) > 18),
-  ]));
+  const active: Set<string> = new Set(links.flatMap(({ from, to }, index) => kept?.has(index) ? [] : [from, to]));
+  const gates: Map<string, Gateway[]> = new Map(cards.flatMap((card, index) => active.has(card.id) ? [[card.id,
+    gateways(card, obstacles.filter((rect) => rect !== padded[index]), degrees.get(card.id) ?? 0, spacing.lead),
+  ]] : []));
   const allGates: Gateway[] = [...gates.values()].flat();
-  const xs: number[] = tracks([...obstacles.flatMap(({ x, width }) => [x, x + width]), ...allGates.map(({ lead }) => lead.x)], outer);
-  const ys: number[] = tracks([...obstacles.flatMap(({ y, height }) => [y, y + height]), ...allGates.map(({ lead }) => lead.y)], outer);
-  const grid = makeGrid(xs, ys, obstacles);
+  const xs: number[] = tracks([...obstacles.flatMap(({ x, width }) => [x, x + width]), ...allGates.map(({ lead }) => lead.x)], outer, spacing.track);
+  const ys: number[] = tracks([...obstacles.flatMap(({ y, height }) => [y, y + height]), ...allGates.map(({ lead }) => lead.y)], outer, spacing.track);
+  const grid = makeGrid(xs, ys, obstacles, spacing.track);
   const used: Map<string, RoutePort[]> = new Map();
-  const taken: RouteSegment[] = [];
+  const taken: Shaft[] = [];
   const routes: RecipeRoute[] = [];
-  const order = links.map(({ from, to }, index) => {
+  const reserve = (index: number, route: RecipeRoute): void => {
+    const { from, to } = links[index]!;
+    routes[index] = route;
+    for (const [id, port] of [[from, route.source], [to, route.target]] as const) {
+      const booked: RoutePort[] = used.get(id) ?? [];
+      booked.push(port);
+      used.set(id, booked);
+    }
+    for (const s of routeShafts(route)) {
+      grid.reserve(s);
+      taken.push(s);
+    }
+  };
+  for (const [index, route] of kept ?? []) reserve(index, { points: route.points, source: route.source, target: route.target });
+  const order = links.flatMap(({ from, to }, index) => {
+    if (kept?.has(index)) return [];
     const a: RouteCard = byId.get(from)!;
     const b: RouteCard = byId.get(to)!;
-    return { index, distance: Math.abs(a.x - b.x) + Math.abs(a.y - b.y), boundary: from === "@start" };
+    return [{ index, distance: Math.abs(a.x - b.x) + Math.abs(a.y - b.y), boundary: from === "@start" }];
   }).sort((a, b) => Number(b.boundary) - Number(a.boundary) || Number(b.distance === 0) - Number(a.distance === 0)
     || (a.distance - b.distance) * (longestFirst ? -1 : 1) || (longestFirst ? b.index - a.index : a.index - b.index));
   for (const { index } of order) {
@@ -205,45 +270,57 @@ function routeWithSpace(links: RouteLink[], cards: RouteCard[], outer: number, l
       const preferred: RouteSide = facing(card, opposite);
       return gates.get(card.id)!.flatMap((gate) => {
         const { port, lead, segment } = gate;
-        if (used.get(card.id)?.some((p) => Math.hypot(p.x - port.x, p.y - port.y) < portGap)
-          || taken.some((s) => conflict(segment, s))) return [];
+        if (used.get(card.id)?.some((p) => p.side === port.side && Math.hypot(p.x - port.x, p.y - port.y) < portGap)
+          || gatewayShafts(gate).some((shaft) => taken.some((s) => conflict(shaft, s, spacing.track)))) return [];
         const center: number = segment.axis === "horizontal" ? card.y + card.height / 2 : card.x + card.width / 2;
-        const cost: number = cardGap + Math.abs(center - segment.line) * 1.25 + (preferred === port.side || from === to ? 0 : facingCost);
+        const cost: number = segment.high - segment.low + Math.abs(center - segment.line) * 1.25
+          + (preferred === port.side || from === to ? 0 : facingCost);
         return [{ vertex: grid.vertex(lead), gate, cost }];
       });
     };
     const starts: End[] = candidates(source, target);
     const ends: End[] = candidates(target, source);
     let route: RecipeRoute | undefined;
-    if (from !== to) route = search(grid, starts, ends, target);
+    if (from !== to) route = search(grid, starts, ends, target, !!kept);
     else {
       for (const side of sides) {
         route = search(grid, starts.filter(({ gate }) => gate.port.side === side),
-          ends.filter(({ gate }) => gate.port.side !== side), target);
+          ends.filter(({ gate }) => gate.port.side !== side), target, !!kept);
         if (route && Math.hypot(route.source.x - route.target.x, route.source.y - route.target.y) >= portGap) break;
         route = undefined;
       }
     }
     if (!route) return undefined;
-    routes[index] = route;
-    for (const [id, port] of [[from, route.source], [to, route.target]] as const) {
-      const booked: RoutePort[] = used.get(id) ?? [];
-      booked.push(port);
-      used.set(id, booked);
-    }
-    for (const s of routeSegments(route.points)) {
-      grid.reserve(s);
-      taken.push(s);
-    }
+    reserve(index, route);
   }
   return routes;
 }
 
-export function routeRecipe(links: RouteLink[], cards: RouteCard[]): RecipeRoute[] | undefined {
+export function routeRecipe(links: RouteLink[], cards: RouteCard[], moved?: { card: string; routes: RecipeRoute[] }): RecipeRoute[] | undefined {
   if (links.length === 0) return [];
-  const outer: number = Math.max(6, Math.ceil(links.length / 4)) * edgeGap;
-  const routes: RecipeRoute[] | undefined = routeWithSpace(links, cards, outer, false)
-    ?? routeWithSpace(links, cards, outer * 2, true);
+  const outer: number = Math.max(6, Math.ceil(links.length / 4)) * preferredSpacing.track;
+  let routes: RecipeRoute[] | undefined;
+  if (moved) {
+    const card: RouteCard = cards.find(({ id }) => id === moved.card)!;
+    const blocked: RouteRect[] = [expand(card, cardGap), ...(card.caption ? [expand(card.caption, 4)] : [])];
+    const kept: Map<number, RecipeRoute> = new Map();
+    for (const [index, { from, to }] of links.entries()) {
+      const route: RecipeRoute | undefined = moved.routes[index];
+      if (!route || from === card.id || to === card.id) continue;
+      if (!routeSegments(route.points).some((line) => blocked.some((rect) => crossesRect(line, rect)))) kept.set(index, route);
+    }
+    routes = routeWithSpace(links, cards, preferredSpacing, outer, false, kept)
+      ?? routeWithSpace(links, cards, compactSpacing, outer, false, kept);
+  }
+  routes ??= routeWithSpace(links, cards, preferredSpacing, outer, false, moved && new Map())
+    ?? routeWithSpace(links, cards, compactSpacing, outer, false, moved && new Map())
+    ?? routeWithSpace(links, cards, compactSpacing, outer * 2, true, moved && new Map());
   if (routes) labelRecipeRoutes(links, routes, cards);
+  if (routes && moved) {
+    for (const [index, route] of routes.entries()) {
+      const prior: RecipeRoute | undefined = moved.routes[index];
+      if (prior && prior.points === route.points && JSON.stringify(prior.label) === JSON.stringify(route.label)) routes[index] = prior;
+    }
+  }
   return routes;
 }

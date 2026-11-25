@@ -4,6 +4,9 @@ export type Axis = "horizontal" | "vertical";
 export type RouteRect = XYPosition & { width: number; height: number };
 export type RouteSegment = { axis: Axis; line: number; low: number; high: number };
 
+export const arrowheadLength: number = 18;
+export const arrowheadWidth: number = 15;
+
 export function segment(a: XYPosition, b: XYPosition): RouteSegment {
   return a.y === b.y ? { axis: "horizontal", line: a.y, low: Math.min(a.x, b.x), high: Math.max(a.x, b.x) }
     : { axis: "vertical", line: a.x, low: Math.min(a.y, b.y), high: Math.max(a.y, b.y) };

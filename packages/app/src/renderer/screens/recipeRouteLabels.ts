@@ -1,5 +1,5 @@
 import type { XYPosition } from "@xyflow/react";
-import { crossesRect, expand, overlaps, routeSegments, segment } from "./recipeRouteGeometry";
+import { arrowheadLength, arrowheadWidth, crossesRect, expand, overlaps, routeSegments, segment } from "./recipeRouteGeometry";
 import type { RouteRect, RouteSegment } from "./recipeRouteGeometry";
 import type { RecipeRoute, RouteCard, RouteLink } from "./recipeRouting";
 
@@ -87,10 +87,11 @@ export function labelRecipeRoutes(links: RouteLink[], routes: RecipeRoute[], car
   const paths: RouteSegment[][] = routes.map(({ points }) => routeSegments(points));
   const occupied: RouteRect[] = cards.flatMap((card) => [card, ...(card.caption ? [card.caption] : [])]);
   for (const { target: { x, y, side } } of routes) {
-    const head: RouteRect = side === "left" ? { x: x - 12, y: y - 5, width: 12, height: 10 }
-      : side === "right" ? { x, y: y - 5, width: 12, height: 10 }
-      : side === "top" ? { x: x - 5, y: y - 12, width: 10, height: 12 }
-      : { x: x - 5, y, width: 10, height: 12 };
+    const half: number = arrowheadWidth / 2;
+    const head: RouteRect = side === "left" ? { x: x - arrowheadLength, y: y - half, width: arrowheadLength, height: arrowheadWidth }
+      : side === "right" ? { x, y: y - half, width: arrowheadLength, height: arrowheadWidth }
+      : side === "top" ? { x: x - half, y: y - arrowheadLength, width: arrowheadWidth, height: arrowheadLength }
+      : { x: x - half, y, width: arrowheadWidth, height: arrowheadLength };
     occupied.push(head);
   }
   const order: number[] = links.map((_, index) => index).sort((a, b) => (links[b]!.label?.length ?? 0) - (links[a]!.label?.length ?? 0));
@@ -99,7 +100,7 @@ export function labelRecipeRoutes(links: RouteLink[], routes: RecipeRoute[], car
     if (!label) continue;
     const box: RouteLabel = placeRouteLabel(label, paths[index]!, paths.flatMap((path, i) => i === index ? [] : path), occupied);
     routes[index]!.label = box;
-    occupied.push(box);
+    occupied.push(expand(box, 4));
     if (box.leader) occupied.push(expand(segmentBounds(segment(...box.leader)), 1));
   }
 }
