@@ -433,3 +433,9 @@
 - Decision: Name the affected steps in recipe validation and show the base-change entry in Recipe settings. Failure edges leave the bottom of their source cards. Jira MCP tool refusals take the Failure branch, and saved recipes that use the shipped templates gain a failed End connection if needed. The three agents that produce one usable result keep Success as their only outcome.
 - Why: Adding Read Ticket exposed a route from Git Rebase to GitHub PR without a spec. Failure edges were hard to follow, and Jira MCP needed the same failure branch as Jira CLI.
 - Replaces: Internal paths in recipe validation, failure exits based on drag handles, and attempt errors for refusals from shipped Jira MCP tools.
+
+## 2026-11-25: Check button last in Accounts group headers
+
+- Decision: In Settings, Accounts, each group header shows its buttons at the right end, with Check last.
+- Why: The same layout in every group header.
+- Replaces: Check right after the title.
