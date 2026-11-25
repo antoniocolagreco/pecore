@@ -50,7 +50,7 @@ export class LoginRunner {
     const proc = await spawnAs({ user: appUser, argv, env: { ...(await baseEnv(appUser)), GH_PROMPT_DISABLED: "1" }, cwd: (await baseEnv(appUser)).HOME! });
     proc.stdin.on("error", () => undefined);
     if (account.tool === "gh") proc.stdin.write("\n");
-    this.stream(loginId, proc, /https:\/\/\S+/, done);
+    this.stream(loginId, proc, /https:\/\/\S+/, (code) => code === 0 ? done() : Promise.resolve("logged_out"));
   }
 
   sendCode(loginId: string, code: string): void {
@@ -63,7 +63,7 @@ export class LoginRunner {
     await Promise.all([...this.active.values()].map((p) => p.stop()));
   }
 
-  private stream(loginId: string, proc: Proc, pattern: RegExp, done: () => Promise<string>): void {
+  private stream(loginId: string, proc: Proc, pattern: RegExp, done: (code: number | null) => Promise<string>): void {
     this.active.set(loginId, proc);
     let url: string | null = null;
     const onLine = (line: string) => {
@@ -74,7 +74,7 @@ export class LoginRunner {
     createInterface({ input: proc.stderr }).on("line", onLine);
     void proc.exited.then(async (exit) => {
       this.active.delete(loginId);
-      const state = await done().catch((e: unknown) => `check failed: ${(e as Error).message}`);
+      const state = await done(exit.code).catch((e: unknown) => `check failed: ${(e as Error).message}`);
       this.progress({ loginId, text: `login ended (exit ${exit.code ?? exit.signal}); state: ${state}`, url, done: true });
     });
   }

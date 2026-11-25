@@ -112,7 +112,7 @@ const colorGroups: { title: string; kind: "fill" | "text" | "line" | "shadow"; t
       { name: "--accent-fill", use: "primary buttons, selected items, your chat bubble" },
       { name: "--accent-fill-hover", use: "hover of accent fills" },
       { name: "--on-accent", use: "text on accent fills" },
-      { name: "--agent-kind-color", use: "Agent node badge and built-in agent cards" },
+      { name: "--agent-kind-color", use: "Agent node badge and Default Agent card" },
     ],
   },
   {

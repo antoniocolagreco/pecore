@@ -1,4 +1,5 @@
 import { appUser, baseEnv, run } from "../runners/process";
+import type { CommitAuthor } from "@pecore/schemas";
 
 export class GitError extends Error {
   constructor(
@@ -23,16 +24,22 @@ async function git(user: string, cwd: string, prefix: string[], args: string[], 
 
 let identity: Promise<Record<string, string>> | undefined;
 
+export async function readGitAuthor(): Promise<CommitAuthor> {
+  const env: Record<string, string> = await baseEnv(appUser);
+  const value = async (key: string): Promise<string> => {
+    const result = await run({ user: appUser, cwd: "/", env, argv: ["git", "config", "--global", "--get", key] }).catch(() => null);
+    return result?.code === 0 ? result.stdout.trim() : "";
+  };
+  const [name, email] = await Promise.all([value("user.name"), value("user.email")]);
+  return { name, email };
+}
+
 export function gitIdentityEnv(): Promise<Record<string, string>> {
-  identity ??= (async () => {
-    const value = async (key: string, fallback: string): Promise<string> => {
-      const r = await run({ user: appUser, cwd: "/", env: await baseEnv(appUser), argv: ["git", "config", "--global", "--get", key] });
-      return r.code === 0 && r.stdout.trim() ? r.stdout.trim() : fallback;
-    };
-    const name: string = await value("user.name", "PeCore");
-    const email: string = await value("user.email", "pecore@localhost");
+  identity ??= readGitAuthor().then((author) => {
+    const name: string = author.name || "PeCore";
+    const email: string = author.email || "pecore@localhost";
     return { GIT_AUTHOR_NAME: name, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: name, GIT_COMMITTER_EMAIL: email };
-  })();
+  });
   return identity;
 }
 

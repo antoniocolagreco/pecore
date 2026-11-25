@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { harnessVersion, listOptions, satisfies } from "@pecore/agents";
 import type { ResolvedConnector, Spawn } from "@pecore/agents";
-import { BuiltInHarness, Compaction, ModelAccount, TierName, builtInAgentColor, builtInAgentNames } from "@pecore/schemas";
+import { BuiltInHarness, Compaction, ModelAccount, TierName, agentKindColor, builtInAgentNames, defaultAgentColor, defaultAgentId } from "@pecore/schemas";
 import type { AgentDefinition, NodeAgent, Profile, Profiles, SetupView, Tiers } from "@pecore/schemas";
 import { spawnFor } from "../accounts/agents";
 import type { AgentServices, LoginInfo } from "../accounts/agents";
@@ -221,7 +221,7 @@ export function ensureBuiltInAgents(configuration: Configuration, fillModels: bo
   const builtIns: NodeAgent[] = Array.from(builtInAgentNames, ([id, name]) => {
     const agent: AgentDefinition | undefined = current.agents.agents.find((entry) => entry.id === id);
     return agent?.kind === "agent" ? { ...agent, name, model: agent.model ?? model }
-      : { id, kind: "agent", name, model, color: builtInAgentColor, compaction: Compaction.parse({}) };
+      : { id, kind: "agent", name, model, color: id === defaultAgentId ? agentKindColor : defaultAgentColor, compaction: Compaction.parse({}) };
   });
   const next: Global["agents"] = { agents: [...builtIns, ...agents.filter(({ id }) => !builtInAgentNames.has(id))] };
   if (isDeepStrictEqual(next, current.agents)) return false;

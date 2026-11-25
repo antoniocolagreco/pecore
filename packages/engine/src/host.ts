@@ -65,6 +65,7 @@ export async function host(port: HostPort, env: HostEnv): Promise<{ engine: Engi
       templates: join(env.resources, "templates"),
       agents: { connectorsDir: join(env.resources, "connectors"), adaptersDir: homePaths(env.home).adapters, adapters: pinned.adapters },
       admin,
+      discoverForges: true,
       detectRuntime: detectServicesRuntime,
       ...(env.downloads ? { downloads: env.downloads } : {}),
       development: env.development ?? false,

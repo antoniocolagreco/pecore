@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Accounts } from "./accounts";
+import { Accounts, CommitAuthor } from "./accounts";
 import { Artifact } from "./artifacts";
 import { Profiles } from "./profiles";
 import { ChatAgent, NodeAgentCatalog, ProjectManagerAgent } from "./agent";
@@ -148,7 +148,7 @@ export const LiveMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("queue.updated"), itemId: z.string(), projectId: ProjectId }),
   z.object({ type: z.literal("project.updated"), projectId: ProjectId }),
   z.object({ type: z.literal("definition.changed"), path: z.string(), sha256: z.string().nullable() }),
-  z.object({ type: z.literal("configuration.changed"), kind: z.enum(["settings", "agents", "accounts", "profiles", "tiers", "themes"]) }),
+  z.object({ type: z.literal("configuration.changed"), kind: z.enum(["settings", "agents", "accounts", "profiles", "tiers"]) }),
   z.object({ type: z.literal("log.line"), attemptId: z.string(), event: LogEvent }),
   z.object({ type: z.literal("login.progress"), loginId: z.string(), text: z.string(), url: z.string().nullable(), done: z.boolean() }),
   z.object({ type: z.literal("chat.changed"), project: ProjectId.nullable() }),
@@ -489,34 +489,6 @@ const SetupHarness = z.object({
 export const SetupView = z.object({ harnesses: z.array(SetupHarness), modelAccountWorks: z.boolean() });
 export type SetupView = z.infer<typeof SetupView>;
 
-
-export const themeTokens = [
-  "bg",
-  "bg-gradient-1",
-  "bg-gradient-2",
-  "surface",
-  "surface-raised",
-  "border",
-  "text",
-  "text-muted",
-  "accent",
-  "status-running",
-  "status-success",
-  "status-failed",
-  "status-warning",
-  "status-inactive",
-] as const;
-export const ThemeToken = z.enum(themeTokens);
-export const Theme = z
-  .object({
-    name: z.string().min(1),
-    tokens: z.partialRecord(ThemeToken, z.string().regex(/^(#[0-9a-fA-F]{3,8}|(rgb|rgba|hsl|hsla)\([^)]*\))$/, "a CSS color")),
-  })
-  .strict();
-export type Theme = z.infer<typeof Theme>;
-const ThemeId = z.string().min(1).max(100).regex(/^[\p{L}\p{N} ._-]+$/u);
-const ThemeView = z.object({ id: ThemeId, theme: Theme });
-
 const ListJobsQuery = z.object({ project: ProjectId.optional(), archived: z.enum(["true", "false"]).optional() });
 const ListQueueQuery = z.object({ project: ProjectId.optional(), state: z.enum(["open", "resolved", "cancelled"]).optional() });
 const LogQuery = z.object({ view: z.enum(["events", "raw"]).default("raw") });
@@ -636,6 +608,7 @@ export const routes = {
   putAgentContext: { method: "PUT", path: "/agents/:id/context", params: z.object({ id: Name }), body: z.strictObject({ content: z.string().max(1_000_000), baseSha256: Sha }), bodyLimit: 6_001_024, response: z.object({ sha256: Sha }) },
   getAccounts: accountsFile.get,
   putAccounts: accountsFile.put,
+  getForgeAccountDefaults: { method: "GET", path: "/forge-account-defaults", query: z.object({ awsProfile: z.string().trim().min(1).optional() }), response: z.object({ author: CommitAuthor, codeCommit: z.object({ host: z.string(), user: z.string() }).nullable() }) },
   getProfiles: profilesFile.get,
   putProfiles: profilesFile.put,
   getTiers: tiersFile.get,
@@ -652,8 +625,6 @@ export const routes = {
   checkPrerequisites: { method: "POST", path: "/prerequisites/check", response: z.array(PrerequisiteView) },
   getSetup: { method: "GET", path: "/setup", response: SetupView },
   startSetupLogin: { method: "POST", path: "/setup/:connector/login", params: z.object({ connector: BuiltInHarness }), response: z.object({ loginId: z.string() }) },
-  listThemes: { method: "GET", path: "/themes", response: z.array(ThemeView) },
-  putTheme: { method: "PUT", path: "/themes/:id", params: z.object({ id: ThemeId }), body: Theme, response: ThemeView },
   getLog: { method: "GET", path: "/logs/:id", params: IdParams, query: LogQuery, response: z.union([z.object({ view: z.literal("raw"), lines: z.array(z.unknown()) }), z.object({ view: z.literal("events"), events: z.array(LogEvent) })]) },
 } as const satisfies Record<string, RouteDef>;
 

@@ -13,7 +13,7 @@ const agentFields = {
 };
 
 export const defaultAgentColor: string = "#FFFFFF";
-export const builtInAgentColor: string = "#68389A";
+export const agentKindColor: string = "#68389A";
 export const defaultAgentId: string = "agent-default";
 export const assistantAgentId: string = "assistant";
 

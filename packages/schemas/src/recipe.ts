@@ -1,9 +1,11 @@
 import { z } from "zod";
+import { assistantAgentId } from "./agent";
 import { DefinitionName, JsonSchemaObject, Name, Outcome, TierName } from "./common";
+import { AgentContext } from "./node";
 
 const NodeId = z.string().regex(/^[a-z][a-z0-9-]*$/);
 
-export const RecipeNode = z
+const RecipeStep = z
   .object({
     use: Name,
     params: JsonSchemaObject.optional(),
@@ -18,10 +20,17 @@ export const RecipeNode = z
     reads: z.array(NodeId).default([]),
     requires: z.array(NodeId).default([]),
     optional: z.boolean().default(false),
-    session: z.string().min(1).optional(),
+    agentId: Name.refine((id) => id !== assistantAgentId, "Choose an agent other than Assistant").optional(),
+    agentContext: AgentContext.optional(),
     skipWhenUnchanged: z.boolean().default(false),
   })
   .strict();
+export const RecipeNode = z.preprocess((input: z.input<typeof RecipeStep> & { session?: unknown }) => {
+  if (!input || typeof input !== "object" || !Object.hasOwn(input, "session")) return input;
+  const current = { ...input };
+  delete current.session;
+  return current;
+}, RecipeStep);
 export type RecipeNode = z.infer<typeof RecipeNode>;
 
 export const EdgePort = z.enum(["left", "right", "top", "bottom"]);
@@ -51,7 +60,7 @@ export const RecipeEnd = z.object({
 }).strict();
 export type RecipeEnd = z.infer<typeof RecipeEnd>;
 
-export const Recipe = z
+const RecipeDefinition = z
   .object({
     name: DefinitionName,
     description: z.string().min(1),
@@ -67,7 +76,6 @@ export const Recipe = z
       maxCorrections: z.number().int().nonnegative(),
       checks: z.array(z.string().trim().min(1)).min(1),
     }).strict().optional(),
-    maxNodeRuns: z.number().int().positive().default(100),
     successOutcomes: z.array(z.string().regex(/^[a-z][a-z0-9-]*:[a-z][a-z0-9_]*$/)).default([]),
     ends: z.array(RecipeEnd).optional(),
     layout: z.record(z.union([NodeId, z.literal("@start"), z.literal("@end")]), z.object({ x: z.number(), y: z.number() }).strict()).optional(),
@@ -118,5 +126,11 @@ export const Recipe = z
       if (n.agent && n.agent.tier !== undefined && n.agent.profiles !== undefined) issue(["nodes", id, "agent"], "at most one of tier and profiles");
     }
   });
+export const Recipe = z.preprocess((input: z.input<typeof RecipeDefinition> & { maxNodeRuns?: unknown }) => {
+  if (!input || typeof input !== "object" || !Object.hasOwn(input, "maxNodeRuns")) return input;
+  const current = { ...input };
+  delete current.maxNodeRuns;
+  return current;
+}, RecipeDefinition);
 export type Recipe = z.infer<typeof Recipe>;
-export type RecipeInput = z.input<typeof Recipe>;
+export type RecipeInput = z.input<typeof RecipeDefinition>;

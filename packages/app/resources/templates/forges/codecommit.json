@@ -1,0 +1,9 @@
+{
+  "forge": "codecommit",
+  "tool": "aws",
+  "credentialHelper": "!aws codecommit credential-helper $@",
+  "delivery": "git-delivery",
+  "comment": null,
+  "createRepo": null,
+  "source": null
+}

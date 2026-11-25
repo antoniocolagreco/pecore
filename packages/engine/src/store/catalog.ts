@@ -12,7 +12,7 @@ type NodeRow = {
   retry: number | null;
   prompt: string | null;
   tier: string | null;
-  resume: number | null;
+  agent_context: string | null;
   human_interface: string | null;
   runs_as: string | null;
   clean_checkout: number | null;
@@ -27,7 +27,6 @@ type RecipeRow = {
   start_source_port: string | null;
   start_target_port: string | null;
   on_base_changed: string | null;
-  max_node_runs: number;
   has_ends: number;
   has_layout: number;
   ci_after: string | null;
@@ -41,7 +40,8 @@ type StepRow = {
   step: string;
   node: string;
   optional: number;
-  session: string | null;
+  agent_id: string | null;
+  agent_context: string | null;
   skip_when_unchanged: number;
   has_params: number;
   has_agent: number;
@@ -104,7 +104,7 @@ export class Catalog {
     if (row.kind === "agent") {
       const profiles: string[] = list("profiles");
       return Node.parse({
-        ...common, prompt: row.prompt, resume: !!row.resume, knowledge: list("knowledge"),
+        ...common, prompt: row.prompt, agentContext: row.agent_context ?? undefined, knowledge: list("knowledge"),
         agent: { tier: row.tier ?? undefined, ...(profiles.length ? { profiles } : {}), providerNot: list("providerNot") },
       });
     }
@@ -151,12 +151,12 @@ export class Catalog {
     this.db.transaction(() => {
       this.delete("nodes", name);
       this.db.prepare(`INSERT INTO catalog_nodes
-        (name, description, icon, kind, shipped, timeout_sec, changes_files, retry, prompt, tier, resume, human_interface, runs_as, clean_checkout)
+        (name, description, icon, kind, shipped, timeout_sec, changes_files, retry, prompt, tier, agent_context, human_interface, runs_as, clean_checkout)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         name, node.description, node.icon ?? null, node.kind, Number(shipped),
         "timeoutSec" in node ? node.timeoutSec : null, "changesFiles" in node ? Number(node.changesFiles) : null,
         "retry" in node ? node.retry : null, node.kind === "agent" ? node.prompt : null,
-        node.kind === "agent" ? node.agent.tier ?? null : null, node.kind === "agent" ? Number(node.resume) : null,
+        node.kind === "agent" ? node.agent.tier ?? null : null, node.kind === "agent" ? node.agentContext : null,
         node.kind === "human" ? node.interface : null, node.kind === "command" ? node.runsAs : null,
         node.kind === "command" ? Number(node.cleanCheckout) : null,
       );
@@ -218,7 +218,7 @@ export class Catalog {
     const connection = (edge: EdgeRow) => ({ from: edge.source, on: edge.outcome, ...ports(edge.source_port, edge.target_port) });
     return Recipe.parse({
       name, description: row.description, icon: row.icon ?? undefined, start: row.start ?? undefined, onBaseChanged: row.on_base_changed ?? undefined,
-      maxNodeRuns: row.max_node_runs, successOutcomes: list("successOutcomes"),
+      successOutcomes: list("successOutcomes"),
       ...(row.has_start_ports ? { startPorts: ports(row.start_source_port, row.start_target_port) } : {}),
       ...(row.has_layout ? { layout: Object.fromEntries(layout.map(({ step, x, y }) => [step, { x, y }])) } : {}),
       ...(row.ci_after === null ? {} : {
@@ -237,7 +237,8 @@ export class Catalog {
         this.strings("SELECT value FROM catalog_step_lists WHERE recipe = ? AND step = ? AND field = ? ORDER BY position", name, step.step, field);
       const profiles: string[] = step.has_agent ? list("profiles") : [];
       return [step.step, {
-        use: step.node, optional: !!step.optional, session: step.session ?? undefined, skipWhenUnchanged: !!step.skip_when_unchanged,
+        use: step.node, optional: !!step.optional, skipWhenUnchanged: !!step.skip_when_unchanged,
+        agentId: step.agent_id ?? undefined, agentContext: step.agent_context ?? undefined,
         requires: list("requires"), reads: list("reads"),
         ...(step.has_params ? { params: this.params("SELECT name, value FROM catalog_step_params WHERE recipe = ? AND step = ? ORDER BY name", name, step.step) } : {}),
         ...(step.has_agent ? { agent: {
@@ -254,11 +255,11 @@ export class Catalog {
     this.db.transaction(() => {
       this.delete("recipes", name);
       this.db.prepare(`INSERT INTO catalog_recipes
-        (name, description, icon, shipped, start, has_start_ports, start_source_port, start_target_port, on_base_changed, max_node_runs,
+        (name, description, icon, shipped, start, has_start_ports, start_source_port, start_target_port, on_base_changed,
           has_ends, has_layout, ci_after, ci_on, ci_interval_sec, ci_timeout_sec, ci_max_corrections)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         name, recipe.description, recipe.icon ?? null, Number(shipped), recipe.start ?? null, Number(startPorts !== undefined),
-        startPorts?.sourcePort ?? null, startPorts?.targetPort ?? null, recipe.onBaseChanged ?? null, recipe.maxNodeRuns,
+        startPorts?.sourcePort ?? null, startPorts?.targetPort ?? null, recipe.onBaseChanged ?? null,
         Number(recipe.ends !== undefined), Number(recipe.layout !== undefined), ci?.after ?? null, ci?.on ?? null,
         ci?.intervalSec ?? null, ci?.timeoutSec ?? null, ci?.maxCorrections ?? null,
       );
@@ -280,10 +281,10 @@ export class Catalog {
 
   private saveRecipeSteps(recipe: Recipe): void {
     const insert: Database.Statement = this.db.prepare(`INSERT INTO catalog_recipe_steps
-      (recipe, step, position, node, optional, session, skip_when_unchanged, has_params, has_agent, tier, has_provider_not)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      (recipe, step, position, node, optional, agent_id, agent_context, skip_when_unchanged, has_params, has_agent, tier, has_provider_not)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     for (const [i, [id, step]] of Object.entries(recipe.nodes).entries()) {
-      insert.run(recipe.name, id, i, step.use, Number(step.optional), step.session ?? null, Number(step.skipWhenUnchanged),
+      insert.run(recipe.name, id, i, step.use, Number(step.optional), step.agentId ?? null, step.agentContext ?? null, Number(step.skipWhenUnchanged),
         Number(step.params !== undefined), Number(step.agent !== undefined), step.agent?.tier ?? null, Number(step.agent?.providerNot !== undefined));
       this.writeParams("INSERT INTO catalog_step_params (recipe, step, name, value) VALUES (?, ?, ?, ?)", [recipe.name, id], step.params ?? {});
       this.writeLists("INSERT INTO catalog_step_lists (recipe, step, field, position, value) VALUES (?, ?, ?, ?, ?)", [recipe.name, id], {

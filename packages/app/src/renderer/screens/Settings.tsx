@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { appName, forgeHost, harnessColor, harnesses, Settings as SettingsSchema, Theme } from "@pecore/schemas";
-import type { Account, ForgeAccount, HarnessInfo, LiveMessage, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
+import { appName, codeCommitProfile, ForgeAccount, ForgeKind, forgeHost, forgeServices, harnessColor, harnesses, nextForgeAccountId, Settings as SettingsSchema } from "@pecore/schemas";
+import type { Account, HarnessInfo, LiveMessage, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useAutoSave, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
@@ -37,7 +37,8 @@ const sections: { id: string; title: string }[] = [
 ];
 
 function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (body: { value: T; baseSha256: string }) => Promise<{ sha256: string }>, valid?: (value: T) => boolean) {
-  const remote = useData(get, [], (message) => message.type === "definition.changed" && message.path === name + ".json");
+  const remote = useData(get, [], (message) => (message.type === "definition.changed" && message.path === name + ".json")
+    || (message.type === "configuration.changed" && message.kind === name));
   return {
     ...useAutoSave(remote, put, valid),
     feedback: <>
@@ -133,7 +134,10 @@ function AccountRow({ name, detail, state, checking, actions, color, muted, chil
   </li>;
 }
 
-function LoginControls({ accounts, protectedOnly = false, kind = "model", harnessColors, hideMissing = false }: { accounts: Account[]; protectedOnly?: boolean; kind?: "model" | "tool"; harnessColors?: HarnessColors; hideMissing?: boolean }) {
+function LoginControls({ accounts, protectedOnly = false, kind = "model", harnessColors, hideMissing = false, pendingLogin, onLoginStarted, onEdit }: {
+  accounts: Account[]; protectedOnly?: boolean; kind?: "model" | "tool"; harnessColors?: HarnessColors; hideMissing?: boolean;
+  pendingLogin?: string; onLoginStarted?(): void; onEdit?(account: ForgeAccount): void;
+}) {
   const connected: boolean = useConnected();
   const logins = useData(() => call("listLogins"), [], (message) => (message.type === "login.progress" && message.done) || (message.type === "configuration.changed" && ["settings", "accounts"].includes(message.kind)));
   const [progress, setProgress] = useState<Record<string, Progress>>({});
@@ -167,11 +171,21 @@ function LoginControls({ accounts, protectedOnly = false, kind = "model", harnes
       try { await call("startLogin", { body: { account: account.id, osUser } }); }
       catch (error) { setProgress((old) => ({ ...old, [loginId]: { lines: [], url: null, done: true } })); throw error; }
     } else {
+      const loginId: string = `tool:${account.id}`;
+      checkedRuns.current.delete(loginId);
+      setProgress((old) => ({ ...old, [loginId]: { lines: [], url: null, done: false } }));
       const result = await call("startAccountLogin", { params: { id: account.id } });
       setToolRuns((old) => ({ ...old, [account.id]: result.loginId }));
     }
     logins.reload();
   });
+  useEffect(() => {
+    if (!pendingLogin || !connected) return;
+    const account: Account | undefined = accounts.find(({ id }) => id === pendingLogin);
+    if (!account) return;
+    onLoginStarted?.();
+    void start.run(account);
+  }, [accounts, connected, pendingLogin]);
   const recheck = useAction(async (id: string, isModel: boolean) => {
     setChecking((old) => new Set(old).add(id));
     try {
@@ -239,15 +253,16 @@ function LoginControls({ accounts, protectedOnly = false, kind = "model", harnes
         const busy: boolean = !!id && !output?.done;
         const state: string = toolStates[account.id] ?? (autoChecked.current.has(account.id) && !checking.has(account.id) ? "unknown" : "unchecked");
         return <AccountRow key={account.id}
-          name={account.kind === "forge" ? `${forgeLabel(account.forge)} · ${account.user}` : account.service}
-          detail={account.kind === "forge" ? account.host : `Log in with ${account.tool}, then check again.`}
+          name={account.kind === "forge" ? [forgeServices[account.forge].label, account.user].filter(Boolean).join(" · ") : account.service}
+          detail={account.kind === "forge"
+            ? account.forge === "codecommit" ? `${account.host} · ${codeCommitProfile(account)}` : account.host
+            : `Log in with ${account.tool}, then check again.`}
           state={state} checking={checking.has(account.id)}
           actions={<>
-            {account.kind === "forge" && account.tool !== "git" && state !== "logged_in" && <Button size="sm" variant="primary" disabled={locked || busy} onClick={() => {
-              if (id) setProgress((old) => { const next = { ...old }; delete next[id]; return next; });
-              void start.run(account);
-            }}>Log in</Button>}
+            {account.kind === "forge" && (account.tool === "gh" || account.tool === "glab") && state !== "logged_in" &&
+              <Button size="sm" variant="primary" disabled={locked || busy} onClick={() => void start.run(account)}>Log in</Button>}
             {checkButton(account.id, false, busy)}
+            {account.kind === "forge" && onEdit && <Button size="sm" disabled={locked || busy} onClick={() => onEdit(account)}>Edit</Button>}
           </>}>
           {id && <LoginOutput id={id} progress={output} running={!output?.done} />}
         </AccountRow>;
@@ -256,52 +271,53 @@ function LoginControls({ accounts, protectedOnly = false, kind = "model", harnes
   </>;
 }
 
-type SupportedForge = "github" | "gitlab" | "git";
-
-const forges: Record<SupportedForge, { host: string; tool: ForgeAccount["tool"]; label: string }> = {
-  github: { host: "github.com", tool: "gh", label: "GitHub" },
-  gitlab: { host: "gitlab.com", tool: "glab", label: "GitLab" },
-  git: { host: "", tool: "git", label: "Private Git server" },
-};
-
-function forgeLabel(forge: string): string {
-  return forges[forge as SupportedForge]?.label ?? forge;
-}
-
-function AddForgeAccount({ open, onClose, onAdd, taken }: { open: boolean; onClose(): void; onAdd(account: ForgeAccount): void; taken: string[] }) {
-  const [forge, setForge] = useState<SupportedForge>("github");
-  const [host, setHost] = useState("");
-  const [user, setUser] = useState("");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const base: (typeof forges)[SupportedForge] = forges[forge];
-  const server: string = forgeHost(host) || base.host;
-  const id: string = `${base.tool}-${user || "account"}`.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
-  const valid: boolean = !!server && !!user.trim() && !!name.trim() && /^[^@\s]+@[^@\s]+$/.test(email) && !taken.includes(id);
+function ForgeAccountDialog({ account, onClose, onSave, taken }: { account?: ForgeAccount; onClose(): void; onSave(account: ForgeAccount): Promise<boolean>; taken: string[] }) {
+  const [forge, setForge] = useState<ForgeKind>(account?.forge ?? "github");
+  const [host, setHost] = useState(account?.host ?? "");
+  const [user, setUser] = useState(account?.user ?? "");
+  const [profile, setProfile] = useState(account?.forge === "codecommit" ? codeCommitProfile(account) : "default");
+  const [name, setName] = useState(account?.author.name);
+  const [email, setEmail] = useState(account?.author.email);
+  const defaults = useData(() => account ? Promise.resolve(undefined) : call("getForgeAccountDefaults", { query: {} }), []);
+  const base = forgeServices[forge];
+  const awsProfile: string | undefined = forge === "codecommit" ? profile.trim() : undefined;
+  const server: string = host.trim() ? forgeHost(host) : base.host;
+  const author: ForgeAccount["author"] = { name: (name ?? defaults.data?.author.name ?? "").trim(), email: (email ?? defaults.data?.author.email ?? "").trim() };
+  const valid: boolean = (forge === "codecommit" ? !!awsProfile : !!server) && (!author.email || /^[^@\s]+@[^@\s]+$/.test(author.email));
+  const save = useAction(async () => {
+    const identity = awsProfile && !server ? (await call("getForgeAccountDefaults", { query: { awsProfile } })).codeCommit : null;
+    const resolved: string = server || identity?.host || "";
+    if (!resolved) throw new Error("Configure a region for this AWS profile in the AWS CLI, then try again.");
+    const id: string = account?.id ?? nextForgeAccountId(base.tool, awsProfile ?? resolved, new Set(taken));
+    const parsed: ForgeAccount = ForgeAccount.parse({ id, kind: "forge", forge, host: resolved, tool: base.tool, user: account ? user.trim() : identity?.user ?? "", ...(awsProfile && { awsProfile }), author });
+    if (await onSave(parsed)) onClose();
+    else throw new Error("The account could not be saved. Review the account settings and try again.");
+  });
   return (
     <Dialog
-      open={open}
-      onOpenChange={(o) => !o && onClose()}
-      title="Add a Git hosting account"
-      description={forge === "git" ? `${appName} uses your configured Git credentials to push branches.` : `${appName} uses it to push branches and open pull requests. You log in right after adding it.`}
+      open
+      onOpenChange={(o) => !o && !save.busy && onClose()}
+      title={account ? "Edit Git hosting account" : "Add a Git hosting account"}
+      description={forge === "git" ? "Uses your configured Git credentials." : forge === "codecommit" ? "Uses the selected AWS CLI profile." : account ? undefined : "Sign in with the forge tool after adding the account."}
       width={480}
       footer={<>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="primary" disabled={!valid} onClick={() => {
-          onAdd({ id, kind: "forge", forge, host: server, tool: base.tool, user: user.trim(), author: { name: name.trim(), email: email.trim() } });
-          onClose();
-        }}>Add account</Button>
+        <Button disabled={save.busy} onClick={onClose}>Cancel</Button>
+        <Button variant="primary" loading={save.busy} disabled={!valid || save.busy || defaults.loading} onClick={() => void save.run()}>{account ? "Save" : "Add account"}</Button>
       </>}
     >
-      <Select label="Service" value={forge} onValueChange={(v) => { if (v) setForge(v as SupportedForge); }}
-        options={Object.entries(forges).map(([value, { label }]) => ({ value, label }))} />
-      <TextField label="Username" value={user} onValueChange={setUser} placeholder={`your ${base.label} username`} autoFocus />
-      <TextField label="Server" value={host} onValueChange={setHost} required={forge === "git"} placeholder={base.host || "git.example.com"} description="For a company or self-hosted server, enter its address, for example git.example.com." mono />
+      <Select label="Service" value={forge} disabled={save.busy} onValueChange={(v) => {
+        const next: ForgeKind | undefined = ForgeKind.safeParse(v).data;
+        if (next && next !== forge) { setForge(next); setHost(""); setUser(""); }
+      }} options={Object.entries(forgeServices).map(([value, { label }]) => ({ value, label }))} />
+      {(forge !== "codecommit" || account) && <TextField label="Server" disabled={save.busy} value={host} onValueChange={setHost}
+        required={forge === "git"} placeholder={base.host || (forge === "git" ? "git.example.com" : undefined)} mono />}
+      {forge === "codecommit" && <TextField label="AWS profile" disabled={save.busy} value={profile} onValueChange={setProfile} required mono />}
+      {account && <TextField label="Username" disabled={save.busy} value={user} onValueChange={setUser} />}
       <div className={s.pair}>
-        <TextField label="Commit author name" value={name} onValueChange={setName} />
-        <TextField label="Commit author email" value={email} onValueChange={setEmail} type="email" />
+        <TextField label="Commit author name" disabled={save.busy} value={name ?? defaults.data?.author.name ?? ""} onValueChange={setName} />
+        <TextField label="Commit author email" disabled={save.busy} value={email ?? defaults.data?.author.email ?? ""} onValueChange={setEmail} type="email" />
       </div>
-      {taken.includes(id) && <ErrorText error={`An account called ${id} already exists.`} />}
+      <ErrorText error={save.error ?? defaults.error} />
     </Dialog>
   );
 }
@@ -312,18 +328,10 @@ export function Settings() {
   const settings = useGlobalFile("settings", () => call("getSettings"), (body) => call("putSettings", { body }), (value) => SettingsSchema.safeParse(value).success);
   const accounts = useGlobalFile("accounts", () => call("getAccounts"), (body) => call("putAccounts", { body }));
   const status = useData(() => call("getStatus"), []);
-  const themes = useData(() => call("listThemes"), [], (message) => message.type === "configuration.changed" && message.kind === "themes");
-  const themeInput = useRef<HTMLInputElement>(null);
-  const importTheme = useAction(async (file: File) => {
-    const id: string = file.name.replace(/\.json$/i, "");
-    const theme: ReturnType<typeof Theme.safeParse> = Theme.safeParse(JSON.parse(await file.text()));
-    if (!theme.success) throw new Error(theme.error.issues.map(({ path, message }) => [path.join("."), message].filter(Boolean).join(" ")).join("\n"));
-    await call("putTheme", { params: { id }, body: theme.data });
-    themes.reload();
-  });
   const [checks, setChecks] = useState<RouteResult<"checkPrerequisites">>();
   const [disableDialog, setDisableDialog] = useState(false);
-  const [addForge, setAddForge] = useState(false);
+  const [forgeDialog, setForgeDialog] = useState<ForgeAccount | "new">();
+  const [pendingLogin, setPendingLogin] = useState<string>();
   const [showUnavailable, setShowUnavailable] = useState(false);
   const [active, setActive] = useState<string>(sections[0]!.id);
   const actualProtected: boolean = settings.current?.protectedMode ?? false;
@@ -372,15 +380,23 @@ export function Settings() {
                 : <p className={s.groupText}>No AI tools yet. The ones you log in to on this computer show up here on their own.</p>}
               {harnessColors && showUnavailable && <ComingSoonTools {...harnessColors} />}
             </Card>
-            <Card title="Git hosting" actions={<Button size="sm" icon={<PlusIcon />} disabled={!connected || !accounts.value || accounts.saving} onClick={() => setAddForge(true)}>Add account</Button>}>
+            <Card title="Git hosting" actions={<Button size="sm" icon={<PlusIcon />} disabled={!connected || !accounts.value || accounts.saving} onClick={() => setForgeDialog("new")}>Add account</Button>}>
               {(accounts.current?.accounts ?? []).some(({ kind }) => kind !== "model")
-                ? <LoginControls accounts={accounts.current?.accounts ?? []} kind="tool" />
+                ? <LoginControls accounts={accounts.current?.accounts ?? []} kind="tool" pendingLogin={pendingLogin}
+                  onLoginStarted={() => setPendingLogin(undefined)} onEdit={setForgeDialog} />
                 : <p className={s.groupText}>Add an account, on a public service or on your own server, to push branches and open pull requests.</p>}
             </Card>
           </div>
         </Section>
-        <AddForgeAccount open={addForge} onClose={() => setAddForge(false)} taken={(accounts.value?.accounts ?? []).map(({ id }) => id)}
-          onAdd={(account) => { if (accounts.value) void accounts.commit({ ...accounts.value, accounts: [...accounts.value.accounts, account] }); }} />
+        {forgeDialog && <ForgeAccountDialog account={forgeDialog === "new" ? undefined : forgeDialog} onClose={() => setForgeDialog(undefined)}
+          taken={(accounts.value?.accounts ?? []).map(({ id }) => id)} onSave={async (account) => {
+            if (!accounts.value) return false;
+            const next: Account[] = forgeDialog === "new" ? [...accounts.value.accounts, account] : accounts.value.accounts.map((entry) => entry.id === account.id ? account : entry);
+            if (!await accounts.commit({ accounts: next })) return false;
+            if (forgeDialog === "new" && (account.tool === "gh" || account.tool === "glab")) setPendingLogin(account.id);
+            accounts.reload();
+            return true;
+          }} />}
 
         {settings.feedback}
         {value && <>
@@ -430,15 +446,7 @@ export function Settings() {
                 options={[{ value: "system", label: "System" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} />
               <Select label="Theme" value={prefs.theme}
                 onValueChange={(theme) => theme && update({ ...value, ui: { ...value.ui, theme } })}
-                options={[...builtInThemes, ...(themes.data ?? []).map(({ id, theme }) => ({ value: id, label: theme.name }))]} />
-              <Button loading={importTheme.busy} disabled={!connected} onClick={() => themeInput.current?.click()}>Import theme</Button>
-              <input ref={themeInput} type="file" accept=".json,application/json" hidden onChange={(event) => {
-                const file: File | undefined = event.currentTarget.files?.[0];
-                event.currentTarget.value = "";
-                if (file) void importTheme.run(file);
-              }} />
-              <ErrorText error={themes.error} />
-              <ErrorText error={importTheme.error} />
+                options={builtInThemes} />
             </div>
           </Section>
         </>}

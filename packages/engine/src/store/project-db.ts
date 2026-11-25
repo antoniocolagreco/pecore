@@ -181,8 +181,8 @@ export class ProjectDb {
       case "attempt.started": {
         const p = e.payload;
         run(
-          `INSERT INTO attempts (id, node_run_id, profile, connector, harness_version, connector_version, account, os_user, session_group, started_at)
-           VALUES (@id, @nodeRun, @profile, @connector, @harness, @connectorVersion, @account, @osUser, @group, @at)`,
+          `INSERT INTO attempts (id, node_run_id, profile, connector, harness_version, connector_version, account, os_user, agent_id, agent_context, started_at)
+           VALUES (@id, @nodeRun, @profile, @connector, @harness, @connectorVersion, @account, @osUser, @agentId, @agentContext, @at)`,
           {
             id: p.attemptId,
             nodeRun: p.nodeRunId,
@@ -192,7 +192,8 @@ export class ProjectDb {
             connectorVersion: p.connectorVersion,
             account: p.account,
             osUser: p.osUser,
-            group: p.sessionGroup,
+            agentId: p.agentId ?? null,
+            agentContext: p.agentContext ?? null,
             at,
           },
         );

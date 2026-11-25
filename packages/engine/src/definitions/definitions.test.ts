@@ -90,6 +90,16 @@ describe("recipe check", () => {
     expect(checkRecipe(recipe({ ...local, nodes: { ...local.nodes, lint: { use: "eslint" } } }), nodes, true)).toContainEqual({ path: "nodes.lint.use", message: "node eslint not found" });
   });
 
+  it("accepts card and context overrides only on agent steps", () => {
+    const valid: Recipe = recipe({ ...local, nodes: { ...local.nodes, code: { use: "builder", agentId: "reviewer", agentContext: "isolated" } } });
+    expect(checkRecipe(valid, nodes, false)).toEqual([]);
+    const invalid: Recipe = recipe({ ...local, nodes: { ...local.nodes, lint: { use: "lint", agentId: "reviewer", agentContext: "isolated" } } });
+    expect(checkRecipe(invalid, nodes, false)).toEqual([
+      { path: "nodes.lint.agentId", message: "lint is not an agent node" },
+      { path: "nodes.lint.agentContext", message: "lint is not an agent node" },
+    ]);
+  });
+
   it("rejects an edge on an outcome the node does not produce, and allows stale only with requires", () => {
     const edges = [...local.edges, { from: "code", on: "stale", to: "lint" }];
     expect(checkRecipe(recipe({ ...local, edges }), nodes, true)).toContainEqual({ path: "edges.5.on", message: "stale is not an outcome of code" });
@@ -160,6 +170,16 @@ describe("phase 1 gate: shipped templates", () => {
     expect(lib.errors).toEqual([]);
     expect(lib.nodes.size).toBeGreaterThan(0);
     expect(lib.recipes.has("feature-to-pr")).toBe(true);
+  });
+
+  it("ships independent sessions for reviewers and shared sessions for the other agents", async () => {
+    const { nodes } = await loadTemplates(shippedTemplates);
+    const contexts: [string, string][] = [...nodes.values()].flatMap((node): [string, string][] =>
+      node.kind === "agent" ? [[node.name, node.agentContext]] : []);
+    expect(contexts.sort(([a], [b]) => a.localeCompare(b))).toEqual([
+      ["approver", "isolated"], ["builder", "shared"], ["code-reviewer", "isolated"],
+      ["resolve-rebase-conflicts", "shared"], ["spec-writer", "shared"], ["tests-writer", "shared"], ["write-pr", "shared"],
+    ]);
   });
 });
 describe("instantiate", () => {

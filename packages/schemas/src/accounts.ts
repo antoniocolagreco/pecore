@@ -14,15 +14,28 @@ export const ModelAccount = z
   })
   .strict();
 
+export const ForgeKind = z.enum(["github", "gitlab", "codecommit", "git"]);
+export type ForgeKind = z.infer<typeof ForgeKind>;
+export const forgeServices = {
+  github: { host: "github.com", tool: "gh", label: "GitHub" },
+  gitlab: { host: "gitlab.com", tool: "glab", label: "GitLab" },
+  codecommit: { host: "", tool: "aws", label: "AWS CodeCommit" },
+  git: { host: "", tool: "git", label: "Private Git server" },
+} as const;
+
+export const CommitAuthor = z.object({ name: z.string(), email: z.union([z.email(), z.literal("")]) }).strict();
+export type CommitAuthor = z.infer<typeof CommitAuthor>;
+
 export const ForgeAccount = z
   .object({
     id: AccountId,
     kind: z.literal("forge"),
-    forge: z.enum(["github", "gitlab", "codecommit", "git"]),
+    forge: ForgeKind,
     host: z.string().min(1),
     tool: z.enum(["gh", "glab", "aws", "git"]),
-    user: z.string().min(1),
-    author: z.object({ name: z.string().min(1), email: z.email() }).strict(),
+    user: z.string(),
+    awsProfile: z.string().trim().min(1).optional(),
+    author: CommitAuthor,
   })
   .strict();
 
@@ -44,6 +57,17 @@ export const Account = z.discriminatedUnion("kind", [ModelAccount, ForgeAccount,
 export type Account = z.infer<typeof Account>;
 export type ModelAccount = z.infer<typeof ModelAccount>;
 export type ForgeAccount = z.infer<typeof ForgeAccount>;
+
+export function codeCommitProfile(account: ForgeAccount): string {
+  return account.awsProfile ?? (account.user || "default");
+}
+
+export function nextForgeAccountId(tool: ForgeAccount["tool"], hint: string, taken: ReadonlySet<string>): string {
+  const base: string = `${tool}-${hint.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "account"}`;
+  let id: string = base;
+  for (let suffix: number = 2; taken.has(id); suffix++) id = `${base}-${suffix}`;
+  return id;
+}
 export type ServiceAccount = z.infer<typeof ServiceAccount>;
 
 export const Accounts = z

@@ -1,9 +1,9 @@
-import { builtInAgentColor, builtInAgentNames, harnesses } from "@pecore/schemas";
+import { agentKindColor, builtInAgentNames, defaultAgentId, harnesses } from "@pecore/schemas";
 import type { ModelAccount, NodeAgent } from "@pecore/schemas";
 import type { CSSProperties } from "react";
 import { Link } from "react-router";
 import { Badge, Card } from "../ds/feedback";
-import { SparkIcon } from "../ds/icons";
+import { LockIcon, SparkIcon } from "../ds/icons";
 import s from "./AgentCard.module.css";
 
 export function AgentCard({ agent, account, to }: {
@@ -12,11 +12,14 @@ export function AgentCard({ agent, account, to }: {
   to?: string;
 }) {
   const harness: string = harnesses.find(({ id }) => id === account?.connector)?.name ?? account?.connector ?? "No harness";
-  const color: string = builtInAgentNames.has(agent.id) && agent.color === builtInAgentColor ? "var(--agent-kind-color)" : agent.color;
+  const color: string = agent.id === defaultAgentId && agent.color === agentKindColor ? "var(--agent-kind-color)" : agent.color;
   const style: CSSProperties = { "--agent-color": color } as CSSProperties;
+  const protectedAgent: boolean = builtInAgentNames.has(agent.id);
+  const protectionLabel: string = "Cannot be deleted";
   const contents = <Card className={s.card}>
     <header className={s.header}>
       <h2 title={agent.name}>{agent.name}</h2>
+      {protectedAgent && <span className={s.lock} role="img" aria-label={protectionLabel} title={protectionLabel}><LockIcon size="md" /></span>}
     </header>
     <div className={s.art}>
       <div className={s.emblem} aria-hidden="true"><SparkIcon size="md" /></div>
@@ -34,6 +37,6 @@ export function AgentCard({ agent, account, to }: {
   </Card>;
 
   return to
-    ? <Link className={s.entry} style={style} to={to} aria-label={agent.name}>{contents}</Link>
+    ? <Link className={s.entry} style={style} to={to} aria-label={protectedAgent ? `${agent.name}, ${protectionLabel}` : agent.name}>{contents}</Link>
     : <div className={s.entry} style={style}>{contents}</div>;
 }

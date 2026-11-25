@@ -154,7 +154,7 @@ describe("auto-setup", () => {
     const app = await s.start();
     const catalog = await app.call("getAgents");
     expect(catalog.value.agents).toMatchObject([
-      { id: "assistant", name: "Assistant", color: "#68389A", model: { account: "codex", model: "gpt-9", effort: "medium" } },
+      { id: "assistant", name: "Assistant", color: "#FFFFFF", model: { account: "codex", model: "gpt-9", effort: "medium" } },
       { id: "agent-default", name: "Default Agent", color: "#68389A", model: { account: "codex", model: "gpt-9", effort: "medium" } },
     ]);
     for (const card of catalog.value.agents) {
@@ -230,7 +230,7 @@ describe("auto-setup", () => {
       tracking: { profiles: [] },
     });
     expect(s.notices).toEqual([]);
-    expect((await app.call("getAgents")).value.agents).toMatchObject([{ name: "Assistant", color: "#68389A", model: null }, { name: "Default Agent", color: "#68389A", model: null }]);
+    expect((await app.call("getAgents")).value.agents).toMatchObject([{ name: "Assistant", color: "#FFFFFF", model: null }, { name: "Default Agent", color: "#68389A", model: null }]);
     expect(await app.call("getSetup")).toEqual({
       harnesses: [
         { connector: "claude-code", installed: true, version: "2.1.400", loggedIn: false },

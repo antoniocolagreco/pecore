@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef } from "react";
 import { BaseEdge, MarkerType, Position, ReactFlow } from "@xyflow/react";
 import type { Edge, EdgeProps, Node, ReactFlowInstance } from "@xyflow/react";
-import { Node as NodeDefinition, Recipe } from "@pecore/schemas";
-import type { JobView, NodeRunView } from "@pecore/schemas";
+import { defaultAgentId, Node as NodeDefinition, Recipe } from "@pecore/schemas";
+import type { JobView, NodeAgent, NodeRunView } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { DefinitionIcon, useDefinitionIcons } from "./DefinitionIcon";
-import { BoundaryCard, NodeCard, recipeNodeKind, useDefaultNodeAgent } from "./NodeCard";
+import { BoundaryCard, NodeCard, recipeNodeKind, useNodeAgents } from "./NodeCard";
 import { templateTitle } from "./templateTitle";
 import { nodeRunState, StateLabel, toneColor } from "./states";
 import type { Tone } from "./states";
@@ -102,7 +102,7 @@ export function JobGraph({ recipe, definitions, runs, selected, onSelect }: {
 }) {
   const connected: boolean = useConnected();
   const icons = useDefinitionIcons();
-  const defaultAgent = useDefaultNodeAgent();
+  const agents: NodeAgent[] | undefined = useNodeAgents();
   const { back, positions } = useMemo(() => arrange(recipe), [recipe]);
   const latest: Map<string, NodeRunView> = latestRuns(runs);
   const backTargets = new Set<string>([...back].map((index) => recipe.edges[index]!.to));
@@ -126,7 +126,7 @@ export function JobGraph({ recipe, definitions, runs, selected, onSelect }: {
       position: recipe.layout?.[id] ?? positions.get(id)!,
       data: { label: <>
         <NodeCard icon={<DefinitionIcon icons={icons.data} type="node" name={definition.use} selected={node?.icon} size="lg" />}
-          title={templateTitle(definition.use)} kind={recipeNodeKind(node?.kind)} agent={defaultAgent} />
+          title={templateTitle(definition.use)} kind={recipeNodeKind(node?.kind)} agent={agents?.find(({ id }) => id === (definition.agentId ?? defaultAgentId))} />
         <div className={s.caption}>
           <StateLabel info={info} />
           {templateTitle(id) !== templateTitle(definition.use) && <small title={templateTitle(id)}>{templateTitle(id)}</small>}

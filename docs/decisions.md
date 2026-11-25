@@ -367,3 +367,15 @@
 - Decision: when no profile is set, the Assistant uses the first profile of the `standard` tier: the tool's default model with middle effort. "Auto-configured model" saves nothing and is resolved at each use. A one-time migration clears the profile that auto-setup had saved.
 - Why: the most expensive model at maximum effort was a costly default for chatting and configuring the app.
 - Replaces: the `frontier` profile as the Assistant's default.
+
+## 2026-11-25: Each agent has a session per job
+
+- Decision: Agent context defaults to Shared and can be set to Isolated in an agent template or overridden in a recipe step. A recipe step can assign its own agent card. Shared runs continue the card's conversation within the job. Isolated runs use a fresh conversation and leave the Shared one untouched. Changing account, model or effort starts a new session on the next node. Shipped agent reviewers use Isolated.
+- Why: related steps can build on the same agent's work while reviewers assess it independently.
+- Replaces: Resume session on a node and the recipe step's named session group.
+
+## 2026-11-25: Discover Git hosting accounts at startup
+
+- Decision: Add missing GitHub, GitLab and CodeCommit accounts from the app user's forge CLI sessions. Manual accounts ask for the service and its server or AWS profile. Author details start with global Git settings. GitHub and GitLab fill the username after login. Account settings can be edited afterwards.
+- Why: The CLIs already know the authenticated identities and Git already knows the commit author.
+- Replaces: Entering every forge account, username and commit author by hand.

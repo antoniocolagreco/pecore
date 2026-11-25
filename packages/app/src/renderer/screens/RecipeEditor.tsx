@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import type { Connection, XYPosition } from "@xyflow/react";
-import { EdgePort, HumanInterface, humanInterfaces, KnowledgeFileName, Name, Outcome, ProjectId, RecipeEnd, RecipeEndResult } from "@pecore/schemas";
-import type { DefinitionEntry } from "@pecore/schemas";
+import { AgentContext, assistantAgentId, builtInAgentNames, defaultAgentId, EdgePort, HumanInterface, humanInterfaces, KnowledgeFileName, Name, Outcome, ProjectId, RecipeEnd, RecipeEndResult } from "@pecore/schemas";
+import type { DefinitionEntry, NodeAgent } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { defaultDefinitionIcon, definitionIconName, DefinitionIcon, DefinitionIconField, useDefinitionIcons } from "../components/DefinitionIcon";
+import { AgentContextField } from "../components/AgentFields";
 import { restorePageScroll } from "../components/usePageScroll";
 import { ErrorText, Page } from "../components/ui";
 import { Button, IconButton } from "../ds/button";
@@ -21,7 +22,7 @@ import { DefinitionErrors, DeleteTemplateButton, definitionUrl, object, parseDra
 import type { NewDefinition } from "./NodeEditor";
 import { RecipeGraph } from "./RecipeGraph";
 import type { RecipeCanvas, RecipeGraphLink, RecipeGraphNode } from "./RecipeGraph";
-import { BoundaryCard, NodeCard, RecipeNodeKindBadge, recipeNodeKind, useDefaultNodeAgent } from "../components/NodeCard";
+import { BoundaryCard, NodeCard, RecipeNodeKindBadge, recipeNodeKind, useNodeAgents } from "../components/NodeCard";
 import { RecipePalette } from "./RecipePalette";
 import type { PaletteNode } from "./RecipePalette";
 import { arrangeRecipe, freeRecipeSlot, recipeEnd, recipeLayout, recipeStart, snapRecipePosition, withRecipeBoundaries } from "./recipeLayout";
@@ -61,7 +62,8 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
     ? call("listDefinitions", { query: { dir: knowledgeDir } }) : Promise.resolve([]),
   [knowledgeDir], (event) => event.type === "definition.changed" && event.path.startsWith(knowledgeDir + "/"));
   const icons = useDefinitionIcons();
-  const defaultAgent = useDefaultNodeAgent();
+  const agents: NodeAgent[] | undefined = useNodeAgents();
+  const defaultAgent: NodeAgent | undefined = agents?.find(({ id }) => id === defaultAgentId);
   const duplicate = useAction(async () => {
     const source = parseDraft(file.content);
     if (!source || file.dirty) return;
@@ -116,6 +118,14 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
   const definition: DefinitionEntry | undefined = nodeDefinitions.get(string(selectedNode.use));
   const nodeValue = object(definition?.value);
   const selectedKind = recipeNodeKind(nodeValue.kind);
+  const selectedAgentId: string = string(selectedNode.agentId) || defaultAgentId;
+  const agentOptions: Option[] = [
+    { value: defaultAgentId, label: builtInAgentNames.get(defaultAgentId)! },
+    ...(agents ?? []).filter(({ id }) => id !== assistantAgentId && id !== defaultAgentId).map(({ id, name }) => ({ value: id, label: name })),
+  ];
+  if (!agentOptions.some(({ value }) => value === selectedAgentId)) agentOptions.push({ value: selectedAgentId, label: `${selectedAgentId} (Unavailable)` });
+  const templateContext: AgentContext = AgentContext.safeParse(nodeValue.agentContext).data ?? "shared";
+  const stepContext: AgentContext | undefined = AgentContext.safeParse(selectedNode.agentContext).data;
   const recipeName: string = string(draft?.name);
   const projectRecipes: unknown = projectConfig?.recipes;
   const knowledgeEditable: boolean = projectFile.editable && !!projectConfig &&
@@ -167,11 +177,12 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
     const title: string = templateTitle(name) || stepTitle;
     const definitionValue = object(nodeDefinitions.get(name)?.value);
     const kind = recipeNodeKind(definitionValue.kind);
+    const agentId: string = string(object(value).agentId) || defaultAgentId;
     const showStepTitle: boolean = stepTitle !== title && stepTitle.toLowerCase() !== kind;
     return {
       id,
       label: <>
-        <NodeCard icon={<DefinitionIcon icons={icons.data} type="node" name={name} selected={string(definitionValue.icon)} size="lg" />} title={title} kind={kind} agent={defaultAgent} />
+        <NodeCard icon={<DefinitionIcon icons={icons.data} type="node" name={name} selected={string(definitionValue.icon)} size="lg" />} title={title} kind={kind} agent={agents?.find(({ id }) => id === agentId)} />
         {showStepTitle && <small className={s.stepCaption} title={stepTitle}>{stepTitle}</small>}
       </>,
       invalid: highlight("nodes." + id),
@@ -347,10 +358,18 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
               {selected ? <>
                 <div className={s.inspectorMeta}>
                   <DefinitionIcon icons={icons.data} type="node" name={string(selectedNode.use)} selected={string(nodeValue.icon)} size="sm" />
-                  {selectedKind && <RecipeNodeKindBadge kind={selectedKind} agent={defaultAgent} />}
+                  {selectedKind && <RecipeNodeKindBadge kind={selectedKind} agent={agents?.find(({ id }) => id === selectedAgentId)} />}
                   {humanInterface && <span>{humanInterfaces[humanInterface].label}</span>}
                   {definition && file.editable && <Link to={definitionUrl("node", definition.path)}>Edit definition</Link>}
                 </div>
+                {selectedKind === "agent" && <>
+                  <Select label="Agent card" value={selectedAgentId} options={agentOptions} disabled={!editable || !agents}
+                    onValueChange={(id) => { if (id) updateNode("agentId", id === defaultAgentId ? undefined : id); }} />
+                  <AgentContextField value={stepContext ?? templateContext} disabled={!editable}
+                    description={stepContext === undefined ? "Uses the node template setting." : "Overrides the node template setting."}
+                    onChange={(value) => updateNode("agentContext", value)} />
+                  {stepContext !== undefined && <Button variant="ghost" disabled={!editable} onClick={() => updateNode("agentContext", undefined)}>Use template context</Button>}
+                </>}
                 {!!inspectorOutcomes.length && <div className={s.inspectorOutcomes}>
                   <strong>Outcomes</strong>
                   <span>{inspectorOutcomes.join(", ")}</span>
@@ -385,7 +404,7 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
                     </div>
                     <NumberField label="Max rounds" min={0} fullWidth disabled={!editable} value={typeof edge.maxRounds === "number" ? edge.maxRounds : 0}
                       unit={typeof edge.maxRounds === "number" ? undefined : "No limit"}
-                      labelAction={<FieldHelp title="Max rounds">How many times this arrow can send the job here. When it is reached, the job pauses and asks you whether to allow more rounds or end it. 0 means no limit; Max node runs still applies.</FieldHelp>}
+                      labelAction={<FieldHelp title="Max rounds">How many times this arrow can send the job here. When it is reached, the job pauses and asks you whether to allow more rounds or end it. 0 means no limit.</FieldHelp>}
                       onValueChange={(next) => update({ edges: edges.map((item, i) => i === index ? { ...edge, maxRounds: next ? next : undefined } : item) })} />
                   </div>;
                 })}
@@ -409,9 +428,6 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
                   onValueChange={(description) => update({ description })} className={s.recipeDescription} />
                 <DefinitionIconField icons={icons.data} type="recipe" name={string(draft.name)} value={string(draft.icon)} disabled={!editable}
                   onChange={(icon) => update({ icon })} />
-                <NumberField label="Max node runs" min={1} fullWidth value={typeof draft.maxNodeRuns === "number" ? draft.maxNodeRuns : null}
-                  labelAction={<FieldHelp title="Max node runs">The most steps one job can run, repeated steps included. When a job reaches it, the job pauses and asks you whether to allow more steps or end it. It stops a loop, for example between review and code, from running forever.</FieldHelp>}
-                  disabled={!editable} onValueChange={(next) => update({ maxNodeRuns: next ?? undefined })} />
               </>}
             </fieldset>}
           </Card>

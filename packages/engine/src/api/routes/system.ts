@@ -1,4 +1,7 @@
 import type { PrerequisiteView } from "@pecore/schemas";
+import { CommitAuthor } from "@pecore/schemas";
+import { codeCommitIdentity } from "../../accounts/forges";
+import { readGitAuthor } from "../../workdir/git-as";
 import { checkPrerequisites } from "../../home/prerequisites";
 import type { Prerequisite } from "../../home/prerequisites";
 import type { Engine } from "../../main";
@@ -30,6 +33,10 @@ export function systemHandlers(engine: Engine) {
       return { ok: true };
     },
     listLogins: async () => engine.loginViews(),
+    getForgeAccountDefaults: async ({ query }) => {
+      const [git, codeCommit] = await Promise.all([readGitAuthor(), query.awsProfile ? codeCommitIdentity(query.awsProfile) : null]);
+      return { author: CommitAuthor.safeParse(git).data ?? { name: git.name, email: "" }, codeCommit };
+    },
     startLogin: async ({ body }) => ({ loginId: await conflictOn(() => engine.startLogin(body.account, body.osUser)) }),
     loginCode: async ({ params, body }) => {
       await conflictOn(async () => engine.sendLoginCode(params.id, body.code));
@@ -43,11 +50,5 @@ export function systemHandlers(engine: Engine) {
     checkPrerequisites: async (): Promise<PrerequisiteView[]> => (await prerequisites(engine)).map((p) => ({ ...p, setting: prerequisiteSetting[p.tool] ?? null })),
     getSetup: async () => engine.setupView(),
     startSetupLogin: async ({ params }) => ({ loginId: await conflictOn(() => engine.startSetupLogin(params.connector)) }),
-    listThemes: async () => engine.configuration.themes(),
-    putTheme: ({ params: { id }, body }) => engine.withConfiguration(async () => {
-      engine.configuration.setTheme(id, body);
-      engine.configurationChanged("themes");
-      return { id, theme: body };
-    }),
   } satisfies Partial<Handlers>;
 }

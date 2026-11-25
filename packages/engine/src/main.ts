@@ -16,6 +16,7 @@ import type { CompleteProjectImportBody, ExportProjectBody, ExportProjectResult,
 import { AgentServices, protectedUser, spawnFor } from "./accounts/agents";
 import type { AgentPaths, LoginInfo } from "./accounts/agents";
 import { LoginRunner } from "./accounts/login";
+import { discoverForgeAccounts, forgeLoginUser, newForgeAccounts } from "./accounts/forges";
 import { identityOk } from "./runners/forge-env";
 import { loadProject, validateGlobal } from "./definitions/load";
 import type { DefinitionError, Global } from "./definitions/load";
@@ -54,7 +55,7 @@ import { InvalidArchive } from "./share/archive";
 import { beginImport, previewImport } from "./share/import";
 import { reviewProjectContents } from "./share/review";
 
-export type EngineOptions = { home: string; templates: string; downloads?: string; development?: boolean; agents?: AgentPaths; checkLogins?: boolean; detectRuntime?: () => Promise<Settings["servicesRuntime"]>; admin?: (script: string) => Promise<void>; orders?: OrderSink; notify?: (notification: Pick<Notification, "kind" | "title" | "body">) => void };
+export type EngineOptions = { home: string; templates: string; downloads?: string; development?: boolean; agents?: AgentPaths; checkLogins?: boolean; discoverForges?: boolean; detectRuntime?: () => Promise<Settings["servicesRuntime"]>; admin?: (script: string) => Promise<void>; orders?: OrderSink; notify?: (notification: Pick<Notification, "kind" | "title" | "body">) => void };
 
 export class EngineStartError extends Error {
   constructor(readonly errors: DefinitionError[]) {
@@ -142,7 +143,7 @@ export class Engine extends EventEmitter {
       return null;
     });
     this.agentChats = new AgentChats(this, this.chats, (message) => this.live(message));
-    await this.runAutoSetup();
+    await this.runAutoSetup(this.opts.discoverForges === true);
     if (this.opts.detectRuntime && this.settings.servicesRuntime === null) {
       this.runtimeDetection = this.detectServicesRuntime(this.opts.detectRuntime).catch((error: unknown) => console.error("services runtime detection:", error));
     }
@@ -244,22 +245,32 @@ export class Engine extends EventEmitter {
     return result;
   }
 
-  private async runAutoSetup(): Promise<void> {
+  private async runAutoSetup(discoverForges: boolean = false): Promise<void> {
     const agents: AgentServices | null = this.agents;
     if (this.shuttingDown) return;
     await this.withConfiguration(async () => {
-      const result = agents && this.opts.checkLogins !== false
-        ? await autoSetup(this.configuration, agents).catch((error: unknown) => { console.error("auto-setup:", error); return null; }) : null;
+      const [result, forgeLogins] = await Promise.all([
+        agents && this.opts.checkLogins !== false
+          ? autoSetup(this.configuration, agents).catch((error: unknown) => { console.error("auto-setup:", error); return null; }) : null,
+        discoverForges ? discoverForgeAccounts() : [],
+      ]);
+      const accounts: Accounts = this.configuration.accounts();
+      const forges: ForgeAccount[] = await newForgeAccounts(accounts, forgeLogins);
+      if (forges.length) this.configuration.write({ accounts: { accounts: [...accounts.accounts, ...forges] } });
       if (result) this.setupHarnesses = result.harnesses;
       const cardsChanged: boolean = ensureBuiltInAgents(this.configuration, true);
       const changes = result?.changes;
-      if (!changes && !cardsChanged) return;
+      if (!changes && !cardsChanged && !forges.length) return;
       await this.reloadGlobal();
       if (changes) {
         this.notify({ kind: "auto-setup", title: `${appName} setup`, body: changes.message });
         for (const kind of changes.changed) this.configurationChanged(kind);
       }
       if (cardsChanged) this.configurationChanged("agents");
+      if (forges.length) {
+        this.notify({ kind: "auto-setup", title: `${appName} setup`, body: `Added ${forges.length} Git hosting ${forges.length === 1 ? "account" : "accounts"}.` });
+        if (!changes?.changed.includes("accounts")) this.configurationChanged("accounts");
+      }
     });
   }
 
@@ -454,7 +465,19 @@ export class Engine extends EventEmitter {
     const a = this.account(id);
     if (a.kind !== "forge") throw new Error(`account ${id} has no tool login in ${appName}; log in with ${a.kind === "service" ? a.tool : "the harness"} and recheck`);
     const loginId = `tool:${id}`;
-    await this.loginRunner.tool(loginId, a, () => this.recheckAccount(id));
+    await this.loginRunner.tool(loginId, a, async () => {
+      if (!a.user) {
+        const user: string | undefined = await forgeLoginUser(a);
+        if (user) await this.withConfiguration(async () => {
+          const account: Account | undefined = this.accounts.accounts.find((entry) => entry.id === id);
+          if (account?.kind !== "forge" || account.user || account.tool !== a.tool || account.host !== a.host) return;
+          this.configuration.write({ accounts: { accounts: this.accounts.accounts.map((entry) => entry.id === id ? { ...account, user } : entry) } });
+          await this.reloadGlobal();
+          this.configurationChanged("accounts");
+        });
+      }
+      return this.recheckAccount(id);
+    });
     return loginId;
   }
 
@@ -504,7 +527,7 @@ export class Engine extends EventEmitter {
     this.live({ type: "definition.changed", path, sha256 });
   }
 
-  configurationChanged(kind: keyof Global | "themes"): void {
+  configurationChanged(kind: keyof Global): void {
     this.live({ type: "configuration.changed", kind });
   }
 
@@ -554,8 +577,8 @@ export class Engine extends EventEmitter {
       },
       setupEnded: (state) => this.setupEnded(id, state),
       forgeAccount: (accountId) => this.accounts.accounts.find((a): a is ForgeAccount => a.kind === "forge" && a.id === accountId),
-      defaultAgent: () => this.catalogAgent(defaultAgentId),
-      defaultAgentContext: () => this.agentContext(defaultAgentId),
+      agentCard: (agentId) => this.catalogAgent(agentId),
+      agentContext: (agentId) => this.agentContext(agentId),
       live: (attemptId, line) => {
         this.emit("log", { projectId: id, attemptId, line });
         for (const event of logEvents(line)) this.live({ type: "log.line", attemptId, event });

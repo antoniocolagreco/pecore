@@ -3,7 +3,6 @@
   "description": "Check that tests fail before the fix, then deliver the fix and link its pull request on the issue.",
   "start": "spec",
   "onBaseChanged": "rebase",
-  "maxNodeRuns": 60,
   "ends": [
     { "from": "spec", "on": "rejected", "result": "not_delivered" },
     { "from": "human", "on": "reject", "result": "not_delivered" },

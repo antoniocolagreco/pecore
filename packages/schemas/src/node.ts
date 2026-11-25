@@ -93,6 +93,9 @@ export const CommandNode = z
   })
   .strict();
 
+export const AgentContext = z.enum(["shared", "isolated"]);
+export type AgentContext = z.infer<typeof AgentContext>;
+
 export const AgentNode = z
   .object({
     ...Base,
@@ -109,7 +112,7 @@ export const AgentNode = z
       })
       .strict(),
     knowledge: z.array(z.string()).default([]),
-    resume: z.boolean().default(false),
+    agentContext: AgentContext.default("shared"),
   })
   .strict();
 
@@ -209,11 +212,17 @@ function checkNode(node: z.infer<typeof CommandNode> | z.infer<typeof AgentNode>
 }
 
 const NodeShape = z.discriminatedUnion("kind", [CommandNode, AgentNode, HumanNode, SourceNode]);
-export const Node = NodeShape.superRefine((node, ctx) => {
+const NodeDefinition = NodeShape.superRefine((node, ctx) => {
   for (const issue of checkNode(node)) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
 });
+export const Node = z.preprocess((input: z.input<typeof NodeDefinition> & { resume?: unknown }) => {
+  if (!input || typeof input !== "object" || input.kind !== "agent" || !Object.hasOwn(input, "resume")) return input;
+  const current = { ...input };
+  delete current.resume;
+  return current;
+}, NodeDefinition);
 export type Node = z.infer<typeof Node>;
-export type NodeInput = z.input<typeof Node>;
+export type NodeInput = z.input<typeof NodeDefinition>;
 export type CommandNode = z.infer<typeof CommandNode>;
 export type AgentNode = z.infer<typeof AgentNode>;
 export type SourceNode = z.infer<typeof SourceNode>;

@@ -3,7 +3,6 @@
   "description": "New feature on existing code: spec, tests, code, checks, review, commit, PR",
   "start": "spec",
   "onBaseChanged": "rebase",
-  "maxNodeRuns": 60,
   "ends": [
     { "from": "spec", "on": "rejected", "result": "not_delivered" },
     { "from": "human", "on": "reject", "result": "not_delivered" },

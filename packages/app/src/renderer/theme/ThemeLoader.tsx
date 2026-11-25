@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { call } from "../api/client";
 import { useData } from "../api/hooks";
-import { applyTheme, systemMode, themeMode, themePrefs } from "./themes";
+import { applyTheme, systemMode, themePrefs } from "./themes";
 import type { Mode, ThemePrefs } from "./themes";
 
 function useSystemMode(): Mode {
@@ -16,16 +16,11 @@ function useSystemMode(): Mode {
 }
 
 export function ThemeLoader() {
-  const settings = useData(() => call("getSettings"), [], (m) => m.type === "configuration.changed" && (m.kind === "settings" || m.kind === "themes"));
-  const themes = useData(() => call("listThemes"), [], (m) => m.type === "configuration.changed" && m.kind === "themes");
+  const settings = useData(() => call("getSettings"), [], (m) => m.type === "configuration.changed" && m.kind === "settings");
   const system = useSystemMode();
   const prefs: ThemePrefs = themePrefs(settings.data?.value.ui);
   const mode: Mode = prefs.mode === "system" ? system : prefs.mode;
   const choice: string = prefs.theme;
-  useEffect(() => {
-    const theme = themes.data?.find(({ id }) => id === choice)?.theme ?? null;
-    const variant: Mode | null = themeMode(theme);
-    return applyTheme(mode, choice, variant === null || variant === mode ? theme : null);
-  }, [mode, choice, themes.data]);
+  useEffect(() => applyTheme(mode, choice), [mode, choice]);
   return null;
 }

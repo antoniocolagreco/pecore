@@ -1,3 +1,4 @@
+import { AgentContext } from "@pecore/schemas";
 import type { Account, BuiltInHarness } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
@@ -5,9 +6,25 @@ import { IconButton } from "../ds/button";
 import { Spinner } from "../ds/feedback";
 import { TextField } from "../ds/field";
 import { RefreshIcon } from "../ds/icons";
+import { FieldHelp } from "../ds/overlay";
 import { Combobox, Select } from "../ds/select";
 import { install } from "../shell/SetupBanner";
 import s from "../screens/Settings.module.css";
+
+export function AgentContextField({ value, disabled, description, onChange }: {
+  value: AgentContext;
+  disabled: boolean;
+  description?: string;
+  onChange(value: AgentContext): void;
+}) {
+  return <Select label="Agent context" value={value} disabled={disabled} description={description}
+    labelAction={<FieldHelp title="Agent context">Shared continues this agent's conversation for the job. Isolated starts a fresh conversation for this run.</FieldHelp>}
+    options={[{ value: "shared", label: "Shared" }, { value: "isolated", label: "Isolated" }]}
+    onValueChange={(next) => {
+      const context: AgentContext | undefined = AgentContext.safeParse(next).data;
+      if (context) onChange(context);
+    }} />;
+}
 
 export function harnessName(account: Account, all: Account[]): string {
   if (account.kind !== "model") return account.id;

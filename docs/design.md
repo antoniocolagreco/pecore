@@ -141,11 +141,13 @@ Settings lists its sections in the main sidebar. Fields adapt to the window widt
 
 Accounts shows each installed harness automatically. A row shows the identity when available, a visible Check button and Log in only when needed. Working accounts show “Logged in”, including OpenCode and private Git servers. OpenCode is working if it lists models. With none it shows “No models”. General Git hosting copy is service-neutral. An account row and the service picker identify the actual service.
 
+Git hosting discovers GitHub, GitLab and CodeCommit accounts at startup. A manual GitHub or GitLab account starts the forge login and saves its username on success. The author name and email come from global Git settings and can be edited.
+
 There is no Models section. The user picks provider, model and effort on the Agents page. Effort is locked until a model is chosen. It shows the chosen model's options, falls back to Default alone when none exist and resets to Default on model changes. The app loads model lists at startup and caches them. A refresh button beside Model reloads the choices. Selects and comboboxes use the same arrow and no clear button. Focus uses one ring. Loading choices shows a spinner without making the field look disabled.
 
 ### Appearance
 
-Appearance has one mode (System, Light or Dark) and one theme. System follows the operating system. Bundled themes provide light and dark versions. Import a custom theme in Settings > Appearance. It applies in the mode that matches its background.
+Appearance has one mode (System, Light or Dark) and one bundled theme. System follows the operating system. Each theme provides light and dark versions. A saved imported theme falls back to Default.
 
 The bundled themes are Default, Autumn, Spring, Summer, Winter, Woodlands and Monochrome. Woodlands takes its green palette from Everforest and uses a warm background glow. Summer uses sand backgrounds, sky-blue accents and an orange glow. The seasonal themes use lightly tinted, near-neutral panels, sidebar and controls. Monochrome uses greys, black fills with white text in Light, and grey fills with light text in Dark. Error, warning and success states retain distinct colours.
 
@@ -266,7 +268,7 @@ Store app data in SQLite tables with fields for each record. Keep files when the
 | `run/api.json`, MCP bridge token and `run/lock` | Local connection details and the engine lock |
 | System sudoers rule | Protected-mode permissions |
 
-Global configuration extends `chats.db` to reuse the engine's database connection and private file permissions. Settings, account references, profiles, ordered tier membership, agent configuration, Markdown context, auto-setup profiles and custom theme tokens have their own rows. Empty tables use defaults. The engine ignores legacy configuration files.
+Global configuration extends `chats.db` to reuse the engine's database connection and private file permissions. Settings, account references, profiles, ordered tier membership, agent configuration, Markdown context and auto-setup profiles have their own rows. Empty tables use defaults. The engine ignores legacy configuration files.
 
 Node and recipe definitions use field columns and child rows for outcomes, outputs, commands, reads, edges and other lists. Shipped templates seed the global catalog on first start and when the catalog format changes. Updated or retired shipped rows are replaced or removed, and user rows stay. A project selects shared templates or keeps its own definitions in its database. The editor and definition tools use named API resources. Zod validates all changes.
 
@@ -318,10 +320,10 @@ Fields by kind:
     *   `mergedCheck`: for delivery nodes; a command that reports whether the delivery was merged (for example `gh pr view <url> --json state --jq 'select(.state=="MERGED") | .state'`, which prints `MERGED` only when merged). Read like a probe: `done` means merged. The engine runs it periodically on `succeeded` jobs that have children (4.6).
 *   **`agent`**
     *   `prompt`: name of the saved Markdown prompt.
-    *   `agent`: legacy tier, profile and provider fields remain readable in existing definitions. Agent nodes run with Default Agent.
+    *   `agent`: legacy tier, profile and provider fields remain readable in existing definitions. The template uses Default Agent. The recipe can assign a different card to a step.
     *   The agent returns `{ "outcome": "<outcome>", "output": <value> }` in its final message. The prompt includes the schema. The outcome determines whether `output` is required and which type it holds (5.8).
     *   `knowledge`: names of the project's knowledge files the node receives, for example `["architecture.md", "naming.md"]`. Node templates are shared, so the node editor offers the knowledge file names found in all projects; each project gives its own file with that name, and a project without it gives nothing. An older entry with a glob (for example `*.md`) still matches the file names.
-    *   `resume`: `true` to resume the harness session when the node runs again in the same job.
+    *   `agentContext`: `shared` by default. `isolated` starts a separate session for each run. The shipped Code Reviewer and Approver use Isolated.
 *   **`human`**
     *   `interface`: the component the person uses to respond, from a list the app can extend:
         *   `decision` asks a question in Notifications and shows what the node reads.
@@ -386,7 +388,6 @@ A GitHub recipe can use `write-pr` to write a title and description and `github-
   "description": "New feature on existing code: spec, tests, code, checks, review, commit, PR",
   "start": "spec",
   "onBaseChanged": "rebase",
-  "maxNodeRuns": 60,
   "ends": [
     { "from": "spec", "on": "rejected", "result": "not_delivered" },
     { "from": "human", "on": "reject", "result": "not_delivered" },
@@ -445,17 +446,17 @@ Recipe fields:
 | `icon` | optional SVG icon name from `templates/icons/`, without the file extension |
 | `start` | the first node |
 | `onBaseChanged` | the node the job re-enters when its base moves (D17, 4.2) |
-| `maxNodeRuns` | cap on node runs per job (4.2) |
 | `layout` | optional node positions for the graph editor (`{ "<node id>": { "x", "y" } }`); ignored by the engine. The editor arranges a recipe without positions from left to right and snaps each node to a free grid cell when dropped. While a node moves, its arrows route from the live positions and keep any explicitly chosen sides. Arrange recalculates the positions in the draft |
 | `ends` | connections to End. Each has `from`, `on` and `result` (`succeeded`, `failed` or an existing `not_delivered` result). The editor saves any chosen sides in `sourcePort` and `targetPort`. Each reachable outcome must have exactly one connection |
 | `startPorts` | optional `sourcePort` and `targetPort` for the connection from Start |
 | `successOutcomes` | legacy list of successful `<node>:<outcome>` values for recipes saved without `ends` |
 | `nodes.<id>.use` | a node template name |
-| `nodes.<id>.params`, `nodes.<id>.agent` | step parameters and agent settings. Engine-user commands take their arguments from the node template |
+| `nodes.<id>.params`, `nodes.<id>.agent` | step parameters and legacy agent settings. Engine-user commands take their arguments from the node template |
+| `nodes.<id>.agentId` | optional agent card ID for an agent step. With no assignment, the step uses Default Agent. Assistant is reserved for its chat |
 | `nodes.<id>.reads` | the steps whose latest outputs this step receives (see above) |
 | `nodes.<id>.requires` | nodes whose latest outcome must be `passed` on the current content state (4.4) |
 | `nodes.<id>.optional` | runs only if the `spec` names it (4.2) |
-| `nodes.<id>.session` | a session group name for agent nodes. Steps of the same job with the same group and agent configuration share a harness session. A node with no group gets a new session (or its own, with `resume`). Changing the account, model or effort starts a new session. Reviewers should have no group, so they judge the code without the builder's history |
+| `nodes.<id>.agentContext` | optional Shared or Isolated override for an agent step. When absent, the step uses its node template's setting |
 | `nodes.<id>.skipWhenUnchanged` | after a base change, if the rebase was clean and the job's own changes are identical to before (same `git patch-id` of the job's diff), the node ends at once with its previous outcome instead of running, and that outcome is bound to the new content state (4.4): an approval of the same patch carries over. Used to avoid repeating reviews and human approvals; checks never use it |
 | `edges` | `from`, `on` (outcome), `to`, optional `maxRounds`. The editor can save `sourcePort` and `targetPort` (left, right, top or bottom) for each arrow |
 
@@ -498,7 +499,7 @@ The engine adds two outputs by itself: a `diff` after a node that changes files,
     *   `model`: provider, connector, login type (`subscription` or `api-key`, both configured inside the harness), the account's `email` (compared with the logged-in account, below), `maxParallel`.
     *   `forge`: forge type, host, tool (`gh`, `glab`, `aws`, `git`), the tool's account name (for example the `gh` login, the AWS profile), commit author.
     *   `service`: external service (for example Atlassian), the tool or MCP server that holds its login, the account name.
-*   Private Git servers use existing SSH or HTTPS repositories and the user's configured Git credentials. A job delivers by pushing its branch. The engine detects a merge when the target branch contains the job commit. Private Git accounts support neither repository creation nor ticket intake. Bitbucket, Codeberg, Gitea, Forgejo, SourceHut and AWS CodeCommit are candidates for future hosting support.
+*   Private Git and AWS CodeCommit deliver to existing repositories by pushing a branch. They support neither repository creation nor ticket intake. Private Git uses the user's configured Git credentials. CodeCommit uses the stored AWS CLI profile and derives its Git host from the profile's region. Legacy CodeCommit rows still use the username field as their profile reference.
 *   There are no exceptions. A service is reached only through a tool that keeps its own login (for example Jira through `acli` or the Atlassian MCP server). A service with no such tool is not supported until one exists.
 *   A harness keeps its login in a config directory, chosen through the variable named in the connector file (for example `CLAUDE_CONFIG_DIR`, `CODEX_HOME`).
     *   Normal mode: the first account of each harness uses the harness's own default directory (no variable set, so `~/.claude`, `~/.codex`): the login the user already has, with no login in <PE/CORE>. A second account of the same harness gets `PECORE_HOME/harness/<app user>/<account-id>/`, private to the app user, and needs one login there.
@@ -566,7 +567,7 @@ Final states are `succeeded`, `not_delivered`, `failed` and `stopped`; a job in 
 | `paused` | the user paused it, globally or per job, or the app quit while it ran |
 | `succeeded` | ended on an outcome listed in the recipe's `successOutcomes` (for example `pr:opened`); a base change can move it back to `running` |
 | `not_delivered` | ended on an outcome with no edge that is neither a success nor a failure (for example `spec:rejected`, `human:reject`); the outcome is shown as the reason; a base change can move it back to `running` |
-| `failed` | a node failed beyond its retries, an unrouted failure outcome ended the job (4.2), or the job hit `maxNodeRuns` and the user chose to end it |
+| `failed` | a node failed beyond its retries, an unrouted failure outcome ended the job (4.2), or the user ended the job when an edge reached its round limit |
 | `stopped` | the user pressed stop |
 
 Pause waits for the running node run to finish, then holds. Play moves a paused job back to `running` or `waiting`. On app start every job that was `running` or `waiting` is `paused` with reason `quit`; `queued` jobs stay `queued`; a pause by the user has reason `user`. A job is archived only from a final state. Archiving removes the workdir, so an archived `failed` or `stopped` job cannot be resumed; a `succeeded` or `not_delivered` job that re-enters `running` on a base change is first unarchived and its worktree recreated from its branch (4.5).
@@ -577,7 +578,7 @@ Pause waits for the running node run to finish, then holds. Play moves a paused 
 *   **One node at a time**: a job has one workdir and runs one node at a time (4.5).
 *   **Edges**: when a node run ends with an outcome, the edge `from` that node `on` that outcome starts its target. The validator rejects two edges with the same `from` and `on`.
 *   **End**: a step outcome either continues along an edge or reaches End with the result recorded in `ends`. The empty recipe goes directly from Start to End and succeeds. An unrouted outcome in an explicit recipe is a validation error. A previously saved recipe without `ends` retains its terminal rules based on `failOutcomes`, `successOutcomes` and `not_delivered`.
-*   **Rounds**: an edge with `maxRounds: n` can send the job back to its target at most `n` times. A job-wide `maxNodeRuns` caps the total number of node runs. When a cap blocks an edge, the job enters `waiting` with reason `round_limit` and asks the user: allow more rounds, or end the job as `failed`.
+*   **Rounds**. An edge with `maxRounds: n` can send the job to its target up to `n` times. When the edge reaches that limit, the job enters `waiting` with reason `round_limit`. The user can allow one more round or end the job as `failed`.
 *   **Optional nodes**: a recipe node with `optional: true` runs only if the `spec` artifact names it; otherwise it ends at once with the built-in outcome `skipped`, which the recipe must route.
 *   **Base change**: a job's base and target change only through a request, recorded as `job.base_change_requested`, in exactly three cases: its parent job's branch gets a new commit (from a node of the parent job); its parent's delivery is detected as merged (4.6); the user, the Assistant or the Project Manager asks to realign it to a branch. A job inherits its base branch from the project when it is created (or from the branch chosen at creation), and its base never moves while it works. A request is applied at once when the job is `queued`, `succeeded`, `not_delivered`, `stopped` or `failed`; otherwise it waits and is applied when the job reaches one of those states. Requests that wait are merged into one, the latest. A realign asked by the user is refused while the job is `running`, `waiting` or `paused`. Applying a request records `job.base_changed`; a job that has started then re-enters `running` at `onBaseChanged` (its worktree recreated if needed), where the rebase node moves its commits and the delivery node moves its PR or MR. If the recipe has no `onBaseChanged`, the job only shows that its base moved. Commits pushed to a branch by hand on the forge, or new commits on `baseBranch`, are not detected; the user realigns by hand.
 
@@ -738,13 +739,14 @@ The engine decides in this order:
 6.  `end_turn` with a missing or invalid output: the validation errors are sent as a new message in the same session, at most twice, each answer decided again from step 1; then `INVALID_OUTPUT`.
 7.  `max_tokens`, `max_turn_requests`, `refusal`, a connector that exits without answering, or any other error: `checkLogin`; `logged_out` gives `auth`, anything else `HARNESS_ERROR`.
 
-`quota` and `rate_limit` make the node run wait (4.7) and `auth` makes it wait for a new login (3.4); neither uses up the node's `retry`. `HARNESS_ERROR` and `TIMEOUT` use up `retry`; `INVALID_OUTPUT` is not retried, because it was already corrected twice. Every new attempt starts from the content state before the node run (4.4) with a new session.
+`quota` and `rate_limit` make the node run wait (4.7) and `auth` makes it wait for a new login (3.4). These waits preserve the node's retry budget. `HARNESS_ERROR` and `TIMEOUT` use that budget. `INVALID_OUTPUT` ends the run after two correction prompts. A retry starts from the content state before the node run (4.4) and applies the session rules below.
 
 Each built-in connector ships with recorded ACP traffic of these cases, used by its tests. A quota or rate limit error that cannot be provoked on purpose is recorded the first time it happens; until then a synthetic fixture (a recorded session with `status` changed to `rejected`, file name ending in `.synthetic.jsonl`) tests the reader, and an unrecorded error message reaches step 7.
 
-#### 5.5 Resume and timeout
+#### 5.5 Agent sessions and timeout
 
-*   A node with `resume`, or in a `session` group (3.2), resumes the session of the latest attempt of the same job, with the same profile and the same node (for `resume`) or group, that ended with a completed node run. `attempts` stores the session id (event `attempt.session_started`) and the group.
+*   Shared steps use one harness session per job and agent card. Each step continues from the latest completed Shared run for that card. A change to its account, model or effort starts a new session for the next node. A different connector or OS user also requires a fresh session.
+*   An Isolated step starts a fresh session for the run and leaves the Shared conversation untouched. An answer to an agent question continues the session of that same run. Attempts record the card, context mode and harness session ID. Historical attempts created before this change remain in the job history, and a job starts its Shared session on its next agent step.
 *   If the connector cannot resume it, a new session starts with the same prompt, and the attempt records `resumed: false`. The prompt always contains the node's inputs, so a new session has what it needs; only the conversation history is lost.
 *   The node's `timeoutSec` covers the whole attempt, correction messages included. `runners/agent.ts` owns it: `cancel()`, then `stop()` 5 seconds later.
 
@@ -781,7 +783,7 @@ Recipes can perform the external actions they define. Outside a recipe, an exter
 
 *   **Assistant:** the user's chat outside projects, including the Jobs list. It reads every project and writes only what is global: templates and projects. Project creation, settings changes, import and deletion use confirmation cards. A flagged export requires the user's decision. It treats untrusted content as data. A direct chat order authorises the requested action. It cannot do a project's work: for that it calls `delegate_to_pm`, which queues a complete, self-contained order, with any images of the current message copied, in that project's Project Manager chat. The Assistant never reads that chat and never says the work is done. When the delegated turn ends (completed, failed or interrupted) the engine posts the Project Manager's final reply, or the failure, in the Assistant chat as a message from "Project Manager · <project>". That message starts no Assistant turn. The Assistant's next turn receives the reports it has not seen yet (`reported_until` in `chats.db`).
 *   **Project Manager:** one per project, the only agent that changes the project's work. It orchestrates and writes no code: it plans and starts jobs, edits the project's recipes, nodes and knowledge, handles its tickets and answers its agents' questions. Project settings belong to the Assistant. Its prompt gives it the name from the project's `pm`. It reads new tickets from linked projects and creates jobs. Orders passed on by the Assistant are user orders; the prompt marks them "passed on by the Assistant". In code and files it is `pm`: the settings key, the role and the notification kind. Code shared with the Assistant lives in `src/chat/`. Each project has one Project Manager chat, kept out of the Assistant's chat. The same session handles intake turns and the user's messages, so the Project Manager remembers the tickets it handled. Intake messages start with "Handle this ticket order"; `GET /projects/:id/chat` marks them with the ticket id. During an intake turn it reads project, recipe, ticket and job data and plans jobs; for a question or comment outside a recipe, it files an `outbound` request, and the engine shows the exact text in Notifications and posts it only after the user approves. During a user turn it has the tools restricted to its project: a call naming another project, a path outside `projects/<id>/` (reads may also use `templates/`), or a job or queue item of another project is refused, and project lifecycle and settings (`create_project`, `update_project`, `delete_project`, `import_project`, `export_project`, `analyze_project_archive`, `project_creation_options`), `write_template` and `delegate_to_pm` are not offered. The Project Manager reports intake results through Notifications.
-*   Agents contains the built-in Assistant and Default Agent cards. Startup recreates missing cards in the Agent badge colour before checking harnesses. Both names are fixed. Each project's PM tab selects a card and edits the PM's identity and optional additional Markdown context. The selected card supplies the account, model, effort, compaction thresholds and shared Markdown context. The choice is saved in the local database. A deleted card is replaced by Default Agent for every PM that used it. Agent nodes use Default Agent.
+*   Agents contains the built-in Assistant and Default Agent cards. Startup recreates missing cards before checking harnesses. Assistant starts white. Default Agent uses the Agent badge colour. Both names are fixed. Each project's PM tab selects a card and edits the PM's identity and optional additional Markdown context. The selected card supplies the account, model, effort, compaction thresholds and shared Markdown context. The choice is saved in the local database. A deleted card is replaced by Default Agent for every PM that used it. An agent step uses the card assigned in the recipe or Default Agent. If its assigned card is unavailable, the job stops and names the card.
 *   Agents lists reusable configurations with a unique name, provider, model, effort, compaction thresholds and optional Markdown context. These configurations are intended for recipe nodes. Assignment is a separate change.
 *   The Project Manager's notifications are written by the engine, not by the model, so ticket text cannot reach the user through them (kind `pm`, title "<project>, ticket <id>"): when `create_jobs` plans a ticket, "The Project Manager created the job Fix login.", opening the first job.
 *   `comment_ticket` during a Project Manager intake turn posts nothing: it adds an `outbound` item to decide (choices `post` and `reject`) with the project, ticket and exact text, and a notification that opens it. A newer request for the same ticket order cancels the open one. `post` runs the source's `comment` command and records `order.asked`, so the replies are read as before; `reject` posts nothing. From the Project Manager on the user's order, `comment_ticket` posts at once.
@@ -1003,20 +1005,20 @@ Events (`src/events.ts`). Each row of `events` has `id` (ULID), `job_id`, `type`
 | `node_run.git_recorded` | branch SHA, HEAD, `refs/stash` | `node_runs.git_before` |
 | `node_run.completed` | outcome, content state after, artifacts | `node_runs` |
 | `node_run.failed` | failure reason | `node_runs` |
-| `attempt.started` | profile, connector, harness and connector versions, OS user, session group | `attempts` insert |
+| `attempt.started` | profile, connector, harness and connector versions, OS user, agent card ID and context mode | `attempts` insert |
 | `attempt.session_started` | ACP session id, `resumed` | `attempts.session_id`, `attempts.resumed` |
 | `attempt.ended` | end reason (outcome, waiting reason or failure reason), resolved model, tokens (input, output, cache read, cache write), cost | `attempts` |
 | `effect.requested`, `effect.completed`, `effect.failed` | node, command hash, result | none |
 | `queue.added`, `queue.resolved` | kind, subject, choice, note | `human_queue` |
 | `ticket.seen` | source, ticket id | `tickets_seen` |
 
-Tables (`src/store/migrations/001-init.sql`):
+Tables (`src/store/migrations/`):
 
 | Table | Columns |
 |---|---|
 | `jobs` | `id` pk, `title`, `recipe` (resolved recipe at job creation), `state`, `waiting_reason`, `failure_reason`, `parent_job_id`, `base_branch`, `base`, `old_base`, `target`, `branch`, `archived`, `merged_at`, `created_at`, `updated_at`; index on `state`, `parent_job_id` |
 | `node_runs` | `id` pk (`<job>/<node>#<round>`), `job_id`, `node`, `round`, `via_edge`, `state`, `outcome`, `waiting_reason`, `reset_at`, `queue_item_id`, `auth_account`, `auth_os_user`, `auth_kind`, `failure_reason`, `content_before`, `content_after`, `git_before` (JSON), `pgid`, `os_user`, `started_at`, `ended_at`; index on `job_id` |
-| `attempts` | `id` pk (ULID), `node_run_id`, `profile`, `connector`, `harness_version`, `connector_version`, `model`, `account`, `os_user`, `session_group`, `session_id`, `resumed`, `tokens_in`, `tokens_out`, `cache_read`, `cache_write`, `cost`, `end_reason`, `log_omitted`, `started_at`, `ended_at` |
+| `attempts` | `id` pk (ULID), `node_run_id`, `profile`, `connector`, `harness_version`, `connector_version`, `model`, `account`, `os_user`, `agent_id`, `agent_context`, `session_id`, `resumed`, `tokens_in`, `tokens_out`, `cache_read`, `cache_write`, `cost`, `end_reason`, `log_omitted`, `started_at`, `ended_at` |
 | `attempt_logs` | `attempt_id` and `sequence` form the primary key. `direction`, `at` and `payload` describe the message |
 | `human_queue` | `id` pk, `job_id` (nullable), `kind` (`human-node`, `agent-question`, `engine-node`, `source-node`, `connector`, `recipe-change`, `import`, `ticket`, `services`, `round-limit`, `outbound`), `subject` (JSON: a snapshot of everything the user must see to decide, for example the full node definition and script, never re-read from disk at decision time), `subject_hash` (sha256 of `subject`), `state` (`open`, `resolved`, `cancelled`), `choices` (JSON), `choice`, `note`, `created_at`, `resolved_at` |
 | `tickets_seen` | `source`, `ticket_id`, `seen_at`; pk on both |
@@ -1068,7 +1070,6 @@ Recorded ACP traffic for tests lives in `packages/agents/fixtures/<connector>/<c
 | `GET /status` | app version, home check warnings, global pause, jobs paused by the quit, Notifications count |
 | `GET /setup` | what auto-setup found: each built-in harness (installed, version, logged in) and whether any model account works; feeds the banner of ui-design.md "Zero-config start" |
 | `POST /prerequisites/check` | checks the prerequisites for the features in use and points each result to its setting |
-| `GET /themes`, `PUT /themes/:id` | list custom themes and save the name and tokens of one theme |
 | `GET /queue`, `POST /queue/:id` | waiting items and the user's choice; the body carries `{choice, note, input, hash}`, where `hash` is the sha256 of the item's `subject` the GUI showed; the engine refuses the choice (409) if the item changed, was resolved or was cancelled since |
 | `GET /definitions?dir`, `GET/PUT /definitions/*path`, `POST /definitions/validate`, `POST /definitions/instantiate` | templates and instances by resource path (`templates/...`, `projects/<id>/...`). `GET` returns the current revision hash. `PUT` checks `baseSha256` (null for a new resource) and returns 409 if the revision changed. `validate` returns `errors` and `warnings`; for a knowledge file both carry line and column. Listing a knowledge directory returns each file's internal links as `value.links` |
 | `POST /projects/:id/knowledge`, `POST /projects/:id/knowledge/rename`, `DELETE /projects/:id/knowledge/:name` | knowledge files: upload up to 50 `.md` files at once (their links may point to each other; a link to a file that is in neither the project nor the upload, or with a path, is removed and its text kept, and the response lists the removed links; an existing name is 409), rename one and update the links that point to it, delete one; each is one commit |
@@ -1091,7 +1092,7 @@ Recorded ACP traffic for tests lives in `packages/agents/fixtures/<connector>/<c
 | `GET /artifacts/:job/:run/:name` | artifact metadata and content from the project database |
 | `GET /logs/:attempt?view=events\|raw` | Normalised events or raw JSON lines from `attempt_logs`. Returns 410 when the log is unavailable |
 
-*   WebSocket `/live` sends a union of `job.updated`, `node_run.updated`, `queue.updated`, `project.updated` (a creation step changed), `definition.changed` (path, new hash), `configuration.changed` (`settings`, `agents`, `accounts`, `profiles`, `tiers` or `themes`), `log.line` (one normalised event), `login.progress`, `chat.changed`, `notify`. `log.line` is sent only for attempts the client subscribed to (`{subscribe: attempt id}`, `{unsubscribe: attempt id}`), so the GUI receives the lines of the log it shows and nothing else.
+*   WebSocket `/live` sends a union of `job.updated`, `node_run.updated`, `queue.updated`, `project.updated` (a creation step changed), `definition.changed` (path, new hash), `configuration.changed` (`settings`, `agents`, `accounts`, `profiles` or `tiers`), `log.line` (one normalised event), `login.progress`, `chat.changed`, `notify`. `log.line` is sent only for attempts the client subscribed to (`{subscribe: attempt id}`, `{unsubscribe: attempt id}`), so the GUI receives the lines of the log it shows and nothing else.
 *   MCP uses a separate loopback endpoint with a private token. The harness talks to it through the stdio shim (section 6 and Phase 6 decisions).
 
 ### Engine and main process messages
@@ -1118,6 +1119,8 @@ The Assistant fills in choices when the user delegates them, validates the input
 6.  In protected mode, give `pecore-agent` access to the new project (group and ACLs, Fixed choices). No login is needed: logins belong to the user, not to the project.
 
 ### Auto-setup
+
+At startup the engine also reads the app user's authenticated `gh` and `glab` identities and checks configured AWS CLI profiles for CodeCommit access. It adds missing accounts by service, host and user, or by host and AWS profile for CodeCommit. An AWS profile must have a region, a working STS identity and permission to list CodeCommit repositories to be discovered. The listing check uses at most one result. All three tools use the app user's existing sessions. Auto-setup never adds plain Git accounts.
 
 `src/home/autosetup.ts`, run by `Engine.start` after the home and the connectors are loaded, and again when a harness login finishes. It only adds what is missing: it never edits or removes an account, profile, tier entry or setting the user has. Each run that changes something is one `PECORE_HOME` commit `auto-setup: <what>` and one notification, for example "Set up Claude Code and Codex: 8 profiles".
 
@@ -1183,7 +1186,7 @@ Every file exports a Zod schema and the TypeScript type inferred from it. The en
 | File | What and why |
 |---|---|
 | `src/node.ts` | node schema of 3.1: common fields, fields by kind (including `source`), `failOutcomes`, `probeRules`, `mergedCheck`, `scratchPaths`, placeholder syntax check |
-| `src/recipe.ts` | recipe schema of 3.2: `start`, `onBaseChanged`, `maxNodeRuns`, `successOutcomes`, nodes, edges, `requires`, `optional`, `skipWhenUnchanged`, `maxRounds` |
+| `src/recipe.ts` | recipe schema of 3.2: `start`, `onBaseChanged`, `successOutcomes`, nodes, edges, `requires`, `optional`, `skipWhenUnchanged`, `maxRounds` |
 | `src/project.ts` | `project.json` of 3.5 |
 | `src/accounts.ts` | account schema with the kinds `model`, `forge`, `service` |
 | `src/profiles.ts` | profile schema |
@@ -1245,7 +1248,7 @@ Everything that knows ACP or a harness lives here (section 5). It imports only `
 | **graph/** | |
 | `src/graph/job-machine.ts` | job states and transitions of 4.1 |
 | `src/graph/node-run-machine.ts` | node run states of 4.3 |
-| `src/graph/rules.ts` | one node at a time, edges, rounds, `maxNodeRuns`, optional nodes, base change (4.2); pure functions |
+| `src/graph/rules.ts` | pure functions for running one node at a time, routing outcomes, counting edge rounds, and handling base changes (4.2) |
 | `src/graph/rules.test.ts` | property tests with fast-check: a job never runs two nodes at once, rounds never exceed `maxRounds`, every job reaches a final state or `waiting` |
 | `src/graph/executor.ts` | applies the rules to a job: picks the next node, applies `skipWhenUnchanged` (`git diff <base> <commit> \| git patch-id --stable`), asks the scheduler for pool units, hands the node to its runner, records the outcome, writes the `diff` artifact after `changesFiles: true` nodes; answers to `round-limit` queue items |
 | **scheduler/** | |
@@ -1328,7 +1331,7 @@ The screens below come from G16. Their layout is designed in [ui-design.md](ui-d
 | `src/renderer/api/client.ts` | typed HTTP client from `@pecore/schemas` |
 | `src/renderer/api/live.ts` | WebSocket subscription |
 | `src/renderer/shell/` | navigation with the page's sub-navigation, top bar (command palette, global pause and play), command palette (`cmdk`), disconnected banner ([ui-design.md](ui-design.md) Proposed Design, Cross-cutting behaviour) |
-| `src/renderer/theme/` | theme tokens as CSS variables, loading custom theme records through the API with default token fallback (UI4, UI16) |
+| `src/renderer/theme/` | selects the bundled palette and resolves mode from settings (UI4, UI16) |
 | `src/renderer/shell/SetupBanner.tsx` | the banner shown when no harness is installed and logged in (ui-design.md "Zero-config start") |
 | `src/renderer/screens/Factory.tsx` | home: counters, unfinished jobs, "Play interrupted jobs" |
 | `src/renderer/screens/Jobs.tsx` | every job, filters, stacked jobs as a tree, controls by state |

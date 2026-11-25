@@ -51,9 +51,17 @@ describe("node schema", () => {
 
   it("accepts an agent node and fills defaults", () => {
     const n = Node.parse(builder);
-    expect(n.kind === "agent" && n.resume).toBe(false);
+    expect(n.kind === "agent" && n.agentContext).toBe("shared");
     const empty: Node = Node.parse({ ...builder, outputs: undefined });
     expect(empty.kind === "agent" && empty.outputs).toEqual({});
+  });
+
+  it("validates agent context and drops the retired resume field from old definitions", () => {
+    const node: Node = Node.parse({ ...builder, resume: true, agentContext: "isolated" });
+    expect(node).toMatchObject({ agentContext: "isolated" });
+    expect(node).not.toHaveProperty("resume");
+    expect(Node.safeParse({ ...builder, agentContext: "private" }).success).toBe(false);
+    expect(Node.safeParse({ ...githubPr, agentContext: "isolated" }).success).toBe(false);
   });
 
   it("gives each outcome at most one output, of a known type, on a known outcome", () => {

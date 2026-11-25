@@ -50,3 +50,31 @@ it("creates a Source node through the normal template editor", async () => {
     comment: { command: ["fixture-cli", "comment"] }, replies: { command: ["fixture-cli", "replies"] },
   });
 });
+
+it("edits the template's agent context and keeps the changesFiles field", async () => {
+  const node: Node = Node.parse({
+    name: "builder", description: "Build the change", kind: "agent", prompt: "builder.md", outcomes: ["done"],
+    changesFiles: false, timeoutSec: 60, agent: { tier: "standard" },
+  });
+  api.call.mockImplementation(async (route: string, input?: RouteInput<"getDefinition">) => {
+    if (route === "listDefinitions") return [];
+    if (route === "getDefinition") return { content: input?.params.path.endsWith(".md") ? "Build the change" : JSON.stringify(node), sha256: "node-v1" };
+    if (route === "validateDefinition") return { errors: [], warnings: [] };
+    if (route === "saveDefinition") return { sha256: "node-v2" };
+    throw new Error(`Unexpected route ${route}`);
+  });
+  const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: ["/edit/node/templates/nodes/builder.json"] });
+  render(<RouterProvider router={router} />);
+  const user = userEvent.setup();
+  const context: HTMLElement = await screen.findByRole("combobox", { name: "Agent context" });
+  expect(context.textContent).toContain("Shared");
+  expect(screen.queryByRole("checkbox", { name: "Resume session" })).toBeNull();
+  await user.click(context);
+  await user.click(await screen.findByRole("option", { name: "Isolated" }));
+  await user.click(screen.getByRole("checkbox", { name: "Can edit files" }));
+  const save: HTMLButtonElement = screen.getByRole("button", { name: "Save" });
+  await waitFor(() => expect(save.disabled).toBe(false));
+  await user.click(save);
+  const saved: RouteInput<"saveDefinition"> = api.call.mock.calls.findLast(([route]) => route === "saveDefinition")?.[1];
+  expect(JSON.parse(saved.body.content)).toMatchObject({ agentContext: "isolated", changesFiles: true });
+});

@@ -1,7 +1,7 @@
 import { cloneElement, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { ReactElement, ReactNode, Ref } from "react";
 import { Link, useBlocker, useNavigate, useParams } from "react-router";
-import { ApiError, ArtifactType, HumanInterface, humanInterfaces, isNodeKindTag, Name } from "@pecore/schemas";
+import { AgentContext, ApiError, ArtifactType, HumanInterface, humanInterfaces, isNodeKindTag, Name } from "@pecore/schemas";
 import type { DefinitionFile, Node, RouteResult } from "@pecore/schemas";
 import { basicSetup, EditorView, minimalSetup } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
@@ -9,6 +9,7 @@ import { lineNumbers } from "@codemirror/view";
 import { setDiagnostics } from "@codemirror/lint";
 import type { Diagnostic } from "@codemirror/lint";
 import { highlight } from "../components/CodeSnapshot";
+import { AgentContextField } from "../components/AgentFields";
 import { templateTitle } from "../components/templateTitle";
 import { markdown } from "@codemirror/lang-markdown";
 import { StreamLanguage } from "@codemirror/language";
@@ -402,7 +403,7 @@ const typeLabels: Record<ArtifactType, string> = {
 };
 const typeExamples: Record<ArtifactType, string> = {
   text: "words written freely. For example, the Spec Writer rejects a ticket and explains why, or a check writes what went wrong.",
-  diff: "the changes made to the code, line by line, as you see them in a pull request. You never choose it: PeCore creates it by itself after a node with Changes files on.",
+  diff: "the changes made to the code, line by line, as you see them in a pull request. PeCore creates it after a node with Can edit files enabled.",
   document: "a text with a title, such as the ticket you sent or the description of a pull request.",
   spec: "the plan of the work: what must work at the end, which tests to write and which functions to add. The Spec Writer writes it and the Builder follows it.",
   findings: "a list of problems found in the code. Each one points to a file and a line, says how serious it is and explains it. A code review writes it and the Builder fixes the problems.",
@@ -550,7 +551,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   const inlineKeys: string[] = [
     "description", "tags", "timeoutSec",
     ...(kind === "source" ? ["credentials", ...sourceCommands.map(({ key }) => key)] : ["outcomes", "outputs", "changesFiles"]),
-    ...(kind === "agent" ? ["prompt", "resume", "knowledge"] : []),
+    ...(kind === "agent" ? ["prompt", "agentContext", "knowledge"] : []),
     ...(kind === "command" ? ["command", "script", "runsAs", "cleanCheckout", "inputs", "optionalInputs", "outputRules"] : []),
     ...(human ? ["interface"] : []),
   ];
@@ -592,7 +593,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
             <TextField label="Name" required value={string(draft.name)} disabled={sidecarDirty}
               labelAction={help("Name", "Recipes use this name to refer to the node template.")}
               description="Lowercase letters, digits and hyphens. Start with a letter." onValueChange={(name) => update("name", name)} />
-            <Select label="Kind" labelAction={help("Kind", "Agent gives a task to an AI model. Run command runs a program or script. Human pauses the job for a person to respond. Source reads tickets and sends replies.")}
+            <Select label="Kind" labelAction={help("Kind", "Agent gives a task to an AI model. Command runs a program or script. Human pauses the job for a person to respond. Source reads tickets and sends replies.")}
               options={nodeKinds} value={kind || null} disabled={sidecarDirty} onValueChange={(value) => {
               const next: Node["kind"] | undefined = nodeKinds.find((option) => option.value === value)?.value;
               if (!next) return;
@@ -647,9 +648,13 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
                 })} />
               {fieldErrors("outputs")}{fieldErrors("outputRules")}
             </div>
-            {!human && flag("changesFiles", "Changes files", "Enable this if the node writes to the job's files. PeCore fails the step if a read-only node changes them. Its changes reach the nodes that read it as a diff.")}
+            {!human && flag("changesFiles", "Can edit files", "Allow this node to edit the job's files. PeCore records those edits as a diff for the nodes that read it. If this is off, edits fail the step.")}
           </>}
-          {kind === "agent" && flag("resume", "Resume session", "Continue the previous conversation if this step runs again in the same job.")}
+          {kind === "agent" && <>
+            <AgentContextField value={AgentContext.safeParse(draft.agentContext).data ?? "shared"} disabled={!editable}
+              onChange={(value) => update("agentContext", value)} />
+            {fieldErrors("agentContext")}
+          </>}
           {kind === "command" && <>
             {!draft.script && <>{commandField("Command", draft.command, (command) => update("command", command))}{fieldErrors("command")}</>}
             {!draft.command && textField("script", "Script name", "Enter the name of the saved .sh script. Choose either a command or a script.")}

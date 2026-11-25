@@ -118,7 +118,7 @@ function Subject({ item, connected }: { item: QueueItemView; connected: boolean 
     case "round-limit":
       return (
         <Details>
-          <dt>Edge</dt><dd><Snapshot value={subject.edge ?? "Job node run limit"} /></dd>
+          <dt>Edge</dt><dd><Snapshot value={subject.edge ?? "Unknown"} /></dd>
           <dt>Cap</dt><dd>{typeof subject.cap === "number" ? subject.cap : "Unknown"}</dd>
           <dt>Job</dt><dd>{connected && item.jobId ? <Link to={`/jobs/${item.jobId}`}>{item.jobId}</Link> : item.jobId}</dd>
         </Details>

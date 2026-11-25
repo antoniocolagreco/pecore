@@ -11,14 +11,15 @@ import { Engine } from "../main";
 const fakeAgent = fileURLToPath(new URL("../../../agents/test/fake-agent/agent.mjs", import.meta.url));
 
 const init = [{ expect: "initialize" }, { send: { jsonrpc: "2.0", id: "$id", result: { protocolVersion: 1, agentCapabilities: { loadSession: false, sessionCapabilities: { resume: {} } } } } }];
-const newSession = [{ expect: "session/new" }, { send: { jsonrpc: "2.0", id: "$id", result: { sessionId: "S1" } } }];
+const startSession = (sessionId: string): object[] => [{ expect: "session/new" }, { send: { jsonrpc: "2.0", id: "$id", result: { sessionId } } }];
+const newSession: object[] = startSession("S1");
 const resumeSession = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
 const prompt = { expect: "session/prompt" };
 const usageAnswer = { send: { jsonrpc: "2.0", id: "$id", result: { stopReason: "end_turn", usage: { inputTokens: 10, outputTokens: 20, cachedReadTokens: 30, cachedWriteTokens: 40 } } } };
-const message = (text: string, messageId: string = "final"): object => ({
-  send: { jsonrpc: "2.0", method: "session/update", params: { sessionId: "S1", update: { sessionUpdate: "agent_message_chunk", messageId, content: { type: "text", text } } } },
+const message = (text: string, messageId: string = "final", sessionId: string = "S1"): object => ({
+  send: { jsonrpc: "2.0", method: "session/update", params: { sessionId, update: { sessionUpdate: "agent_message_chunk", messageId, content: { type: "text", text } } } },
 });
-const output = (o: object): object => message(JSON.stringify(o));
+const output = (o: object, sessionId: string = "S1"): object => message(JSON.stringify(o), "final", sessionId);
 
 const agentNode = (extra: object = {}) => ({
   name: "agent-x",
@@ -58,17 +59,23 @@ async function setup(scripts: object[][], node: object = agentNode(), recipeExtr
     JSON.stringify({ name: "fake", title: "Fake", kind: "native", harness: { program: "node", versionArgs: ["--version"], versionRange: ">=18.0.0" }, command: ["{harnessPath}", fakeAgent], env: { FAKE_AGENT_SCRIPT: files.join(",") }, reader: "claude-code" }),
   );
   await mkdir(home, { recursive: true });
-  await setTestConfiguration(home, "accounts", { accounts: [{ id: "fake", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" }] });
+  await setTestConfiguration(home, "accounts", { accounts: [
+    { id: "fake", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" },
+    { id: "fake-alt", kind: "model", provider: "fakeco", connector: "fake", login: "subscription" },
+  ] });
   if (configureAgent) {
     await setTestConfiguration(home, "profiles", { profiles: [{ id: "p1", account: "fake", model: "m1" }] });
     await setTestConfiguration(home, "tiers", { tiers: { strong: ["p1"], standard: ["p1"] } });
-    await setTestConfiguration(home, "agents", { agents: [{
-      id: "agent-default", kind: "agent", name: "Default Agent", color: "#68389A",
-      model: { account: "fake", model: "m-default" }, compaction: { auto: 131_072, max: 262_144 },
-    }] });
+    await setTestConfiguration(home, "agents", { agents: [
+      { id: "agent-default", kind: "agent", name: "Default Agent", color: "#68389A",
+        model: { account: "fake", model: "m-default" }, compaction: { auto: 131_072, max: 262_144 } },
+      { id: "reviewer", kind: "agent", name: "Reviewer", color: "#FFFFFF",
+        model: { account: "fake", model: "m-default" }, compaction: { auto: 131_072, max: 262_144 } },
+    ] });
   }
   const engine = await Engine.start({ home, templates: lib, agents: { connectorsDir: connectors, adaptersDir: join(root, "adapters"), adapters: {} }, checkLogins: false });
   engine.setAgentContext("agent-default", "# Shared agent context");
+  if (configureAgent) engine.setAgentContext("reviewer", "# Reviewer instructions");
   await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, recipeKnowledge }, ["one-agent"]);
   const p = engine.project("demo");
   for (const [name, content] of Object.entries(knowledge)) await writeFile(join(p.ctx.dir, "knowledge", name), content);
@@ -117,7 +124,7 @@ describe("agent nodes with the fake agent (5.4)", () => {
       ...init, ...newSession, prompt, message("I will make the change.", "progress"),
       { write: { path: "done.txt", content: "x" } }, message("```json\n{"), message('"outcome":"done"}\n```'), usageAnswer,
     ]]);
-    expect(p.ctx.defaultAgent()?.model?.model).toBe("m-default");
+    expect(p.ctx.agentCard("agent-default")?.model?.model).toBe("m-default");
     const j = await until(final(p, id));
     expect(j.state).toBe("succeeded");
     const a = p.ctx.db.db.prepare("SELECT profile, account, session_id, resumed, tokens_in, tokens_out, cache_read, cache_write, end_reason FROM attempts").get();
@@ -139,7 +146,7 @@ describe("agent nodes with the fake agent (5.4)", () => {
 
   it("saves the output of the chosen outcome and gives it to the nodes that read it, labelled with its node", async () => {
     const first: object[] = [...init, ...newSession, prompt, { write: { path: "change.txt", content: "new content\n" } }, output({ outcome: "again", output: "the tests are wrong" }), usageAnswer];
-    const second = [...init, ...newSession, prompt, output({ outcome: "done" }), usageAnswer];
+    const second = [...init, ...resumeSession, prompt, output({ outcome: "done" }), usageAnswer];
     const { engine, p, id } = await setup([first, second], agentNode({ outputs: { again: "text" } }), { nodes: { x: { use: "agent-x", reads: ["x"] } } });
     try {
       expect((await until(final(p, id))).state).toBe("succeeded");
@@ -322,10 +329,10 @@ describe("agent nodes with the fake agent (5.4)", () => {
     await engine.shutdown();
   }, 30000);
 
-  it("resumes the session of the node's previous completed run", async () => {
+  it("uses the same Shared session when a node repeats", async () => {
     const first = [...init, ...newSession, prompt, output({ outcome: "again" }), usageAnswer];
     const second = [...init, ...resumeSession, prompt, output({ outcome: "done" }), usageAnswer];
-    const { engine, p, id } = await setup([first, second], agentNode({ resume: true }));
+    const { engine, p, id } = await setup([first, second]);
     const j = await until(final(p, id));
     expect(j.state).toBe("succeeded");
     expect(p.ctx.db.db.prepare("SELECT session_id, resumed FROM attempts ORDER BY started_at").all()).toEqual([
@@ -333,6 +340,94 @@ describe("agent nodes with the fake agent (5.4)", () => {
       { session_id: "S1", resumed: 1 },
     ]);
     await engine.shutdown();
+  });
+
+  it("starts a separate Shared session for a different job with the same card", async () => {
+    const { engine, p, id } = await setup([
+      [...init, ...newSession, prompt, output({ outcome: "done" }), usageAnswer],
+      [...init, ...startSession("S2"), prompt, output({ outcome: "done" }, "S2"), usageAnswer],
+    ]);
+    try {
+      expect(await until(final(p, id))).toMatchObject({ state: "succeeded" });
+      const next: string = await engine.createJob("demo", { title: "Second job", ticket: { text: "y" } });
+      expect(await until(final(p, next))).toMatchObject({ state: "succeeded" });
+      expect(p.ctx.db.db.prepare("SELECT session_id, resumed FROM attempts ORDER BY id").all()).toEqual([
+        { session_id: "S1", resumed: 0 }, { session_id: "S2", resumed: 0 },
+      ]);
+    } finally {
+      await engine.shutdown();
+    }
+  });
+
+  it("keeps separate Shared sessions per card across nodes and skips Isolated runs", async () => {
+    const { engine, p, id } = await setup([
+      [...init, ...newSession, prompt, output({ outcome: "done" }), usageAnswer],
+      [...init, ...startSession("S2"), prompt, output({ outcome: "done" }, "S2"), usageAnswer],
+      [...init, ...startSession("S3"), prompt, output({ outcome: "done" }, "S3"), usageAnswer],
+      [...init, ...resumeSession, prompt, output({ outcome: "done" }), usageAnswer],
+      [...init, ...resumeSession, prompt, output({ outcome: "done" }, "S3"), usageAnswer],
+    ], agentNode({ agentContext: "isolated" }), {
+      nodes: {
+        x: { use: "agent-x", agentContext: "shared" }, isolated: { use: "agent-x" },
+        review: { use: "agent-x", agentId: "reviewer", agentContext: "shared" },
+        build: { use: "agent-x", agentContext: "shared" },
+        verify: { use: "agent-x", agentId: "reviewer", agentContext: "shared" },
+      },
+      successOutcomes: ["verify:done"],
+      edges: [
+        { from: "x", on: "done", to: "isolated" }, { from: "isolated", on: "done", to: "review" },
+        { from: "review", on: "done", to: "build" }, { from: "build", on: "done", to: "verify" },
+      ],
+    });
+    try {
+      expect(await until(final(p, id))).toMatchObject({ state: "succeeded" });
+      expect(p.ctx.db.db.prepare("SELECT agent_id, agent_context, session_id, resumed FROM attempts ORDER BY id").all()).toEqual([
+        { agent_id: "agent-default", agent_context: "shared", session_id: "S1", resumed: 0 },
+        { agent_id: "agent-default", agent_context: "isolated", session_id: "S2", resumed: 0 },
+        { agent_id: "reviewer", agent_context: "shared", session_id: "S3", resumed: 0 },
+        { agent_id: "agent-default", agent_context: "shared", session_id: "S1", resumed: 1 },
+        { agent_id: "reviewer", agent_context: "shared", session_id: "S3", resumed: 1 },
+      ]);
+      const attemptId: string = p.ctx.db.db.prepare<[], string>("SELECT id FROM attempts WHERE agent_id = 'reviewer' ORDER BY id LIMIT 1").pluck().get()!;
+      const text: string = JSON.stringify(p.ctx.db.logs.read(attemptId));
+      expect(text).toContain("# Reviewer instructions");
+      expect(text).not.toContain("# Shared agent context");
+    } finally {
+      await engine.shutdown();
+    }
+  });
+
+  it.each([
+    { account: "fake-alt", model: "m-default", effort: null },
+    { account: "fake", model: "m-next", effort: null },
+    { account: "fake", model: "m-default", effort: "high" },
+  ])("starts a fresh session after the card changes to $account/$model/$effort", async (model: NonNullable<NodeAgent["model"]>) => {
+    const { engine, p, id } = await setup([
+      [...init, ...newSession, prompt, output({ question: "Continue?" }), usageAnswer],
+      [...init, ...resumeSession, prompt, output({ outcome: "done" }), usageAnswer],
+      [...init, ...startSession("S2"), prompt, output({ outcome: "done" }, "S2"), usageAnswer],
+    ], agentNode(), {
+      nodes: { x: { use: "agent-x" }, y: { use: "agent-x" } },
+      successOutcomes: ["y:done"],
+      edges: [{ from: "x", on: "done", to: "y" }],
+    });
+    try {
+      expect(await until(final(p, id))).toMatchObject({ state: "waiting", waiting_reason: "human" });
+      const cards: NodeAgent[] = engine.agentCatalog().agents.map((agent) => agent.id === "agent-default" ? { ...agent, model } : agent);
+      engine.configuration.write({ agents: { agents: cards } });
+      await engine.reloadGlobal();
+      const item = p.ctx.db.db.prepare<[], { id: string; subject_hash: string }>("SELECT id, subject_hash FROM human_queue WHERE state = 'open'").get()!;
+      await p.executor.answer(item.id, "answer", "Yes", item.subject_hash);
+      expect(await until(() => {
+        const job = p.executor.job(id);
+        return job.state === "waiting" ? undefined : final(p, id)();
+      })).toMatchObject({ state: "succeeded" });
+      expect(p.ctx.db.db.prepare("SELECT session_id, resumed FROM attempts ORDER BY id").all()).toEqual([
+        { session_id: "S1", resumed: 0 }, { session_id: "S1", resumed: 1 }, { session_id: "S2", resumed: 0 },
+      ]);
+    } finally {
+      await engine.shutdown();
+    }
   });
 });
 

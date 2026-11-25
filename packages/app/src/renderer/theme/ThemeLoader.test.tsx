@@ -1,7 +1,7 @@
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Settings } from "@pecore/schemas";
-import type { LiveMessage, Theme } from "@pecore/schemas";
+import type { LiveMessage } from "@pecore/schemas";
 import { ThemeLoader } from "./ThemeLoader";
 
 const api = vi.hoisted(() => ({
@@ -30,38 +30,34 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("loads a custom theme by record ID and refreshes it after a catalog update", async () => {
-  let theme: Theme = { name: "Clear Blue", tokens: { bg: "#fff", accent: "#004488" } };
-  api.call.mockImplementation(async (route: string) => route === "getSettings"
-    ? { value: Settings.parse({ ui: { mode: "light", theme: "blue" } }), sha256: "settings" }
-    : [{ id: "blue", theme }]);
-  const mounted: ReturnType<typeof render> = render(<ThemeLoader />);
-  const root: HTMLElement = document.documentElement;
-  await waitFor(() => expect(root.style.getPropertyValue("--accent")).toBe("#004488"));
-  expect(root.dataset.theme).toBe("light");
-
-  theme = { name: "Clear Blue", tokens: { bg: "#fff", accent: "#005599" } };
-  act(() => {
-    for (const listener of api.listeners) listener({ type: "configuration.changed", kind: "themes" });
-  });
-  await waitFor(() => expect(root.style.getPropertyValue("--accent")).toBe("#005599"), { timeout: 1500 });
-  mounted.unmount();
-  expect(root.style.getPropertyValue("--accent")).toBe("");
-});
-
-it("follows system mode and applies a custom theme only when its background matches", async () => {
-  api.call.mockImplementation(async (route: string) => route === "getSettings"
-    ? { value: Settings.parse({ ui: { mode: "system", theme: "night" } }), sha256: "settings" }
-    : [{ id: "night", theme: { name: "Night", tokens: { bg: "#111", accent: "#caf" } } }]);
+it("applies a bundled palette and reloads it when the settings change", async () => {
+  let theme: string = "builtin:autumn";
+  api.call.mockImplementation(async () => ({
+    value: Settings.parse({ ui: { mode: "light", theme } }), sha256: "settings",
+  }));
   render(<ThemeLoader />);
   const root: HTMLElement = document.documentElement;
-  await waitFor(() => expect(api.call).toHaveBeenCalledWith("listThemes"));
+  await waitFor(() => expect(root.dataset.palette).toBe("autumn-light"));
   expect(root.dataset.theme).toBe("light");
-  expect(root.style.getPropertyValue("--accent")).toBe("");
+
+  theme = "builtin:woodlands";
+  act(() => {
+    for (const listener of api.listeners) listener({ type: "configuration.changed", kind: "settings" });
+  });
+  await waitFor(() => expect(root.dataset.palette).toBe("woodlands-light"));
+});
+
+it("uses Default for a saved imported theme and still follows system mode", async () => {
+  api.call.mockResolvedValue({ value: Settings.parse({ ui: { mode: "system", theme: "night" } }), sha256: "settings" });
+  const root: HTMLElement = document.documentElement;
+  root.dataset.palette = "autumn-dark";
+  render(<ThemeLoader />);
+  await waitFor(() => expect(root.dataset.palette).toBeUndefined());
+  expect(root.dataset.theme).toBe("light");
   act(() => {
     Object.assign(media, { matches: true });
     media.dispatchEvent(new Event("change"));
   });
-  await waitFor(() => expect(root.style.getPropertyValue("--accent")).toBe("#caf"));
-  expect(root.dataset.theme).toBe("dark");
+  await waitFor(() => expect(root.dataset.theme).toBe("dark"));
+  expect(root.dataset.palette).toBeUndefined();
 });

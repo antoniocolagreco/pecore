@@ -33,11 +33,16 @@ a.entry:is(:hover, :focus-visible) .card {
 }
 
 .header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
   padding: 1px 2px;
 }
 
 .header h2 {
   display: -webkit-box;
+  min-width: 0;
   height: 2lh;
   margin: 0;
   overflow: hidden;
@@ -47,6 +52,12 @@ a.entry:is(:hover, :focus-visible) .card {
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.lock {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-2);
 }
 
 .art {

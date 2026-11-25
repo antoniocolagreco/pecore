@@ -145,7 +145,8 @@ export function checkRecipe(recipe: Recipe, nodes: Map<string, Node>, remote: bo
     resolved.set(id, node);
     if (r.params && node.kind === "command" && node.runsAs === "engine") issues.push({ path: `nodes.${id}.params`, message: "params cannot be overridden on a runsAs: engine node" });
     if (r.agent && node.kind !== "agent") issues.push({ path: `nodes.${id}.agent`, message: `${r.use} is not an agent node` });
-    if (r.session !== undefined && node.kind !== "agent") issues.push({ path: `nodes.${id}.session`, message: `${r.use} is not an agent node` });
+    if (r.agentId !== undefined && node.kind !== "agent") issues.push({ path: `nodes.${id}.agentId`, message: `${r.use} is not an agent node` });
+    if (r.agentContext !== undefined && node.kind !== "agent") issues.push({ path: `nodes.${id}.agentContext`, message: `${r.use} is not an agent node` });
     for (const p of r.agent?.providerNot ?? []) {
       const target = recipe.nodes[p];
       const tn = target && nodes.get(target.use);

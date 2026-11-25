@@ -16,7 +16,7 @@ import { Colors, Example, Icons, Rules, Section, Sizes, Surfaces, Typography, sl
 import g from "./gallery.module.css";
 
 type PreviewMode = "app" | Mode;
-type Saved = { theme: string | undefined; palette: string | undefined; style: string | null };
+type Saved = { theme: string | undefined; palette: string | undefined };
 
 function restore(saved: Saved): void {
   const root = document.documentElement;
@@ -24,14 +24,12 @@ function restore(saved: Saved): void {
   else root.dataset.theme = saved.theme;
   if (saved.palette === undefined) delete root.dataset.palette;
   else root.dataset.palette = saved.palette;
-  if (saved.style === null) root.removeAttribute("style");
-  else root.setAttribute("style", saved.style);
 }
 
 function ThemePreview() {
   const [saved] = useState<Saved>(() => {
     const root = document.documentElement;
-    return { theme: root.dataset.theme, palette: root.dataset.palette, style: root.getAttribute("style") };
+    return { theme: root.dataset.theme, palette: root.dataset.palette };
   });
   const [mode, setMode] = useState<PreviewMode>("app");
   const [theme, setTheme] = useState<string>(() => saved.palette ? `builtin:${saved.palette.replace(/-(light|dark)$/, "")}` : defaultTheme);
@@ -40,8 +38,7 @@ function ThemePreview() {
       restore(saved);
       return;
     }
-    document.documentElement.removeAttribute("style");
-    applyTheme(mode, theme, null);
+    applyTheme(mode, theme);
   }, [mode, theme, saved]);
   useEffect(() => () => restore(saved), [saved]);
   return (

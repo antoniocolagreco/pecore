@@ -13,21 +13,19 @@ const outcomeNames = ["a", "b", "c"];
 const arbGraph = fc
   .record({
     size: fc.integer({ min: 1, max: 6 }),
-    maxNodeRuns: fc.integer({ min: 1, max: 30 }),
-    edges: fc.array(fc.record({ from: fc.nat(5), on: fc.constantFrom(...outcomeNames), to: fc.nat(5), maxRounds: fc.option(fc.integer({ min: 1, max: 4 }), { nil: undefined }) }), { maxLength: 15 }),
+    edges: fc.array(fc.record({ from: fc.nat(5), on: fc.constantFrom(...outcomeNames), to: fc.nat(5), maxRounds: fc.integer({ min: 1, max: 4 }) }), { maxLength: 15 }),
     fails: fc.subarray(outcomeNames),
   })
-  .map(({ size, maxNodeRuns, edges, fails }) => {
+  .map(({ size, edges, fails }) => {
     const ids = Array.from({ length: size }, (_, i) => `n${i}`);
     const seen = new Set<string>();
     const es = edges
-      .map((e) => ({ from: ids[e.from % size]!, on: e.on, to: ids[e.to % size]!, ...(e.maxRounds ? { maxRounds: e.maxRounds } : {}) }))
+      .map((e) => ({ from: ids[e.from % size]!, on: e.on, to: ids[e.to % size]!, maxRounds: e.maxRounds }))
       .filter((e) => (seen.has(`${e.from}:${e.on}`) ? false : (seen.add(`${e.from}:${e.on}`), true)));
     const recipe = Recipe.parse({
       name: "r",
       description: "r",
       start: "n0",
-      maxNodeRuns,
       successOutcomes: ["n0:done"],
       nodes: Object.fromEntries(ids.map((id) => [id, { use: id }])),
       edges: es,
@@ -47,16 +45,6 @@ function simulate(recipe: Recipe, byId: Map<string, Node>, choose: (i: number) =
 }
 
 describe("graph rules (4.2), property tests", () => {
-  it("every job ends or stops at a round limit, and node runs never exceed maxNodeRuns", () => {
-    fc.assert(
-      fc.property(arbGraph, fc.array(fc.constantFrom(...outcomeNames), { minLength: 1, maxLength: 50 }), ({ recipe, byId }, picks) => {
-        const { history, last } = simulate(recipe, byId, (i) => picks[i % picks.length]!);
-        expect(["end", "round_limit"]).toContain(last.kind);
-        expect(history.length).toBeLessThanOrEqual(recipe.maxNodeRuns);
-      }),
-    );
-  });
-
   it("an edge never sends the job back more than maxRounds times", () => {
     fc.assert(
       fc.property(arbGraph, fc.array(fc.constantFrom(...outcomeNames), { minLength: 1, maxLength: 50 }), ({ recipe, byId }, picks) => {
@@ -89,7 +77,6 @@ describe("graph rules (4.2), examples", () => {
     description: "r",
     start: "lint",
     onBaseChanged: "lint",
-    maxNodeRuns: 10,
     successOutcomes: ["commit:done"],
     nodes: { lint: { use: "lint" }, commit: { use: "commit" } },
     edges: [
@@ -140,7 +127,21 @@ describe("graph rules (4.2), examples", () => {
       { nodeId: "lint", outcome: "failed", viaEdge: 1 },
     ];
     expect(nextStep(recipe, byId, h)).toEqual({ kind: "round_limit", edge: 1, cap: "maxRounds" });
-    expect(nextStep(recipe, byId, h, { extraRounds: { 1: 1 }, extraNodeRuns: 0 })).toEqual({ kind: "run", nodeId: "lint", round: 3, viaEdge: 1 });
+    expect(nextStep(recipe, byId, h, { extraRounds: { 1: 1 } })).toEqual({ kind: "run", nodeId: "lint", round: 3, viaEdge: 1 });
+  });
+
+  it("continues a loop whose edge has no round limit", () => {
+    const unlimited: Recipe = Recipe.parse({
+      name: "repeat",
+      description: "Repeat until lint passes",
+      start: "lint",
+      successOutcomes: ["lint:passed"],
+      nodes: { lint: { use: "lint" } },
+      edges: [{ from: "lint", on: "failed", to: "lint" }],
+    });
+    const { history, last } = simulate(unlimited, byId, (step) => step < 120 ? "failed" : "passed");
+    expect(history).toHaveLength(121);
+    expect(last).toEqual({ kind: "end", state: "succeeded", reason: "lint:passed" });
   });
 
   it("the empty recipe ends succeeded", () => {

@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { Recipe } from "./recipe";
+import { Recipe, RecipeNode } from "./recipe";
 
 const feature = {
   name: "feature",
   description: "New feature on existing code: spec, tests, code, checks, review, commit, PR",
   start: "spec",
   onBaseChanged: "rebase",
-  maxNodeRuns: 60,
   successOutcomes: ["pr:opened"],
   nodes: {
     spec: { use: "spec-writer" },
@@ -56,6 +55,15 @@ const issues = (value: unknown) => {
 };
 
 describe("recipe schema", () => {
+  it("validates agent step overrides and ignores old session groups", () => {
+    const step: RecipeNode = RecipeNode.parse({ use: "builder", agentId: "reviewer", agentContext: "isolated", session: "previous" });
+    expect(step).toMatchObject({ agentId: "reviewer", agentContext: "isolated" });
+    expect(step).not.toHaveProperty("session");
+    expect(RecipeNode.parse({ use: "builder" })).not.toHaveProperty("agentContext");
+    expect(RecipeNode.safeParse({ use: "builder", agentContext: "private" }).success).toBe(false);
+    expect(RecipeNode.safeParse({ use: "builder", agentId: "assistant" }).success).toBe(false);
+  });
+
   it("accepts the feature recipe of design 3.2", () => {
     expect(issues(feature)).toEqual([]);
   });

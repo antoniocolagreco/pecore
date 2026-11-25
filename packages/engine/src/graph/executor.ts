@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { basename, join } from "node:path";
 import { monotonicFactory } from "ulid";
 import type { RawLine, Usage } from "@pecore/agents";
-import type { AgentNode, Artifact, ArtifactType, FailureReason, ForgeAccount, JobDefinitions, JobState, Node, NodeAgent, Project, Settings, WaitingReason } from "@pecore/schemas";
-import { artifactTypes, DocumentArtifact, isHumanNode, Recipe, ReferenceArtifact, SpecArtifact } from "@pecore/schemas";
+import type { AgentContext, AgentNode, Artifact, ArtifactType, FailureReason, ForgeAccount, JobDefinitions, JobState, Node, NodeAgent, Project, Settings, WaitingReason } from "@pecore/schemas";
+import { artifactTypes, defaultAgentId, DocumentArtifact, isHumanNode, Recipe, ReferenceArtifact, SpecArtifact } from "@pecore/schemas";
 import { spawnFor } from "../accounts/agents";
 import type { AgentServices } from "../accounts/agents";
 import { knowledgeClosure } from "../definitions/knowledge";
@@ -60,6 +60,7 @@ export type JobRow = {
 
 type NodeRunRow = {
   id: string;
+  job_id: string;
   node: string;
   round: number;
   via_edge: number | null;
@@ -92,8 +93,8 @@ export type ProjectContext = {
   forgeAccount(id: string): ForgeAccount | undefined;
   setupEnded?: (state: JobState) => void;
   held?: () => boolean;
-  defaultAgent(): NodeAgent | undefined;
-  defaultAgentContext(): string;
+  agentCard(id: string): NodeAgent | undefined;
+  agentContext(id: string): string;
   live?: (attemptId: string, line: RawLine) => void;
   orderAttachments?: (orderId: string, attachmentIds: string[]) => Promise<JobAttachment[]>;
   agentQuestion?: (itemId: string) => void;
@@ -251,12 +252,13 @@ export class JobExecutor {
   }
 
   private allowances(jobId: string): Allowances {
-    const rows = this.ctx.db.db.prepare("SELECT subject FROM human_queue WHERE job_id = ? AND kind = 'round-limit' AND state = 'resolved' AND choice = 'allow'").all(jobId) as { subject: string }[];
-    const a: Allowances = { extraRounds: {}, extraNodeRuns: 0 };
-    for (const { subject } of rows) {
-      const s = JSON.parse(subject) as { edge: number | null; cap: string };
-      if (s.cap === "maxNodeRuns") a.extraNodeRuns += 1;
-      else if (s.edge !== null) a.extraRounds[s.edge] = (a.extraRounds[s.edge] ?? 0) + 1;
+    const edges: number[] = this.ctx.db.db.prepare<[string], number>(`
+      SELECT json_extract(subject, '$.edge') FROM human_queue
+      WHERE job_id = ? AND kind = 'round-limit' AND state = 'resolved' AND choice = 'allow'
+        AND json_extract(subject, '$.cap') = 'maxRounds'`).pluck().all(jobId);
+    const a: Allowances = { extraRounds: {} };
+    for (const edge of edges) {
+      a.extraRounds[edge] = (a.extraRounds[edge] ?? 0) + 1;
     }
     return a;
   }
@@ -322,7 +324,7 @@ export class JobExecutor {
         last.outcome = check.result;
       }
       const d = reentry
-        ? reenterOnBaseChange(recipe, history, this.allowances(jobId))!
+        ? reenterOnBaseChange(recipe, history)!
         : nextStep(recipe, this.byId(recipe, nodes), history, this.allowances(jobId));
       if (d.kind === "end") {
         await this.finish(job, d.state, d.reason);
@@ -769,14 +771,17 @@ export class JobExecutor {
 
     let profile: AgentProfile | null = null;
     let pools: string[] = ["jobs"];
+    const agentId: string = recipeNode.agentId ?? defaultAgentId;
+    const agentContext: AgentContext | undefined = node.kind === "agent" ? recipeNode.agentContext ?? node.agentContext : undefined;
     if (node.kind === "agent") {
       const agents = this.ctx.agents;
-      const card: NodeAgent | undefined = this.ctx.defaultAgent();
+      const card: NodeAgent | undefined = this.ctx.agentCard(agentId);
       const model: NodeAgent["model"] = card?.model ?? null;
       profile = continuation?.profile ?? (card && model
         ? { ...model, profile: `${card.id}:${createHash("sha256").update(JSON.stringify(model)).digest("hex")}` } : null);
       if (!profile || !agents) {
-        const detail: string = !profile ? "Choose a provider and model on the Default Agent card." : "No harness service is available.";
+        const detail: string = !agents ? "No harness service is available."
+          : !card ? `Agent card ${agentId} is unavailable.` : `Choose a provider and model on the ${card.name} card.`;
         this.fail(job, run.id, "AGENT_UNAVAILABLE", detail);
         return false;
       }
@@ -821,12 +826,11 @@ export class JobExecutor {
         this.ctx.db.append([{ jobId: job.id, type: "node_run.git_recorded", payload: { nodeRunId: run.id, ...attemptGit } }]);
         this.setRun(job.id, run.id, "running", null, { osUser: this.ctx.user });
         const attemptId = ulid();
-        const sessionGroup = node.kind === "agent" ? (recipeNode.session ?? null) : null;
         this.ctx.db.append([
           {
             jobId: job.id,
             type: "attempt.started",
-            payload: { attemptId, nodeRunId: run.id, profile: profile?.profile ?? null, connector: profile ? (this.ctx.agents!.account(profile.account)?.connector ?? null) : null, harnessVersion: null, connectorVersion: null, account: profile?.account ?? null, osUser: this.ctx.user, sessionGroup },
+            payload: { attemptId, nodeRunId: run.id, profile: profile?.profile ?? null, connector: profile ? (this.ctx.agents!.account(profile.account)?.connector ?? null) : null, harnessVersion: null, connectorVersion: null, account: profile?.account ?? null, osUser: this.ctx.user, ...(agentContext && { agentId, agentContext }) },
           },
         ]);
         const context = this.placeholderContext(this.job(job.id));
@@ -865,7 +869,7 @@ export class JobExecutor {
                 onStart,
                 effect: effectRecorder(this.ctx.db, job.id, run.id, run.node),
               })
-            : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, sessionGroup, { wd, context, inputs: agentInputs, onStart, env: servicesEnv, continuation: resumed, sidecars, knowledge: definitions?.knowledgeByStep });
+            : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, { id: agentId, context: agentContext! }, { wd, context, inputs: agentInputs, onStart, env: servicesEnv, continuation: resumed, sidecars, knowledge: definitions?.knowledgeByStep });
         this.running.delete(job.id);
         if (result.log) this.ctx.db.logs.write(attemptId, { dir: "cmd", text: result.log, at: Date.now() });
         if (this.closing) return false;
@@ -1002,16 +1006,18 @@ export class JobExecutor {
     this.timers.set(job.id, setTimeout(() => void this.retryWait(job.id, nodeRunId, "auth"), delay));
   }
 
-  private resumeSession(jobId: string, node: string, profile: string, resume: boolean, group: string | null): string | null {
-    if (!resume && group === null) return null;
-    const row = this.ctx.db.db
-      .prepare(
-        `SELECT a.session_id FROM attempts a JOIN node_runs n ON a.node_run_id = n.id
-         WHERE n.job_id = ? AND n.state = 'completed' AND a.profile = ? AND a.session_id IS NOT NULL AND ${group !== null ? "a.session_group = ?" : "n.node = ?"}
-         ORDER BY a.started_at DESC LIMIT 1`,
-      )
-      .get(jobId, profile, group ?? node) as { session_id: string } | undefined;
-    return row?.session_id ?? null;
+  private resumeSession(run: NodeRunRow, agentId: string, profile: string, connector: string): string | null {
+    const attempts = this.ctx.db.db.prepare<[string, string, string], {
+      profile: string; connector: string; os_user: string; agent_context: AgentContext; session_id: string; state: string;
+    }>(`SELECT a.profile, a.connector, a.os_user, a.agent_context, a.session_id, n.state
+        FROM attempts a JOIN node_runs n ON a.node_run_id = n.id
+        WHERE n.job_id = ? AND a.agent_id = ? AND n.id <> ? AND a.session_id IS NOT NULL
+        ORDER BY a.id DESC`).iterate(run.job_id, agentId, run.id);
+    for (const attempt of attempts) {
+      if (attempt.profile !== profile || attempt.connector !== connector || attempt.os_user !== this.ctx.user) return null;
+      if (attempt.agent_context === "shared" && attempt.state === "completed") return attempt.session_id;
+    }
+    return null;
   }
 
   private waitUntil(jobId: string, nodeRunId: string, reason: "quota" | "rate_limit", until: number): void {
@@ -1064,7 +1070,7 @@ export class JobExecutor {
     recipeNode: Recipe["nodes"][string],
     profile: AgentProfile,
     attemptId: string,
-    sessionGroup: string | null,
+    agent: { id: string; context: AgentContext },
     x: { wd: string; context: CommandRun["context"]; inputs: AgentInput[]; onStart: (pgid: number, user: string) => void; env: Record<string, string>; continuation: (QuestionSubject & AgentContinuation) | null; sidecars: CommandRun["sidecars"]; knowledge: JobDefinitions["knowledgeByStep"] },
   ): Promise<Attempt> {
     const agents = this.ctx.agents!;
@@ -1084,7 +1090,8 @@ export class JobExecutor {
       return { kind: "failed", reason: "AGENT_UNAVAILABLE", retry: false, log: `Log in to ${account.connector} with account ${account.id}.` };
     }
     const spawn = spawnFor(this.ctx.user, { ...x.env, PECORE_JOB_ID: job.id });
-    const resumeId = this.resumeSession(job.id, run.node, profile.profile, node.resume, sessionGroup);
+    const resumeId: string | null = agent.context === "shared" && !x.continuation
+      ? this.resumeSession(run, agent.id, profile.profile, account.connector) : null;
     const attachments: string[] = await this.copyAttachments(job.id, x.wd);
     const r = await runAgentNode({
       node,
@@ -1098,7 +1105,7 @@ export class JobExecutor {
       attachments,
       knowledge: await this.knowledgeFiles(x.knowledge && Object.hasOwn(x.knowledge, run.node) ? x.knowledge[run.node]! : node.knowledge),
       development: this.ctx.development ?? false,
-      agentContext: this.ctx.defaultAgentContext(),
+      agentContext: this.ctx.agentContext(agent.id),
       connector,
       login,
       spawn,
@@ -1301,6 +1308,12 @@ export class JobExecutor {
   }
 
   async recoverAfterRestart(): Promise<void> {
+    const obsolete = this.ctx.db.db.prepare<[], { id: string; job_id: string }>(`
+      SELECT id, job_id FROM human_queue
+      WHERE kind = 'round-limit' AND state = 'open' AND json_extract(subject, '$.cap') = 'maxNodeRuns'`).all();
+    if (obsolete.length) this.ctx.db.append(obsolete.map(({ id, job_id }): NewEvent => ({
+      jobId: job_id, type: "queue.resolved", payload: { itemId: id, state: "cancelled", choice: null, note: "The recipe-wide limit was removed." },
+    })));
     for (const job of this.jobs()) {
       const open = this.runs(job.id).filter((r) => r.state === "running");
       for (const r of open) {
