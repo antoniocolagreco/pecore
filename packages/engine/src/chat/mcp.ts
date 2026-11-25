@@ -47,7 +47,7 @@ export function mcpRoute(app: FastifyInstance, engine: Engine): void {
       case "notifications/initialized":
         return failure(-32600, "initialized must be a notification");
       case "tools/list":
-        return success({ tools: tools.list(chatId ? engine.agentChats.access(chatId) : "assistant") });
+        return success({ tools: tools.list(chatId ? engine.agentChats.access(chatId) : "assistant", chatId ? engine.agentChats.project(chatId) : null) });
       case "tools/call": {
         if (!chatId) return failure(-32602, "A chat identifier is required for tools/call");
         const input = callSchema.safeParse(params);

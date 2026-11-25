@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { argvShellScript, Node, Recipe } from "@pecore/schemas";
 import type { CommandNode, OutcomeRule, OutputRule, RepositoryNode, TrackerNode } from "@pecore/schemas";
 import type Database from "better-sqlite3";
@@ -14,6 +15,8 @@ type NodeRow = {
   tier: string | null;
   agent_session: string | null;
   human_interface: string | null;
+  chat_approved_hash: string | null;
+  reads_only: number | null;
   repository_account: string | null;
   repository_script: string | null;
   tracker_provider: string | null;
@@ -118,11 +121,14 @@ export class Catalog {
       return json_value === null ? { outcome, stdoutJson: json_field, other: true } : { outcome, stdoutJson: json_field, value: JSON.parse(json_value) };
     });
     const inputs = { inputs: list("inputs"), optionalInputs: list("optionalInputs"), outcomeRules };
+    const remote = row.reads_only ? { readOnly: true } : {};
     if (row.kind === "tracker") return Node.parse({
+      ...remote,
       ...common, ...inputs, provider: row.tracker_provider, account: row.tracker_account, script: row.tracker_script,
       outputRules: command?.outputRules, ...(row.tracker_repeat_check ? { repeatCheck: true } : {}),
     });
     if (row.kind === "repository") return Node.parse({
+      ...remote,
       ...common, ...inputs, account: row.repository_account,
       script: row.repository_script ?? (command?.command?.length ? argvShellScript(command.command) : undefined),
       outputRules: command?.outputRules,
@@ -155,10 +161,11 @@ export class Catalog {
     const node: Node = Node.parse(value);
     const { name } = node;
     this.db.transaction(() => {
+      const approved: string | null = this.chatApprovedHash(name);
       this.delete("nodes", name);
       this.db.prepare(`INSERT INTO catalog_nodes
-        (name, description, icon, kind, shipped, timeout_sec, changes_files, retry, prompt, tier, agent_session, human_interface, repository_account, repository_script, tracker_provider, tracker_account, tracker_script, tracker_repeat_check)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        (name, description, icon, kind, shipped, timeout_sec, changes_files, retry, prompt, tier, agent_session, human_interface, repository_account, repository_script, tracker_provider, tracker_account, tracker_script, tracker_repeat_check, chat_approved_hash, reads_only)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         name, node.description, node.icon ?? null, node.kind, Number(shipped),
         "timeoutSec" in node ? node.timeoutSec : null, "changesFiles" in node ? Number(node.changesFiles) : null,
         "retry" in node ? node.retry : null, node.kind === "agent" ? node.prompt : null,
@@ -167,6 +174,7 @@ export class Catalog {
         node.kind === "repository" ? node.account : null, node.kind === "repository" ? node.script : null,
         node.kind === "tracker" ? node.provider : null, node.kind === "tracker" ? node.account : null,
         node.kind === "tracker" ? node.script : null, node.kind === "tracker" && node.repeatCheck ? 1 : null,
+        approved, "readOnly" in node && node.readOnly ? 1 : null,
       );
       this.writeParams("INSERT INTO catalog_node_params (node, name, value) VALUES (?, ?, ?)", [name], node.params);
       this.writeLists("INSERT INTO catalog_node_lists (node, field, position, value) VALUES (?, ?, ?, ?)", [name], {
@@ -180,6 +188,30 @@ export class Catalog {
       }
       if ("inputs" in node) this.saveCommandNode(node);
     })();
+  }
+
+  private chatApprovedHash(name: string): string | null {
+    return this.db.prepare<[string], string | null>("SELECT chat_approved_hash FROM catalog_nodes WHERE name = ?").pluck().get(name) ?? null;
+  }
+
+  chatNode(name: string) {
+    const node: Node | null = this.node(name);
+    if (node?.kind !== "repository" && node?.kind !== "tracker") return null;
+    const checks: Record<string, string> = {};
+    if (node.kind === "repository") {
+      for (const check of [node.probe, node.mergedCheck]) {
+        if (check && !Array.isArray(check)) checks[check.script] = this.content(check.script) ?? "";
+      }
+    }
+    const executable = { ...node, description: undefined, tags: undefined, icon: undefined };
+    const hash: string = createHash("sha256").update(JSON.stringify({ executable, checks })).digest("hex");
+    return { node, checks, hash, approved: hash === this.chatApprovedHash(name) };
+  }
+
+  approveChatNode(name: string, hash: string): boolean {
+    if (this.chatNode(name)?.hash !== hash) return false;
+    this.db.prepare("UPDATE catalog_nodes SET chat_approved_hash = ? WHERE name = ?").run(hash, name);
+    return true;
   }
 
   private saveCommandNode(node: CommandNode | RepositoryNode | TrackerNode): void {

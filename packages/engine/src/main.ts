@@ -585,7 +585,6 @@ export class Engine extends EventEmitter {
       },
       setupEnded: (state) => this.setupEnded(id, state),
       forgeAccount: (accountId) => this.accounts.accounts.find((a): a is ForgeAccount => a.kind === "forge" && a.id === accountId),
-      trackerTemplate: (name) => this.catalog.node(name),
       agentCard: (agentId) => this.catalogAgent(agentId),
       agentContext: (agentId) => this.agentContext(agentId),
       live: (attemptId, line) => {

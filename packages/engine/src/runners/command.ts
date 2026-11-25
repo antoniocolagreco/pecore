@@ -26,6 +26,7 @@ export type CommandRun<Output extends string = ArtifactType> = {
   inlineScript?: string;
   remote?: boolean;
   repeatCheck?: boolean;
+  redactCredentials?: boolean;
   extraEnv?: Record<string, string>;
   onStart?: (pgid: number, user: string) => void;
   effect?: { requested(hash: string): void; done(ok: boolean, result: unknown): void };
@@ -118,6 +119,10 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
     const input: string = commandInput(c.inputs);
     const values = placeholderValues({ ...c.context, params: c.params, workdir: cwd });
     const env = { ...(await baseEnv(user)), ...(await gitIdentityEnv()), ...placeholderEnv(values), ...c.extraEnv };
+    const secrets: string[] = c.redactCredentials
+      ? Object.entries(c.extraEnv ?? {}).flatMap(([key, value]) => value && /TOKEN|SECRET|PASSWORD|ACCESS_KEY/.test(key) ? [value] : [])
+      : [];
+    const redact = (content: string): string => secrets.reduce((text, secret) => text.replaceAll(secret, "[redacted]"), content);
     const timeoutMs = c.node.timeoutSec * 1000;
     let log = "";
 
@@ -135,7 +140,7 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
         const outputs = [];
         for (const [type, rule] of c.outputs(outcome)) {
           if ("file" in rule) continue;
-          outputs.push({ type, content: await readOutput(rule, p.stdout, async () => "") });
+          outputs.push({ type, content: redact(await readOutput(rule, p.stdout, async () => "")) });
         }
         return { kind: "completed", outcome, outputs, log, fromProbe: true };
       }
@@ -163,7 +168,7 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
     const outputs = [];
     for (const [type, rule] of c.outputs(outcome)) {
       try {
-        outputs.push({ type, content: await readOutput(rule, r.stdout, (rel) => (remote ? readFile(join(cwd, rel), "utf8") : readFileAs(c.user, cwd, rel))) });
+        outputs.push({ type, content: redact(await readOutput(rule, r.stdout, (rel) => (remote ? readFile(join(cwd, rel), "utf8") : readFileAs(c.user, cwd, rel)))) });
       } catch (e) {
         if (e instanceof FsAsError) return { kind: "failed", reason: "HARNESS_ERROR", log: log + `output ${type}: ${e.message}\n` };
         throw e;

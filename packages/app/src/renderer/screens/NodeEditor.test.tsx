@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Node } from "@pecore/schemas";
 import type { RouteInput } from "@pecore/schemas";
@@ -12,6 +12,36 @@ vi.mock("../api/client", () => ({ call: api.call }));
 vi.mock("../api/live", () => ({ useConnected: () => true, onLive: () => () => undefined, useLive: () => undefined }));
 
 afterEach(cleanup);
+
+it("shows the saved script before approving it for chat in protected mode", async () => {
+  const rect: DOMRect = new DOMRect();
+  Object.defineProperty(Range.prototype, "getClientRects", { configurable: true, value: () => [rect] });
+  Object.defineProperty(Range.prototype, "getBoundingClientRect", { configurable: true, value: () => rect });
+  const node: Node = Node.parse({
+    kind: "repository", name: "publish", description: "Publish work", account: "project.account",
+    script: "git status", outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }],
+  });
+  const path: string = "templates/nodes/publish.json";
+  const hash: string = "a".repeat(64);
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "getDefinition") return { content: JSON.stringify(node), sha256: "node-v1", chatApproval: { approved: false, hash, checks: {} } };
+    if (route === "validateDefinition") return { errors: [], warnings: [] };
+    if (route === "getAccounts") return { value: { accounts: [] } };
+    if (route === "getNodeTemplateUsage" || route === "listDefinitions") return [];
+    if (route === "approveChatNode") return { ok: true };
+    throw new Error("Unexpected route " + route);
+  });
+  const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: ["/edit/node/" + path] });
+  render(<RouterProvider router={router} />);
+  const user = userEvent.setup();
+  expect(await screen.findByText(/To approve/)).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Approve" }));
+  const dialog: HTMLElement = await screen.findByRole("dialog", { name: "Approve script for chat?" });
+  expect(dialog.querySelector(".cm-content")?.textContent).toBe("git status");
+  await user.click(within(dialog).getByRole("button", { name: "Approve script" }));
+  await waitFor(() => expect(screen.queryByText(/To approve/)).toBeNull());
+  expect(api.call).toHaveBeenCalledWith("approveChatNode", { params: { path }, body: { hash } });
+});
 
 it("edits a Command without showing account or check controls", async () => {
   const node: Node = Node.parse({

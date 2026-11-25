@@ -13,7 +13,7 @@ import { ChatConfirmation } from "../components/ChatConfirmation";
 import { ExportFindings, ImportSelectionFields, ProjectSecurityReview, useImportSelection } from "../components/ProjectShare";
 import { StateLabel } from "../components/states";
 import type { StateInfo } from "../components/states";
-import { ErrorText, dateTime, time } from "../components/ui";
+import { ErrorText, dateTime, time, ui } from "../components/ui";
 import { Button, IconButton } from "../ds/button";
 import { Checkbox, RadioGroup } from "../ds/choice";
 import { TextTable } from "../ds/data";
@@ -274,16 +274,27 @@ function FormCard({ action, form, connected }: { action: ChatActionView; form: C
     const draft: Draft = drafts[id] ?? { choices: [], other: false, text: "" };
     return [id, { choices: draft.choices, text: draft.other || form.questions.find((question) => question.id === id)?.kind === "text" ? draft.text.trim() : "" }];
   }));
-  const submit = useAction(() => api.answerForm(action.id, { answers }));
+  const submit = useAction((decision?: "Approve" | "Reject") => api.answerForm(action.id, decision ? { answers: { decision: { choices: [decision], text: "" } } } : { answers }));
   if (state !== "awaiting_answer") {
     const given: Record<string, ChatFormAnswer> = object(target.answers) as Record<string, ChatFormAnswer>;
     return <section className={s.action} aria-label={form.title ?? "Questions"}>
-      <div className={s.actionHead}><SparkIcon /><strong>{form.title ?? "Questions"}</strong><span className={s.actionMeta}>{state === "answered" ? "Answered" : "Not answered"}</span></div>
+      <div className={s.actionHead}><SparkIcon /><strong>{form.title ?? "Questions"}</strong><span className={s.actionMeta}>{state === "answered" ? "Answered" : state === "approved" ? "Completed" : state === "cancelled" ? "Rejected" : state === "running" ? "Running" : state === "failed" ? "Failed" : state === "interrupted" ? "Interrupted" : "Not answered"}</span></div>
+      {typeof target.details === "string" && <pre className={s.actionDetails}>{target.details}</pre>}
+      <ErrorText error={string(target.error)} />
       {state === "answered" && <ul className={s.formAnswers}>{form.questions.map(({ id, prompt }) => <li key={id}>
         <span className={s.actionMeta}>{prompt}</span> {[...(given[id]?.choices ?? []), ...(given[id]?.text ? [given[id].text] : [])].join(", ")}
       </li>)}</ul>}
     </section>;
   }
+  if (target.nodeProposal) return <section className={s.action} aria-label={form.title}>
+    <div className={s.actionHead}><SparkIcon /><strong>{form.title}</strong></div>
+    <pre className={s.actionDetails}>{string(target.details)}</pre>
+    <ErrorText error={submit.error} />
+    <div className={ui.row}>
+      <Button variant="primary" size="sm" disabled={!connected || submit.busy} onClick={() => void submit.run("Approve")}>Approve</Button>
+      <Button variant="secondary" size="sm" disabled={!connected || submit.busy} onClick={() => void submit.run("Reject")}>Reject</Button>
+    </div>
+  </section>;
   const problem: string | null = chatFormProblem(form, answers);
   const busy: boolean = submit.busy || !connected;
   return (
@@ -321,7 +332,7 @@ function DelegationCard({ project, error, connected }: { project: string; error:
 
 function ActionCard({ action, connected }: { action: ChatActionView; connected: boolean }) {
   const target: Record<string, unknown> = object(action.target);
-  if (action.tool === "ask_user") {
+  if (action.tool === "ask_user" || target.nodeProposal) {
     const form = ChatForm.safeParse(target.form);
     if (form.success) return <FormCard action={action} form={form.data} connected={connected} />;
   }

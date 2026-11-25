@@ -92,7 +92,6 @@ export type ProjectContext = {
   released(): void;
   agents: AgentServices | null;
   forgeAccount(id: string): ForgeAccount | undefined;
-  trackerTemplate?(name: string): Node | null;
   setupEnded?: (state: JobState) => void;
   held?: () => boolean;
   agentCard(id: string): NodeAgent | undefined;
@@ -132,7 +131,7 @@ function sha256(data: string | Buffer): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
-function outputProblem(type: ArtifactType, content: string): string | null {
+export function outputProblem(type: ArtifactType, content: string): string | null {
   const schema = artifactTypes[type].schema;
   if (type === "text" || type === "diff" || !schema) return null;
   try {
@@ -1007,7 +1006,7 @@ export class JobExecutor {
     }
   }
 
-  private placeholderContext(job: JobRow): CommandRun["context"] {
+  placeholderContext(job: JobRow): CommandRun["context"] {
     const ticket: Artifact | undefined = this.ticket(job.id);
     return {
       job: { id: job.id, title: job.title, branch: job.branch, base: job.base, oldBase: job.old_base, target: job.target, commit: jobCommit(this.ctx.db, this.ctx.db.events(job.id)) },

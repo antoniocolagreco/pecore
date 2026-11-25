@@ -416,7 +416,7 @@ export type NotificationView = z.infer<typeof NotificationView>;
 const Sha = z.string().regex(/^[0-9a-f]{64}$/);
 const PathParams = z.object({ path: z.string().min(1) });
 
-export const DefinitionFile = z.object({ path: z.string(), content: z.string(), sha256: Sha });
+export const DefinitionFile = z.object({ path: z.string(), content: z.string(), sha256: Sha, chatApproval: z.object({ hash: Sha, approved: z.boolean(), checks: z.record(z.string(), z.string()) }).optional() });
 export type DefinitionFile = z.infer<typeof DefinitionFile>;
 
 export const DefinitionEntry = z.object({ path: z.string(), sha256: Sha, value: z.unknown().nullable(), errors: z.array(DefinitionErrorView) });
@@ -596,6 +596,7 @@ export const routes = {
   answerProjectChatForm: { method: "POST", path: "/projects/:id/chat/actions/:actionId/form", params: z.object({ id: ProjectId, actionId: z.string().min(1) }), body: ChatFormAnswers, response: ChatMessageView },
   listDefinitions: { method: "GET", path: "/definitions", query: z.object({ dir: z.string().min(1) }), response: z.array(DefinitionEntry) },
   getDefinition: { method: "GET", path: "/definitions/*path", params: PathParams, response: DefinitionFile },
+  approveChatNode: { method: "POST", path: "/definitions/chat-approval/*path", params: PathParams, body: z.strictObject({ hash: Sha }), response: Ok },
   saveDefinition: { method: "PUT", path: "/definitions/*path", params: PathParams, body: SaveDefinitionBody, response: SaveDefinitionResult },
   getNodeTemplateUsage: { method: "GET", path: "/templates/nodes/:name/usage", params: z.object({ name: Name }), response: z.array(z.string()) },
   deleteTemplate: { method: "DELETE", path: "/definitions/*path", params: PathParams, body: z.strictObject({ baseSha256: Sha }), response: Ok },

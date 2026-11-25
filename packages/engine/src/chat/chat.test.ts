@@ -5,15 +5,17 @@ import { cp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promis
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { apiClient, Node } from "@pecore/schemas";
 import type { ChatDetail, LiveMessage } from "@pecore/schemas";
 import { FakeForge, forgeAccount } from "../../test/fake-forge";
 import { createProjectWithRecipes } from "../../test/project";
 import { shippedTemplates, tempDir } from "../../test/tmp";
+import { definitionOperations } from "../api/routes/definitions";
 import { handlers } from "../api/handlers";
 import { startApi } from "../api/server";
 import { Engine } from "../main";
+import { callNodeTool } from "./node-tools";
 
 const fakeAgent = fileURLToPath(new URL("../../../agents/test/fake-agent/agent.mjs", import.meta.url));
 const shim = fileURLToPath(new URL("../../../agents/scripts/chat-mcp.mjs", import.meta.url));
@@ -144,8 +146,10 @@ async function setup(build: (root: string) => object[][], extra: { tracker?: boo
       first.engine.catalog.saveNode(Node.parse({
         name, description: "Handle a GitHub ticket", kind: "tracker", provider: "github", account: "project.account", script,
         outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }],
-        ...(name.endsWith("read") ? { outputs: { done: "document" }, outputRules: { done: { stdoutJson: "" } } } : {}),
+        ...(name.endsWith("read") ? { readOnly: true, outputs: { done: "document" }, outputRules: { done: { stdoutJson: "" } } } : { optionalInputs: ["text"] }),
       }));
+      const approval = first.engine.catalog.chatNode(name)!;
+      first.engine.catalog.approveChatNode(name, approval.hash);
     }
     ctx.db.definition.write({ ...ctx.project, tracker: { provider: "github", account: forge.id } });
     expect(await first.engine.reloadProject("demo")).toEqual([]);
@@ -1000,7 +1004,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect((await m.tool("delete_project", { project: "demo" })).result!.isError).toBe(true);
       const read = await m.tool("read_ticket", { project: "demo", ticketId: "7" });
       expect(JSON.parse(read.result!.content![0]!.text)).toMatchObject({ untrusted: true, ticket: { title: "Login broken" } });
-      expect((await m.tool("comment_ticket", { project: "demo", ticketId: "7", text: "Which browser?" })).result!.isError).not.toBe(true);
+      expect((await m.tool("comment_ticket", { project: "demo", ticketId: "7", text: "Which browser?" })).result!.content?.[0]?.text).toBe('{"state":"awaiting_answer"}');
       expect((await m.tool("create_jobs", { project: "demo", plan })).result!.isError).not.toBe(true);
       await m.tool("create_jobs", { project: "demo", plan: [{ key: "other", title: "Other", ticketText: "x", recipe: "reviewed", dependsOn: [] }] });
       expect(ctx.db.db.prepare("SELECT order_key FROM jobs WHERE order_id = ? ORDER BY order_key").all(sent.id)).toEqual([{ order_key: "api" }, { order_key: "ui" }]);
@@ -1008,7 +1012,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect((await m.tool("write_instance", { path: "projects/demo/recipes/reviewed.json", content: changed })).result?.isError).toBe(true);
       m.close();
       expect(t.engine.catalog.recipe("reviewed")).toMatchObject({ description: reviewed.description });
-      expect((await readFile(comments, "utf8")).trim().split("\n")).toHaveLength(1);
+      expect(existsSync(comments)).toBe(false);
       expect(ctx.db.db.prepare("SELECT count(*) AS n FROM human_queue WHERE kind = 'outbound'").get()).toEqual({ n: 0 });
 
       await writeFile(join(t.root, "user-done"), "");
@@ -1040,6 +1044,99 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect(renamedPrompt).toContain("Your name is Evelyn.");
       expect(renamedPrompt).toContain("# Keep a decision log");
     } finally {
+      await t.close();
+    }
+  }, 60000);
+
+  it("lists, authorizes and confirms project node tools without returning credentials", async () => {
+    const t = await setup(() => [init()], {
+      tracker: true,
+      pm: (root) => [
+        init(),
+        [...init(), ...newSession, { expect: "session/prompt" }, { dump: join(root, "node-turn.json") },
+          { waitFile: join(root, "node-done") }, ...replyWith("Done.")],
+      ],
+    });
+    const path: string = "templates/nodes/inspect-ticket.json";
+    const project: string = "demo";
+    const actions = async () => (await t.call("getProjectChat", { params: { id: project } })).actions;
+    const answer = (actionId: string, decision: "Approve" | "Reject") => t.call("answerProjectChatForm", {
+      params: { id: project, actionId }, body: { answers: { decision: { choices: [decision], text: "" } } },
+    });
+    try {
+      const forge = { ...forgeAccount, id: "github-alice" };
+      t.engine.project(project).ctx.forgeAccount = (id) => id === forge.id ? forge : undefined;
+      const bin: string = join(t.root, "node-bin");
+      await mkdir(bin);
+      await writeFile(join(bin, "gh"), '#!/bin/sh\nprintf private-fixture-token\n', { mode: 0o700 });
+      vi.stubEnv("PATH", bin + ":" + process.env.PATH);
+      const script: string = 'printf \'{"title":"Ticket","body":"%s"}\' "$GH_TOKEN"';
+      const inspect: Node = Node.parse({
+        kind: "tracker", name: "inspect-ticket", description: "Inspect a ticket", provider: "github", account: forge.id,
+        readOnly: true, script, outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }],
+        outputs: { done: "document" }, outputRules: { done: { stdoutJson: "" } },
+      });
+      await t.call("saveDefinition", { params: { path }, body: { content: JSON.stringify(inspect), baseSha256: null } });
+      expect(await actions()).toEqual([]);
+      await t.call("sendProjectChatMessage", { params: { id: project }, body: { text: "Inspect the ticket" } });
+      await until(() => existsSync(join(t.root, "node-turn.json")));
+      const m = mcp(tokenFileOf(intakeChat(t)));
+      try {
+        const names = async (): Promise<string[]> => (await m.rpc("tools/list", {})).result!.tools!.map(({ name }) => name);
+        expect(await names()).toEqual(expect.arrayContaining(["node_inspect-ticket", "node_git-push", "node_github-ticket-search"]));
+        const read = await m.tool("node_inspect-ticket", {});
+        expect(read.result!.isError).toBeUndefined();
+        expect(JSON.parse(read.result!.content![0]!.text)).toEqual([{ type: "document", content: { title: "Ticket", body: "[redacted]" } }]);
+        expect((await actions()).some(({ tool, target }) => tool === "node_inspect-ticket" && (target as { state: string }).state === "completed")).toBe(true);
+
+        const writePath: string = "templates/nodes/publish-from-chat.json";
+        const comments: string = join(t.root, "comments");
+        const publish: Node = Node.parse({
+          kind: "repository", name: "publish-from-chat", description: "Publish a note", account: forge.id,
+          script: "cat >> " + JSON.stringify(comments), inputs: ["text"], outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }],
+        });
+        await t.call("saveDefinition", { params: { path: writePath }, body: { content: JSON.stringify(publish), baseSha256: null } });
+        const comment: { ticketId: string; inputs: { text: string } } = { ticketId: "7", inputs: { text: "Check the browser" } };
+        const propose = async (): Promise<string> => {
+          expect((await m.tool("node_publish-from-chat", comment)).result!.content![0]!.text).toBe('{"state":"awaiting_answer"}');
+          return (await actions()).findLast(({ tool }) => tool === "node_publish-from-chat")!.id;
+        };
+        await answer(await propose(), "Reject");
+        expect(existsSync(comments)).toBe(false);
+        const proposed: string = await propose();
+        expect(existsSync(comments)).toBe(false);
+        await answer(proposed, "Approve");
+        expect(await readFile(comments, "utf8")).toContain("Check the browser");
+        await expect(answer(proposed, "Approve")).rejects.toThrow();
+
+        const global = t.engine.global();
+        const mode = vi.spyOn(t.engine, "global").mockReturnValue({ ...global, settings: { ...global.settings, protectedMode: true } });
+        try {
+          expect(await names()).toContain("node_inspect-ticket");
+          const original = await t.call("getDefinition", { params: { path } });
+          expect(original.chatApproval?.approved).toBe(true);
+          const changed: Node = Node.parse({ ...inspect, script: "true\n" + script });
+          await definitionOperations(t.engine).write(path, JSON.stringify(changed));
+          expect(await names()).not.toContain("node_inspect-ticket");
+          await expect(callNodeTool(t.engine, project, "inspect-ticket", {})).rejects.toThrow("needs approval");
+          const review = await t.call("getDefinition", { params: { path } });
+          expect(review.chatApproval?.approved).toBe(false);
+          await expect(t.call("approveChatNode", { params: { path }, body: { hash: original.chatApproval!.hash } })).rejects.toThrow();
+          await t.call("approveChatNode", { params: { path }, body: { hash: review.chatApproval!.hash } });
+          expect(await names()).toContain("node_inspect-ticket");
+          expect(JSON.stringify((await callNodeTool(t.engine, project, "inspect-ticket", {})).value)).toContain("[redacted]");
+          await definitionOperations(t.engine).write(path, JSON.stringify({ ...inspect, script: "printf 1 >/dev/null\n" + script }));
+          expect(await names()).not.toContain("node_inspect-ticket");
+        } finally {
+          mode.mockRestore();
+        }
+        expect(await names()).toContain("node_inspect-ticket");
+      } finally {
+        m.close();
+      }
+    } finally {
+      vi.unstubAllEnvs();
+      await writeFile(join(t.root, "node-done"), "");
       await t.close();
     }
   }, 60000);

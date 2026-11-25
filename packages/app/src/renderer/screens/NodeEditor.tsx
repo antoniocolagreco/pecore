@@ -56,7 +56,7 @@ export function settingUrl(section: string): string {
 }
 
 type Validation = RouteResult<"validateDefinition">;
-type Snapshot = Pick<DefinitionFile, "content"> & { sha256: string | null };
+type Snapshot = Pick<DefinitionFile, "content" | "chatApproval"> & { sha256: string | null };
 export type NewDefinition = { content: string; path(content: string): string };
 
 export function useDefinitionDraft(existingPath: string, sidecar = false, creation?: NewDefinition, revalidate = "", showLoading = true) {
@@ -176,7 +176,7 @@ export function useDefinitionDraft(existingPath: string, sidecar = false, creati
 
   return {
     content, dirty, ready: !!baseline && (!!creation || sidecar || baseline.sha256 !== null || dirty), errors, warnings, savedPath,
-    sha256: baseline?.sha256 ?? null,
+    sha256: baseline?.sha256 ?? null, chatApproval: baseline?.chatApproval,
     canCommit, canWrite: canSave && !changed, commit: save.run,
     editable: connected && !save.busy && !reload.busy,
     update(value: string): void { if (!base && baseline) setBase(baseline); setDraft(value); },
@@ -533,6 +533,15 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   const tracker: boolean = kind === "tracker";
   const repository: boolean = kind === "repository";
   const remote: boolean = tracker || repository;
+  const [approvalOpen, setApprovalOpen] = useState(false);
+  const [approvedHash, setApprovedHash] = useState<string>();
+  const approval = file.chatApproval;
+  const approve = useAction(async () => {
+    if (!approval) return;
+    await call("approveChatNode", { params: { path }, body: { hash: approval.hash } });
+    setApprovedHash(approval.hash);
+    setApprovalOpen(false);
+  });
   const provider = TrackerProvider.safeParse(draft?.provider).data;
   const accounts = useData(() => remote ? call("getAccounts") : Promise.resolve(null), [remote],
     (event) => remote && event.type === "configuration.changed" && event.kind === "accounts");
@@ -610,6 +619,24 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   </>}>
     {(newTemplate || path.startsWith("templates/")) && <Link to="/templates" state={restorePageScroll}>Back to templates</Link>}
     {file.feedback}
+    {remote && approval && !approval.approved && approvedHash !== approval.hash && <Alert tone="warning">
+      <div className={ui.row}>
+        <span>To approve · This script needs your approval before the Project Manager can run it from chat.</span>
+        <Button disabled={file.dirty || !editable} onClick={() => { approve.clear(); setApprovalOpen(true); }}>Approve</Button>
+      </div>
+    </Alert>}
+    {approval && <Dialog open={approvalOpen} onOpenChange={setApprovalOpen} title="Approve script for chat?"
+      footer={<>
+        <Button disabled={approve.busy} onClick={() => setApprovalOpen(false)}>Cancel</Button>
+        <Button variant="primary" loading={approve.busy} disabled={file.dirty || !editable} onClick={() => void approve.run()}>Approve script</Button>
+      </>}>
+      <p>The Project Manager can run this script with the node’s account. Review the code before approving it.</p>
+      <Sidecar content={string(draft?.script)} disabled change={() => undefined} isMarkdown={false} />
+      {Object.entries(approval.checks).map(([name, body]) => <div key={name}><strong>Saved check</strong><pre>{body}</pre></div>)}
+      {Array.isArray(draft?.probe) && <div><strong>Repeat check</strong><pre>{JSON.stringify(draft.probe)}</pre></div>}
+      {Array.isArray(draft?.mergedCheck) && <div><strong>Merge check</strong><pre>{JSON.stringify(draft.mergedCheck)}</pre></div>}
+      <ErrorText error={approve.error} />
+    </Dialog>}
     {file.ready && <Card padded>
       {draft ? (
         <fieldset className={s.fields} disabled={!editable}>
@@ -684,6 +711,8 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
             {!draft.command && textField("script", "Script name", "Enter the name of the saved .sh script. Choose either a command or a script.")}
           </>}
           {remote && <>
+            {check("readOnly", "Reads only", "Run this node from chat without asking for confirmation. Protected mode still requires script approval.",
+              draft.readOnly === true, (checked) => update("readOnly", checked ? true : undefined))}
             {tracker && <><Select label="Tracker" value={provider ?? null} options={[
               { value: "github", label: "GitHub Issues" }, { value: "gitlab", label: "GitLab Issues" }, { value: "jira", label: "Jira" },
             ]} onValueChange={(value) => updateFields({ provider: value, account: undefined })} />

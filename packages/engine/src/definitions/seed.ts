@@ -4,7 +4,7 @@ import type { Catalog } from "../store/catalog";
 import { validIcon } from "./icon";
 import { loadTemplates } from "./load";
 
-export const templatesFormat: string = "8";
+export const templatesFormat: string = "9";
 
 export async function seedTemplates(catalog: Catalog, shipped: string): Promise<void> {
   const db: Catalog["db"] = catalog.db;
@@ -34,6 +34,11 @@ export async function seedTemplates(catalog: Catalog, shipped: string): Promise<
     for (const node of definitions.nodes.values()) if (!catalog.node(node.name)) catalog.saveNode(node, true);
     for (const recipe of definitions.recipes.values()) if (!catalog.recipe(recipe.name)) catalog.saveRecipe(recipe, true);
     for (const [name, body] of contents) if (catalog.content(name) === null) catalog.saveContent(name, body, true);
+    for (const { name } of definitions.nodes.values()) {
+      const shippedNode: unknown = db.prepare("SELECT 1 FROM catalog_nodes WHERE name = ? AND shipped = 1").pluck().get(name);
+      const remote = shippedNode ? catalog.chatNode(name) : null;
+      if (remote) catalog.approveChatNode(name, remote.hash);
+    }
     for (const [name, svg] of icons) if (catalog.icon(name) === null) catalog.saveIcon(name, svg, true);
     db.prepare("INSERT OR REPLACE INTO catalog_version (id, format) VALUES (1, ?)").run(templatesFormat);
   })();

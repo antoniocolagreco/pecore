@@ -142,6 +142,7 @@ export const TrackerNode = CommandNode.pick({
   account: z.string({ error: "Choose an account for this tracker." }).trim().min(1, "Choose an account for this tracker."),
   script: z.string().trim().min(1, "Enter a script for this tracker."),
   repeatCheck: z.literal(true).optional(),
+  readOnly: z.literal(true).optional(),
 }).strict();
 export type TrackerNode = z.infer<typeof TrackerNode>;
 

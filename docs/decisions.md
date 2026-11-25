@@ -409,3 +409,9 @@
 - Decision: A Repository node runs one inline shell script with a Git hosting account chosen on the node template. Shipped templates use the project account and keep their internal repeat and merge checks. A job needs the account before it starts. Command nodes receive no Git hosting or tracker credentials from the app.
 - Why: An experienced developer could not understand the credentials checkbox.
 - Replaces: Use source control credentials, its Check command field and credentialed Command nodes for repository actions.
+
+## 2026-11-25: Project nodes become Project Manager tools
+
+- Decision: Project Managers can call Repository and Tracker nodes in chat. Reads run directly. Changes need confirmation for the exact action. Protected mode also requires the current script to match the authorization recorded by the app. Shipped nodes and user saves authorize the saved script. Agent saves do not. Job execution follows its existing rules.
+- Why: The Project Manager needs to find tickets and plan one job per ticket while keeping Git hosting and tracker logins inside the app.
+- Replaces: Dedicated ticket actions as the only chat access to project trackers and direct posting of comments on request.

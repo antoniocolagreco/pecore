@@ -165,7 +165,8 @@ export class ChatsDb {
       this.db.prepare(`UPDATE messages SET state = 'failed', error = 'Automatic ticket intake has ended.'
         WHERE role = 'user' AND sender IS NULL AND order_id <> id AND state IN ('queued', 'running', 'interrupted')`).run();
       this.db.prepare("UPDATE messages SET state = 'interrupted' WHERE state IN ('queued', 'running')").run();
-      this.db.prepare("UPDATE actions SET target = ? WHERE json_extract(target, '$.state') = 'running'").run(JSON.stringify({ state: "interrupted" }));
+      this.db.prepare(`UPDATE actions SET target = CASE WHEN json_type(target, '$.nodeProposal') IS NULL THEN ?
+        ELSE json_set(target, '$.state', 'interrupted') END WHERE json_extract(target, '$.state') = 'running'`).run(JSON.stringify({ state: "interrupted" }));
       this.db.prepare("UPDATE actions SET target = json_set(target, '$.state', 'interrupted') WHERE json_extract(target, '$.state') IN ('creating_project', 'updating_project', 'deleting_project', 'importing_project', 'exporting_project', 'deleting_agent')").run();
     })();
   }

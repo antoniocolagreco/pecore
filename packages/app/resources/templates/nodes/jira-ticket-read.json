@@ -1,6 +1,7 @@
 {
   "provider": "jira",
   "kind": "tracker",
+  "readOnly": true,
   "account": "project.account",
   "tags": [
     "issue tracker"

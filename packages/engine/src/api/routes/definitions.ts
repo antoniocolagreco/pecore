@@ -288,9 +288,13 @@ export function definitionOperations(engine: Engine) {
       return entries;
     },
     getDefinition: async ({ params: { path } }) => {
-      const bytes: Buffer | null = await definitionBytes(location(path, false));
+      const target = location(path, false);
+      const bytes: Buffer | null = await definitionBytes(target);
       if (!bytes) throw new NotFoundError(`definition ${path} not found`);
-      return { path, content: bytes.toString("utf8"), sha256: sha256(bytes) };
+      const approval = target.kind === "node" && engine.global().settings.protectedMode ? target.catalog?.chatNode(basename(target.file, ".json")) : null;
+      return { path, content: bytes.toString("utf8"), sha256: sha256(bytes),
+        ...(approval ? { chatApproval: { hash: approval.hash, approved: approval.approved, checks: approval.checks } } : {}),
+      };
     },
     validateDefinition: async ({ body: { path, content } }) => {
       const { kind, id } = location(path, false);
@@ -345,8 +349,15 @@ export function definitionOperations(engine: Engine) {
       engine.definitionChanged(`projects/${id}/knowledge/${name}`, null);
       return { ok: true as const };
     }),
+    approveChatNode: ({ params: { path }, body: { hash } }) => mutate(async () => {
+      const target = location(path, false);
+      if (!engine.global().settings.protectedMode || target.kind !== "node" || !target.catalog?.approveChatNode(basename(target.file, ".json"), hash)) {
+        throw new HttpError("conflict", "The script changed or no longer needs approval. Reopen the node.");
+      }
+      return { ok: true as const };
+    }),
     saveDefinition: ({ params: { path }, body: { content, baseSha256 } }) => mutate(async () =>
-      /^projects\/[^/]+\/project\.json$/.test(path) ? engine.withConfiguration(() => save(path, content, baseSha256)) : save(path, content, baseSha256)),
+      /^projects\/[^/]+\/project\.json$/.test(path) ? engine.withConfiguration(() => save(path, content, baseSha256, true)) : save(path, content, baseSha256, true)),
     getNodeTemplateUsage: ({ params: { name } }) => nodeTemplateUsers(name),
     deleteTemplate: ({ params: { path }, body: { baseSha256 } }) => mutate(() => engine.withConfiguration(async () => {
       const target: ReturnType<typeof location> = location(path, false);
@@ -376,7 +387,7 @@ export function definitionOperations(engine: Engine) {
     }),
   } satisfies Partial<Handlers>;
 
-  async function save(path: string, content: string, baseSha256: string | null): Promise<RouteOutput<"saveDefinition">> {
+  async function save(path: string, content: string, baseSha256: string | null, userSave = false): Promise<RouteOutput<"saveDefinition">> {
     const target: ReturnType<typeof location> = location(path, false);
     const { absPath, catalog, kind, id, file } = target;
     const before: Buffer | null = await definitionBytes(target);
@@ -388,7 +399,12 @@ export function definitionOperations(engine: Engine) {
     if (errors.length) throw new HttpError("bad_request", errors.map((error) => error.message).join("\n"));
     const persist = async (data: Buffer): Promise<void> => {
       if (catalog) {
-        if (kind === "node") catalog.saveNode(Node.parse(value));
+        if (kind === "node") catalog.db.transaction(() => {
+          const node: Node = Node.parse(value);
+          catalog.saveNode(node);
+          const approval = userSave ? catalog.chatNode(node.name) : null;
+          if (approval) catalog.approveChatNode(node.name, approval.hash);
+        })();
         else if (kind === "recipe") catalog.saveRecipe(Recipe.parse(value));
         else if (kind === "icon") catalog.saveIcon(file, content);
         else catalog.saveContent(file, content);
@@ -542,7 +558,11 @@ export function definitionOperations(engine: Engine) {
         db.catalog.saveContent(key, body);
         created.push(`projects/${id}/nodes/${key}`);
       }
-      for (const node of additions) db.catalog.saveNode(node);
+      for (const node of additions) {
+        db.catalog.saveNode(node);
+        const approval = engine.catalog.chatNode(node.name);
+        if (approval?.approved) db.catalog.approveChatNode(node.name, approval.hash);
+      }
       if (recipe) {
         if (existingRecipe) kept.push(recipePath);
         else {

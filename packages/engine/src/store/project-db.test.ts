@@ -23,12 +23,12 @@ describe("pecore.db", () => {
   it("applies the migrations once, in WAL mode", async () => {
     const path = join(await tempDir(), "pecore.db");
     const db = new ProjectDb(path);
-    expect(db.version()).toBe(28);
+    expect(db.version()).toBe(29);
     expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_nodes') WHERE name = 'clean_checkout'").get()).toBeUndefined();
     expect(db.db.pragma("journal_mode", { simple: true })).toBe("wal");
     db.close();
     const again = new ProjectDb(path);
-    expect(again.version()).toBe(28);
+    expect(again.version()).toBe(29);
     const tables = again.db.prepare<[], string>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'catalog_%' ORDER BY name").pluck().all();
     expect(tables).toEqual([
       "artifacts", "attempt_logs", "attempts", "events", "human_queue", "jobs", "node_runs",
@@ -344,7 +344,7 @@ describe("chats.db", () => {
 
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.version()).toBe(28);
+    expect(db.version()).toBe(29);
     for (let i = 0; i < notificationsKept + 3; i++) db.addNotification({ kind: "job", title: `n${i}`, body: "" }, 1000 + i);
     const kept = db.notifications();
     expect(kept).toHaveLength(notificationsKept);
@@ -366,7 +366,7 @@ describe("chats.db", () => {
       UPDATE schema_version SET version = 5`);
     old.close();
     const db = new ChatsDb(file);
-    expect(db.version()).toBe(28);
+    expect(db.version()).toBe(29);
     expect(db.messages(assistantChat)).toEqual([]);
     db.close();
   });
