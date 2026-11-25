@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { Recipe, RecipeNode } from "./recipe";
 
+it("accepts legacy recipe anchors without retaining them on Start, End or internal connections", () => {
+  const recipe: unknown = {
+    name: "test", description: "Test recipe", start: "a", startPorts: { sourcePort: "top" },
+    nodes: { a: { use: "build" }, b: { use: "test" } },
+    edges: [{ from: "a", on: "success", to: "b", sourcePort: "bottom", targetPort: "top", maxRounds: 2 }],
+    ends: [{ from: "b", on: "failure", result: "failed", targetPort: "top" }],
+  };
+  const parsed: Recipe = Recipe.parse(recipe);
+  expect(parsed).not.toHaveProperty("startPorts");
+  expect(parsed.edges).toEqual([{ from: "a", on: "success", to: "b", maxRounds: 2 }]);
+  expect(parsed.ends).toEqual([{ from: "b", on: "failure", result: "failed" }]);
+});
+
 const feature = {
   name: "feature",
   description: "New feature on existing code: spec, tests, code, checks, review, commit, PR",

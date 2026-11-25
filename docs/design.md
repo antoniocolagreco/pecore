@@ -448,9 +448,8 @@ Recipe fields:
 | `icon` | optional SVG icon name from `templates/icons/`, without the file extension |
 | `start` | the first node |
 | `onBaseChanged` | the node the job re-enters when its base moves (D17, 4.2) |
-| `layout` | optional node positions for the graph editor (`{ "<node id>": { "x", "y" } }`); ignored by the engine. The editor arranges a recipe without positions from left to right and snaps each node to a free grid cell when dropped. While a node moves, its arrows route from the live positions and keep any explicitly chosen sides. Arrange recalculates the positions in the draft |
-| `ends` | connections to End. Each has `from`, `on` and `result` (`succeeded`, `failed` or `not_delivered`). For new connections, the editor derives the result from `success` or `failure` and suggests an editable value for other outcomes. Each reachable outcome must have exactly one connection. The editor saves any chosen sides in `sourcePort` and `targetPort`. |
-| `startPorts` | optional `sourcePort` and `targetPort` for the connection from Start |
+| `layout` | optional node positions for the graph editor (`{ "<node id>": { "x", "y" } }`), ignored by the engine. Recipes without positions open with an initial layout. Dragging snaps to a free grid cell on release. Arrange runs only when requested. |
+| `ends` | connections to End. Each has `from`, `on` and `result` (`succeeded`, `failed` or `not_delivered`). For new connections, the editor derives the result from `success` or `failure` and suggests an editable value for other outcomes. Each reachable outcome must have exactly one connection. |
 | `successOutcomes` | legacy list of successful `<node>:<outcome>` values for recipes saved without `ends` |
 | `nodes.<id>.use` | a node template name |
 | `nodes.<id>.params`, `nodes.<id>.agent` | step parameters and legacy agent settings. Engine-user commands take their arguments from the node template |
@@ -460,7 +459,9 @@ Recipe fields:
 | `nodes.<id>.optional` | runs only if the `spec` names it (4.2) |
 | `nodes.<id>.agentSession` | optional Job, Node or New override for an agent step. When absent, the step uses its node template's setting |
 | `nodes.<id>.skipWhenUnchanged` | after a base change, if the rebase was clean and the job's own changes are identical to before (same `git patch-id` of the job's diff), the node ends at once with its previous outcome instead of running, and that outcome is bound to the new content state (4.4): an approval of the same patch carries over. Used to avoid repeating reviews and human approvals; checks never use it |
-| `edges` | `from`, `on` (outcome), `to`, optional `maxRounds`. The editor can save `sourcePort` and `targetPort` (left, right, top or bottom) for each arrow |
+| `edges` | `from`, `on` (outcome), `to`, optional `maxRounds` |
+
+The editor routes arrows from live card positions. It divides the canvas into channels at card boundaries and reserves distinct tracks for each arrow. An orthogonal A* search avoids cards and prefers facing sides, then fewer turns and shorter paths. Crossings are allowed. The tracks, sides and attachment points are computed in memory. The recipe migration drops old side fields from the catalog and job history.
 
 Notes on the example:
 

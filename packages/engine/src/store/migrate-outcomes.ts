@@ -48,13 +48,25 @@ function updateSnapshot(snapshot: JobDefinitions, recipe: Recipe, oldRecipeHash:
 
 function migrateCatalogRecipes(db: Database.Database, lookup: OutcomeLookup): void {
   const catalog: Catalog = new Catalog(db);
+  const selectEdges = db.prepare<[string], { position: number; source: string; outcome: string }>(
+    "SELECT position, source, outcome FROM catalog_recipe_edges WHERE recipe = ?");
+  const saveEdge = db.prepare("UPDATE catalog_recipe_edges SET outcome = ? WHERE recipe = ? AND position = ?");
+  const saveCi = db.prepare("UPDATE catalog_recipes SET ci_on = ? WHERE name = ?");
+  const saveSuccess = db.prepare("UPDATE catalog_recipe_lists SET value = ? WHERE recipe = ? AND field = 'successOutcomes' AND position = ?");
   for (const name of catalog.names("recipes")) {
     const recipe: Recipe = catalog.recipe(name)!;
-    const before: string = JSON.stringify(recipe);
+    const atStep: OutcomeLookup = recipeStepOutcomes(recipe, lookup);
+    for (const { position, source, outcome } of selectEdges.all(name)) {
+      const renamed: string = atStep(source, outcome);
+      if (renamed !== outcome) saveEdge.run(renamed, name, position);
+    }
+    const success: string[] = recipe.successOutcomes;
+    const ci: string | undefined = recipe.ci?.on;
     renameRecipeOutcomes(recipe, lookup);
-    if (JSON.stringify(recipe) === before) continue;
-    const shipped: unknown = db.prepare("SELECT shipped FROM catalog_recipes WHERE name = ?").pluck().get(name);
-    catalog.saveRecipe(recipe, shipped === 1);
+    if (recipe.ci && recipe.ci.on !== ci) saveCi.run(recipe.ci.on, name);
+    for (const [position, value] of recipe.successOutcomes.entries()) {
+      if (value !== success[position]) saveSuccess.run(value, name, position);
+    }
   }
 }
 

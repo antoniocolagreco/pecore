@@ -1,12 +1,14 @@
-import { useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
+import { useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode, Ref } from "react";
-import { Background, BackgroundVariant, ConnectionMode, Handle, MarkerType, Panel, Position, ReactFlow } from "@xyflow/react";
-import type { Connection, Node, NodeProps, OnConnectEnd, OnNodeDrag, ReactFlowInstance, Viewport, XYPosition } from "@xyflow/react";
+import { Background, BackgroundVariant, Handle, MarkerType, Panel, Position, ReactFlow, useStore } from "@xyflow/react";
+import type { Connection, EdgeChange, Node, NodeChange, NodeProps, OnNodeDrag, ReactFlowInstance, Viewport, XYPosition } from "@xyflow/react";
 import { Button, IconButton } from "../ds/button";
 import { MinusIcon, MonitorIcon, PlusIcon } from "../ds/icons";
-import { RecipeEdge, recipeAttachments, recipeLaneGap } from "./RecipeEdge";
+import { RecipeEdge } from "./RecipeEdge";
 import type { RoutedRecipeEdge } from "./RecipeEdge";
-import { recipeEnd, recipeGrid, recipeStart, samePosition, slotTaken, snapRecipePosition } from "./recipeLayout";
+import { routeRecipe } from "./recipeRouting";
+import type { RouteCard, RecipeRoute, RoutePort } from "./recipeRouting";
+import { recipeEnd, recipeGrid, recipeStart, samePosition, snapRecipePosition } from "./recipeLayout";
 import type { RecipeLayout, RecipeLink } from "./recipeLayout";
 import "@xyflow/react/dist/style.css";
 import s from "./Editors.module.css";
@@ -16,17 +18,34 @@ export type RecipeGraphLink = RecipeLink & { invalid: boolean; failed: boolean; 
 export type RecipeCanvas = { dropPosition(point: XYPosition): XYPosition | undefined };
 
 const sides: Position[] = Object.values(Position);
-type StepNode = Node<{ label: ReactNode }, "step">;
+type Anchor = NonNullable<Node["handles"]>[number];
+type StepNode = Node<{ label: ReactNode; anchors: Anchor[] }, "step">;
+const cardSize: number = 120;
 
-const edgeStyle = { strokeWidth: 2.5, strokeLinejoin: "round" as const };
+const edgeStyle = { strokeWidth: 2, strokeLinejoin: "round" as const };
 
 function RecipeStep({ id, data, isConnectable }: NodeProps<StepNode>) {
+  const connecting: boolean = useStore((state) => state.connection.inProgress);
   return <>
     {data.label}
-    {sides.map((side) => <Handle key={side} id={side} position={side} type="source" isConnectable={isConnectable}
-      isConnectableStart={id !== recipeEnd} isConnectableEnd={id !== recipeStart}
-      className={s.availablePort} aria-label={`Connect ${side}`} />)}
+    {id !== recipeEnd && sides.map((side) => <Handle key={side} id={side} position={side} type="source"
+      isConnectable={isConnectable} isConnectableEnd={false} className={s.availablePort} aria-label={`Connect ${side}`} />)}
+    {id !== recipeStart && <Handle id="card" type="target" position={Position.Left} isConnectable={isConnectable}
+      isConnectableStart={false} className={s.connectionTarget} style={{ pointerEvents: connecting ? "all" : "none" }} />}
+    {data.anchors.map(({ id: anchor, type, position, x, y }) => <Handle key={anchor} id={anchor} type={type}
+      position={position} isConnectable={false} className={s.routeAnchor} style={{ left: x, top: y }} />)}
   </>;
+}
+
+function dragHandles(id: string): Anchor[] {
+  const middle: number = cardSize / 2;
+  const handles: Anchor[] = id === recipeEnd ? [] : sides.map((position) => ({
+    id: position, position, type: "source", width: 0, height: 0,
+    x: position === Position.Left ? 0 : position === Position.Right ? cardSize : middle,
+    y: position === Position.Top ? 0 : position === Position.Bottom ? cardSize : middle,
+  }));
+  if (id !== recipeStart) handles.push({ id: "card", type: "target", position: Position.Left, x: 0, y: middle, width: 0, height: 0 });
+  return handles;
 }
 
 const nodeTypes = { step: RecipeStep };
@@ -45,46 +64,12 @@ function startViewport(layout: RecipeLayout, start: string): Viewport {
   return { x: 32 - position.x * zoom, y: 220 - position.y * zoom, zoom };
 }
 
-export function routeRecipeEdges(links: RecipeGraphLink[], automatic: RecipeLayout): RoutedRecipeEdge[] {
-  const attachments = recipeAttachments(links);
-  const returns: boolean[] = links.map(({ from, to }) => automatic[to]!.x < automatic[from]!.x);
-  const returnCount: number = returns.filter(Boolean).length;
-  const lanes = new Map<number, number>(returns.map((_, index) => index)
-    .sort((first, second) => Number(returns[second]) - Number(returns[first]))
-    .map((index, lane) => [index, 42 + lane * recipeLaneGap]));
-  const directCandidates: RecipeGraphLink[] = links.filter(({ from, to, failed, targetPort }) =>
-    to === recipeEnd && from !== recipeStart && !failed && (!targetPort || targetPort === "left"));
-  const direct: RecipeGraphLink | undefined = directCandidates.find((link) => !link.neutral) ?? directCandidates[0];
-  const terminalCounts: Record<"top" | "bottom", number> = { top: 0, bottom: 0 };
-  return links.map((link, index) => {
-    const stroke: string = link.invalid || link.failed ? "var(--recipe-edge-failed)"
-      : returns[index] || link.neutral ? "var(--recipe-edge-return)" : "var(--recipe-edge-forward)";
-    const outer: boolean = link.failed || (link.to === recipeEnd && link.from !== recipeStart && link !== direct);
-    const side: "top" | "bottom" = link.failed ? "bottom"
-      : link.targetPort === "top" || link.targetPort === "bottom" ? link.targetPort
-      : terminalCounts.top <= terminalCounts.bottom ? "top" : "bottom";
-    return {
-      id: String(index),
-      source: link.from,
-      target: link.to,
-      type: "routed",
-      data: {
-        attachment: attachments[index]!,
-        sourcePort: link.failed ? "bottom" : link.sourcePort ?? (outer ? side : undefined),
-        targetPort: link.targetPort ?? (outer ? side : undefined),
-        terminalLane: outer ? { side, offset: 44 + (side === "top" ? returnCount * recipeLaneGap : 0) + terminalCounts[side]++ * 30 } : undefined,
-        laneOffset: lanes.get(index)!,
-      },
-      label: link.caption ?? (link.invalid ? link.on + " (invalid)" : link.on),
-      markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 16, height: 16 },
-      style: { ...edgeStyle, stroke },
-      selectable: false,
-      focusable: false,
-    };
-  });
+function blocksCard(layout: RecipeLayout, id: string, point: XYPosition): boolean {
+  return Object.entries(layout).some(([other, at]) => other !== id
+    && Math.abs(at.x - point.x) < cardSize + 4 && Math.abs(at.y - point.y) < cardSize + 4);
 }
 
-export function RecipeGraph({ ref, steps, links, layout, automatic, start, editable, inspectable = false, selected, onSelect, onConnect, onLayout }: {
+export function RecipeGraph({ ref, steps, links, layout, automatic, start, editable, inspectable = false, selected, onSelect, onConnect, onReconnect, onDelete, onLayout }: {
   ref?: Ref<RecipeCanvas>;
   steps: RecipeGraphNode[];
   links: RecipeGraphLink[];
@@ -96,21 +81,62 @@ export function RecipeGraph({ ref, steps, links, layout, automatic, start, edita
   selected: string;
   onSelect(id: string): void;
   onConnect(connection: Connection): void;
+  onReconnect(from: string, outcome: string, to: string): void;
+  onDelete(edges: RecipeLink[]): void;
   onLayout(next: RecipeLayout): void;
 }) {
-  const [flow, setFlow] = useState<ReactFlowInstance<StepNode>>();
+  const [flow, setFlow] = useState<ReactFlowInstance<StepNode, RoutedRecipeEdge>>();
+  const [drag, setDrag] = useState<{ id: string; position: XYPosition }>();
+  const [selectedEdge, setSelectedEdge] = useState<string>();
   const canvas = useRef<HTMLDivElement>(null);
+  const reconnectStart = useRef<XYPosition>(null);
+  const positions: RecipeLayout = useMemo(() => drag ? { ...layout, [drag.id]: drag.position } : layout, [layout, drag]);
+  const routed = useMemo(() => {
+    const valid: RecipeGraphLink[] = links.filter(({ from, to }) => positions[from] && positions[to]);
+    const cards: RouteCard[] = Object.entries(positions).map(([id, at]) => ({ ...at, id, width: cardSize, height: cardSize }));
+    const routes: RecipeRoute[] = routeRecipe(valid, cards);
+    const anchors: Map<string, Anchor[]> = new Map();
+    const addAnchor = (node: string, id: string, type: Anchor["type"], port: RoutePort): string => {
+      const at: XYPosition = positions[node]!;
+      const items: Anchor[] = anchors.get(node) ?? [];
+      const anchor: string = id + ":" + type;
+      items.push({ id: anchor, type, position: port.side as Position, x: port.x - at.x, y: port.y - at.y, width: 0, height: 0 });
+      anchors.set(node, items);
+      return anchor;
+    };
+    const edges: RoutedRecipeEdge[] = valid.map((link, index) => {
+      const route: RecipeRoute = routes[index]!;
+      const id: string = `${link.from}:${link.on}`;
+      const stroke: string = link.invalid || link.failed ? "var(--recipe-edge-failed)"
+        : automatic[link.to]!.x < automatic[link.from]!.x || link.neutral ? "var(--recipe-edge-return)" : "var(--recipe-edge-forward)";
+      return {
+        id, source: link.from, target: link.to,
+        sourceHandle: addAnchor(link.from, id, "source", route.source),
+        targetHandle: addAnchor(link.to, id, "target", route.target),
+        type: "routed", data: { outcome: link.on, route },
+        label: link.caption ?? (link.invalid ? link.on + " (invalid)" : link.on),
+        markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 7, height: 5 },
+        style: { ...edgeStyle, stroke },
+        interactionWidth: 8,
+        deletable: link.from !== recipeStart || link.to !== recipeEnd,
+      };
+    });
+    return { edges, anchors };
+  }, [links, positions, automatic]);
   const nodes: StepNode[] = steps.map(({ id, label, invalid }) => ({
     id,
     type: "step",
-    data: { label },
-    position: layout[id]!,
+    data: { label, anchors: routed.anchors.get(id) ?? [] },
+    handles: [...dragHandles(id), ...(routed.anchors.get(id) ?? [])],
+    position: positions[id]!,
     selected: selected === id,
     className: [s.stepNode, invalid && s.invalidNode].filter(Boolean).join(" "),
-    width: 120,
-    height: 120,
+    width: cardSize,
+    height: cardSize,
+    measured: { width: cardSize, height: cardSize },
     zIndex: 1,
     selectable: id !== recipeStart && id !== recipeEnd,
+    deletable: false,
   }));
   useImperativeHandle(ref, () => ({
     dropPosition(point): XYPosition | undefined {
@@ -118,38 +144,32 @@ export function RecipeGraph({ ref, steps, links, layout, automatic, start, edita
         ? flow?.screenToFlowPosition(point) : undefined;
     },
   }), [flow]);
-  const edges: RoutedRecipeEdge[] = routeRecipeEdges(links, automatic);
-
-  useLayoutEffect(() => {
-    flow?.setNodes((current) => {
-      const byId = new Map<string, StepNode>(current.map((node) => [node.id, node]));
-      return nodes.map((node) => {
-        const existing: StepNode | undefined = byId.get(node.id);
-        return { ...existing, ...node, position: existing?.dragging ? existing.position : node.position };
-      });
-    });
-  });
+  const edges: RoutedRecipeEdge[] = routed.edges.map((edge) => ({
+    ...edge, selected: selectedEdge === edge.id, selectable: editable,
+    focusable: editable, reconnectable: editable && selectedEdge === edge.id ? "target" : false,
+  }));
 
   const place = (id: string, position: XYPosition): void => {
     const previous: XYPosition = layout[id]!;
     const slot: XYPosition = snapRecipePosition(position);
-    const target: XYPosition = slotTaken(layout, slot, id) ? previous : slot;
-    flow?.updateNode(id, { position: target });
-    if (!samePosition(previous, target)) onLayout({ ...layout, [id]: target });
+    if (!blocksCard(layout, id, slot) && !samePosition(previous, slot)) onLayout({ ...layout, [id]: slot });
   };
 
-  const stop: OnNodeDrag<StepNode> = (_, node) => place(node.id, node.position);
-
-  const connectToCard: OnConnectEnd = (event, connection) => {
-    if (!editable || connection.isValid || !connection.fromHandle || !connection.fromNode) return;
-    const pointer: MouseEvent | Touch | undefined = "changedTouches" in event ? event.changedTouches[0] : event;
-    if (!pointer) return;
-    const card: HTMLElement | null = document.elementFromPoint(pointer.clientX, pointer.clientY)?.closest<HTMLElement>(".react-flow__node") ?? null;
-    const target: string | undefined = card?.dataset.id;
-    const source: string = connection.fromNode.id;
-    if (!target || target === source || !canvas.current?.contains(card) || !Object.hasOwn(layout, target)) return;
-
-    onConnect({ source, sourceHandle: connection.fromHandle.id ?? null, target, targetHandle: null });
+  const move = (changes: NodeChange<StepNode>[]): void => {
+    for (const change of changes) {
+      if (change.type === "position" && change.dragging && change.position && !blocksCard(layout, change.id, change.position)) {
+        setDrag({ id: change.id, position: change.position });
+      }
+    }
+  };
+  const stop: OnNodeDrag<StepNode> = (_, node) => {
+    if (!blocksCard(layout, node.id, node.position)) place(node.id, node.position);
+    setDrag(undefined);
+  };
+  const selectEdge = (changes: EdgeChange<RoutedRecipeEdge>[]): void => {
+    const selection = changes.find((change) => change.type === "select" && change.selected);
+    if (selection?.type === "select") setSelectedEdge(selection.id);
+    else if (changes.some((change) => change.type === "select" && change.id === selectedEdge)) setSelectedEdge(undefined);
   };
 
   const moveByKeyboard = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -170,31 +190,56 @@ export function RecipeGraph({ ref, steps, links, layout, automatic, start, edita
 
   return (
     <div ref={canvas} className={s.graph} inert={!editable && !inspectable} onKeyDownCapture={moveByKeyboard}>
-      <ReactFlow
-        defaultNodes={nodes}
+      <ReactFlow<StepNode, RoutedRecipeEdge>
+        nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        connectionMode={ConnectionMode.Loose}
         onInit={setFlow}
         defaultViewport={startViewport(layout, start)}
         minZoom={0.15}
-        deleteKeyCode={null}
+        deleteKeyCode={editable ? ["Backspace", "Delete"] : null}
         selectionKeyCode={null}
         multiSelectionKeyCode={null}
         selectNodesOnDrag={false}
         nodesDraggable={editable}
         autoPanOnNodeDrag={false}
         nodesConnectable={editable}
-        edgesReconnectable={false}
+        edgesReconnectable={editable}
+        reconnectRadius={7}
+        connectOnClick={false}
+        connectionDragThreshold={0}
+        connectionRadius={0}
         elevateEdgesOnSelect={false}
+        onNodesChange={move}
+        onEdgesChange={selectEdge}
         onNodeDragStop={stop}
         onConnect={onConnect}
-        onConnectEnd={connectToCard}
+        onReconnectStart={(event) => {
+          reconnectStart.current = { x: event.clientX, y: event.clientY };
+        }}
+        onReconnect={(edge, { target }) => { if (edge.data) onReconnect(edge.source, edge.data.outcome, target); }}
+        onReconnectEnd={(event, edge, _, connection) => {
+          const start: XYPosition | null = reconnectStart.current;
+          reconnectStart.current = null;
+          if (!start || connection.isValid || !("clientX" in event)) return;
+          if (Math.hypot(event.clientX - start.x, event.clientY - start.y) < 8) return;
+          const target: EventTarget | null = event.target;
+          if (target instanceof Element && target.matches(".react-flow__pane") && canvas.current?.contains(target)) {
+            void flow?.deleteElements({ edges: [edge] });
+          }
+        }}
+        onEdgesDelete={(deleted) => {
+          setSelectedEdge(undefined);
+          onDelete(deleted.flatMap((edge) => edge.data ? [{ from: edge.source, to: edge.target, on: edge.data.outcome }] : []));
+        }}
         isValidConnection={({ source, target }) => source !== recipeEnd && target !== recipeStart
           && (source !== recipeStart || target !== recipeEnd || steps.length === 2)}
-        onNodeClick={(_, node) => onSelect(node.id === recipeStart || node.id === recipeEnd ? "" : node.id)}
-        onPaneClick={() => onSelect("")}
+        onNodeClick={(_, node) => {
+          setSelectedEdge(undefined);
+          onSelect(node.id === recipeStart || node.id === recipeEnd ? "" : node.id);
+        }}
+        onPaneClick={() => { setSelectedEdge(undefined); onSelect(""); }}
       >
         <Background variant={BackgroundVariant.Lines} gap={20} className={s.graphPaper} color="var(--border)" />
         <Panel position="bottom-left" className={s.graphControls}>

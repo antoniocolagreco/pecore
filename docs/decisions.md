@@ -439,3 +439,9 @@
 - Decision: In Settings, Accounts, each group header shows its buttons at the right end, with Check last.
 - Why: The same layout in every group header.
 - Replaces: Check right after the title.
+
+## 2026-11-25: Route recipe arrows around cards
+
+- Decision: Drag from any side of a card and drop anywhere on the destination, including End. Reconnecting keeps the outcome. Dropping the destination on empty canvas removes the arrow. Arrows reroute during dragging on separate orthogonal tracks around cards. Their endpoints follow the facing sides when possible. Recipes store only the connections and card positions.
+- Why: Dragging to End could fail, and saved sides forced awkward bends and overlapping arrows.
+- Replaces: Saved connection sides, bottom exits for failures, and fixed lanes for returns and End.

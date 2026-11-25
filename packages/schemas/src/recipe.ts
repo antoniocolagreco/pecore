@@ -40,8 +40,6 @@ export const RecipeNode = z.preprocess((input: z.input<typeof RecipeStep> & { se
 }, RecipeStep);
 export type RecipeNode = z.infer<typeof RecipeNode>;
 
-export const EdgePort = z.enum(["left", "right", "top", "bottom"]);
-export type EdgePort = z.infer<typeof EdgePort>;
 
 export const Edge = z
   .object({
@@ -49,8 +47,6 @@ export const Edge = z
     on: Outcome,
     to: NodeId,
     maxRounds: z.number().int().positive().optional(),
-    sourcePort: EdgePort.optional(),
-    targetPort: EdgePort.optional(),
   })
   .strict();
 export type Edge = z.infer<typeof Edge>;
@@ -62,8 +58,6 @@ export const RecipeEnd = z.object({
   from: NodeId,
   on: Outcome,
   result: RecipeEndResult,
-  sourcePort: EdgePort.optional(),
-  targetPort: EdgePort.optional(),
 }).strict();
 export type RecipeEnd = z.infer<typeof RecipeEnd>;
 
@@ -73,7 +67,6 @@ const RecipeDefinition = z
     description: z.string().min(1),
     icon: Name.optional(),
     start: NodeId.optional(),
-    startPorts: z.object({ sourcePort: EdgePort.optional(), targetPort: EdgePort.optional() }).strict().optional(),
     onBaseChanged: NodeId.optional(),
     ci: z.object({
       after: NodeId,
@@ -135,9 +128,25 @@ const RecipeDefinition = z
       if (n.agent && n.agent.tier !== undefined && n.agent.profiles !== undefined) issue(["nodes", id, "agent"], `Choose a tier or specific profiles for ${title(id)}.`);
     }
   });
+export function stripRecipeAnchors<T extends object>(recipe: T): T {
+  const current: T & { startPorts?: unknown; edges?: unknown; ends?: unknown } = { ...recipe };
+  delete current.startPorts;
+  for (const key of ["edges", "ends"] as const) {
+    if (!Array.isArray(current[key])) continue;
+    current[key] = current[key].map((edge: unknown) => {
+      if (!edge || typeof edge !== "object") return edge;
+      const connection: { sourcePort?: unknown; targetPort?: unknown } = { ...edge };
+      delete connection.sourcePort;
+      delete connection.targetPort;
+      return connection;
+    });
+  }
+  return current;
+}
+
 export const Recipe = z.preprocess((input: z.input<typeof RecipeDefinition> & { maxNodeRuns?: unknown }) => {
-  if (!input || typeof input !== "object" || !Object.hasOwn(input, "maxNodeRuns")) return input;
-  const current = { ...input };
+  if (!input || typeof input !== "object") return input;
+  const current = stripRecipeAnchors(input);
   delete current.maxNodeRuns;
   return current;
 }, RecipeDefinition);

@@ -5,17 +5,28 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Connection } from "@xyflow/react";
 import { RecipeEditor } from "./RecipeEditor";
-import { recipeEnd } from "./recipeLayout";
+import { recipeEnd, recipeStart } from "./recipeLayout";
+import type { RecipeLink } from "./recipeLayout";
 
 const api = vi.hoisted(() => ({ call: vi.fn() }));
 vi.mock("../api/client", () => ({ call: api.call }));
 vi.mock("../api/live", () => ({ useConnected: () => true, onLive: () => () => undefined, useLive: () => undefined }));
 vi.mock("./RecipeGraph", () => ({
-  RecipeGraph: ({ onSelect, onConnect }: { onSelect(id: string): void; onConnect(connection: Connection): void }) => <>
+  RecipeGraph: ({ onSelect, onConnect, onReconnect, onDelete }: {
+    onSelect(id: string): void;
+    onConnect(connection: Connection): void;
+    onReconnect(from: string, outcome: string, to: string): void;
+    onDelete(links: RecipeLink[]): void;
+  }) => <>
     <button type="button" onClick={() => onSelect("review")}>Inspect review</button>
     <button type="button" onClick={() => onConnect({ source: "read", target: recipeEnd, sourceHandle: "right", targetHandle: "left" })}>Connect read to End</button>
     <button type="button" onClick={() => onConnect({ source: "read", target: "review", sourceHandle: "right", targetHandle: null })}>Connect read to review</button>
     <button type="button" onClick={() => onConnect({ source: "review", target: recipeEnd, sourceHandle: "right", targetHandle: null })}>Connect review to End</button>
+    <button type="button" onClick={() => onReconnect("read", "failure", "review")}>Reconnect failure to review</button>
+    <button type="button" onClick={() => onReconnect("read", "success", recipeEnd)}>Reconnect success to End</button>
+    <button type="button" onClick={() => onReconnect("review", "approved", recipeEnd)}>Reconnect approval to End</button>
+    <button type="button" onClick={() => onReconnect(recipeStart, "", "review")}>Reconnect Start to review</button>
+    <button type="button" onClick={() => onDelete([{ from: "read", on: "failure", to: "review" }])}>Delete failure</button>
   </>,
 }));
 
@@ -148,4 +159,47 @@ it("inherits, overrides and resets the template's session and saves the assigned
   await user.click(save);
   const inherited: RouteInput<"saveDefinition"> = api.call.mock.calls.findLast(([route]) => route === "saveDefinition")?.[1];
   expect(JSON.parse(inherited.body.content).nodes.review).toEqual({ use: "reviewer", agentId: "peer" });
+});
+
+it("keeps the outcome when reconnecting Start, steps and End, and saves deletion", async () => {
+  const recipe: RecipeInput = {
+    name: "review", description: "Read and review", start: "read",
+    nodes: { read: { use: "github-ticket-read" }, review: { use: "review" }, retry: { use: "review" } },
+    edges: [{ from: "read", on: "failure", to: "retry", maxRounds: 2 },
+      { from: "read", on: "success", to: "review" }, { from: "review", on: "approved", to: "retry" }],
+  };
+  api.call.mockClear();
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "listDefinitions") return [];
+    if (route === "getDefinition") return { content: JSON.stringify(recipe), sha256: "recipe-v1" };
+    if (route === "getAgents") return { value: { agents: [] } };
+    if (route === "validateDefinition") return { errors: [], warnings: [] };
+    if (route === "saveDefinition") return { sha256: "recipe-v2" };
+    throw new Error(`Unexpected route ${route}`);
+  });
+  const router = createMemoryRouter([{ path: "/edit/recipe/*", element: <RecipeEditor /> }], { initialEntries: ["/edit/recipe/templates/recipes/review.json"] });
+  render(<RouterProvider router={router} />);
+  const user = userEvent.setup();
+  await screen.findByText("Base-change step");
+  await user.click(screen.getByRole("button", { name: "Reconnect failure to review" }));
+  await user.click(screen.getByRole("button", { name: "Reconnect success to End" }));
+  await user.click(screen.getByRole("button", { name: "Reconnect Start to review" }));
+  expect(screen.queryByRole("combobox", { name: "Outcome" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Reconnect approval to End" }));
+  expect(screen.queryByRole("combobox", { name: "Outcome" })).toBeNull();
+  expect(screen.getByRole("combobox", { name: "Job result" }).textContent).toContain("Success");
+  await user.click(screen.getByRole("button", { name: "Reconnect" }));
+  const save: HTMLButtonElement = screen.getByRole("button", { name: "Save" });
+  await waitFor(() => expect(save.disabled).toBe(false));
+  await user.click(save);
+  const first: RouteInput<"saveDefinition"> = api.call.mock.calls.findLast(([route]) => route === "saveDefinition")?.[1];
+  expect(JSON.parse(first.body.content)).toMatchObject({
+    start: "review", edges: [{ from: "read", on: "failure", to: "review", maxRounds: 2 }],
+    ends: [{ from: "read", on: "success", result: "succeeded" }, { from: "review", on: "approved", result: "succeeded" }],
+  });
+  await user.click(screen.getByRole("button", { name: "Delete failure" }));
+  await waitFor(() => expect(save.disabled).toBe(false));
+  await user.click(save);
+  const second: RouteInput<"saveDefinition"> = api.call.mock.calls.findLast(([route]) => route === "saveDefinition")?.[1];
+  expect(JSON.parse(second.body.content).edges).toEqual([]);
 });

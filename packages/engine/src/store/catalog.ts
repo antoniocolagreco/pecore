@@ -32,9 +32,6 @@ type RecipeRow = {
   description: string;
   icon: string | null;
   start: string | null;
-  has_start_ports: number;
-  start_source_port: string | null;
-  start_target_port: string | null;
   on_base_changed: string | null;
   has_ends: number;
   has_layout: number;
@@ -64,8 +61,6 @@ type EdgeRow = {
   target: string | null;
   result: string | null;
   max_rounds: number | null;
-  source_port: string | null;
-  target_port: string | null;
 };
 
 type CommandAction = "command" | "probe" | "mergedCheck";
@@ -260,13 +255,10 @@ export class Catalog {
     const layout: { step: string; x: number; y: number }[] = row.has_layout
       ? this.db.prepare<[string], { step: string; x: number; y: number }>("SELECT step, x, y FROM catalog_recipe_layout WHERE recipe = ? ORDER BY step").all(name) : [];
     const edges: EdgeRow[] = this.db.prepare<[string], EdgeRow>("SELECT * FROM catalog_recipe_edges WHERE recipe = ? ORDER BY position").all(name);
-    const ports = (source: string | null, target: string | null): { sourcePort?: string; targetPort?: string } =>
-      ({ ...(source === null ? {} : { sourcePort: source }), ...(target === null ? {} : { targetPort: target }) });
-    const connection = (edge: EdgeRow) => ({ from: edge.source, on: edge.outcome, ...ports(edge.source_port, edge.target_port) });
+    const connection = (edge: EdgeRow) => ({ from: edge.source, on: edge.outcome });
     return Recipe.parse({
       name, description: row.description, icon: row.icon ?? undefined, start: row.start ?? undefined, onBaseChanged: row.on_base_changed ?? undefined,
       successOutcomes: list("successOutcomes"),
-      ...(row.has_start_ports ? { startPorts: ports(row.start_source_port, row.start_target_port) } : {}),
       ...(row.has_layout ? { layout: Object.fromEntries(layout.map(({ step, x, y }) => [step, { x, y }])) } : {}),
       ...(row.ci_after === null ? {} : {
         ci: { after: row.ci_after, on: row.ci_on, intervalSec: row.ci_interval_sec, timeoutSec: row.ci_timeout_sec, maxCorrections: row.ci_max_corrections, checks: list("ciChecks") },
@@ -298,15 +290,14 @@ export class Catalog {
 
   saveRecipe(value: Recipe, shipped: boolean = false): void {
     const recipe: Recipe = Recipe.parse(value);
-    const { name, startPorts, ci } = recipe;
+    const { name, ci } = recipe;
     this.db.transaction(() => {
       this.delete("recipes", name);
       this.db.prepare(`INSERT INTO catalog_recipes
-        (name, description, icon, shipped, start, has_start_ports, start_source_port, start_target_port, on_base_changed,
+        (name, description, icon, shipped, start, on_base_changed,
           has_ends, has_layout, ci_after, ci_on, ci_interval_sec, ci_timeout_sec, ci_max_corrections)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-        name, recipe.description, recipe.icon ?? null, Number(shipped), recipe.start ?? null, Number(startPorts !== undefined),
-        startPorts?.sourcePort ?? null, startPorts?.targetPort ?? null, recipe.onBaseChanged ?? null,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        name, recipe.description, recipe.icon ?? null, Number(shipped), recipe.start ?? null, recipe.onBaseChanged ?? null,
         Number(recipe.ends !== undefined), Number(recipe.layout !== undefined), ci?.after ?? null, ci?.on ?? null,
         ci?.intervalSec ?? null, ci?.timeoutSec ?? null, ci?.maxCorrections ?? null,
       );
@@ -315,11 +306,11 @@ export class Catalog {
       });
       this.saveRecipeSteps(recipe);
       const insert: Database.Statement = this.db.prepare(`INSERT INTO catalog_recipe_edges
-        (recipe, position, source, outcome, target, result, max_rounds, source_port, target_port) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        (recipe, position, source, outcome, target, result, max_rounds) VALUES (?, ?, ?, ?, ?, ?, ?)`);
       const connections: (Recipe["edges"][number] | NonNullable<Recipe["ends"]>[number])[] = [...recipe.edges, ...(recipe.ends ?? [])];
       for (const [i, edge] of connections.entries()) {
         insert.run(name, i, edge.from, edge.on, "to" in edge ? edge.to : null, "result" in edge ? edge.result : null,
-          "to" in edge ? edge.maxRounds ?? null : null, edge.sourcePort ?? null, edge.targetPort ?? null);
+          "to" in edge ? edge.maxRounds ?? null : null);
       }
       const point: Database.Statement<[string, string, number, number]> = this.db.prepare("INSERT INTO catalog_recipe_layout (recipe, step, x, y) VALUES (?, ?, ?, ?)");
       for (const [id, { x, y }] of Object.entries(recipe.layout ?? {})) point.run(name, id, x, y);

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import type { Connection, XYPosition } from "@xyflow/react";
-import { AgentSession, assistantAgentId, builtInAgentNames, defaultAgentId, EdgePort, HumanInterface, humanInterfaces, KnowledgeFileName, Name, Outcome, ProjectId, RecipeEnd, RecipeEndResult } from "@pecore/schemas";
+import { AgentSession, assistantAgentId, builtInAgentNames, defaultAgentId, HumanInterface, humanInterfaces, KnowledgeFileName, Name, Outcome, ProjectId, RecipeEnd, RecipeEndResult } from "@pecore/schemas";
 import type { DefinitionEntry, NodeAgent } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
@@ -35,7 +35,7 @@ const failureOutcomes: ReadonlySet<string> = new Set<string>([
 ]);
 const endLabels: Record<RecipeEndResult, string> = { succeeded: "Success", failed: "Failure", not_delivered: "Not delivered" };
 const endOptions: Option[] = Object.entries(endLabels).map(([value, label]) => ({ value, label }));
-type DraftConnection = RecipeLink & { result?: RecipeEndResult };
+type DraftConnection = RecipeLink & { result?: RecipeEndResult; reconnect?: boolean };
 
 function standardEndResult(outcome: string): RecipeEndResult | undefined {
   if (outcome === "success") return "succeeded";
@@ -215,8 +215,6 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
       to,
       on,
       maxRounds: typeof edge.maxRounds === "number" ? edge.maxRounds : undefined,
-      sourcePort: EdgePort.safeParse(edge.sourcePort).data,
-      targetPort: EdgePort.safeParse(edge.targetPort).data,
       invalid: highlight("edges." + index),
       failed: failureOutcomes.has(on) || (Array.isArray(declaredFailures) && declaredFailures.includes(on)),
     }];
@@ -229,15 +227,13 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
   const layout: RecipeLayout = recipeLayout(automatic, savedLayout);
   const graphLayout: RecipeLayout = recipeLayout(withRecipeBoundaries(layout, start), { ...savedLayout, ...layout });
   const startTarget: string = entries.length ? start : recipeEnd;
-  const startPorts = object(draft?.startPorts);
-  const boundaryLinks: RecipeGraphLink[] = ends.filter(({ from }) => Object.hasOwn(nodes, from)).map(({ from, on, result, sourcePort, targetPort }) => ({
-    from, on, to: recipeEnd, sourcePort, targetPort,
+  const boundaryLinks: RecipeGraphLink[] = ends.filter(({ from }) => Object.hasOwn(nodes, from)).map(({ from, on, result }) => ({
+    from, on, to: recipeEnd,
     caption: standardEndResult(on) === result ? endLabels[result] : `${on} · ${endLabels[result]}`, invalid: false, failed: result === "failed", neutral: result === "not_delivered",
   }));
   if (startTarget === recipeEnd || Object.hasOwn(nodes, startTarget)) {
     boundaryLinks.push({
       from: recipeStart, on: "", to: startTarget,
-      sourcePort: EdgePort.safeParse(startPorts.sourcePort).data, targetPort: EdgePort.safeParse(startPorts.targetPort).data,
       failed: false, invalid: false,
     });
   }
@@ -254,7 +250,6 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
     updateGraph({
       nodes: { ...nodes, [id]: { use: template } },
       layout: { ...savedLayout, ...layout, [id]: position },
-      startPorts: entries.length ? draft?.startPorts : undefined,
     });
     setSelected(id);
   };
@@ -273,30 +268,21 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
       edges: edges.filter((value) => object(value).from !== selected && object(value).to !== selected),
       layout: Object.fromEntries(Object.entries(graphLayout).filter(([id]) => id !== selected)),
       start: draft.start === selected ? undefined : draft.start,
-      startPorts: draft.start === selected ? undefined : draft.startPorts,
       onBaseChanged: draft.onBaseChanged === selected ? undefined : draft.onBaseChanged,
       ci: ci.after === selected ? undefined : draft.ci,
       ends: ends.filter(({ from }) => from !== selected),
     });
     setSelected("");
   };
-  const connect = ({ source, target, sourceHandle, targetHandle }: Connection): void => {
+  const connect = ({ source, target }: Connection): void => {
     if (!editable || source === recipeEnd || target === recipeStart) return;
-    const sourcePort = EdgePort.safeParse(sourceHandle).data;
-    const targetPort = EdgePort.safeParse(targetHandle).data;
     if (source === recipeStart) {
       if (Object.hasOwn(nodes, target) || (target === recipeEnd && entries.length === 0)) {
-        updateGraph({ start: target === recipeEnd ? undefined : target, startPorts: { sourcePort, targetPort } });
+        updateGraph({ start: target === recipeEnd ? undefined : target });
       }
       return;
     }
-    setConnection({
-      from: source,
-      to: target,
-      on: "",
-      sourcePort,
-      targetPort,
-    });
+    setConnection({ from: source, to: target, on: "" });
   };
   function outcomesFor(id: string): string[] {
     const node = object(nodes[id]);
@@ -315,15 +301,51 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
   const connectionEnd: boolean = connection?.to === recipeEnd;
   const standardResult: RecipeEndResult | undefined = standardEndResult(connection?.on ?? "");
   const selectedEndResult: RecipeEndResult | undefined = standardResult ?? connection?.result;
-  const chooseOutcome = (on: string): void => {
-    if (!connection) return;
-    const definition = object(nodeDefinitions.get(string(object(nodes[connection.from]).use))?.value);
+  const suggestedResult = (from: string, on: string): RecipeEndResult => {
+    const definition = object(nodeDefinitions.get(string(object(nodes[from]).use))?.value);
     const failures: unknown = definition.failOutcomes;
-    const saved: RecipeEndResult | undefined = ends.find((end) => end.from === connection.from && end.on === on)?.result;
+    const saved: RecipeEndResult | undefined = ends.find((end) => end.from === from && end.on === on)?.result;
     const failed: boolean = failureOutcomes.has(on) || (Array.isArray(failures) && failures.includes(on));
     const positive: boolean = ["approved", "yes", "ci_passed"].includes(on);
-    const result: RecipeEndResult = saved ?? (failed ? "failed" : positive ? "succeeded" : "not_delivered");
-    setConnection({ ...connection, on, result: on ? result : undefined });
+    return saved ?? (failed ? "failed" : positive ? "succeeded" : "not_delivered");
+  };
+  const chooseOutcome = (on: string): void => {
+    if (connection) setConnection({ ...connection, on, result: on ? suggestedResult(connection.from, on) : undefined });
+  };
+  const writeConnection = ({ from, on, to }: RecipeLink, result?: RecipeEndResult): void => {
+    const existing: number = edges.findIndex((value) => object(value).from === from && object(value).on === on);
+    const remainingEnds: RecipeEnd[] = ends.filter((item) => item.from !== from || item.on !== on);
+    if (to === recipeEnd) {
+      if (!result) return;
+      updateGraph({ edges: edges.filter((_, index) => index !== existing), ends: [...remainingEnds, { from, on, result }] });
+    } else {
+      const next: unknown[] = existing < 0 ? [...edges, { from, on, to }]
+        : edges.map((value, index) => index === existing ? { ...object(value), to } : value);
+      updateGraph({ edges: next, ends: remainingEnds });
+    }
+    setConnection(undefined);
+  };
+  const reconnect = (from: string, on: string, to: string): void => {
+    if (!editable || from === recipeEnd || to === recipeStart) return;
+    if (from === recipeStart) {
+      if (to !== start) connect({ source: from, target: to, sourceHandle: null, targetHandle: null });
+      return;
+    }
+    if (edges.some((value) => object(value).from === from && object(value).on === on && object(value).to === to)
+      || to === recipeEnd && ends.some((end) => end.from === from && end.on === on)) return;
+    const result: RecipeEndResult | undefined = standardEndResult(on);
+    if (to === recipeEnd && !result) {
+      setConnection({ from, on, to, result: suggestedResult(from, on), reconnect: true });
+    } else writeConnection({ from, on, to }, result);
+  };
+  const deleteConnections = (removed: RecipeLink[]): void => {
+    if (!editable || !removed.length) return;
+    const has = (from: string, on: string): boolean => removed.some((edge) => edge.from === from && edge.on === on);
+    updateGraph({
+      start: has(recipeStart, "") ? undefined : start || undefined,
+      edges: edges.filter((value) => !has(string(object(value).from), string(object(value).on))),
+      ends: ends.filter(({ from, on }) => !has(from, on)),
+    });
   };
   const inspectorOutcomes: string[] = selected ? outcomesFor(selected) : [];
   const required: string[] = Array.isArray(selectedNode.requires) ? selectedNode.requires.map(string) : [];
@@ -367,7 +389,7 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
           <RecipeGraph ref={canvas} steps={[...graphNodes, ...boundaryNodes]} links={[...graphEdges, ...boundaryLinks]}
             layout={graphLayout} automatic={withRecipeBoundaries(automatic, start)}
             start={recipeStart} editable={editable} inspectable={knowledgeMode} selected={selected} onSelect={setSelected}
-            onConnect={connect} onLayout={(next) => update({ layout: next })} />
+            onConnect={connect} onReconnect={reconnect} onDelete={deleteConnections} onLayout={(next) => update({ layout: next })} />
           <Card title={selected ? templateTitle(string(selectedNode.use) || selected) : knowledgeMode ? "Knowledge" : "Recipe settings"}
             actions={selected && !knowledgeMode ? <div className={s.inspectorActions}>
               <IconButton label="Remove node" icon={<TrashIcon />} disabled={!editable} onClick={removeSelected} />
@@ -469,32 +491,22 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
       </> : <ErrorText error="Unable to read the recipe definition." />}
       <DefinitionErrors errors={file.errors} showPath={false} />
     </div>}
-    <Dialog open={!!connection} onOpenChange={(open) => { if (!open) setConnection(undefined); }} title="Connect nodes"
+    <Dialog open={!!connection} onOpenChange={(open) => { if (!open) setConnection(undefined); }} title={connection?.reconnect ? "Reconnect nodes" : "Connect nodes"}
       description={connection && `${graphTitle(connection.from)} → ${graphTitle(connection.to)}`}
       footer={<>
         <Button variant="ghost" onClick={() => setConnection(undefined)}>Cancel</Button>
         <Button variant="primary" type="submit" form="recipe-connection"
-          disabled={!connection || !editable || !Outcome.safeParse(connection.on).success || (connectionEnd && !selectedEndResult)}>Connect</Button>
+          disabled={!connection || !editable || !Outcome.safeParse(connection.on).success || (connectionEnd && !selectedEndResult)}>{connection?.reconnect ? "Reconnect" : "Connect"}</Button>
       </>}>
       {connection && <form id="recipe-connection" className={s.inspectorFields} onSubmit={(event) => {
         event.preventDefault();
         if (!editable || !Outcome.safeParse(connection.on).success) return;
-        const { from, on, to, sourcePort, targetPort } = connection;
-        const result = selectedEndResult;
-        const remainingEdges: unknown[] = edges.filter((value) => object(value).from !== from || object(value).on !== on);
-        const remainingEnds: RecipeEnd[] = ends.filter((item) => item.from !== from || item.on !== on);
-        if (to === recipeEnd) {
-          if (!result) return;
-          updateGraph({ edges: remainingEdges, ends: [...remainingEnds, { from, on, result, sourcePort, targetPort }] });
-        } else {
-          updateGraph({ edges: [...remainingEdges, { from, on, to, sourcePort, targetPort }], ends: remainingEnds });
-        }
-        setConnection(undefined);
+        writeConnection(connection, selectedEndResult);
       }}>
-        {outcomes.length
+        {!connection.reconnect && (outcomes.length
           ? <Select label="Outcome" disabled={!editable} value={connection.on || null} options={outcomes}
             onValueChange={(on) => chooseOutcome(on ?? "")} />
-          : <TextField label="Outcome" disabled={!editable} value={connection.on} onValueChange={chooseOutcome} />}
+          : <TextField label="Outcome" disabled={!editable} value={connection.on} onValueChange={chooseOutcome} />)}
         {connectionEnd && !standardResult && connection.on && <Select label="Job result" options={endOptions} value={connection.result ?? null} disabled={!editable}
           onValueChange={(value) => setConnection({ ...connection, result: RecipeEndResult.safeParse(value).data })} />}
       </form>}

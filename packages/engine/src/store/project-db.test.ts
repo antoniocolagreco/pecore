@@ -15,6 +15,13 @@ import { Configuration } from "./configuration";
 import { ProjectDb } from "./project-db";
 
 const job = "01JOB";
+function restoreLegacyAnchors(db: Database.Database): void {
+  db.exec(`ALTER TABLE catalog_recipes ADD COLUMN has_start_ports INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE catalog_recipes ADD COLUMN start_source_port TEXT;
+    ALTER TABLE catalog_recipes ADD COLUMN start_target_port TEXT;
+    ALTER TABLE catalog_recipe_edges ADD COLUMN source_port TEXT;
+    ALTER TABLE catalog_recipe_edges ADD COLUMN target_port TEXT;`);
+}
 const created = {
   jobId: job,
   type: "job.created" as const,
@@ -22,15 +29,62 @@ const created = {
 };
 
 describe("pecore.db", () => {
+  it("drops only graph anchors from catalog recipes, job recipes and their saved events", async () => {
+    const path: string = join(await tempDir(), "pecore.db");
+    const old: ProjectDb = new ProjectDb(path);
+    const current: Recipe = Recipe.parse({
+      name: "run", description: "Two checks", start: "one",
+      nodes: { one: { use: "check" }, two: { use: "check" } },
+      edges: [{ from: "one", to: "two", on: "success", maxRounds: 2 }],
+      ends: [{ from: "two", on: "success", result: "succeeded" }],
+      layout: { one: { x: 272, y: 176 }, two: { x: 544, y: 176 } },
+    });
+    const legacy = {
+      ...current,
+      startPorts: { sourcePort: "bottom", targetPort: "top" },
+      edges: [{ ...current.edges[0]!, sourcePort: "left", targetPort: "right" }],
+      ends: [{ ...current.ends![0]!, targetPort: "left" }],
+    };
+    const recipe: string = JSON.stringify(legacy);
+    const definitions = { nodes: {}, recipeHash: definitionHash(legacy) };
+    old.catalog.saveRecipe(current);
+    old.append([
+      { ...created, payload: { ...created.payload, recipe: current, definitions } },
+      { jobId: job, type: "job.definitions_saved", payload: definitions },
+    ]);
+    old.db.prepare("UPDATE jobs SET recipe = ? WHERE id = ?").run(recipe, job);
+    old.db.prepare("UPDATE events SET payload = json_set(payload, '$.recipe', json(?)) WHERE type = 'job.created'").run(recipe);
+    restoreLegacyAnchors(old.db);
+    old.db.exec(`UPDATE catalog_recipes SET has_start_ports = 1, start_source_port = 'bottom', start_target_port = 'top';
+      UPDATE catalog_recipe_edges SET source_port = 'left', target_port = 'right';
+      UPDATE schema_version SET version = 32;`);
+    old.close();
+    const db: ProjectDb = new ProjectDb(path);
+    try {
+      expect(db.version()).toBe(33);
+      expect(db.catalog.recipe(current.name)).toEqual(current);
+      expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_recipes') WHERE name LIKE '%port%'").all()).toEqual([]);
+      expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_recipe_edges') WHERE name LIKE '%port%'").all()).toEqual([]);
+      const migrated: string = db.db.prepare<[], string>("SELECT recipe FROM jobs").pluck().get()!;
+      expect(JSON.parse(migrated)).toMatchObject(current);
+      const events = db.events(job);
+      expect(events[0]?.payload).toMatchObject({ recipe: current, definitions: { recipeHash: definitionHash(current) } });
+      expect(events[1]?.payload).toMatchObject({ recipeHash: definitionHash(current) });
+      expect(migrated + JSON.stringify(events)).not.toMatch(/(?:sourcePort|targetPort|startPorts)/);
+    } finally {
+      db.close();
+    }
+  });
+
   it("applies the migrations once, in WAL mode", async () => {
     const path = join(await tempDir(), "pecore.db");
     const db = new ProjectDb(path);
-    expect(db.version()).toBe(32);
+    expect(db.version()).toBe(33);
     expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_nodes') WHERE name = 'clean_checkout'").get()).toBeUndefined();
     expect(db.db.pragma("journal_mode", { simple: true })).toBe("wal");
     db.close();
     const again = new ProjectDb(path);
-    expect(again.version()).toBe(32);
+    expect(again.version()).toBe(33);
     const tables = again.db.prepare<[], string>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'catalog_%' ORDER BY name").pluck().all();
     expect(tables).toEqual([
       "artifacts", "attempt_logs", "attempts", "events", "human_queue", "jobs", "node_runs",
@@ -60,6 +114,7 @@ describe("pecore.db", () => {
       edges: [{ from: "read", on: "success", to: "search" }],
       ends: [{ from: "search", on: "success", result: "succeeded" }],
     }));
+    restoreLegacyAnchors(old.db);
     old.db.prepare("UPDATE schema_version SET version = 31").run();
     old.close();
     const db: ChatsDb = new ChatsDb(path);
@@ -100,6 +155,7 @@ describe("pecore.db", () => {
     old.catalog.saveNode(check);
     old.catalog.saveNode(review);
     old.catalog.saveRecipe(legacy);
+    restoreLegacyAnchors(old.db);
     old.db.prepare("UPDATE schema_version SET version = 30").run();
     const checkRun: string = job + "/check#0";
     const reviewRun: string = job + "/review#0";
@@ -494,7 +550,7 @@ describe("chats.db", () => {
 
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.version()).toBe(32);
+    expect(db.version()).toBe(33);
     for (let i = 0; i < notificationsKept + 3; i++) db.addNotification({ kind: "job", title: `n${i}`, body: "" }, 1000 + i);
     const kept = db.notifications();
     expect(kept).toHaveLength(notificationsKept);
@@ -516,7 +572,7 @@ describe("chats.db", () => {
       UPDATE schema_version SET version = 5`);
     old.close();
     const db = new ChatsDb(file);
-    expect(db.version()).toBe(32);
+    expect(db.version()).toBe(33);
     expect(db.messages(assistantChat)).toEqual([]);
     db.close();
   });

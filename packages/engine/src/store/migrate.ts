@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import type Database from "better-sqlite3";
 import type { OutcomeLookup } from "../definitions/outcomes";
 import { migrateOutcomes } from "./migrate-outcomes";
+import { migrateRecipeAnchors } from "./migrate-recipe-anchors";
 
 const migrationsDir = fileURLToPath(new URL("./migrations/", import.meta.url));
 
@@ -19,6 +20,7 @@ export function migrate(db: Database.Database, prefix: string, options?: { inher
     db.transaction(() => {
       const sql: string = readFileSync(migrationsDir + file, "utf8");
       if (file === "shared-031-node-outcomes.sql") migrateOutcomes(db, sql, prefix === "", options);
+      else if (file === "shared-033-drop-recipe-anchors.sql") migrateRecipeAnchors(db, sql, prefix === "");
       else db.exec(sql);
       db.prepare("DELETE FROM schema_version").run();
       db.prepare("INSERT INTO schema_version (version) VALUES (?)").run(version);
