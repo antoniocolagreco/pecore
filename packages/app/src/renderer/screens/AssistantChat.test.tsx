@@ -96,3 +96,9 @@ it("opens a project chat and links to its Project Manager settings when a model 
   expect(screen.getByRole("button", { name: "Send" }).hasAttribute("disabled")).toBe(true);
   expect(api.call).toHaveBeenCalledWith("getProjectChat", { params: { id: "demo" } });
 });
+
+it("shows pages read by the Project Manager under its reply", async () => {
+  chat = { ...chat, messages: [request, reply], actions: [{ id: "read-page", messageId: request.id, tool: "read_web_page", target: {}, createdAt: 2 }] };
+  render(<MemoryRouter initialEntries={["/projects/demo"]}><ChatPanel /></MemoryRouter>);
+  expect(await screen.findByText("Read: web page")).toBeTruthy();
+});

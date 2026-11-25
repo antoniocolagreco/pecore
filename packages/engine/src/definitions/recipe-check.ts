@@ -1,12 +1,12 @@
 import { Ajv } from "ajv";
-import { automaticOutputs, templateTitle } from "@pecore/schemas";
+import { automaticOutputs, recipeStart, templateTitle } from "@pecore/schemas";
 import type { ArtifactType, Node, Recipe } from "@pecore/schemas";
 import { paramsWithDefaults } from "../runners/placeholders";
 
 export type RecipeIssue = { path: string; message: string };
 
 function stepTitle(recipe: Recipe, id: string): string {
-  return templateTitle(recipe.nodes[id]?.use ?? id);
+  return id === recipeStart ? "Start" : templateTitle(recipe.nodes[id]?.use ?? id);
 }
 
 function outcomeTitle(name: string): string {
@@ -64,13 +64,15 @@ export function availableOutputs(recipe: Recipe, byId: Map<string, Node>, includ
     const node = byId.get(id);
     return node ? producedTypes(recipe, id, node).map((type) => pair(id, type)) : [];
   }));
+  const request: string = pair(recipeStart, "document");
+  all.add(request);
   const incoming = new Map<string, { from: string; on: string }[]>(ids.map((id) => [id, []]));
   for (const e of recipe.edges) incoming.get(e.to)?.push({ from: e.from, on: e.on });
   const startNode = recipe.start !== undefined ? byId.get(recipe.start) : undefined;
   const entry = new Map<string, Set<string>>();
-  if (recipe.start !== undefined) entry.set(recipe.start, new Set());
+  if (recipe.start !== undefined) entry.set(recipe.start, new Set([request]));
   if (includeBaseChange && recipe.onBaseChanged !== undefined && recipe.onBaseChanged !== recipe.start) {
-    entry.set(recipe.onBaseChanged, new Set(startNode && recipe.start !== undefined ? producedTypes(recipe, recipe.start, startNode).map((type) => pair(recipe.start!, type)) : []));
+    entry.set(recipe.onBaseChanged, new Set([request, ...(startNode && recipe.start !== undefined ? producedTypes(recipe, recipe.start, startNode).map((type) => pair(recipe.start!, type)) : [])]));
   }
   const avail = new Map<string, Set<string>>(ids.map((id) => [id, entry.has(id) && incoming.get(id)!.length === 0 ? new Set(entry.get(id)) : new Set(all)]));
   let changed = true;
@@ -111,6 +113,7 @@ function readIssues(recipe: Recipe, resolved: Map<string, Node>, live: Set<strin
     if (!("inputs" in node)) continue;
     for (const type of [...node.inputs, ...node.optionalInputs]) {
       const providers: string[] = reads.filter((read) => {
+        if (read === recipeStart) return type === "document";
         const source: Node | undefined = resolved.get(read);
         return source !== undefined && producedTypes(recipe, read, source).includes(type);
       });

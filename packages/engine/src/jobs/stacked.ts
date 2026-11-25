@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { ReferenceArtifact } from "@pecore/schemas";
+import { recipeStart, ReferenceArtifact } from "@pecore/schemas";
 import type { Artifact, ForgeAccount, Project, StoredEvent } from "@pecore/schemas";
 import { loadForgeDefaults } from "../projects/defaults";
 import { forgeEnv } from "../runners/forge-env";
@@ -30,7 +30,7 @@ export function jobArtifacts(events: StoredEvent[]): JobArtifact[] {
   const out: JobArtifact[] = [];
   for (const e of events) {
     if (e.type === "job.created") {
-      if (e.payload.ticket) out.push({ artifact: e.payload.ticket, node: null });
+      if (e.payload.ticket) out.push({ artifact: e.payload.ticket, node: recipeStart });
       for (const artifact of e.payload.attachments ?? []) out.push({ artifact, node: null });
     }
     if (e.type === "node_run.completed") for (const artifact of e.payload.artifacts) out.push({ artifact, node: nodeOfRun(e.payload.nodeRunId) });

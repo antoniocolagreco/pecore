@@ -425,9 +425,9 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
                   <span>{inspectorOutcomes.join(", ")}</span>
                 </div>}
                 <MultiCombobox label="Reads from" placeholder="Choose nodes" value={reads} disabled={!editable}
-                  labelAction={<FieldHelp title="Reads from">The nodes whose latest output this step receives, for example the spec writer's spec or a check's log. Agents and people also always receive the ticket and the job's current changes.</FieldHelp>}
+                  labelAction={<FieldHelp title="Reads from">Choose Start for the job request, or choose steps for their latest output, such as the spec writer's spec or a check's log.</FieldHelp>}
                   description={("inputs" in nodeValue) && nodeInputs.length ? `This command takes ${nodeInputs.join(", ")}. Read one node for each.` : undefined}
-                  options={stepOptions.filter(({ value }) => value !== selected || reads.includes(value))}
+                  options={[{ value: recipeStart, label: "Start (job request)" }, ...stepOptions.filter(({ value }) => value !== selected || reads.includes(value))]}
                   onValueChange={(next) => updateNode("reads", next.length ? next : undefined)} />
                 {humanInterface === "decision" && questionParameter.type === "string" && <TextField label="Question"
                   value={string(object(selectedNode.params).question)} placeholder={string(questionParameter.default)} disabled={!editable}

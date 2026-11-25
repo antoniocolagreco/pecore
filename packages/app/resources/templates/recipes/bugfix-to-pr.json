@@ -14,7 +14,7 @@
     { "from": "comment", "on": "failure", "result": "failed" }
   ],
   "nodes": {
-    "spec": { "use": "spec-writer" },
+    "spec": { "use": "spec-writer", "reads": ["@start"] },
     "tests": { "use": "tests-writer", "reads": ["spec", "tests-check", "tests-fail", "code"] },
     "tests-check": { "use": "typecheck" },
     "tests-fail": { "use": "tests-fail-check", "params": { "suite": "unit" } },

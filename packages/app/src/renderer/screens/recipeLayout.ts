@@ -1,11 +1,12 @@
 import type { XYPosition } from "@xyflow/react";
+import { recipeStart } from "@pecore/schemas";
 import type { Edge } from "@pecore/schemas";
 
 export type RecipeLayout = Record<string, XYPosition>;
 export type RecipeLink = Edge;
 
 export const recipeGrid: [number, number] = [272, 176];
-export const recipeStart: string = "@start";
+export { recipeStart };
 export const recipeEnd: string = "@end";
 
 export function withRecipeBoundaries(layout: RecipeLayout, start: string): RecipeLayout {

@@ -13,7 +13,7 @@
     { "from": "pr", "on": "failure", "result": "failed" }
   ],
   "nodes": {
-    "spec": { "use": "spec-writer" },
+    "spec": { "use": "spec-writer", "reads": ["@start"] },
     "tests": { "use": "tests-writer", "reads": ["spec", "tests-check", "code"] },
     "tests-check": { "use": "typecheck" },
     "code": { "use": "builder", "reads": ["spec", "lint", "types", "test", "review", "human"] },

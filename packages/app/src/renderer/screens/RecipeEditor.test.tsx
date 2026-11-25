@@ -32,6 +32,40 @@ vi.mock("./RecipeGraph", () => ({
 
 afterEach(cleanup);
 
+it("adds Start's job request to Reads from without adding it to Requires", async () => {
+  const template: DefinitionEntry = {
+    path: "templates/nodes/review.json", sha256: "node-v1", errors: [], value: { name: "review", kind: "human", outcomes: ["approved"] },
+  };
+  const recipe: RecipeInput = {
+    name: "request-review", description: "Review the request", start: "review", nodes: { review: { use: "review" } },
+    ends: [{ from: "review", on: "approved", result: "succeeded" }],
+  };
+  api.call.mockClear();
+  api.call.mockImplementation(async (route: string, input?: RouteInput<"listDefinitions">) => {
+    if (route === "listDefinitions") return input?.query.dir === "templates/nodes" ? [template] : [];
+    if (route === "getDefinition") return { content: JSON.stringify(recipe), sha256: "recipe-v1" };
+    if (route === "getAgents") return { value: { agents: [] } };
+    if (route === "validateDefinition") return { errors: [], warnings: [] };
+    if (route === "saveDefinition") return { sha256: "recipe-v2" };
+    throw new Error(`Unexpected route ${route}`);
+  });
+  const router = createMemoryRouter([{ path: "/edit/recipe/*", element: <RecipeEditor /> }], { initialEntries: ["/edit/recipe/templates/recipes/request-review.json"] });
+  render(<RouterProvider router={router} />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Inspect review" }));
+  await user.click(screen.getByRole("combobox", { name: "Requires" }));
+  expect(screen.queryByRole("option", { name: "Start (job request)" })).toBeNull();
+  await user.keyboard("{Escape}");
+  await user.click(screen.getByRole("combobox", { name: "Reads from" }));
+  await user.click(await screen.findByRole("option", { name: "Start (job request)" }));
+  await user.keyboard("{Escape}");
+  const save: HTMLButtonElement = screen.getByRole("button", { name: "Save" });
+  await waitFor(() => expect(save.disabled).toBe(false));
+  await user.click(save);
+  const request: RouteInput<"saveDefinition"> = api.call.mock.calls.findLast(([route]) => route === "saveDefinition")?.[1];
+  expect(JSON.parse(request.body.content).nodes.review.reads).toEqual(["@start"]);
+});
+
 it("shows the validation sentence and lets the user clear the base-change step", async () => {
   const recipe: RecipeInput = {
     name: "route", description: "Change the base branch", start: "spec", onBaseChanged: "rebase",

@@ -1,7 +1,7 @@
 {
   "name": "spec-writer",
   "tags": ["specification"],
-  "description": "Reads the ticket and the code, and writes a spec: acceptance criteria, what the tests must check, the interfaces to add or change, and optional nodes to run; rejects a ticket that is unclear or not feasible",
+  "description": "Uses the job request, attachments and code to write acceptance criteria, test cases and interfaces, or explain why the request cannot be implemented",
   "kind": "agent",
   "prompt": "spec-writer.md",
   "agent": { "tier": "strong" },

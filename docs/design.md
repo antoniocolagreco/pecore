@@ -380,7 +380,7 @@ A project export serializes its project definition, templates, and script and pr
 
 A decision asks the user to choose an outcome. A code review or report review shows artifacts and offers `approved`, `changes_requested` and `rejected`. Only a review approval satisfies a human prerequisite. An approval for changed worktree content becomes stale. Both wait for the user's response without a timeout.
 
-Data passes between nodes only through `reads`. Each step lists the steps it reads. When it starts, it receives the latest artifact of each type that each read step produced, labelled with that step's id. Agents and people always receive the job's ticket, attachments and current diff. Each command input type comes from exactly one read step. Required inputs must be available on every route to the step, including when the base changes. A connection to End stops its route. If Read Ticket fails before Spec Writer runs, a later base change can restart at Git Rebase and reach GitHub PR without a spec.
+Data passes between nodes through `reads`. A step gets the latest artifact of each type from each source it selects. `@start` supplies the saved request document on every route, including after a base change. Agents still get the request automatically for recipes that omit `@start`. They also get attachment paths and the current diff. Each command input type comes from exactly one source. Required inputs must be available on every route to the step, including when the base changes. A connection to End stops its route. If Read Ticket fails before Spec Writer runs, a later base change can restart at Git Rebase and reach GitHub PR without a spec.
 
 A GitHub recipe can use `write-pr` to write a title and description and `github-pr` to publish them. With a `ci` configuration such as `{"after":"pr","on":"success","checks":["tests"],"intervalSec":30,"timeoutSec":1800,"maxCorrections":2}`, the scheduler waits for the listed checks on the recorded commit. Connect `ci_failed` to a correction step and use `ci_passed`, `ci_exhausted` and `ci_timeout` to route the other outcomes. The CI report of a failure is a `text` produced by the `ci.after` step, so the correction step reads that step. Persisted deadlines and correction counts survive restarts. If the PR head changes unexpectedly, the job waits for the user.
 
@@ -399,7 +399,7 @@ A GitHub recipe can use `write-pr` to write a title and description and `github-
     { "from": "pr", "on": "failure", "result": "failed" }
   ],
   "nodes": {
-    "spec":    { "use": "spec-writer" },
+    "spec":    { "use": "spec-writer", "reads": ["@start"] },
     "tests":   { "use": "tests-writer", "reads": ["spec", "tests-check", "code"] },
     "tests-check": { "use": "typecheck" },
     "code":    { "use": "builder", "reads": ["spec", "lint", "types", "test", "review", "human"] },
@@ -454,7 +454,7 @@ Recipe fields:
 | `nodes.<id>.use` | a node template name |
 | `nodes.<id>.params`, `nodes.<id>.agent` | step parameters and legacy agent settings. Engine-user commands take their arguments from the node template |
 | `nodes.<id>.agentId` | optional agent card ID for an agent step. With no assignment, the step uses Default Agent. Assistant is reserved for its chat |
-| `nodes.<id>.reads` | the steps whose latest outputs this step receives (see above) |
+| `nodes.<id>.reads` | `@start` for the job request, or step IDs for their latest outputs |
 | `nodes.<id>.requires` | nodes whose latest outcome must be `success` or a review's `approved` on the current content state (4.4) |
 | `nodes.<id>.optional` | runs only if the `spec` names it (4.2) |
 | `nodes.<id>.agentSession` | optional Job, Node or New override for an agent step. When absent, the step uses its node template's setting |
@@ -485,7 +485,7 @@ A type exists only for a distinct data structure, not for a different name. What
 |---|---|---|
 | `text` | plain text | the log of every command, the CI report, a rejection reason, a person's note |
 | `diff` | a patch | the job's changes, written by the engine after any node with `changesFiles: true` |
-| `document` | `title`, `body`, optional `source` and `id` | the ticket, written by the engine at job creation; the pull request description |
+| `document` | `title`, `body`, optional `source` and `id` | the job request from Start and the pull request description |
 | `spec` | `criteria[]`, `tests[]`, `interfaces[] {name, signature}`, `optionalNodes[]` | the spec writer's spec |
 | `findings` | optional `verdict`, `items[] {file, line?, hunk?, level, text}` | the reviewer's findings (`line`, level `blocker`, `major` or `minor`); the approver's risk (`hunk`, level `safe` or `risky`) |
 | `reference` | optional `sha`, `url`, `ref` | a commit (`sha`), a pushed branch (`ref`), a pull request or repository (`url`) |
@@ -577,7 +577,7 @@ Pause waits for the running node run to finish, then holds. Play moves a paused 
 
 #### 4.2 Graph rules
 
-*   **Start**: the job runs `start` first.
+*   **Start**: the engine saves one `document` when it creates the job. Its title and body carry the complete request, and its optional ID links the original tracker ticket. Start runs nothing. The job runs `start` first, which is Spec Writer in every shipped recipe.
 *   **One node at a time**: a job has one workdir and runs one node at a time (4.5).
 *   **Edges**: when a node run ends with an outcome, the edge `from` that node `on` that outcome starts its target. The validator rejects two edges with the same `from` and `on`.
 *   **End**: a step outcome either continues along an edge or reaches End with the result recorded in `ends`. The empty recipe goes directly from Start to End and succeeds. An unrouted outcome in an explicit recipe is a validation error. A previously saved recipe without `ends` retains its terminal rules based on `failOutcomes`, `successOutcomes` and `not_delivered`.
@@ -772,7 +772,7 @@ Each built-in connector ships with recorded ACP traffic of these cases, used by 
 
 #### 5.8 Prompt and output
 
-*   The engine sends the prompt as the text of `session/prompt` and records it in the attempt log. The prompt includes the ticket, current diff, read artifacts and knowledge documents under their own headings. Attachment paths point to copies in the worktree. The prompt includes the JSON Schema built from the node's `outcomes` and `outputs`.
+*   The engine sends the prompt as the text of `session/prompt` and records it in the attempt log. The prompt includes the request from Start, current diff, read artifacts and knowledge documents under their own headings. It lists worktree paths for the selected original files, including images. Spec Writer uses these inputs without fetching the ticket or web pages again. The prompt includes the JSON Schema built from the node's `outcomes` and `outputs`.
 *   The agent ends its turn with a final message containing only its result or question. The engine reads the last ACP message, accepts a plain JSON object or one JSON code fence, and validates it with Zod. Missing or invalid JSON follows the correction flow in 5.4. Each correction includes the expected shape again.
 
 #### 5.9 Logins
@@ -788,7 +788,7 @@ The Assistant manages what is global: the templates and the projects themselves.
 Recipes can perform the external actions they define. In Project Manager chat, a Repository or Tracker action that makes a change needs confirmation even when the user asked for it.
 
 *   **Assistant:** the user's chat outside projects, including the Jobs list. It reads every project and writes only what is global: templates and projects. Project creation, settings changes, import and deletion use confirmation cards. A flagged export requires the user's decision. It treats untrusted content as data. A direct chat order authorises the requested action. It cannot do a project's work: for that it calls `delegate_to_pm`, which queues a complete, self-contained order, with any images of the current message copied, in that project's Project Manager chat. The Assistant never reads that chat and never says the work is done. When the delegated turn ends (completed, failed or interrupted) the engine posts the Project Manager's final reply, or the failure, in the Assistant chat as a message from "Project Manager · <project>". That message starts no Assistant turn. The Assistant's next turn receives the reports it has not seen yet (`reported_until` in `chats.db`).
-*   **Project Manager:** plans jobs, manages project knowledge and answers agent questions. It uses the project's Repository and Tracker nodes as MCP tools. It can search or read tickets, then submit one job per ticket. Its chat and calls are scoped to one project. The Assistant delegates project work and manages project settings and shared templates.
+*   **Project Manager:** plans jobs, manages project knowledge and answers agent questions. It reads tickets through Tracker tools and public HTTP or HTTPS text pages through `read_web_page`, which returns up to 200 KB as untrusted data and reports truncation. It chooses a recipe, combines the relevant ticket, page and chat details into one self-contained request per ticket, and chooses original files from the current order by ID. `create_jobs` saves the full request in `ticketText` and the original tracker ID or link in `ticketId` when there is one. The Project Manager's chat and calls are scoped to one project.
 *   Agents contains the built-in Assistant and Default Agent cards. Startup recreates missing cards before checking harnesses. Assistant starts white. Default Agent uses the Agent badge colour. Both names are fixed. Each project's PM tab selects a card and edits the PM's identity and optional additional Markdown context. The selected card supplies the account, model, effort, compaction thresholds and shared Markdown context. The choice is saved in the local database. A deleted card is replaced by Default Agent for every PM that used it. An agent step uses the card assigned in the recipe or Default Agent. If its assigned card is unavailable, the job stops and names the card.
 *   Agents lists reusable configurations with a unique name, provider, model, effort, compaction thresholds and optional Markdown context. These configurations are intended for recipe nodes. Assignment is a separate change.
 *   Agent questions: when a job's agent asks a question (an `agent-question` item), the engine also queues it in the project's Project Manager chat, starting with "Answer this agent question", with the question as untrusted data. The Project Manager answers with `answer_question` only if the project's knowledge, recipes, ticket or job already decide it; otherwise it says in one line that the user must decide, and the item stays in Notifications. During that turn its tools are `list_recipes`, `list_definitions`, `read_definition`, `read_ticket`, `job_status`, `read_artifact` and `answer_question`, for that item only. Without a Project Manager profile the question goes only to Notifications.

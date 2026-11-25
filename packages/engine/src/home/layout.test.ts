@@ -25,7 +25,7 @@ describe("PECORE_HOME layout", () => {
       await seedTemplates(catalog, shippedTemplates);
       expect(catalog.node("git-commit")).toMatchObject({ kind: "command", script: "git-commit.sh" });
       expect(catalog.content("git-commit.sh")).toContain("git commit");
-      expect(catalog.recipe("feature-to-pr")).toMatchObject({ name: "feature-to-pr" });
+      expect(catalog.recipe("feature-to-pr")).toMatchObject({ name: "feature-to-pr", start: "spec", nodes: { spec: { reads: ["@start"] } } });
       const node: Node = Node.parse({ name: "builder", kind: "human", interface: "decision", description: "Mine", outcomes: ["accept"] });
       catalog.saveNode(node);
       catalog.saveContent("custom.md", "My context");
@@ -41,6 +41,7 @@ describe("PECORE_HOME layout", () => {
       expect(catalog.content("custom.md")).toBe("My context");
       expect(catalog.recipe("old-shipped")).toBeNull();
       expect(catalog.recipe("my-recipe")).toMatchObject({ description: "Kept" });
+      expect(catalog.content("spec-writer.md")).toContain("Open relevant attachments");
       expect(db.db.prepare("SELECT format FROM catalog_version").pluck().get()).toBe(templatesFormat);
     } finally {
       db.close();

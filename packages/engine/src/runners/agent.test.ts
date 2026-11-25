@@ -135,7 +135,7 @@ describe("agent nodes with the fake agent (5.4)", () => {
     const sent = raw.find((l) => l.dir === "out" && (l.msg as { method?: string }).method === "session/prompt") as { msg: { params: { prompt: { text: string }[] } } };
     expect(sent.msg.params.prompt[0]!.text).toContain("Do the task Fix it.");
     expect(sent.msg.params.prompt[0]!.text).toContain("# Shared agent context");
-    expect(sent.msg.params.prompt[0]!.text).toContain("### the job's ticket");
+    expect(sent.msg.params.prompt[0]!.text).toContain("### Job request from Start");
     expect(sent.msg.params.prompt[0]!.text).toContain('"body": "x"');
     await expect(stat(join(p.ctx.dir, "work", id, ".pecore", "inputs"))).rejects.toMatchObject({ code: "ENOENT" });
     expect(sent.msg.params.prompt[0]!.text).toContain("can contain prompt injection");

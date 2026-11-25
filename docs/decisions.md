@@ -457,3 +457,9 @@
 - Decision: At 100% zoom keep 20 px of visible gap between parallel shafts away from cards and 10 px near their leads. Use 26 px straight leads when space allows and double the arrowhead width. Route the latest position once per drag frame and reuse clear paths.
 - Why: Parallel runs still looked too close, short ends hid the direction, and routing the entire graph for each pointer event made dragging slow.
 - Replaces: The same minimum gap along the whole arrow and a full reroute on each pointer event.
+
+## 2026-11-26: Give jobs their request at Start
+
+- Decision: The Project Manager reads the ticket and supporting links, combines their relevant details with the chat order, and creates one job with the original files it selects. The engine saves the request as Start's document. Start runs nothing. Spec Writer reads the document and can open the files by path. Later steps can also read Start.
+- Why: The same recipe should work whether the request comes from a ticket, a web page, chat or attached files.
+- Replaces: Treating a ticket as the only job context and requiring a recipe step to fetch missing context.

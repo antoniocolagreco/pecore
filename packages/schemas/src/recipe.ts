@@ -5,6 +5,7 @@ import { AgentSession, legacyAgentSession } from "./node";
 import { templateTitle } from "./template-title";
 
 const NodeId = z.string().regex(/^[a-z][a-z0-9-]*$/);
+export const recipeStart = "@start";
 
 const RecipeStep = z
   .object({
@@ -18,7 +19,7 @@ const RecipeStep = z
       })
       .strict()
       .optional(),
-    reads: z.array(NodeId).default([]),
+    reads: z.array(z.union([NodeId, z.literal(recipeStart)])).default([]),
     requires: z.array(NodeId).default([]),
     optional: z.boolean().default(false),
     agentId: Name.refine((id) => id !== assistantAgentId, "Choose an agent other than Assistant").optional(),
@@ -78,7 +79,7 @@ const RecipeDefinition = z
     }).strict().optional(),
     successOutcomes: z.array(z.string().regex(/^[a-z][a-z0-9-]*:[a-z][a-z0-9_]*$/)).default([]),
     ends: z.array(RecipeEnd).optional(),
-    layout: z.record(z.union([NodeId, z.literal("@start"), z.literal("@end")]), z.object({ x: z.number(), y: z.number() }).strict()).optional(),
+    layout: z.record(z.union([NodeId, z.literal(recipeStart), z.literal("@end")]), z.object({ x: z.number(), y: z.number() }).strict()).optional(),
     nodes: z.record(NodeId, RecipeNode).default({}),
     edges: z.array(Edge).default([]),
   })
@@ -86,7 +87,7 @@ const RecipeDefinition = z
   .superRefine((r, ctx) => {
     const ids = new Set(Object.keys(r.nodes));
     const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: "custom", path, message });
-    const title = (id: string): string => templateTitle(r.nodes[id]?.use ?? id);
+    const title = (id: string): string => id === recipeStart ? "Start" : templateTitle(r.nodes[id]?.use ?? id);
     const outcome = (name: string): string => templateTitle(name.replaceAll("_", "-"));
     if (ids.size === 0) {
       if (r.start !== undefined) issue(["start"], "Connect Start directly to End when the recipe has no steps.");
@@ -122,7 +123,7 @@ const RecipeDefinition = z
     }
     for (const [id, n] of Object.entries(r.nodes)) {
       for (const [i, req] of n.requires.entries()) if (!ids.has(req)) issue(["nodes", id, "requires", i], `${title(id)} requires ${title(req)}, which is missing. Choose an existing step in Requires.`);
-      for (const [i, read] of n.reads.entries()) if (!ids.has(read)) issue(["nodes", id, "reads", i], `${title(id)} reads from ${title(read)}, which is missing. Choose an existing step in Reads from.`);
+      for (const [i, read] of n.reads.entries()) if (read !== recipeStart && !ids.has(read)) issue(["nodes", id, "reads", i], `${title(id)} reads from ${title(read)}, which is missing. Choose an existing step in Reads from.`);
       if (new Set(n.reads).size !== n.reads.length) issue(["nodes", id, "reads"], `${title(id)} reads the same step twice. Select it once in Reads from.`);
       for (const [i, p] of (n.agent?.providerNot ?? []).entries()) if (!ids.has(p)) issue(["nodes", id, "agent", "providerNot", i], `The provider restriction on ${title(id)} refers to ${title(p)}, which is missing. Choose an existing Agent step.`);
       if (n.agent && n.agent.tier !== undefined && n.agent.profiles !== undefined) issue(["nodes", id, "agent"], `Choose a tier or specific profiles for ${title(id)}.`);

@@ -173,6 +173,25 @@ describe("phase 1 gate: shipped templates", () => {
     expect(lib.errors).toEqual([]);
     expect(lib.nodes.size).toBeGreaterThan(0);
     expect(lib.recipes.has("feature-to-pr")).toBe(true);
+    for (const recipe of lib.recipes.values()) {
+      expect(recipe.start).toBe("spec");
+      expect(recipe.nodes.spec).toMatchObject({ use: "spec-writer", reads: ["@start"] });
+    }
+  });
+
+  it("provides Start's document both on entry and after a base change", () => {
+    const reader: Node = check("reader", ["success"], { inputs: ["document"] });
+    const secondary: Node = check("another-document", ["success"], { outputs: { success: "document" }, outputRules: { success: { stdoutJson: "" } } });
+    const nodes: Map<string, Node> = new Map([[reader.name, reader], [secondary.name, secondary]]);
+    const recipe: Recipe = Recipe.parse({
+      name: "request", description: "Read the request", start: "read", onBaseChanged: "reenter",
+      nodes: { read: { use: "reader", reads: ["@start"] }, other: { use: secondary.name }, reenter: { use: "reader", reads: ["@start"] } },
+      edges: [{ from: "read", to: "other", on: "success" }, { from: "other", to: "reenter", on: "success" }],
+      ends: [{ from: "reenter", on: "success", result: "succeeded" }],
+    });
+    expect(checkRecipe(recipe, nodes, false)).toEqual([]);
+    recipe.nodes.reenter!.reads.push("other");
+    expect(checkRecipe(recipe, nodes, false)).toContainEqual({ path: "nodes.reenter.reads", message: "Start and Another Document produce the same input for Reader (document). Select one source in Reads from." });
   });
 
   it("identifies the base-change route that bypasses the spec after adding Read Ticket", async () => {
@@ -220,7 +239,9 @@ describe("phase 1 gate: shipped templates", () => {
       const index: number = nodes.get(recipe.nodes[from]!.use)!.outcomes.indexOf(on);
       return { from, on: index >= 0 ? index : on, ...edge };
     };
-    const graph = { ...recipe, edges: recipe.edges.map(route), ends: recipe.ends!.map(route) };
+    const spec = { ...recipe.nodes.spec };
+    if (spec.reads?.length === 1 && spec.reads[0] === "@start") delete spec.reads;
+    const graph = { ...recipe, nodes: { ...recipe.nodes, spec }, edges: recipe.edges.map(route), ends: recipe.ends!.map(route) };
     expect(createHash("sha256").update(JSON.stringify(graph)).digest("hex")).toBe(before);
   });
 

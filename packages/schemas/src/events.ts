@@ -44,10 +44,11 @@ export const OrderPlan = z.array(z.object({
   key: z.string().min(1),
   title: z.string().min(1),
   recipe: z.string().min(1).optional(),
-  ticketText: z.string(),
+  ticketText: z.string().describe("The complete request for Start, including relevant ticket, page, and chat context."),
+  ticketId: z.string().trim().min(1).optional().describe("The original tracker ticket ID or link when this job is for a ticket."),
   dependsOn: z.array(z.string().min(1)).max(1),
   baseBranch: z.string().min(1).optional(),
-  attachmentIds: z.array(z.ulid()).optional(),
+  attachmentIds: z.array(z.ulid()).optional().describe("IDs of original files from the current order to attach to this job."),
 }).strict());
 export type OrderPlan = z.infer<typeof OrderPlan>;
 

@@ -3,7 +3,7 @@ import { basename, join } from "node:path";
 import { monotonicFactory } from "ulid";
 import type { RawLine, Usage } from "@pecore/agents";
 import type { AgentSession, AgentNode, Artifact, ArtifactType, FailureReason, ForgeAccount, JobDefinitions, JobState, Node, NodeAgent, Project, ServiceAccount, Settings, WaitingReason } from "@pecore/schemas";
-import { artifactTypes, defaultAgentId, DocumentArtifact, isHumanNode, Recipe, ReferenceArtifact, SpecArtifact } from "@pecore/schemas";
+import { artifactTypes, defaultAgentId, DocumentArtifact, isHumanNode, Recipe, recipeStart, ReferenceArtifact, SpecArtifact } from "@pecore/schemas";
 import { TrackerMcpAuthError } from "../accounts/atlassian";
 import { spawnFor } from "../accounts/agents";
 import type { AgentServices } from "../accounts/agents";
@@ -271,7 +271,7 @@ export class JobExecutor {
   }
 
   private ticket(jobId: string): Artifact | undefined {
-    return jobArtifacts(this.ctx.db.events(jobId)).find(({ artifact, node }) => node === null && artifact.type === "document")?.artifact;
+    return jobArtifacts(this.ctx.db.events(jobId)).find(({ node }) => node === recipeStart)?.artifact;
   }
 
   private latestDiff(jobId: string): Artifact | undefined {
@@ -860,10 +860,10 @@ export class JobExecutor {
           const found: JobArtifact | undefined = read.find(({ artifact }) => artifact.type === type);
           return found ? [{ type, content: this.ctx.db.requireArtifact(found.artifact).toString("utf8") }] : [];
         });
-        const ticket: Artifact | undefined = this.ticket(job.id);
+        const ticket: Artifact | undefined = recipeNode.reads.includes(recipeStart) ? undefined : this.ticket(job.id);
         const diff: Artifact | undefined = this.latestDiff(job.id);
         const agentInputs: AgentInput[] = node.kind !== "agent" ? [] : [
-          ...(ticket ? [{ artifact: ticket, node: null }] : []),
+          ...(ticket ? [{ artifact: ticket, node: recipeStart }] : []),
           ...(diff ? [{ artifact: diff, node: null }] : []),
           ...read,
         ].map(({ artifact, node: from }) => ({ type: artifact.type as ArtifactType, content: this.ctx.db.requireArtifact(artifact).toString("utf8"), from }));

@@ -42,7 +42,7 @@ async function createMissing(ctx: ProjectContext, { orderId, plan }: PlannedOrde
       if (attachmentIds.length && !ctx.orderAttachments) throw new JobCreateError("order attachments are unavailable");
       const id: string = await createJob(ctx, {
         title: entry.title,
-        ticket: { text: entry.ticketText },
+        ticket: { text: entry.ticketText, id: entry.ticketId },
         recipe: entry.recipe,
         baseBranch: entry.baseBranch,
         parentJobId,

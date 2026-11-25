@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiClient, Node } from "@pecore/schemas";
+import { apiClient, Node, Recipe } from "@pecore/schemas";
 import type { ChatDetail, LiveMessage } from "@pecore/schemas";
 import { FakeForge, forgeAccount } from "../../test/fake-forge";
 import { createProjectWithRecipes } from "../../test/project";
@@ -15,7 +15,9 @@ import { definitionOperations } from "../api/routes/definitions";
 import { handlers } from "../api/handlers";
 import { startApi } from "../api/server";
 import { Engine } from "../main";
+import { workdirOf } from "../workdir/worktrees";
 import { callNodeTool } from "./node-tools";
+import * as webPage from "./web-page";
 
 const fakeAgent = fileURLToPath(new URL("../../../agents/test/fake-agent/agent.mjs", import.meta.url));
 const shim = fileURLToPath(new URL("../../../agents/scripts/chat-mcp.mjs", import.meta.url));
@@ -1140,6 +1142,110 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       await t.close();
     }
   }, 60000);
+
+  it("starts one job with the PM's full request and selected original files", async () => {
+    const t = await setup(() => [init(true)], {
+      tracker: true,
+      pm: (root) => [
+        init(true),
+        [...init(true), ...newSession, { expect: "session/prompt" }, { dump: join(root, "pm-order.json") }, { waitFile: join(root, "order-planned") }, ...replyWith("One job created.")],
+        [...init(true), ...newSession, { expect: "session/prompt" }, { dump: join(root, "spec-prompt.json") }, { waitFile: join(root, "spec-checked") }, ...replyWith('{"outcome":"success","output":{"criteria":["Login works"],"tests":[],"interfaces":[]}}')],
+      ],
+    });
+    const url: string = "https://example.com/login-behavior";
+    const body: string = "The new login flow must retain the selected workspace.";
+    const page = vi.spyOn(webPage, "readWebPage").mockResolvedValue({ url, contentType: "text/plain", body, truncated: false, untrusted: true });
+    const ticketId: string = "https://github.com/example/demo/issues/7";
+    const project: string = "demo";
+    try {
+      const { ctx } = t.engine.project(project);
+      const recipes: string[] = ["check-request"];
+      t.engine.catalog.saveNode(Node.parse({
+        name: "echo-request", description: "Echo the request", kind: "command", command: ["cat"], inputs: ["document"],
+        timeoutSec: 30, changesFiles: false,
+        outcomes: ["success"], outcomeRules: [{ exitCode: 0, outcome: "success" }],
+        outputs: { success: "document" }, outputRules: { success: { stdoutJson: "document" } },
+      }));
+      t.engine.catalog.saveRecipe(Recipe.parse({
+        name: "check-request", description: "Write the spec and read the request again", start: "spec",
+        nodes: { spec: { use: "spec-writer", reads: ["@start"] }, read: { use: "echo-request", reads: ["@start"] } },
+        edges: [{ from: "spec", on: "success", to: "read" }],
+        ends: [{ from: "read", on: "success", result: "succeeded" }, { from: "spec", on: "rejected", result: "failed" }],
+      }));
+      ctx.db.definition.write({ ...ctx.project, recipes });
+      expect(await t.engine.reloadProject(project)).toEqual([]);
+      const files: { name: string; mime: string; data: string }[] = [
+        ...Array.from({ length: 5 }, (_, index) => ({ name: `screen-${index + 1}.png`, mime: "image/png", data: png })),
+        { name: "before.json", mime: "application/json", data: Buffer.from('{"workspace":null}').toString("base64") },
+        { name: "after.json", mime: "application/json", data: Buffer.from('{"workspace":"alpha"}').toString("base64") },
+        { name: "workspaces.xlsx", mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data: Buffer.from([80, 75, 3, 4, 255, 0, 128]).toString("base64") },
+        { name: "extra.txt", mime: "text/plain", data: Buffer.from("Leave this out").toString("base64") },
+      ];
+      const params = { id: project };
+      const ids: string[] = [];
+      for (const file of files) ids.push((await t.call("uploadProjectChatAttachment", { params, body: file })).id);
+      const text: string = `Fix login using ${ticketId}, ${url}, and the supporting files.`;
+      const order = await t.call("sendProjectChatMessage", { params, body: { text, attachmentIds: ids } });
+      await until(() => existsSync(join(t.root, "pm-order.json")));
+      const pmPrompt: { params: { prompt: { type: string; text?: string; data?: string }[] } } = JSON.parse(await readFile(join(t.root, "pm-order.json"), "utf8"));
+      expect(pmPrompt.params.prompt[0]!.text).toContain(text);
+      expect(pmPrompt.params.prompt[0]!.text).toContain("Choose the original files");
+      expect(pmPrompt.params.prompt.filter(({ type }) => type === "image")).toHaveLength(5);
+      for (const [index, id] of ids.entries()) {
+        expect(pmPrompt.params.prompt[0]!.text).toContain(id);
+        expect(pmPrompt.params.prompt[0]!.text).toContain(files[index]!.name);
+      }
+      const pm = mcp(tokenFileOf(intakeChat(t)));
+      try {
+        const ticket = await pm.tool("read_ticket", { project, ticketId });
+        expect(ticket.result!.isError).toBeUndefined();
+        const source: { ticket: { title: string; body: string } } = JSON.parse(ticket.result!.content![0]!.text);
+        expect(source.ticket.body).toBe("Login fails");
+        const web = await pm.tool("read_web_page", { url });
+        expect(JSON.parse(web.result!.content![0]!.text)).toMatchObject({ body, untrusted: true });
+        expect(page).toHaveBeenCalledWith(url);
+        const request: string = `${text}\n\n${source.ticket.title}: ${source.ticket.body}\n\n${"Additional user context. ".repeat(4_000)}\n\n${body}`;
+        const selected: string[] = ids.slice(0, 8);
+        const entry = { key: "login", title: "Fix login", ticketText: request, ticketId, recipe: "check-request", dependsOn: [], attachmentIds: selected };
+        const unrelated: string = (await t.call("uploadProjectChatAttachment", { params, body: files[8]! })).id;
+        const refused = await pm.tool("create_jobs", { project, plan: [{ ...entry, attachmentIds: [...selected, unrelated] }] });
+        expect(refused.result!.isError).toBe(true);
+        const created = await pm.tool("create_jobs", { project, plan: [entry] });
+        expect(created.result!.isError).toBeUndefined();
+        const { jobIds }: { jobIds: { login: string } } = JSON.parse(created.result!.content![0]!.text);
+        expect(ctx.db.db.prepare("SELECT id FROM jobs WHERE order_id = ?").pluck().all(order.id)).toEqual([jobIds.login]);
+        const event = ctx.db.events(jobIds.login).find((event) => event.type === "job.created")!;
+        expect(JSON.parse(ctx.db.requireArtifact(event.payload.ticket!).toString("utf8"))).toMatchObject({ title: entry.title, body: request, id: ticketId });
+        expect(event.payload.attachments).toHaveLength(8);
+        await writeFile(join(t.root, "order-planned"), "");
+        await until(() => existsSync(join(t.root, "spec-prompt.json")));
+        const spec: { params: { prompt: { text: string }[] } } = JSON.parse(await readFile(join(t.root, "spec-prompt.json"), "utf8"));
+        const prompt: string = spec.params.prompt[0]!.text;
+        expect(prompt.match(/### Job request from Start/g)).toHaveLength(1);
+        expect(prompt).toContain(JSON.stringify(request));
+        expect(prompt).toContain("including images");
+        expect(prompt).not.toContain("extra.txt");
+        for (const [index, attachment] of event.payload.attachments!.entries()) {
+          expect(attachment.name).toBe(`${selected[index]}-${files[index]!.name}`);
+          const path: string = `.pecore/attachments/${attachment.name}`;
+          expect(prompt).toContain(path);
+          expect(await readFile(join(workdirOf(ctx.dir, jobIds.login), path))).toEqual(Buffer.from(files[index]!.data, "base64"));
+        }
+        await writeFile(join(t.root, "spec-checked"), "");
+        const detail = await until(async () => {
+          const job = await t.call("getJob", { params: { id: jobIds.login } });
+          return job.job.state === "succeeded" && job;
+        });
+        const echoed = detail.artifacts.find(({ type, run }) => type === "document" && run !== "ticket")!;
+        expect(JSON.parse(ctx.db.requireArtifact(echoed).toString("utf8"))).toMatchObject({ title: entry.title, body: request, id: ticketId });
+      } finally {
+        pm.close();
+      }
+    } finally {
+      page.mockRestore();
+      await t.close();
+    }
+  });
 
   it("passes an Assistant order with its image to the Project Manager, and posts the final reply back without starting an Assistant turn", async () => {
     const resumed = [{ expect: "session/resume" }, { send: { jsonrpc: "2.0", id: "$id", result: {} } }];
