@@ -72,6 +72,34 @@ it("expands arguments from inputs without converting their types", () => {
   })).toEqual({ fields: ["with quotes", 12], ticket: "TST-1" });
 });
 
+it("routes a Jira tool refusal through the failure outcome without creating a ticket output", async () => {
+  const bridge = await fakeBridge();
+  const { engine, close } = await apiProject();
+  try {
+    await serviceAccount(engine);
+    await writeFile(bridge.authorized, "yes");
+    const { ctx, executor } = engine.project("demo");
+    const node: McpTrackerNode = {
+      ...fixture(), tool: "forbidden", outcomes: ["success", "failure"], failOutcomes: ["failure"], outputs: { success: "document" },
+      outcomeRules: [{ exitCode: 0, outcome: "success" }, { exitCode: "other", outcome: "failure" }],
+    };
+    const recipe: Recipe = Recipe.parse({
+      name: "jira-read", description: "Read a Jira ticket", start: "read", nodes: { read: { use: node.name } },
+      ends: [{ from: "read", on: "success", result: "succeeded" }, { from: "read", on: "failure", result: "failed" }],
+    });
+    ctx.defs.nodes.set(node.name, node);
+    ctx.defs.recipes.set(recipe.name, recipe);
+    const job: string = await engine.createJob("demo", { title: "Read Jira", ticket: { text: "Read", id: "TST-42" }, recipe: recipe.name });
+    await expect.poll(() => executor.job(job).state).toBe("failed");
+    expect(executor.job(job).failure_reason).toBe("read:failure");
+    expect(ctx.db.db.prepare("SELECT state, outcome FROM node_runs WHERE job_id = ?").all(job)).toEqual([{ state: "completed", outcome: "failure" }]);
+    expect(executor.artifacts(job).map(({ name }) => name)).toEqual(["ticket.json"]);
+    expect((await readFile(bridge.calls, "utf8")).trim().split("\n")).toHaveLength(1);
+  } finally {
+    await close();
+  }
+});
+
 it("waits on expired OAuth, releases the job after login, and maps the tool output", async () => {
   const bridge = await fakeBridge();
   const { engine, close } = await apiProject();

@@ -427,3 +427,9 @@
 - Decision: Use `success` and `failure` for ordinary outcomes. Keep clear names for distinct paths such as `changes_requested` and literal answers such as `yes` and `no`. Rename shipped and saved outcome references without changing how existing recipes route. End derives the job result for the standard outcomes. For other outcomes, show a prefilled job result the user can change.
 - Why: Names such as `done` do not tell the user what happened. The editor asked users to classify an ordinary failure a second time.
 - Replaces: Vague outcome aliases and the required job result choice for every connection to End.
+
+## 2026-11-25: Explain base-change routes and route Tracker failures
+
+- Decision: Name the affected steps in recipe validation and show the base-change entry in Recipe settings. Failure edges leave the bottom of their source cards. Jira MCP tool refusals take the Failure branch, and saved recipes that use the shipped templates gain a failed End connection if needed. The three agents that produce one usable result keep Success as their only outcome.
+- Why: Adding Read Ticket exposed a route from Git Rebase to GitHub PR without a spec. Failure edges were hard to follow, and Jira MCP needed the same failure branch as Jira CLI.
+- Replaces: Internal paths in recipe validation, failure exits based on drag handles, and attempt errors for refusals from shipped Jira MCP tools.

@@ -1,4 +1,5 @@
 import { monotonicFactory } from "ulid";
+import { templateTitle } from "@pecore/schemas";
 import type { Artifact, JobDefinitions, Recipe } from "@pecore/schemas";
 import { checkRecipe, hasCommitNode, recipeParameterIssues } from "../definitions/recipe-check";
 import { definitionHash, jobDefinitions, jobNodes, snapshotDefinitions } from "../definitions/snapshot";
@@ -54,7 +55,7 @@ export function recipeForJob(ctx: ProjectContext, recipeName: string): Recipe {
     })),
   };
   const issues = [...checkRecipe(recipe, ctx.defs.nodes, ctx.project.repo !== null), ...recipeParameterIssues(recipe, ctx.defs.nodes)];
-  if (issues.length) throw new JobCreateError(`recipe ${recipeName} is not valid: ${issues.map((i) => `${i.path}: ${i.message}`).join("; ")}`);
+  if (issues.length) throw new JobCreateError(`Check the ${templateTitle(recipeName)} recipe. ${issues.map(({ message }) => message).join(" ")}`);
   return recipe;
 }
 

@@ -21,6 +21,39 @@ vi.mock("./RecipeGraph", () => ({
 
 afterEach(cleanup);
 
+it("shows the validation sentence and lets the user clear the base-change step", async () => {
+  const recipe: RecipeInput = {
+    name: "route", description: "Change the base branch", start: "spec", onBaseChanged: "rebase",
+    nodes: { spec: { use: "spec-writer" }, rebase: { use: "git-rebase" }, pr: { use: "github-pr" } },
+  };
+  const message: string = "GitHub PR needs the spec from Spec Writer. A base change can restart at Git Rebase before Spec Writer has produced it.";
+  api.call.mockClear();
+  api.call.mockImplementation(async (route: string, input?: RouteInput<"validateDefinition">) => {
+    if (route === "listDefinitions") return [];
+    if (route === "getDefinition") return { content: JSON.stringify(recipe), sha256: "v1" };
+    if (route === "getAgents") return { value: { agents: [] } };
+    if (route === "validateDefinition") return {
+      errors: JSON.parse(input!.body.content).onBaseChanged ? [{ file: "route.json", path: "nodes.pr.reads", message }] : [], warnings: [],
+    };
+    if (route === "saveDefinition") return { sha256: "v2" };
+    throw new Error(`Unexpected route ${route}`);
+  });
+  const router = createMemoryRouter([{ path: "/edit/recipe/*", element: <RecipeEditor /> }], { initialEntries: ["/edit/recipe/templates/recipes/route.json"] });
+  render(<RouterProvider router={router} />);
+  await screen.findByText(message);
+  expect(screen.queryByText(/nodes\.pr\.reads/)).toBeNull();
+  const user = userEvent.setup();
+  const setting: HTMLElement = screen.getByRole("combobox", { name: "Base-change step" });
+  expect(setting.textContent).toContain("Git Rebase");
+  await user.click(setting);
+  await user.click(await screen.findByRole("option", { name: "Keep the current result" }));
+  const save: HTMLButtonElement = screen.getByRole("button", { name: "Save" });
+  await waitFor(() => expect(save.disabled).toBe(false));
+  await user.click(save);
+  const request: RouteInput<"saveDefinition"> = api.call.mock.calls.findLast(([route]) => route === "saveDefinition")?.[1];
+  expect(JSON.parse(request.body.content)).not.toHaveProperty("onBaseChanged");
+});
+
 it("uses one outcome selection per connection and asks for a job result only for a named path to End", async () => {
   const template: DefinitionEntry = {
     path: "templates/nodes/github-ticket-read.json", sha256: "node-v1", errors: [],

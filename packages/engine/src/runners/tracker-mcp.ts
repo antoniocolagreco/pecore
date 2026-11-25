@@ -1,5 +1,5 @@
 import type { ArtifactType, McpTrackerNode } from "@pecore/schemas";
-import { atlassianTool } from "../accounts/atlassian";
+import { atlassianTool, TrackerMcpRefusedError } from "../accounts/atlassian";
 import { commandHash, pickOutcome } from "./command";
 import type { CommandOutcome, CommandRun } from "./command";
 
@@ -33,17 +33,23 @@ export async function runMcpTracker(node: McpTrackerNode, account: string, optio
   const args: Record<string, unknown> = trackerMcpArguments(node, options);
   if (!node.readOnly) options.effect?.requested(commandHash([node.server, node.tool, JSON.stringify(args)]));
   let value: unknown;
+  let refused: TrackerMcpRefusedError | undefined;
   try {
     value = await atlassianTool(account, node.tool, args, {
       onStart: (proc) => options.onStart?.(proc.pgid, proc.user), timeoutMs: node.timeoutSec * 1000,
     });
   } catch (error) {
     if (!node.readOnly) options.effect?.done(false, { error: (error as Error).message });
-    throw error;
+    if (!(error instanceof TrackerMcpRefusedError)) throw error;
+    refused = error;
   }
-  if (!node.readOnly) options.effect?.done(true, {});
+  if (!refused && !node.readOnly) options.effect?.done(true, {});
   const raw: string = JSON.stringify(value ?? null);
-  const outcome: string | null = pickOutcome(node.outcomeRules, { code: 0, stdout: raw });
+  const outcome: string | null = pickOutcome(node.outcomeRules, { code: refused ? 1 : 0, stdout: refused ? "" : raw });
+  if (refused) {
+    if (!outcome || !node.failOutcomes.includes(outcome)) throw refused;
+    return { kind: "completed", outcome, outputs: [], log: refused.message, fromProbe: false };
+  }
   if (!outcome) return { kind: "failed", reason: "INVALID_OUTPUT", log: "The MCP result did not match a node outcome." };
   const type: ArtifactType | undefined = node.outputs[outcome];
   const content: string = type === "document" ? JSON.stringify({ title: node.name, body: typeof value === "string" ? value : raw })

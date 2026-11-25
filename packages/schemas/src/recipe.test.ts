@@ -83,27 +83,27 @@ describe("recipe schema", () => {
   });
 
   it("rejects two edges with the same from and on", () => {
-    expect(issues({ ...feature, edges: [...feature.edges, { from: "spec", on: "accepted", to: "code" }] })).toContain("edges.22: two edges from spec on accepted");
+    expect(issues({ ...feature, edges: [...feature.edges, { from: "spec", on: "accepted", to: "code" }] })).toContain("edges.22: Spec Writer has two connections for Accepted. Keep only one.");
   });
 
   it("rejects edges, start and requires that name missing nodes", () => {
-    expect(issues({ ...feature, start: "nope" })).toContain("start: nope is not a recipe node");
-    expect(issues({ ...feature, edges: [{ from: "spec", on: "accepted", to: "nope" }] })).toContain("edges.0.to: nope is not a recipe node");
-    expect(issues({ ...feature, nodes: { ...feature.nodes, commit: { use: "git-commit", requires: ["nope"] } } })).toContain("nodes.commit.requires.0: nope is not a recipe node");
+    expect(issues({ ...feature, start: "nope" })).toContain("start: Start points to Nope, which is missing. Connect Start to an existing step.");
+    expect(issues({ ...feature, edges: [{ from: "spec", on: "accepted", to: "nope" }] })).toContain("edges.0.to: Spec Writer connects to Nope, which is missing. Choose another destination.");
+    expect(issues({ ...feature, nodes: { ...feature.nodes, commit: { use: "git-commit", requires: ["nope"] } } })).toContain("nodes.commit.requires.0: Git Commit requires Nope, which is missing. Choose an existing step in Requires.");
   });
 
   it("reads only recipe nodes, each once", () => {
     expect(issues({ ...feature, nodes: { ...feature.nodes, code: { use: "builder", reads: ["spec", "review"] } } })).toEqual([]);
-    expect(issues({ ...feature, nodes: { ...feature.nodes, code: { use: "builder", reads: ["nope"] } } })).toContain("nodes.code.reads.0: nope is not a recipe node");
-    expect(issues({ ...feature, nodes: { ...feature.nodes, code: { use: "builder", reads: ["spec", "spec"] } } })).toContain("nodes.code.reads: a node is read twice");
+    expect(issues({ ...feature, nodes: { ...feature.nodes, code: { use: "builder", reads: ["nope"] } } })).toContain("nodes.code.reads.0: Builder reads from Nope, which is missing. Choose an existing step in Reads from.");
+    expect(issues({ ...feature, nodes: { ...feature.nodes, code: { use: "builder", reads: ["spec", "spec"] } } })).toContain("nodes.code.reads: Builder reads the same step twice. Select it once in Reads from.");
   });
 
   it("requires a success outcome with no edge", () => {
-    expect(issues({ ...feature, successOutcomes: [] })).toContain("successOutcomes: at least one success outcome");
-    expect(issues({ ...feature, successOutcomes: ["commit:done"] })).toContain("successOutcomes.0: commit:done has an edge");
+    expect(issues({ ...feature, successOutcomes: [] })).toContain("successOutcomes: Choose at least one outcome that ends the job successfully.");
+    expect(issues({ ...feature, successOutcomes: ["commit:done"] })).toContain("successOutcomes.0: Done on Git Commit already goes to another step. Choose one destination.");
   });
 
   it("rejects providerNot targets that are not recipe nodes", () => {
-    expect(issues({ ...feature, nodes: { ...feature.nodes, review: { use: "code-reviewer", agent: { providerNot: ["coder"] } } } })).toContain("nodes.review.agent.providerNot.0: coder is not a recipe node");
+    expect(issues({ ...feature, nodes: { ...feature.nodes, review: { use: "code-reviewer", agent: { providerNot: ["coder"] } } } })).toContain("nodes.review.agent.providerNot.0: The provider restriction on Code Reviewer refers to Coder, which is missing. Choose an existing Agent step.");
   });
 });

@@ -259,8 +259,8 @@ export function useUnsaved(dirty: boolean): ReactNode {
   />;
 }
 
-export function DefinitionErrors({ errors }: { errors: RouteResult<"validateDefinition">["errors"] | undefined }) {
-  return <>{errors?.map((error, index) => <ErrorText key={index} error={[error.path, error.message].filter(Boolean).join(": ")} />)}</>;
+export function DefinitionErrors({ errors, showPath = true }: { errors: RouteResult<"validateDefinition">["errors"] | undefined; showPath?: boolean }) {
+  return <>{errors?.map((error, index) => <ErrorText key={index} error={showPath && error.path ? error.path + ": " + error.message : error.message} />)}</>;
 }
 
 const editorTheme = EditorView.theme({

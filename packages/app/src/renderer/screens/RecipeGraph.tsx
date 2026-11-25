@@ -45,6 +45,45 @@ function startViewport(layout: RecipeLayout, start: string): Viewport {
   return { x: 32 - position.x * zoom, y: 220 - position.y * zoom, zoom };
 }
 
+export function routeRecipeEdges(links: RecipeGraphLink[], automatic: RecipeLayout): RoutedRecipeEdge[] {
+  const attachments = recipeAttachments(links);
+  const returns: boolean[] = links.map(({ from, to }) => automatic[to]!.x < automatic[from]!.x);
+  const returnCount: number = returns.filter(Boolean).length;
+  const lanes = new Map<number, number>(returns.map((_, index) => index)
+    .sort((first, second) => Number(returns[second]) - Number(returns[first]))
+    .map((index, lane) => [index, 42 + lane * recipeLaneGap]));
+  const directCandidates: RecipeGraphLink[] = links.filter(({ from, to, failed, targetPort }) =>
+    to === recipeEnd && from !== recipeStart && !failed && (!targetPort || targetPort === "left"));
+  const direct: RecipeGraphLink | undefined = directCandidates.find((link) => !link.neutral) ?? directCandidates[0];
+  const terminalCounts: Record<"top" | "bottom", number> = { top: 0, bottom: 0 };
+  return links.map((link, index) => {
+    const stroke: string = link.invalid || link.failed ? "var(--recipe-edge-failed)"
+      : returns[index] || link.neutral ? "var(--recipe-edge-return)" : "var(--recipe-edge-forward)";
+    const outer: boolean = link.failed || (link.to === recipeEnd && link.from !== recipeStart && link !== direct);
+    const side: "top" | "bottom" = link.failed ? "bottom"
+      : link.targetPort === "top" || link.targetPort === "bottom" ? link.targetPort
+      : terminalCounts.top <= terminalCounts.bottom ? "top" : "bottom";
+    return {
+      id: String(index),
+      source: link.from,
+      target: link.to,
+      type: "routed",
+      data: {
+        attachment: attachments[index]!,
+        sourcePort: link.failed ? "bottom" : link.sourcePort ?? (outer ? side : undefined),
+        targetPort: link.targetPort ?? (outer ? side : undefined),
+        terminalLane: outer ? { side, offset: 44 + (side === "top" ? returnCount * recipeLaneGap : 0) + terminalCounts[side]++ * 30 } : undefined,
+        laneOffset: lanes.get(index)!,
+      },
+      label: link.caption ?? (link.invalid ? link.on + " (invalid)" : link.on),
+      markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 16, height: 16 },
+      style: { ...edgeStyle, stroke },
+      selectable: false,
+      focusable: false,
+    };
+  });
+}
+
 export function RecipeGraph({ ref, steps, links, layout, automatic, start, editable, inspectable = false, selected, onSelect, onConnect, onLayout }: {
   ref?: Ref<RecipeCanvas>;
   steps: RecipeGraphNode[];
@@ -79,41 +118,7 @@ export function RecipeGraph({ ref, steps, links, layout, automatic, start, edita
         ? flow?.screenToFlowPosition(point) : undefined;
     },
   }), [flow]);
-  const attachments = recipeAttachments(links);
-  const returns: boolean[] = links.map(({ from, to }) => automatic[to]!.x < automatic[from]!.x);
-  const returnCount: number = returns.filter(Boolean).length;
-  const lanes = new Map<number, number>(returns.map((_, index) => index)
-    .sort((first, second) => Number(returns[second]) - Number(returns[first]))
-    .map((index, lane) => [index, 42 + lane * recipeLaneGap]));
-  const endings: RecipeGraphLink[] = links.filter(({ from, to }) => to === recipeEnd && from !== recipeStart);
-  const directCandidates: RecipeGraphLink[] = endings.filter(({ targetPort }) => !targetPort || targetPort === "left");
-  const direct: RecipeGraphLink | undefined = directCandidates.find((link) => !link.failed && !link.neutral) ?? directCandidates[0];
-  const terminalCounts: Record<"top" | "bottom", number> = { top: 0, bottom: 0 };
-  const edges: RoutedRecipeEdge[] = links.map((link, index) => {
-    const stroke: string = link.invalid || link.failed ? "var(--recipe-edge-failed)"
-      : returns[index] || link.neutral ? "var(--recipe-edge-return)" : "var(--recipe-edge-forward)";
-    const terminal: boolean = link.to === recipeEnd && link.from !== recipeStart && link !== direct;
-    const side: "top" | "bottom" = link.targetPort === "top" || link.targetPort === "bottom" ? link.targetPort
-      : terminalCounts.top <= terminalCounts.bottom ? "top" : "bottom";
-    return {
-      id: String(index),
-      source: link.from,
-      target: link.to,
-      type: "routed",
-      data: {
-        attachment: attachments[index]!,
-        sourcePort: link.sourcePort ?? (terminal ? side : undefined),
-        targetPort: link.targetPort ?? (terminal ? side : undefined),
-        laneOffset: lanes.get(index)!,
-        terminalLane: terminal ? { side, offset: 44 + (side === "top" ? returnCount * recipeLaneGap : 0) + terminalCounts[side]++ * 30 } : undefined,
-      },
-      label: link.caption ?? (link.invalid ? link.on + " (invalid)" : link.on),
-      markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 16, height: 16 },
-      style: { ...edgeStyle, stroke },
-      selectable: false,
-      focusable: false,
-    };
-  });
+  const edges: RoutedRecipeEdge[] = routeRecipeEdges(links, automatic);
 
   useLayoutEffect(() => {
     flow?.setNodes((current) => {

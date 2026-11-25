@@ -17,4 +17,5 @@ export * from "./profiles";
 export * from "./project";
 export * from "./recipe";
 export * from "./settings";
+export * from "./template-title";
 export * from "./tiers";

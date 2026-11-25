@@ -76,6 +76,7 @@ async function withBridge<T>(account: string, options: BridgeOptions, run: (clie
 }
 
 class McpToolError extends Error {}
+export class TrackerMcpRefusedError extends McpToolError {}
 
 export async function checkAtlassian(account: string, options: BridgeOptions = {}): Promise<void> {
   await atlassianTool(account, "atlassianUserInfo", {}, options);
@@ -93,7 +94,7 @@ export async function atlassianTool(account: string, name: string, args: Record<
     }
     if (isError || (output && typeof output === "object" && "error" in output && output.error === true)) {
       if (texts.some((part) => authRequired.test(part)) || authRequired.test(JSON.stringify(output ?? null))) throw new TrackerMcpAuthError(account);
-      throw new McpToolError("The Atlassian tool refused the request. Check the site, tool arguments and your Jira permissions.");
+      throw new TrackerMcpRefusedError("The Atlassian tool refused the request. Check the site, tool arguments and your Jira permissions.");
     }
     return output;
   });

@@ -25,12 +25,12 @@ describe("pecore.db", () => {
   it("applies the migrations once, in WAL mode", async () => {
     const path = join(await tempDir(), "pecore.db");
     const db = new ProjectDb(path);
-    expect(db.version()).toBe(31);
+    expect(db.version()).toBe(32);
     expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_nodes') WHERE name = 'clean_checkout'").get()).toBeUndefined();
     expect(db.db.pragma("journal_mode", { simple: true })).toBe("wal");
     db.close();
     const again = new ProjectDb(path);
-    expect(again.version()).toBe(31);
+    expect(again.version()).toBe(32);
     const tables = again.db.prepare<[], string>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'catalog_%' ORDER BY name").pluck().all();
     expect(tables).toEqual([
       "artifacts", "attempt_logs", "attempts", "events", "human_queue", "jobs", "node_runs",
@@ -38,6 +38,41 @@ describe("pecore.db", () => {
       "project_knowledge_steps", "project_recipes", "project_variables", "schema_version", "tickets_seen",
     ]);
     again.close();
+  });
+
+  it("adds the new Jira MCP failure route to recipes using a shipped template only", async () => {
+    const path: string = join(await tempDir(), "chats.db");
+    const old: ChatsDb = new ChatsDb(path);
+    const catalog: Catalog = new Catalog(old.db);
+    catalog.saveNode(Node.parse({
+      name: "jira-mcp-ticket-read", description: "Read Jira", kind: "tracker", mode: "mcp", provider: "jira",
+      account: "atlassian", server: "atlassian", tool: "getJiraIssue", arguments: {},
+      outcomes: ["success"], outcomeRules: [{ exitCode: 0, outcome: "success" }],
+    }), true);
+    catalog.saveNode(Node.parse({
+      name: "jira-mcp-ticket-search", description: "Find Jira tickets", kind: "tracker", mode: "mcp", provider: "jira",
+      account: "atlassian", server: "atlassian", tool: "searchJiraIssuesUsingJql", arguments: {},
+      outcomes: ["success"], outcomeRules: [{ exitCode: 0, outcome: "success" }],
+    }));
+    catalog.saveRecipe(Recipe.parse({
+      name: "jira", description: "Read and search Jira", start: "read",
+      nodes: { read: { use: "jira-mcp-ticket-read" }, search: { use: "jira-mcp-ticket-search" } },
+      edges: [{ from: "read", on: "success", to: "search" }],
+      ends: [{ from: "search", on: "success", result: "succeeded" }],
+    }));
+    old.db.prepare("UPDATE schema_version SET version = 31").run();
+    old.close();
+    const db: ChatsDb = new ChatsDb(path);
+    try {
+      const updated: Recipe = new Catalog(db.db).recipe("jira")!;
+      expect(updated.edges).toEqual([{ from: "read", on: "success", to: "search" }]);
+      expect(updated.ends).toEqual([
+        { from: "search", on: "success", result: "succeeded" },
+        { from: "read", on: "failure", result: "failed" },
+      ]);
+    } finally {
+      db.close();
+    }
   });
 
   it("migrates catalog references, live review choices, finished outcomes and job snapshots together", async () => {
@@ -459,7 +494,7 @@ describe("chats.db", () => {
 
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.version()).toBe(31);
+    expect(db.version()).toBe(32);
     for (let i = 0; i < notificationsKept + 3; i++) db.addNotification({ kind: "job", title: `n${i}`, body: "" }, 1000 + i);
     const kept = db.notifications();
     expect(kept).toHaveLength(notificationsKept);
@@ -481,7 +516,7 @@ describe("chats.db", () => {
       UPDATE schema_version SET version = 5`);
     old.close();
     const db = new ChatsDb(file);
-    expect(db.version()).toBe(31);
+    expect(db.version()).toBe(32);
     expect(db.messages(assistantChat)).toEqual([]);
     db.close();
   });

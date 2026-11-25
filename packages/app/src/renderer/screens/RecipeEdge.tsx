@@ -133,10 +133,10 @@ function roundedPath(points: XYPosition[]): string {
 }
 
 function terminalPath(from: InternalNode, to: InternalNode, start: XYPosition, end: XYPosition,
-  source: Position, target: Position, band: TerminalLane, lanes: HorizontalLane[]): EdgePath {
+  source: Position, target: Position, band: TerminalLane, lanes: HorizontalLane[], bottom: number): EdgePath {
   const preferred: number = band.side === "top"
     ? Math.min(from.internals.positionAbsolute.y, to.internals.positionAbsolute.y) - band.offset
-    : Math.max(
+    : Math.max(bottom,
       from.internals.positionAbsolute.y + (from.measured.height ?? from.height ?? 0),
       to.internals.positionAbsolute.y + (to.measured.height ?? to.height ?? 0),
     ) + band.offset;
@@ -169,13 +169,27 @@ function mixedPath(start: XYPosition, end: XYPosition, source: Position, target:
   return [roundedPath(reversed ? points.reverse() : points), ((lane === from.y ? from.x : leadX) + to.x) / 2, lane];
 }
 
-function recipePath(from: InternalNode, to: InternalNode, data: NonNullable<RoutedRecipeEdge["data"]>, lanes: HorizontalLane[]): EdgePath {
+export function recipePath(from: InternalNode, to: InternalNode, data: NonNullable<RoutedRecipeEdge["data"]>, lanes: HorizontalLane[],
+  nodes: Iterable<InternalNode>): EdgePath {
   const [defaultSource, defaultTarget] = facingSides(from.internals.positionAbsolute, to.internals.positionAbsolute);
   const sourcePosition: Position = data.sourcePort ? positions[data.sourcePort] : defaultSource;
   const targetPosition: Position = data.targetPort ? positions[data.targetPort] : defaultTarget;
   const start: XYPosition = attachmentPoint(from, sourcePosition, data.attachment.source);
   const end: XYPosition = attachmentPoint(to, targetPosition, data.attachment.target);
-  if (data.terminalLane) return terminalPath(from, to, start, end, sourcePosition, targetPosition, data.terminalLane, lanes);
+  if (data.terminalLane) {
+    let bottom: number = 0;
+    if (data.terminalLane.side === "bottom") {
+      const left: number = Math.min(start.x, end.x);
+      const right: number = Math.max(start.x, end.x);
+      for (const node of nodes) {
+        const { x, y } = node.internals.positionAbsolute;
+        if (x <= right && x + (node.measured.width ?? node.width ?? 0) >= left) {
+          bottom = Math.max(bottom, y + (node.measured.height ?? node.height ?? 0));
+        }
+      }
+    }
+    return terminalPath(from, to, start, end, sourcePosition, targetPosition, data.terminalLane, lanes, bottom);
+  }
   if (sourcePosition === Position.Top && targetPosition === Position.Top) return returnPath(start, end, data.laneOffset, lanes);
   const mixed: EdgePath | undefined = mixedPath(start, end, sourcePosition, targetPosition, lanes);
   if (mixed) return mixed;
@@ -197,7 +211,7 @@ function recipePaths(state: ReactFlowState): Map<string, EdgePath> {
     const { id, source, target, data } = edge as RoutedRecipeEdge;
     const from: InternalNode | undefined = state.nodeLookup.get(source);
     const to: InternalNode | undefined = state.nodeLookup.get(target);
-    if (from && to && data) paths.set(id, recipePath(from, to, data, lanes));
+    if (from && to && data) paths.set(id, recipePath(from, to, data, lanes, state.nodeLookup.values()));
   }
   pathsByState.set(state, paths);
   return paths;

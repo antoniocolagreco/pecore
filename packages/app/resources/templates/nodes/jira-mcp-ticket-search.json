@@ -32,12 +32,20 @@
   },
   "inputs": [],
   "outcomes": [
-    "success"
+    "success",
+    "failure"
+  ],
+  "failOutcomes": [
+    "failure"
   ],
   "outcomeRules": [
     {
       "exitCode": 0,
       "outcome": "success"
+    },
+    {
+      "exitCode": "other",
+      "outcome": "failure"
     }
   ],
   "outputs": {

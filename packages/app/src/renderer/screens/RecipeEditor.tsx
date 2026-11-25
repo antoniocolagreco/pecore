@@ -154,7 +154,11 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
       kind,
     }];
   });
-  const stepOptions: Option[] = entries.map(([value]) => ({ value, label: templateTitle(value) }));
+  const stepOptions: Option[] = entries.map(([value, step]) => {
+    const name: string = templateTitle(string(object(step).use) || value);
+    const caption: string = templateTitle(value);
+    return { value, label: name === caption ? name : `${name} (${caption})` };
+  });
   const parameters = object(object(nodeValue.params).properties);
   const questionParameter = object(parameters.question);
   const trackerParameters: { key: string; label: string }[] = [
@@ -454,12 +458,16 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
                   onValueChange={(description) => update({ description })} className={s.recipeDescription} />
                 <DefinitionIconField icons={icons.data} type="recipe" name={string(draft.name)} value={string(draft.icon)} disabled={!editable}
                   onChange={(icon) => update({ icon })} />
+                {entries.length > 0 && <Select label="Base-change step" value={string(draft.onBaseChanged)}
+                  options={[{ value: "", label: "Keep the current result" }, ...stepOptions]}
+                  description="After a stopped or finished job changes base, restart it at this step."
+                  onValueChange={(step) => update({ onBaseChanged: step || undefined })} />}
               </>}
             </fieldset>}
           </Card>
         </div>
       </> : <ErrorText error="Unable to read the recipe definition." />}
-      <DefinitionErrors errors={file.errors} />
+      <DefinitionErrors errors={file.errors} showPath={false} />
     </div>}
     <Dialog open={!!connection} onOpenChange={(open) => { if (!open) setConnection(undefined); }} title="Connect nodes"
       description={connection && `${graphTitle(connection.from)} → ${graphTitle(connection.to)}`}

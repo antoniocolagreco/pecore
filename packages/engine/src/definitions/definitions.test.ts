@@ -83,12 +83,12 @@ describe("recipe check", () => {
     const missing: Recipe = recipe({ ...valid, ends: [{ from: "lint", on: "passed", result: "succeeded" }] });
     const unknown: Recipe = recipe({ ...valid, ends: [{ from: "lint", on: "missing", result: "succeeded" }] });
     expect(checkRecipe(valid, nodes, false)).toEqual([]);
-    expect(checkRecipe(missing, nodes, false)).toContainEqual({ path: "nodes.lint", message: "connect these outcomes: failed" });
-    expect(checkRecipe(unknown, nodes, false)).toContainEqual({ path: "ends.0.on", message: "missing is not an outcome of lint" });
+    expect(checkRecipe(missing, nodes, false)).toContainEqual({ path: "nodes.lint", message: "Connect the remaining outcomes of Lint to another step or End (Failed)." });
+    expect(checkRecipe(unknown, nodes, false)).toContainEqual({ path: "ends.0.on", message: "Lint has no Missing outcome. Choose another outcome for this connection to End." });
   });
 
   it("rejects a missing node instance", () => {
-    expect(checkRecipe(recipe({ ...local, nodes: { ...local.nodes, lint: { use: "eslint" } } }), nodes, true)).toContainEqual({ path: "nodes.lint.use", message: "node eslint not found" });
+    expect(checkRecipe(recipe({ ...local, nodes: { ...local.nodes, lint: { use: "eslint" } } }), nodes, true)).toContainEqual({ path: "nodes.lint.use", message: "The ESLint node template is missing. Choose another node." });
   });
 
   it("accepts card and session overrides only on agent steps", () => {
@@ -96,14 +96,14 @@ describe("recipe check", () => {
     expect(checkRecipe(valid, nodes, false)).toEqual([]);
     const invalid: Recipe = recipe({ ...local, nodes: { ...local.nodes, lint: { use: "lint", agentId: "reviewer", agentSession: "new" } } });
     expect(checkRecipe(invalid, nodes, false)).toEqual([
-      { path: "nodes.lint.agentId", message: "lint is not an agent node" },
-      { path: "nodes.lint.agentSession", message: "lint is not an agent node" },
+      { path: "nodes.lint.agentId", message: "Choose an Agent node to use agent settings. Lint is a different kind of node." },
+      { path: "nodes.lint.agentSession", message: "Choose an Agent node to use agent settings. Lint is a different kind of node." },
     ]);
   });
 
   it("rejects an edge on an outcome the node does not produce, and allows stale only with requires", () => {
     const edges = [...local.edges, { from: "code", on: "stale", to: "lint" }];
-    expect(checkRecipe(recipe({ ...local, edges }), nodes, true)).toContainEqual({ path: "edges.5.on", message: "stale is not an outcome of code" });
+    expect(checkRecipe(recipe({ ...local, edges }), nodes, true)).toContainEqual({ path: "edges.5.on", message: "Builder has no Stale outcome. Choose another outcome for this connection." });
   });
 
   const publishing = (publish: object, edges: object[]) => recipe({
@@ -122,32 +122,32 @@ describe("recipe check", () => {
   const onlyAccepted = throughSpec.filter((edge) => edge.on !== "rejected");
 
   it("gives a command its required input from the node it reads, on every path", () => {
-    expect(checkRecipe(publishing({ reads: ["spec"] }, throughSpec), nodes, true)).toContainEqual({ path: "nodes.publish.reads", message: "spec from spec is not produced on every path to publish" });
+    expect(checkRecipe(publishing({ reads: ["spec"] }, throughSpec), nodes, true)).toContainEqual({ path: "nodes.publish.reads", message: "Publish needs the spec from Spec Writer. A path reaches Publish without that output. Route it through an outcome of Spec Writer that produces the spec." });
     expect(checkRecipe(publishing({ reads: ["spec"] }, onlyAccepted), nodes, true)).toEqual([]);
   });
 
   it("asks a command to read a node that produces each required input", () => {
-    expect(checkRecipe(publishing({}, throughSpec), nodes, true)).toContainEqual({ path: "nodes.publish.reads", message: "read a node that produces spec" });
+    expect(checkRecipe(publishing({}, throughSpec), nodes, true)).toContainEqual({ path: "nodes.publish.reads", message: "Publish needs a spec input. Select a step that produces it in Reads from." });
   });
 
   it("rejects two read nodes that produce the same input of a command", () => {
-    expect(checkRecipe(publishing({ reads: ["spec", "lint"] }, onlyAccepted), nodes, true)).toContainEqual({ path: "nodes.publish.reads", message: "spec and lint both produce text; read only one" });
+    expect(checkRecipe(publishing({ reads: ["spec", "lint"] }, onlyAccepted), nodes, true)).toContainEqual({ path: "nodes.publish.reads", message: "Spec Writer and Lint produce the same input for Publish (text). Select one source in Reads from." });
   });
 
   it("rejects reading a node that produces nothing", () => {
     const silent = new Map<string, Node>([...nodes, ["lint", check("lint", ["passed", "failed"], { command: ["true"] })], ["quiet", Node.parse({ ...writer, name: "quiet", outputs: {} })]]);
     const r = recipe({ ...local, nodes: { ...local.nodes, code: { use: "builder", reads: ["spec"] }, spec: { use: "quiet" } } });
-    expect(checkRecipe(r, silent, true)).toContainEqual({ path: "nodes.code.reads", message: "spec produces nothing to read" });
+    expect(checkRecipe(r, silent, true)).toContainEqual({ path: "nodes.code.reads", message: "Quiet produces no output for Builder to read. Remove it from Reads from." });
   });
 
   it("rejects a success outcome that is a fail outcome", () => {
     const r = recipe({ ...local, successOutcomes: ["commit:failed"] });
-    expect(checkRecipe(r, nodes, true)).toContainEqual({ path: "successOutcomes.0", message: "failed is a fail outcome of commit" });
+    expect(checkRecipe(r, nodes, true)).toContainEqual({ path: "successOutcomes.0", message: "Git Commit reports Failed as a failure. Choose another outcome to end the job successfully." });
   });
 
   it("requires an edge on skipped for optional nodes", () => {
     const r = recipe({ ...local, nodes: { ...local.nodes, lint: { use: "lint", optional: true } } });
-    expect(checkRecipe(r, nodes, true)).toContainEqual({ path: "nodes.lint.optional", message: "optional node lint needs an edge on skipped" });
+    expect(checkRecipe(r, nodes, true)).toContainEqual({ path: "nodes.lint.optional", message: "Connect the Skipped outcome of Lint to another step or End." });
   });
 
   it("rejects params overrides on Repository nodes", () => {
@@ -162,7 +162,7 @@ describe("recipe check", () => {
       outcomes: ["pushed", "failed"], outcomeRules: [{ exitCode: 0, outcome: "pushed" }] });
     const r = recipe({ start: "push", successOutcomes: ["push:pushed"], nodes: { push: { use: "git-push" } } });
     const pushNodes = new Map<string, Node>([["git-push", push]]);
-    expect(checkRecipe(r, pushNodes, false)).toEqual([{ path: "nodes.push.use", message: "git-push needs a remote repository, and this project has none" }]);
+    expect(checkRecipe(r, pushNodes, false)).toEqual([{ path: "nodes.push.use", message: "Git Push needs a remote repository. Add one in Project Settings or remove this step." }]);
     expect(checkRecipe(r, pushNodes, true)).toEqual([]);
   });
 });
@@ -173,6 +173,40 @@ describe("phase 1 gate: shipped templates", () => {
     expect(lib.errors).toEqual([]);
     expect(lib.nodes.size).toBeGreaterThan(0);
     expect(lib.recipes.has("feature-to-pr")).toBe(true);
+  });
+
+  it("identifies the base-change route that bypasses the spec after adding Read Ticket", async () => {
+    const library = await loadTemplates(shippedTemplates);
+    const bugfix: Recipe = library.recipes.get("bugfix-to-pr")!;
+    const draft: Recipe = Recipe.parse({
+      ...bugfix, start: "ticket", nodes: { ...bugfix.nodes, ticket: { use: "github-ticket-read" } },
+      edges: [...bugfix.edges, { from: "ticket", on: "success", to: "spec" }],
+      ends: [...bugfix.ends!, { from: "ticket", on: "failure", result: "failed" }],
+    });
+    expect(checkRecipe(draft, library.nodes, true)).toContainEqual({
+      path: "nodes.pr.reads",
+      message: "GitHub PR needs the spec from Spec Writer. A base change can restart at Git Rebase before Spec Writer has produced it. Route that branch through Spec Writer, or clear the base-change step in Recipe settings and remove the disconnected steps.",
+    });
+    const throughSpec: Recipe = Recipe.parse({
+      ...draft, edges: draft.edges.map((edge) =>
+        (edge.from === "rebase" || edge.from === "resolve-conflicts") && edge.on === "success" ? { ...edge, to: "spec" } : edge),
+    });
+    expect(checkRecipe(throughSpec, library.nodes, true)).toEqual([]);
+    const fromStart: Recipe = Recipe.parse({
+      ...draft, onBaseChanged: undefined,
+      nodes: Object.fromEntries(Object.entries(draft.nodes).filter(([id]) => id !== "rebase" && id !== "resolve-conflicts")),
+      edges: draft.edges.filter(({ from }) => from !== "rebase" && from !== "resolve-conflicts"),
+      ends: draft.ends!.filter(({ from }) => from !== "resolve-conflicts"),
+    });
+    expect(checkRecipe(fromStart, library.nodes, true)).toEqual([]);
+    const bypass: Recipe = Recipe.parse({
+      ...fromStart, edges: [...fromStart.edges, { from: "ticket", on: "failure", to: "lint" }],
+      ends: fromStart.ends!.filter(({ from }) => from !== "ticket"),
+    });
+    expect(checkRecipe(bypass, library.nodes, true)).toContainEqual({
+      path: "nodes.pr.reads",
+      message: "GitHub PR needs the spec from Spec Writer. A path reaches GitHub PR without that output. Route it through an outcome of Spec Writer that produces the spec.",
+    });
   });
 
   it.each([
@@ -204,6 +238,17 @@ describe("phase 1 gate: shipped templates", () => {
       ["human-review", ["approved", "changes_requested", "rejected"]],
       ["spec-writer", ["rejected"]],
     ]);
+  });
+
+  it("ships failure routes for Jira MCP operations and leaves successful agent completions alone", async () => {
+    const { nodes } = await loadTemplates(shippedTemplates);
+    for (const name of ["jira-mcp-ticket-read", "jira-mcp-ticket-search", "jira-mcp-issue-comment"]) {
+      expect(nodes.get(name)).toMatchObject({
+        outcomes: ["success", "failure"], failOutcomes: ["failure"],
+        outcomeRules: [{ exitCode: 0, outcome: "success" }, { exitCode: "other", outcome: "failure" }],
+      });
+    }
+    for (const name of ["approver", "tests-writer", "write-pr"]) expect(nodes.get(name)?.outcomes).toEqual(["success"]);
   });
 
   it("retains separately routed custom outcomes and literal answers during migration", () => {
@@ -249,7 +294,7 @@ describe("instantiate", () => {
       ctx.db.definition.write({ ...ctx.project, recipes: undefined });
       await engine.reloadProject("demo");
       await expect(call("instantiate", { body: { kind: "recipe", name: "feature-to-pr", project: "demo" } }))
-        .rejects.toThrow("git-push needs a remote repository");
+        .rejects.toThrow("Git Push needs a remote repository");
       expect(ctx.db.catalog.node("git-push")).toBeNull();
       const response: RouteOutput<"instantiate"> = await call("instantiate", { body: { kind: "recipe", name: "feature-to-local-commit", project: "demo" } });
       expect(response.created).toContain("projects/demo/recipes/feature-to-local-commit.json");

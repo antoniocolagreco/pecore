@@ -153,7 +153,7 @@ describe("definition routes", () => {
 
   it("refuses to add or save a recipe that needs a remote repository in a local project (decision 72)", async () => {
     const { engine, call, close } = await apiProject();
-    const refusal = "git-push needs a remote repository, and this project has none";
+    const refusal = "Git Push needs a remote repository. Add one in Project Settings or remove this step.";
     await expect(call("instantiate", { body: { kind: "recipe", name: "feature-to-pr", project: "demo" } })).rejects.toThrow(refusal);
     expect(existsSync(join(engine.projectDir("demo"), "recipes", "feature.json"))).toBe(false);
     expect(existsSync(join(engine.projectDir("demo"), "nodes", "git-push.json"))).toBe(false);

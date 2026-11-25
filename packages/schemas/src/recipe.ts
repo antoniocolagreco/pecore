@@ -2,6 +2,7 @@ import { z } from "zod";
 import { assistantAgentId } from "./agent";
 import { DefinitionName, JsonSchemaObject, Name, Outcome, TierName } from "./common";
 import { AgentSession, legacyAgentSession } from "./node";
+import { templateTitle } from "./template-title";
 
 const NodeId = z.string().regex(/^[a-z][a-z0-9-]*$/);
 
@@ -92,44 +93,46 @@ const RecipeDefinition = z
   .superRefine((r, ctx) => {
     const ids = new Set(Object.keys(r.nodes));
     const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: "custom", path, message });
+    const title = (id: string): string => templateTitle(r.nodes[id]?.use ?? id);
+    const outcome = (name: string): string => templateTitle(name.replaceAll("_", "-"));
     if (ids.size === 0) {
-      if (r.start !== undefined) issue(["start"], "a recipe with no nodes has no start");
-      if (r.edges.length > 0) issue(["edges"], "a recipe with no nodes has no edges");
-      if (r.ends?.length) issue(["ends"], "a recipe with no steps goes directly from Start to End");
+      if (r.start !== undefined) issue(["start"], "Connect Start directly to End when the recipe has no steps.");
+      if (r.edges.length > 0) issue(["edges"], "Remove the connections to steps that are no longer in the recipe.");
+      if (r.ends?.length) issue(["ends"], "A recipe with no steps goes directly from Start to End.");
       return;
     }
-    if (r.start === undefined) issue(["start"], "required when the recipe has nodes");
-    else if (!ids.has(r.start)) issue(["start"], `${r.start} is not a recipe node`);
-    if (r.onBaseChanged !== undefined && !ids.has(r.onBaseChanged)) issue(["onBaseChanged"], `${r.onBaseChanged} is not a recipe node`);
-    if (r.ci && !ids.has(r.ci.after)) issue(["ci", "after"], `${r.ci.after} is not a recipe node`);
-    if (r.ends === undefined && r.successOutcomes.length === 0) issue(["successOutcomes"], "at least one success outcome");
-    if (r.ends?.length === 0) issue(["ends"], "connect at least one outcome to End");
-    if (r.ends !== undefined && r.successOutcomes.length) issue(["successOutcomes"], "set results on the connections to End");
+    if (r.start === undefined) issue(["start"], "Connect Start to the first step.");
+    else if (!ids.has(r.start)) issue(["start"], `Start points to ${title(r.start)}, which is missing. Connect Start to an existing step.`);
+    if (r.onBaseChanged !== undefined && !ids.has(r.onBaseChanged)) issue(["onBaseChanged"], `The base-change step ${title(r.onBaseChanged)} is missing. Choose an existing step in Recipe settings.`);
+    if (r.ci && !ids.has(r.ci.after)) issue(["ci", "after"], `The step ${title(r.ci.after)} is missing. Choose an existing delivery step for CI.`);
+    if (r.ends === undefined && r.successOutcomes.length === 0) issue(["successOutcomes"], "Choose at least one outcome that ends the job successfully.");
+    if (r.ends?.length === 0) issue(["ends"], "Connect at least one outcome to End.");
+    if (r.ends !== undefined && r.successOutcomes.length) issue(["successOutcomes"], "Set the job results on the connections to End.");
     const seen = new Set<string>();
     for (const [i, e] of r.edges.entries()) {
-      if (!ids.has(e.from)) issue(["edges", i, "from"], `${e.from} is not a recipe node`);
-      if (!ids.has(e.to)) issue(["edges", i, "to"], `${e.to} is not a recipe node`);
+      if (!ids.has(e.from)) issue(["edges", i, "from"], `A connection starts at ${title(e.from)}, which is missing. Remove or replace that connection.`);
+      if (!ids.has(e.to)) issue(["edges", i, "to"], `${title(e.from)} connects to ${title(e.to)}, which is missing. Choose another destination.`);
       const key = `${e.from}:${e.on}`;
-      if (seen.has(key)) issue(["edges", i], `two edges from ${e.from} on ${e.on}`);
+      if (seen.has(key)) issue(["edges", i], `${title(e.from)} has two connections for ${outcome(e.on)}. Keep only one.`);
       seen.add(key);
     }
     for (const [i, s] of r.successOutcomes.entries()) {
-      const [node] = s.split(":");
-      if (!ids.has(node as string)) issue(["successOutcomes", i], `${node} is not a recipe node`);
-      if (seen.has(s)) issue(["successOutcomes", i], `${s} has an edge`);
+      const [node, name] = s.split(":") as [string, string];
+      if (!ids.has(node)) issue(["successOutcomes", i], `The step ${title(node)} is missing. Choose an outcome from an existing step.`);
+      if (seen.has(s)) issue(["successOutcomes", i], `${outcome(name)} on ${title(node)} already goes to another step. Choose one destination.`);
     }
     for (const [i, end] of (r.ends ?? []).entries()) {
-      if (!ids.has(end.from)) issue(["ends", i, "from"], `${end.from} is not a recipe node`);
+      if (!ids.has(end.from)) issue(["ends", i, "from"], `A connection to End comes from ${title(end.from)}, which is missing. Remove or replace that connection.`);
       const key: string = `${end.from}:${end.on}`;
-      if (seen.has(key)) issue(["ends", i], `${key} already has a connection`);
+      if (seen.has(key)) issue(["ends", i], `${title(end.from)} already has a connection for ${outcome(end.on)}. Keep only one.`);
       seen.add(key);
     }
     for (const [id, n] of Object.entries(r.nodes)) {
-      for (const [i, req] of n.requires.entries()) if (!ids.has(req)) issue(["nodes", id, "requires", i], `${req} is not a recipe node`);
-      for (const [i, read] of n.reads.entries()) if (!ids.has(read)) issue(["nodes", id, "reads", i], `${read} is not a recipe node`);
-      if (new Set(n.reads).size !== n.reads.length) issue(["nodes", id, "reads"], "a node is read twice");
-      for (const [i, p] of (n.agent?.providerNot ?? []).entries()) if (!ids.has(p)) issue(["nodes", id, "agent", "providerNot", i], `${p} is not a recipe node`);
-      if (n.agent && n.agent.tier !== undefined && n.agent.profiles !== undefined) issue(["nodes", id, "agent"], "at most one of tier and profiles");
+      for (const [i, req] of n.requires.entries()) if (!ids.has(req)) issue(["nodes", id, "requires", i], `${title(id)} requires ${title(req)}, which is missing. Choose an existing step in Requires.`);
+      for (const [i, read] of n.reads.entries()) if (!ids.has(read)) issue(["nodes", id, "reads", i], `${title(id)} reads from ${title(read)}, which is missing. Choose an existing step in Reads from.`);
+      if (new Set(n.reads).size !== n.reads.length) issue(["nodes", id, "reads"], `${title(id)} reads the same step twice. Select it once in Reads from.`);
+      for (const [i, p] of (n.agent?.providerNot ?? []).entries()) if (!ids.has(p)) issue(["nodes", id, "agent", "providerNot", i], `The provider restriction on ${title(id)} refers to ${title(p)}, which is missing. Choose an existing Agent step.`);
+      if (n.agent && n.agent.tier !== undefined && n.agent.profiles !== undefined) issue(["nodes", id, "agent"], `Choose a tier or specific profiles for ${title(id)}.`);
     }
   });
 export const Recipe = z.preprocess((input: z.input<typeof RecipeDefinition> & { maxNodeRuns?: unknown }) => {
