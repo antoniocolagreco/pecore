@@ -168,7 +168,7 @@ export class AgentChats {
 
   private async instructions(role: Role, agent: NonNullable<ReturnType<Engine["chatAgent"]>>): Promise<string> {
     const { user } = this.engine.global().settings;
-    const lines: string[] = [preambles[role], "The user does not see tool calls that fail. If you cannot recover from a failed tool call, say in your reply what failed and what the user can do.", "When you talk with the user and offer options to choose from, or need a short value such as a URL or a name, ask with ask_user instead of writing the options in your reply."];
+    const lines: string[] = [preambles[role], "The user does not see tool calls that fail. If you cannot recover from a failed tool call, say in your reply what failed and what the user can do.", "When you talk with the user and offer options to choose from, or need a short value such as a URL or a name, ask with ask_user instead of writing the options in your reply.", "You run inside PeCore: the user sees only this chat. Always prefer PeCore's tools and skills over your own built-in ones. For questions and choices use ask_user, never your own question or form tool, which the user cannot see."];
     if (this.engine.opts.development) lines.push(developmentNote);
     lines.push(`Your name is ${agent.name}.`);
     if (user.name) lines.push(`The user's name is ${user.name}.`);

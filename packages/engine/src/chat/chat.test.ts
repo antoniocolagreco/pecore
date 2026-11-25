@@ -536,6 +536,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       await t.call("sendChatMessage", { body: { text: "Download a repo" } });
       await until(() => existsSync(join(t.root, "first.json")));
       expect(await readFile(join(t.root, "first.json"), "utf8")).toContain("ask with ask_user instead of writing the options in your reply");
+      expect(await readFile(join(t.root, "first.json"), "utf8")).toContain("never your own question or form tool");
       await m.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
       const form = { title: "New project", questions: [
         { id: "how", prompt: "How do you want to start?", kind: "single", options: [{ label: "From a repository", recommended: true }, { label: "Clone only" }] },
