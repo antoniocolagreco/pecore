@@ -23,13 +23,13 @@ const deliver = {
   name: "deliver",
   description: "write, commit, push, pull request, issue comment",
   start: "write",
-  successOutcomes: ["comment:done"],
+  successOutcomes: ["comment:success"],
   nodes: { write: { use: "write-spec" }, commit: { use: "git-commit" }, push: { use: "git-push" }, pr: { use: "github-pr", reads: ["write"] }, comment: { use: "github-issue-comment", reads: ["pr"] } },
   edges: [
     { from: "write", on: "done", to: "commit" },
-    { from: "commit", on: "done", to: "push" },
-    { from: "push", on: "pushed", to: "pr" },
-    { from: "pr", on: "opened", to: "comment" },
+    { from: "commit", on: "success", to: "push" },
+    { from: "push", on: "success", to: "pr" },
+    { from: "pr", on: "success", to: "comment" },
   ],
 };
 

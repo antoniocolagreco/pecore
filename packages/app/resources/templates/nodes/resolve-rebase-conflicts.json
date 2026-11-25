@@ -5,9 +5,9 @@
   "kind": "agent",
   "prompt": "resolve-rebase-conflicts.md",
   "agent": { "tier": "strong" },
-  "outcomes": ["resolved", "unresolved"],
-  "outputs": { "unresolved": "text" },
-  "failOutcomes": ["unresolved"],
+  "outcomes": ["success", "failure"],
+  "outputs": { "failure": "text" },
+  "failOutcomes": ["failure"],
   "changesFiles": true,
   "timeoutSec": 1800
 }

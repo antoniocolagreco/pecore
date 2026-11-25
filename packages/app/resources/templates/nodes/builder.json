@@ -5,7 +5,7 @@
   "kind": "agent",
   "prompt": "builder.md",
   "agent": { "tier": "strong" },
-  "outcomes": ["done", "tests_disputed"],
+  "outcomes": ["success", "tests_disputed"],
   "outputs": { "tests_disputed": "text" },
   "changesFiles": true,
   "timeoutSec": 3600

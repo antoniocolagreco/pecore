@@ -5,8 +5,8 @@
   "kind": "agent",
   "prompt": "spec-writer.md",
   "agent": { "tier": "strong" },
-  "outcomes": ["accepted", "rejected"],
-  "outputs": { "accepted": "spec", "rejected": "text" },
+  "outcomes": ["success", "rejected"],
+  "outputs": { "success": "spec", "rejected": "text" },
   "changesFiles": false,
   "timeoutSec": 1800
 }

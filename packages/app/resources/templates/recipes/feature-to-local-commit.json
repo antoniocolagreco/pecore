@@ -4,9 +4,9 @@
   "start": "spec",
   "ends": [
     { "from": "spec", "on": "rejected", "result": "not_delivered" },
-    { "from": "human", "on": "reject", "result": "not_delivered" },
-    { "from": "commit", "on": "done", "result": "succeeded" },
-    { "from": "commit", "on": "failed", "result": "failed" }
+    { "from": "human", "on": "rejected", "result": "not_delivered" },
+    { "from": "commit", "on": "success", "result": "succeeded" },
+    { "from": "commit", "on": "failure", "result": "failed" }
   ],
   "nodes": {
     "spec": { "use": "spec-writer" },
@@ -22,23 +22,23 @@
     "commit": { "use": "git-commit", "requires": ["lint", "types", "test", "human"] }
   },
   "edges": [
-    { "from": "spec", "on": "accepted", "to": "tests" },
-    { "from": "tests", "on": "done", "to": "tests-check" },
-    { "from": "tests-check", "on": "failed", "to": "tests", "maxRounds": 3 },
-    { "from": "tests-check", "on": "passed", "to": "code" },
-    { "from": "code", "on": "done", "to": "lint" },
+    { "from": "spec", "on": "success", "to": "tests" },
+    { "from": "tests", "on": "success", "to": "tests-check" },
+    { "from": "tests-check", "on": "failure", "to": "tests", "maxRounds": 3 },
+    { "from": "tests-check", "on": "success", "to": "code" },
+    { "from": "code", "on": "success", "to": "lint" },
     { "from": "code", "on": "tests_disputed", "to": "tests", "maxRounds": 2 },
-    { "from": "lint", "on": "passed", "to": "types" },
-    { "from": "types", "on": "passed", "to": "test" },
-    { "from": "lint", "on": "failed", "to": "code", "maxRounds": 3 },
-    { "from": "types", "on": "failed", "to": "code", "maxRounds": 3 },
-    { "from": "test", "on": "failed", "to": "code", "maxRounds": 3 },
-    { "from": "test", "on": "passed", "to": "review" },
-    { "from": "review", "on": "changes", "to": "code", "maxRounds": 3 },
-    { "from": "review", "on": "approve", "to": "approve" },
-    { "from": "approve", "on": "done", "to": "human" },
-    { "from": "human", "on": "approve", "to": "commit" },
-    { "from": "human", "on": "changes", "to": "code" },
+    { "from": "lint", "on": "success", "to": "types" },
+    { "from": "types", "on": "success", "to": "test" },
+    { "from": "lint", "on": "failure", "to": "code", "maxRounds": 3 },
+    { "from": "types", "on": "failure", "to": "code", "maxRounds": 3 },
+    { "from": "test", "on": "failure", "to": "code", "maxRounds": 3 },
+    { "from": "test", "on": "success", "to": "review" },
+    { "from": "review", "on": "changes_requested", "to": "code", "maxRounds": 3 },
+    { "from": "review", "on": "approved", "to": "approve" },
+    { "from": "approve", "on": "success", "to": "human" },
+    { "from": "human", "on": "approved", "to": "commit" },
+    { "from": "human", "on": "changes_requested", "to": "code" },
     { "from": "commit", "on": "stale", "to": "lint" }
   ]
 }

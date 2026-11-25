@@ -31,7 +31,7 @@ const recipe = {
   name: "whoami-commit",
   description: "write who.txt and commit it",
   start: "write",
-  successOutcomes: ["commit:done"],
+  successOutcomes: ["commit:success"],
   nodes: { write: { use: "whoami" }, commit: { use: "git-commit" } },
   edges: [{ from: "write", on: "done", to: "commit" }],
 };

@@ -1,10 +1,12 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type Database from "better-sqlite3";
+import type { OutcomeLookup } from "../definitions/outcomes";
+import { migrateOutcomes } from "./migrate-outcomes";
 
 const migrationsDir = fileURLToPath(new URL("./migrations/", import.meta.url));
 
-export function migrate(db: Database.Database, prefix: string): number {
+export function migrate(db: Database.Database, prefix: string, options?: { inherited?: Database.Database; archivedOutcomes?: OutcomeLookup }): number {
   const files = readdirSync(migrationsDir)
     .map((f) => ({ f, m: new RegExp(`^(?:${prefix}|shared-)(\\d{3})-.*\\.sql$`).exec(f) }))
     .filter((x): x is { f: string; m: RegExpExecArray } => x.m !== null)
@@ -15,7 +17,9 @@ export function migrate(db: Database.Database, prefix: string): number {
   for (const { file, version } of files) {
     if (version <= current) continue;
     db.transaction(() => {
-      db.exec(readFileSync(migrationsDir + file, "utf8"));
+      const sql: string = readFileSync(migrationsDir + file, "utf8");
+      if (file === "shared-031-node-outcomes.sql") migrateOutcomes(db, sql, prefix === "", options);
+      else db.exec(sql);
       db.prepare("DELETE FROM schema_version").run();
       db.prepare("INSERT INTO schema_version (version) VALUES (?)").run(version);
     })();

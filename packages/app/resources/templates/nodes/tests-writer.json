@@ -5,7 +5,7 @@
   "kind": "agent",
   "prompt": "tests-writer.md",
   "agent": { "tier": "strong" },
-  "outcomes": ["done"],
+  "outcomes": ["success"],
   "changesFiles": true,
   "timeoutSec": 2700
 }

@@ -6,6 +6,7 @@ import type { RouteOutput } from "@pecore/schemas";
 import { setTestConfiguration, testConfiguration } from "../../test/configuration";
 import { loadTemplates, validateGlobal } from "./load";
 import { checkRecipe, hasCommitNode } from "./recipe-check";
+import { outcomeRenames } from "./outcomes";
 
 const check = (name: string, outcomes: string[], extra: object = {}) =>
   Node.parse({
@@ -174,6 +175,42 @@ describe("phase 1 gate: shipped templates", () => {
     expect(lib.recipes.has("feature-to-pr")).toBe(true);
   });
 
+  it.each([
+    ["bugfix-to-pr", "4d0acdff4b1fabe0efe99ac544d2394d82cb6dbe2acfc9447a3e4353f470e8dc"],
+    ["feature-to-local-commit", "6731b23e11f93e40e02e6717b1ce3ec6490fdfa78b63e1b3a9e97e4650997e1e"],
+    ["feature-to-pr", "8f1c560073c868bbad2f72aeb939f2b666282c231158ed87b3e2f690272c887f"],
+  ])("preserves every route of %s when outcomes are identified by their position", async (name, before) => {
+    const { nodes } = await loadTemplates(shippedTemplates);
+    const recipe: Recipe = JSON.parse(await readFile(join(shippedTemplates, "recipes", name + ".json"), "utf8"));
+    const route = ({ from, on, ...edge }: Recipe["edges"][number] | NonNullable<Recipe["ends"]>[number]) => {
+      const index: number = nodes.get(recipe.nodes[from]!.use)!.outcomes.indexOf(on);
+      return { from, on: index >= 0 ? index : on, ...edge };
+    };
+    const graph = { ...recipe, edges: recipe.edges.map(route), ends: recipe.ends!.map(route) };
+    expect(createHash("sha256").update(JSON.stringify(graph)).digest("hex")).toBe(before);
+  });
+
+  it("ships only standard results, distinct paths and literal decision answers", async () => {
+    const { nodes } = await loadTemplates(shippedTemplates);
+    const extras: [string, string[]][] = [...nodes].flatMap(([name, node]) => {
+      const named: string[] = node.outcomes.filter((outcome) => outcome !== "success" && outcome !== "failure");
+      return named.length ? [[name, named]] : [];
+    });
+    expect(extras).toEqual([
+      ["builder", ["tests_disputed"]],
+      ["code-reviewer", ["approved", "changes_requested"]],
+      ["git-rebase", ["rebase_conflict"]],
+      ["human-decision", ["yes", "no"]],
+      ["human-review", ["approved", "changes_requested", "rejected"]],
+      ["spec-writer", ["rejected"]],
+    ]);
+  });
+
+  it("retains separately routed custom outcomes and literal answers during migration", () => {
+    expect([...outcomeRenames("custom-check", ["done", "passed", "failed"])]).toEqual([["failed", "failure"]]);
+    expect([...outcomeRenames("custom-question", ["ok", "no"], "decision")]).toEqual([]);
+  });
+
   it("ships independent sessions for reviewers and shared sessions for the other agents", async () => {
     const { nodes } = await loadTemplates(shippedTemplates);
     const sessions: [string, string][] = [...nodes.values()].flatMap((node): [string, string][] =>
@@ -240,3 +277,6 @@ describe("global configuration", () => {
   });
 
 });
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";

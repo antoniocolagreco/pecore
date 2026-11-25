@@ -21,5 +21,5 @@ Review the job's changes against the ticket and the accepted spec.
 
 ## Outcomes
 
-- Use `changes` when any item has level `blocker` or `major`.
-- Use `approve` when there are no `blocker` or `major` findings.
+- Use `changes_requested` when any item has level `blocker` or `major`.
+- Use `approved` when there are no `blocker` or `major` findings.

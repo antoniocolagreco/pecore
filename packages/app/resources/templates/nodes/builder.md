@@ -21,4 +21,4 @@ Fill the interface stubs and implement the behavior in the accepted spec.
 ## Outcomes
 
 - Use `tests_disputed` when a test is wrong. In `output`, name each wrong test and explain why it contradicts the ticket or spec.
-- Use `done` when the implementation meets the spec and the tests, lint, and type check pass.
+- Use `success` when the implementation meets the spec and the tests, lint, and type check pass.

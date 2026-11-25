@@ -129,7 +129,7 @@ async function finishedJob(p: Awaited<ReturnType<typeof apiProject>>): Promise<s
   const { id } = await p.call("createJob", { body: { project: "demo", title: "Add hello", ticket: { text: "x" } } });
   await until(async () => (await p.call("getJob", { params: { id } })).job.state === "waiting");
   const human = items(p.engine, "demo", "human-node").find((i) => i.state === "open")!;
-  await p.engine.project("demo").executor.answer(human.id, "approve", null, human.subject_hash);
+  await p.engine.project("demo").executor.answer(human.id, "approved", null, human.subject_hash);
   await until(async () => (await p.call("getJob", { params: { id } })).job.state === "succeeded");
   return id;
 }
@@ -279,13 +279,39 @@ describe("project import (share/, CUJ 7)", () => {
     const { id } = await b.call("createJob", { body: { project: "demo", title: "After import", ticket: { text: "x" } } });
     await until(async () => (await b.call("getJob", { params: { id } })).job.state === "waiting");
     const human = items(b.engine, "demo", "human-node").find((i) => i.state === "open")!;
-    await executor.answer(human.id, "approve", null, human.subject_hash);
+    await executor.answer(human.id, "approved", null, human.subject_hash);
     await until(async () => (await b.call("getJob", { params: { id } })).job.state === "succeeded");
     expect(items(b.engine, "demo", "engine-node")).toEqual([]);
 
     await expect(b.call("importProject", { body: { path: out } })).rejects.toMatchObject({ status: 409, message: expect.stringContaining("project demo already exists") });
     await b.close();
   }, 120000);
+
+  it("imports a legacy review recipe against the renamed shared review node", async () => {
+    const receiver = await secondHome(shippedTemplates);
+    try {
+      const archive: string = rawArchive(join(await tempDir(), "legacy-review.tar.zst"), [
+        manifest(false),
+        { name: "project.json", body: JSON.stringify({ id: "demo", name: "Demo", repo: null, recipes: ["legacy-review"] }) },
+        { name: "nodes/human-review.json", body: JSON.stringify({
+          name: "human-review", kind: "human", interface: "code-review", description: "Review the change",
+          outcomes: ["approve", "changes", "reject"], outputs: { changes: "text" },
+        }) },
+        { name: "recipes/legacy-review.json", body: JSON.stringify({
+          name: "legacy-review", description: "Review the change", start: "review", nodes: { review: { use: "human-review" } },
+          ends: [{ from: "review", on: "approve", result: "succeeded" }, { from: "review", on: "changes", result: "failed" },
+            { from: "review", on: "reject", result: "not_delivered" }],
+        }) },
+      ]);
+      await expect(receiver.call("importProject", { body: { path: archive } })).resolves.toMatchObject({ state: "imported", id: "demo" });
+      const { id } = await receiver.call("createJob", { body: { project: "demo", title: "Review", ticket: { text: "x" } } });
+      const human: Item = await until(() => items(receiver.engine, "demo", "human-node").find((item) => item.state === "open"));
+      await receiver.engine.project("demo").executor.answer(human.id, "approved", null, human.subject_hash);
+      await until(async () => (await receiver.call("getJob", { params: { id } })).job.state === "succeeded");
+    } finally {
+      await receiver.close();
+    }
+  });
 
   it("the same archive with history imported ten times gives ten independent copies, each with its own job ids, artifacts and logs", async () => {
     const p = await apiProject();
@@ -340,7 +366,7 @@ describe("project import (share/, CUJ 7)", () => {
     await until(() => executor.job(child).waiting_reason === "parent_job");
     expect(executor.job(child).state).toBe("queued");
     const human = items(b.engine, "demo", "human-node").find((i) => i.state === "open")!;
-    await executor.answer(human.id, "approve", null, human.subject_hash);
+    await executor.answer(human.id, "approved", null, human.subject_hash);
     await until(() => executor.job(parent).state === "succeeded");
     await until(() => executor.job(child).state === "waiting");
     await b.close();
@@ -352,9 +378,9 @@ describe("project import (share/, CUJ 7)", () => {
     const pr: Node = f.engine.catalog.node("github-pr")!;
     f.engine.catalog.saveNode(Node.parse({ ...pr, name: "pr-explicit", account: forgeAccount.id, inputs: [], optionalInputs: [] }));
     f.engine.catalog.saveRecipe(Recipe.parse({
-      name: "explicit", description: "PR with an explicit account", start: "commit", successOutcomes: ["finish:opened"],
+      name: "explicit", description: "PR with an explicit account", start: "commit", successOutcomes: ["finish:success"],
       nodes: { commit: { use: "git-commit" }, finish: { use: "pr-explicit" } },
-      edges: [{ from: "commit", on: "done", to: "finish" }],
+      edges: [{ from: "commit", on: "success", to: "finish" }],
     }));
     ctx.db.definition.write({ ...ctx.project, recipes: [...ctx.project.recipes!, "explicit"], folder: "/home/someone/shop" });
     await f.engine.reloadProject("shop");

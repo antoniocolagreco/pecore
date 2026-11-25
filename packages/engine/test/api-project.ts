@@ -23,11 +23,11 @@ const reviewed = {
   name: "reviewed",
   description: "write, human review, commit",
   start: "write",
-  successOutcomes: ["commit:done"],
+  successOutcomes: ["commit:success"],
   nodes: { write: { use: "write-hello" }, human: { use: "human-review" }, commit: { use: "git-commit" } },
   edges: [
     { from: "write", on: "done", to: "human" },
-    { from: "human", on: "approve", to: "commit" },
+    { from: "human", on: "approved", to: "commit" },
   ],
 };
 

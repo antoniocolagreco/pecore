@@ -6,8 +6,8 @@
   "agentSession": "new",
   "prompt": "code-reviewer.md",
   "agent": { "tier": "strong" },
-  "outcomes": ["approve", "changes"],
-  "outputs": { "approve": "findings", "changes": "findings" },
+  "outcomes": ["approved", "changes_requested"],
+  "outputs": { "approved": "findings", "changes_requested": "findings" },
   "changesFiles": false,
   "timeoutSec": 1800
 }

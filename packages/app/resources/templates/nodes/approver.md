@@ -21,4 +21,4 @@ Classify every hunk in the job's changes for human review.
 
 ## Outcomes
 
-- Use `done` when every hunk has a classification and a reason.
+- Use `success` when every hunk has a classification and a reason.

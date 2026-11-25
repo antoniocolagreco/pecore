@@ -6,20 +6,20 @@
     "issue tracker"
   ],
   "outcomes": [
-    "done",
-    "failed"
+    "success",
+    "failure"
   ],
   "failOutcomes": [
-    "failed"
+    "failure"
   ],
   "outcomeRules": [
     {
       "exitCode": 0,
-      "outcome": "done"
+      "outcome": "success"
     },
     {
       "exitCode": "other",
-      "outcome": "failed"
+      "outcome": "failure"
     }
   ],
   "timeoutSec": 120,

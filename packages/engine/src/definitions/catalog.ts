@@ -69,7 +69,7 @@ export async function saveLegacyJobDefinitions(loaded: LoadedProject, db: Projec
     if (jobDefinitions(db, row.id)) continue;
     const recipe: Recipe = Recipe.parse(JSON.parse(row.recipe));
     if (Object.values(recipe.nodes).some(({ use }) => !loaded.nodes.has(use))) continue;
-    legacy.push({ jobId: row.id, type: "job.definitions_saved", payload: await snapshotDefinitions(recipe, loaded.nodes, loaded.nodeDir) });
+    legacy.push({ jobId: row.id, type: "job.definitions_saved", payload: await snapshotDefinitions(recipe, loaded.nodes, loaded.nodeDir, loaded.sidecars) });
   }
   if (legacy.length) db.append(legacy);
 }

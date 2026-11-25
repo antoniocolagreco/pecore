@@ -43,11 +43,11 @@ const recipes: Record<string, object> = {
     description: "write and commit; rebase on a base change",
     start: "write",
     onBaseChanged: "rebase",
-    successOutcomes: ["commit:done"],
+    successOutcomes: ["commit:success"],
     nodes: { write: { use: "write-own" }, commit: { use: "git-commit" }, rebase: { use: "git-rebase" } },
     edges: [
       { from: "write", on: "done", to: "commit" },
-      { from: "rebase", on: "clean", to: "commit" },
+      { from: "rebase", on: "success", to: "commit" },
     ],
   },
   reviewed: {
@@ -55,12 +55,12 @@ const recipes: Record<string, object> = {
     description: "write, human review, commit; rebase on a base change",
     start: "write",
     onBaseChanged: "rebase",
-    successOutcomes: ["commit:done"],
+    successOutcomes: ["commit:success"],
     nodes: { write: { use: "write-own" }, human: { use: "human-review" }, commit: { use: "git-commit" }, rebase: { use: "git-rebase" } },
     edges: [
       { from: "write", on: "done", to: "human" },
-      { from: "human", on: "approve", to: "commit" },
-      { from: "rebase", on: "clean", to: "commit" },
+      { from: "human", on: "approved", to: "commit" },
+      { from: "rebase", on: "success", to: "commit" },
     ],
   },
   delivered: {
@@ -71,7 +71,7 @@ const recipes: Record<string, object> = {
     nodes: { write: { use: "write-own" }, commit: { use: "git-commit" }, deliver: { use: "deliver" } },
     edges: [
       { from: "write", on: "done", to: "commit" },
-      { from: "commit", on: "done", to: "deliver" },
+      { from: "commit", on: "success", to: "deliver" },
     ],
   },
   "no-commit": {
@@ -123,7 +123,7 @@ describe("stacked jobs (4.6, decision 10)", () => {
     await until(() => openItem(parent));
     expect(job(child).state).toBe("queued");
     const item = openItem(parent)!;
-    await p.executor.answer(item.id, "approve", null, item.subject_hash);
+    await p.executor.answer(item.id, "approved", null, item.subject_hash);
     await until(() => job(child).state === "succeeded");
     expect(job(child).base).toBe(await sha(parent));
     expect(await files(child)).toEqual(["child.txt", "parent.txt"]);
@@ -171,7 +171,7 @@ describe("stacked jobs (4.6, decision 10)", () => {
     const second = await sha(parent);
     expect(job(child)).toMatchObject({ state: "waiting", waiting_reason: "human", base: first });
     expect(openItem(child)).toEqual(review);
-    await p.executor.answer(review.id, "approve", null, review.subject_hash);
+    await p.executor.answer(review.id, "approved", null, review.subject_hash);
     await until(() => job(child).state === "succeeded" && job(child).base === second);
     expect(job(child).old_base).toBe(first);
     expect(await files(child)).toEqual(["child.txt", "main.txt", "parent.txt"]);
@@ -205,7 +205,7 @@ describe("stacked jobs (4.6, decision 10)", () => {
     expect(job(parent).merged_at).not.toBeNull();
     expect(job(child)).toMatchObject({ state: "waiting", target: `factory/${parent}` });
     const review = openItem(child)!;
-    await p.executor.answer(review.id, "approve", null, review.subject_hash);
+    await p.executor.answer(review.id, "approved", null, review.subject_hash);
     await until(() => job(child).state === "succeeded" && job(child).target === "main");
     expect(job(child).base).toBe(await branchHead(repo, "main"));
     await engine.shutdown();

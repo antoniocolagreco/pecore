@@ -160,8 +160,8 @@ describe("definition routes", () => {
     const result = await definitionOperations(engine).instantiate({ kind: "recipe", name: "feature-to-pr", project: "demo" });
     expect(result.errors.map(({ message }) => message)).toContain(refusal);
     expect(await call("listQueue", { query: { state: "open" } })).toEqual([]);
-    const content = JSON.stringify({ name: "push", description: "commit and push", start: "commit", successOutcomes: ["push:pushed"],
-      nodes: { commit: { use: "git-commit" }, push: { use: "git-push" } }, edges: [{ from: "commit", on: "done", to: "push" }] });
+    const content = JSON.stringify({ name: "push", description: "commit and push", start: "commit", successOutcomes: ["push:success"],
+      nodes: { commit: { use: "git-commit" }, push: { use: "git-push" } }, edges: [{ from: "commit", on: "success", to: "push" }] });
     await call("saveDefinition", { params: { path: "templates/recipes/push.json" }, body: { content, baseSha256: null } });
     await expect(call("instantiate", { body: { kind: "recipe", name: "push", project: "demo" } })).rejects.toThrow(refusal);
     expect(existsSync(join(engine.projectDir("demo"), "recipes", "push.json"))).toBe(false);

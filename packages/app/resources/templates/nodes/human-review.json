@@ -4,6 +4,6 @@
   "description": "The user reviews the diff, with risky hunks first, and approves, asks for changes or rejects",
   "kind": "human",
   "interface": "code-review",
-  "outcomes": ["approve", "changes", "reject"],
-  "outputs": { "changes": "text" }
+  "outcomes": ["approved", "changes_requested", "rejected"],
+  "outputs": { "changes_requested": "text" }
 }

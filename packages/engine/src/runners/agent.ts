@@ -5,6 +5,7 @@ import type { AgentEvent, Login, RawLine, ResolvedConnector, Session, Spawn, Tur
 import { artifactTypes } from "@pecore/schemas";
 import type { AgentNode, ArtifactType, FailureReason } from "@pecore/schemas";
 import { z } from "zod";
+import { renamedOutcome } from "../definitions/outcomes";
 import { placeholderValues, substitute } from "./placeholders";
 import type { PlaceholderContext } from "./placeholders";
 
@@ -122,10 +123,13 @@ export function buildPrompt(template: string, node: AgentNode, inputs: AgentInpu
 
 export type AgentResult = { outcome: string; outputs: { type: ArtifactType; content: string }[] };
 
-function validateOutput(node: Pick<AgentNode, "outcomes" | "outputs">, value: unknown): { ok: true; value: AgentResult } | { ok: false; errors: string[] } {
+function validateOutput(node: Pick<AgentNode, "name" | "outcomes" | "outputs">, value: unknown): { ok: true; value: AgentResult } | { ok: false; errors: string[] } {
   const parsed = Output.safeParse(value);
-  if (!parsed.success || !node.outcomes.includes(parsed.data.outcome)) return { ok: false, errors: [`/outcome must be one of ${node.outcomes.join(", ")}`] };
-  const { outcome, output } = parsed.data;
+  const invalid = { ok: false as const, errors: [`/outcome must be one of ${node.outcomes.join(", ")}`] };
+  if (!parsed.success) return invalid;
+  const { outcome: reported, output } = parsed.data;
+  const outcome: string = node.outcomes.includes(reported) ? reported : renamedOutcome(node.name, reported);
+  if (!node.outcomes.includes(outcome)) return invalid;
   const type: ArtifactType | undefined = node.outputs[outcome];
   if (!type) return { ok: true, value: { outcome, outputs: [] } };
   if (output === undefined) return { ok: false, errors: [`/output is required with ${outcome}`] };

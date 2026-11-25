@@ -67,12 +67,12 @@ const recipe = {
   name: "forge-e2e",
   description: "write, commit, push, pull or merge request",
   start: "write",
-  successOutcomes: ["pr:opened"],
+  successOutcomes: ["pr:success"],
   nodes: { write: { use: "write-job-file" }, commit: { use: "git-commit" }, push: { use: "git-push" }, pr: { use: "github-pr", reads: ["write"] } },
   edges: [
     { from: "write", on: "done", to: "commit" },
-    { from: "commit", on: "done", to: "push" },
-    { from: "push", on: "pushed", to: "pr" },
+    { from: "commit", on: "success", to: "push" },
+    { from: "push", on: "success", to: "pr" },
   ],
 };
 

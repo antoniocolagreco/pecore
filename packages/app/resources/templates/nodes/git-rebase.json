@@ -4,11 +4,11 @@
   "description": "Rebase the job branch onto its new base and restore uncommitted changes.",
   "kind": "command",
   "script": "git-rebase.sh",
-  "outcomes": ["clean", "conflict"],
+  "outcomes": ["success", "rebase_conflict"],
   "changesFiles": true,
   "outcomeRules": [
-    { "exitCode": 0, "outcome": "clean" },
-    { "exitCode": "other", "outcome": "conflict" }
+    { "exitCode": 0, "outcome": "success" },
+    { "exitCode": "other", "outcome": "rebase_conflict" }
   ],
   "timeoutSec": 600
 }

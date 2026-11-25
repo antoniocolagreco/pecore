@@ -198,7 +198,7 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 *   Header: title, project, branch, state label, "why is it waiting" line (IC8), controls (IC3). Notice when the base changed (IC9).
 *   Tabs:
     *   Graph: the recipe graph at the positions saved in the recipe's `layout`, with node run states. Each node is the Templates node card; its state, step name and round sit under it. Back edges are curved arrows with the round count on the target node. The running node pulses. Nodes with no run yet are Pending.
-    *   History: node runs in order (`node_runs`, `attempts`): recipe node id, attempt, outcome, duration, failure reason; for example "test · round 1 · failed · 0m 42s".
+    *   History: node runs in order (`node_runs`, `attempts`): recipe node id, attempt, outcome, duration, failure reason; for example "test · round 1 · failure · 0m 42s".
 *   The selected node shows its latest run and a list of earlier runs. The detail panel shows duration, attempts, tokens, cost, artifacts loaded from the project database (IC7), and the attempt log.
 *   Log shows the attempt's messages from the project database. The default view displays text, tool calls and results, with live updates while the attempt runs. "Raw" shows the stored messages as JSON lines. Only the open log receives live updates. Logs stay until the job or project is deleted. Imported history that omitted logs shows "Log unavailable".
 *   Artifact viewer (IC7), one view per type: spec and findings as rendered Markdown (a finding shows `file:line` or the hunk, its level and text); diff as a unified view like a code review on GitHub (one block per file with added and removed line counts, hunk bands, old and new line numbers, red and green bands for removed and added lines, the changed part of a line marked), risky hunks first with their reason, taken from the findings of the same content; text as plain text; document as title, source and plain body; reference as a link when it has a URL, else its ref or SHA.
@@ -310,7 +310,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   The background shows small square grid lines. Drag freely and release to snap to a larger, invisible cell. A drop on an occupied cell returns the node to its previous position.
 *   Arrange places the flow from left to right, with the base-change step below it and retry arrows above it. Arrows stay behind the cards. Success paths are green, failures red and other returns amber. The editor uses this arrangement when no positions are saved. Save records the draft positions in `layout`.
 *   Validation errors on the node or edge that causes them (IE2).
-*   Start and End are always present and can be moved on the grid. Start uses the theme’s Success colour and End uses Fail. Start can connect from any side to the first step. Connect a step outcome to any side of End and pick Success or Failure.
+*   Start and End are always present and can be moved on the grid. Start uses the theme’s Success colour and End uses Fail. Start can connect from any side to the first step. Connect a step to any side of End and choose its outcome once. Success and Failure set the job result directly. For other outcomes, the dialog prefills a job result and lets the user change it.
 *   Connections to End use separate lanes for their labels. Automatic connections can enter from different sides.
 *   For an agent step, Agent card selects Default Agent or another card from Agents. The step badge shows the selected card. Agent session offers Job, Node and New. Use template session clears the override.
 *   Inspector for a node: read-only kind (and interface for a Human node), Reads from, `requires`, `optional`, `skipWhenUnchanged` and `maxRounds` of its outgoing edges. Reads from is a multi-select of the recipe's steps with an info icon: the step receives their latest outputs; agents and people always receive the ticket and the job's changes. For a command it also lists the input types it takes, one read step each. Edit definition opens the shared node. Remove node removes the selected step, its arrows and references from the draft.
@@ -324,6 +324,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 ### Node editor
 
 *   Opened from a recipe or from Templates. New Node offers Agent, Command, Human, Repository and Tracker. Repository and Tracker show an Account select and one shell script editor. Tracker also shows the provider. A Human node has an Interface select: Decision, Code review or Report review.
+*   Use Success and Failure for ordinary results. Add a named outcome when the recipe needs a distinct path, such as Changes requested. Decision outcomes can be literal answers.
 *   Under the outcomes, Outputs has one row per outcome: a select of the six types (Nothing by default). No text under the field. The info icon of Outputs explains, for a user who knows nothing of the app, that a job is a chain of nodes, that each outcome can hand a result to later nodes, and that they receive it only through Reads from, with the Spec Writer as example. It then explains each type in a short paragraph: what it is, an example, who writes it and who uses it. The menus show only the names. The info icons of Required inputs and Optional inputs explain inputs with an example and show the same paragraphs. For a command, a row with an output also asks where to read it: Last line of the output, Field of JSON output or File in the workdir, and the name, field or path. For a Human node the rows are checkboxes, "<outcome>: the person can write a note".
 *   Every select in the app opens its menu below the field, or above it when there is no room below, so the whole list is visible; it does not cover the field.
 *   A command shows Required inputs and Optional inputs as chip groups of the six types. Selecting a type in one group removes it from the other. The help says the recipe selects each source and the script reads a JSON object on stdin, for example `jq '.spec'`. Agents get labelled inputs inline in their prompts. Human review loads them from the project database.
@@ -460,7 +461,7 @@ Rows are checked from the top; the first match wins.
 | the outcome | `completed`, outcome in the node's `failOutcomes` or `stale` | `status-failed` (also when an edge routes it back) |
 | the outcome | `completed`, `<node>:<outcome>` in `successOutcomes` | `status-success` |
 | the outcome | `completed`, outcome with no edge (the job ended Not delivered) | `status-inactive` |
-| the outcome | `completed`, any other outcome (`passed`, `changes`, `conflict`) | no status color |
+| the outcome | `completed`, any other outcome (`changes_requested`, `rebase_conflict`) | no status color |
 
 Color is never the only signal: every state also has an icon and its label.
 

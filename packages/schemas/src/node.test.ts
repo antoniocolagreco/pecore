@@ -177,10 +177,10 @@ describe("human node", () => {
     expect(decision).toMatchObject({ kind: "human", interface: "decision", tags: ["decision"] });
   });
 
-  it("gives the review interfaces approve, changes and reject", () => {
+  it("gives review interfaces result names and reads legacy reviews", () => {
     expect(issues(review)).toEqual([]);
-    expect(issues({ ...review, interface: "report-review" })).toEqual([]);
-    expect(issues({ ...review, outcomes: ["approve", "reject"], outputs: {} })).toEqual(["outcomes: Code review needs approve, changes, reject"]);
+    expect(issues({ ...review, interface: "report-review", outcomes: ["approved", "changes_requested", "rejected"], outputs: { changes_requested: "text" } })).toEqual([]);
+    expect(issues({ ...review, outcomes: ["approve", "reject"], outputs: {} })).toEqual(["outcomes: Code review needs approved, changes_requested, rejected"]);
   });
 
   it("lets a person write only text", () => {

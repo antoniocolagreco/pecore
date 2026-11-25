@@ -4,7 +4,7 @@ import type { Catalog } from "../store/catalog";
 import { validIcon } from "./icon";
 import { loadTemplates } from "./load";
 
-export const templatesFormat: string = "10";
+export const templatesFormat: string = "11";
 
 export async function seedTemplates(catalog: Catalog, shipped: string): Promise<void> {
   const db: Catalog["db"] = catalog.db;

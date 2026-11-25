@@ -7,20 +7,20 @@
     "issue tracker"
   ],
   "outcomes": [
-    "done",
-    "failed"
+    "success",
+    "failure"
   ],
   "failOutcomes": [
-    "failed"
+    "failure"
   ],
   "outcomeRules": [
     {
       "exitCode": 0,
-      "outcome": "done"
+      "outcome": "success"
     },
     {
       "exitCode": "other",
-      "outcome": "failed"
+      "outcome": "failure"
     }
   ],
   "timeoutSec": 120,
@@ -36,10 +36,10 @@
   },
   "script": "set -e\nrepo=\"$PECORE_PROJECT_REPO_OWNER/$PECORE_PROJECT_REPO_NAME\"\nid=${PECORE_PARAMS_TICKET:-$PECORE_TICKET_ID}\ncase \"$id\" in \"https://$GH_HOST/$repo/issues/\"*) id=${id##*/} ;; esac\ncase \"$id\" in \"\"|*[!0-9]*) echo \"Enter a ticket ID or link for this repository.\" >&2; exit 1 ;; esac\ngh issue view \"$id\" --repo \"$repo\" --json title,body,author | jq -e '{title, body: (.body // \"\"), author: .author.login}'",
   "outputs": {
-    "done": "document"
+    "success": "document"
   },
   "outputRules": {
-    "done": {
+    "success": {
       "stdoutJson": ""
     }
   }

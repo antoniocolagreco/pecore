@@ -421,3 +421,9 @@
 - Decision: Tracker nodes choose CLI or MCP server. The latter saves the server, tool and arguments. The app launches a local stdio bridge on demand. The bridge owns browser OAuth and its tokens. Adding the Atlassian service account starts sign-in. An expired login pauses a job node until sign-in succeeds. Chat actions offer sign-in in Accounts. The existing chat confirmation and protected-mode authorization cover MCP calls.
 - Why: One Atlassian login can reach several Jira sites and each call can choose its site by cloudId.
 - Replaces: CLI as the only Tracker mode.
+
+## 2026-11-25: Name node outcomes by their result
+
+- Decision: Use `success` and `failure` for ordinary outcomes. Keep clear names for distinct paths such as `changes_requested` and literal answers such as `yes` and `no`. Rename shipped and saved outcome references without changing how existing recipes route. End derives the job result for the standard outcomes. For other outcomes, show a prefilled job result the user can change.
+- Why: Names such as `done` do not tell the user what happened. The editor asked users to classify an ordinary failure a second time.
+- Replaces: Vague outcome aliases and the required job result choice for every connection to End.

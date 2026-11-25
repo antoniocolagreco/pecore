@@ -31,11 +31,16 @@ import { templateTitle } from "../components/templateTitle";
 import s from "./Editors.module.css";
 
 const failureOutcomes: ReadonlySet<string> = new Set<string>([
-  "failed", "conflict", "unexpected_pass", "stale", "ci_failed", "ci_exhausted", "ci_timeout",
+  "failure", "failed", "rebase_conflict", "conflict", "unexpected_pass", "stale", "ci_failed", "ci_exhausted", "ci_timeout",
 ]);
 const endLabels: Record<RecipeEndResult, string> = { succeeded: "Success", failed: "Failure", not_delivered: "Not delivered" };
-const endOptions: Option[] = ["succeeded", "failed"].map((value) => ({ value, label: endLabels[value as RecipeEndResult] }));
+const endOptions: Option[] = Object.entries(endLabels).map(([value, label]) => ({ value, label }));
 type DraftConnection = RecipeLink & { result?: RecipeEndResult };
+
+function standardEndResult(outcome: string): RecipeEndResult | undefined {
+  if (outcome === "success") return "succeeded";
+  if (outcome === "failure") return "failed";
+}
 
 function graphTitle(id: string): string {
   if (id === recipeStart) return "Start";
@@ -223,7 +228,7 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
   const startPorts = object(draft?.startPorts);
   const boundaryLinks: RecipeGraphLink[] = ends.filter(({ from }) => Object.hasOwn(nodes, from)).map(({ from, on, result, sourcePort, targetPort }) => ({
     from, on, to: recipeEnd, sourcePort, targetPort,
-    caption: `${on} · ${endLabels[result]}`, invalid: false, failed: result === "failed", neutral: result === "not_delivered",
+    caption: standardEndResult(on) === result ? endLabels[result] : `${on} · ${endLabels[result]}`, invalid: false, failed: result === "failed", neutral: result === "not_delivered",
   }));
   if (startTarget === recipeEnd || Object.hasOwn(nodes, startTarget)) {
     boundaryLinks.push({
@@ -302,7 +307,20 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
     }
     return outcomes;
   }
-  const outcomes: Option[] = connection ? outcomesFor(connection.from).map((outcome) => ({ value: outcome, label: outcome })) : [];
+  const outcomes: Option[] = connection ? outcomesFor(connection.from).map((outcome) => ({ value: outcome, label: templateTitle(outcome.replaceAll("_", "-")) })) : [];
+  const connectionEnd: boolean = connection?.to === recipeEnd;
+  const standardResult: RecipeEndResult | undefined = standardEndResult(connection?.on ?? "");
+  const selectedEndResult: RecipeEndResult | undefined = standardResult ?? connection?.result;
+  const chooseOutcome = (on: string): void => {
+    if (!connection) return;
+    const definition = object(nodeDefinitions.get(string(object(nodes[connection.from]).use))?.value);
+    const failures: unknown = definition.failOutcomes;
+    const saved: RecipeEndResult | undefined = ends.find((end) => end.from === connection.from && end.on === on)?.result;
+    const failed: boolean = failureOutcomes.has(on) || (Array.isArray(failures) && failures.includes(on));
+    const positive: boolean = ["approved", "yes", "ci_passed"].includes(on);
+    const result: RecipeEndResult = saved ?? (failed ? "failed" : positive ? "succeeded" : "not_delivered");
+    setConnection({ ...connection, on, result: on ? result : undefined });
+  };
   const inspectorOutcomes: string[] = selected ? outcomesFor(selected) : [];
   const required: string[] = Array.isArray(selectedNode.requires) ? selectedNode.requires.map(string) : [];
   const reads: string[] = Array.isArray(selectedNode.reads) ? selectedNode.reads.map(string) : [];
@@ -422,12 +440,12 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
                     <IconButton label="Remove connection to End" icon={<TrashIcon />} disabled={!editable}
                       onClick={() => updateGraph({ ends: ends.filter((item) => item !== end) })} />
                   </div>
-                  <Select label="Result" value={end.result} disabled={!editable}
-                    options={end.result === "not_delivered" ? [...endOptions, { value: end.result, label: endLabels[end.result] }] : endOptions}
+                  {!standardEndResult(end.on) && <Select label="Job result" value={end.result} disabled={!editable}
+                    options={endOptions}
                     onValueChange={(value) => {
                       const result = RecipeEndResult.safeParse(value);
                       if (result.success) updateGraph({ ends: ends.map((item) => item === end ? { ...item, result: result.data } : item) });
-                    }} />
+                    }} />}
                 </div>)}
               </> : <>
                 {creation && <TextField label="Name" required disabled={!editable} value={string(draft.name)}
@@ -448,12 +466,13 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
       footer={<>
         <Button variant="ghost" onClick={() => setConnection(undefined)}>Cancel</Button>
         <Button variant="primary" type="submit" form="recipe-connection"
-          disabled={!connection || !editable || !Outcome.safeParse(connection.on).success || (connection.to === recipeEnd && !connection.result)}>Connect</Button>
+          disabled={!connection || !editable || !Outcome.safeParse(connection.on).success || (connectionEnd && !selectedEndResult)}>Connect</Button>
       </>}>
       {connection && <form id="recipe-connection" className={s.inspectorFields} onSubmit={(event) => {
         event.preventDefault();
         if (!editable || !Outcome.safeParse(connection.on).success) return;
-        const { from, on, to, sourcePort, targetPort, result } = connection;
+        const { from, on, to, sourcePort, targetPort } = connection;
+        const result = selectedEndResult;
         const remainingEdges: unknown[] = edges.filter((value) => object(value).from !== from || object(value).on !== on);
         const remainingEnds: RecipeEnd[] = ends.filter((item) => item.from !== from || item.on !== on);
         if (to === recipeEnd) {
@@ -466,9 +485,9 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
       }}>
         {outcomes.length
           ? <Select label="Outcome" disabled={!editable} value={connection.on || null} options={outcomes}
-            onValueChange={(on) => setConnection({ ...connection, on: on ?? "" })} />
-          : <TextField label="Outcome" disabled={!editable} value={connection.on} onValueChange={(on) => setConnection({ ...connection, on })} />}
-        {connection.to === recipeEnd && <Select label="Result" options={endOptions} value={connection.result ?? null} disabled={!editable}
+            onValueChange={(on) => chooseOutcome(on ?? "")} />
+          : <TextField label="Outcome" disabled={!editable} value={connection.on} onValueChange={chooseOutcome} />}
+        {connectionEnd && !standardResult && connection.on && <Select label="Job result" options={endOptions} value={connection.result ?? null} disabled={!editable}
           onValueChange={(value) => setConnection({ ...connection, result: RecipeEndResult.safeParse(value).data })} />}
       </form>}
     </Dialog>

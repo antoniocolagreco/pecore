@@ -15,8 +15,8 @@ import { TextArea } from "../ds/field";
 import { ErrorText, ui } from "./ui";
 import s from "./ConfirmItem.module.css";
 
-const positive: ReadonlySet<string> = new Set(["approve", "confirm", "accept", "yes", "continue", "retry", "allow", "start", "post"]);
-const negative: ReadonlySet<string> = new Set(["reject", "deny", "stop", "no", "abort", "cancel", "fail"]);
+const positive: ReadonlySet<string> = new Set(["approved", "approve", "confirm", "accept", "yes", "continue", "retry", "allow", "start", "post"]);
+const negative: ReadonlySet<string> = new Set(["rejected", "reject", "deny", "stop", "no", "abort", "cancel", "fail"]);
 
 export const queueKindLabel: Record<QueueItemView["kind"], string> = {
   "human-node": "Human step",
@@ -180,7 +180,7 @@ function ItemDetail({ item, replacement, reload, onDone }: {
                 disabled={!connected || answer.busy}
                 onClick={() => void answer.run(choice)}
               >
-                {choice}
+                {choice === "approved" ? "Approve" : choice === "changes_requested" ? "Request changes" : choice === "rejected" ? "Reject" : choice}
               </Button>
             ))}
           </div>

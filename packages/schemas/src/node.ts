@@ -120,8 +120,8 @@ export type HumanInterface = z.infer<typeof HumanInterface>;
 
 export const humanInterfaces: Readonly<Record<HumanInterface, { readonly label: string; readonly description: string; readonly outcomes: readonly string[] | null }>> = {
   decision: { label: "Decision", description: "Asks a question in Notifications and follows the answer you choose.", outcomes: null },
-  "code-review": { label: "Code review", description: "Shows the job's code changes, with the findings of the nodes it reads, and asks you to approve, request changes or reject.", outcomes: ["approve", "changes", "reject"] },
-  "report-review": { label: "Report review", description: "Shows what the nodes it reads produced and asks you to approve, request changes or reject.", outcomes: ["approve", "changes", "reject"] },
+  "code-review": { label: "Code review", description: "Shows the job's code changes, with the findings of the nodes it reads, and asks you to approve, request changes or reject.", outcomes: ["approved", "changes_requested", "rejected"] },
+  "report-review": { label: "Report review", description: "Shows what the nodes it reads produced and asks you to approve, request changes or reject.", outcomes: ["approved", "changes_requested", "rejected"] },
 };
 
 export const HumanNode = z.strictObject({ ...Base, ...Runnable, kind: z.literal("human"), interface: HumanInterface });
@@ -239,7 +239,8 @@ function checkNode(node: z.infer<typeof NodeShape>): Issue[] {
       if (type !== "text") issues.push({ path: ["outputs", outcome], message: "a person can only write text" });
     }
     const outcomes: readonly string[] | null = humanInterfaces[node.interface].outcomes;
-    if (outcomes && (node.outcomes.length !== outcomes.length || !outcomes.every((outcome) => node.outcomes.includes(outcome)))) {
+    const legacyReview: boolean = node.outcomes.length === 3 && ["approve", "changes", "reject"].every((outcome) => node.outcomes.includes(outcome));
+    if (outcomes && !legacyReview && (node.outcomes.length !== outcomes.length || !outcomes.every((outcome) => node.outcomes.includes(outcome)))) {
       issues.push({ path: ["outcomes"], message: `${humanInterfaces[node.interface].label} needs ${outcomes.join(", ")}` });
     }
   }

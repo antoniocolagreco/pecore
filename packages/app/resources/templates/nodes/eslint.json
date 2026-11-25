@@ -4,13 +4,13 @@
   "description": "Run ESLint on the whole project",
   "kind": "command",
   "command": ["npx", "--no-install", "eslint", "."],
-  "outcomes": ["passed", "failed"],
-  "failOutcomes": ["failed"],
+  "outcomes": ["success", "failure"],
+  "failOutcomes": ["failure"],
   "changesFiles": false,
   "scratchPaths": [".eslintcache"],
   "outcomeRules": [
-    { "exitCode": 0, "outcome": "passed" },
-    { "exitCode": "other", "outcome": "failed" }
+    { "exitCode": 0, "outcome": "success" },
+    { "exitCode": "other", "outcome": "failure" }
   ],
   "timeoutSec": 600
 }

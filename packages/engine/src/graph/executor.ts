@@ -707,7 +707,7 @@ export class JobExecutor {
       const last = runs.filter((r) => r.node === req).at(-1);
       if (!last) return false;
       const node = this.nodeFor(recipe, req, nodes);
-      const ok: boolean = isHumanNode(node) ? node.interface !== "decision" && last.outcome === "approve" : last.outcome === "passed";
+      const ok: boolean = isHumanNode(node) ? node.interface !== "decision" && (last.outcome === "approved" || last.outcome === "approve") : (last.outcome === "success" || last.outcome === "passed");
       if (!ok || last.content_before !== current || last.content_after !== current) return false;
     }
     return true;
@@ -1247,7 +1247,7 @@ export class JobExecutor {
       if (!isHumanNode(node)) return;
       const pending: boolean = this.runs(jobId).some((run) => run.id === subject.nodeRunId && run.state === "waiting" && run.queue_item_id === itemId);
       if (!pending) throw new Error("the item changed or was resolved");
-      if (node.interface !== "decision" && choice === "approve") {
+      if (node.interface !== "decision" && (choice === "approved" || choice === "approve")) {
         const current: string = await contentState(this.ctx.user, workdirOf(this.ctx.dir, jobId));
         if (current !== subject.contentState) {
           this.ctx.db.append([{ jobId, type: "queue.resolved", payload: { itemId, state: "cancelled", choice: null, note: "The reviewed content changed." } }]);

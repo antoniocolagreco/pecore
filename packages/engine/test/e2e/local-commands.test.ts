@@ -58,13 +58,13 @@ const recipes: Record<string, object> = {
     name: "cmd-only",
     description: "write, check, review, commit",
     start: "write",
-    successOutcomes: ["commit:done"],
+    successOutcomes: ["commit:success"],
     nodes: { write: { use: "touch-file" }, check: { use: "has-file" }, human: { use: "human-review" }, commit: { use: "git-commit", requires: ["check", "human"] } },
     edges: [
       { from: "write", on: "done", to: "check" },
       { from: "check", on: "passed", to: "human" },
-      { from: "human", on: "approve", to: "commit" },
-      { from: "human", on: "changes", to: "write" },
+      { from: "human", on: "approved", to: "commit" },
+      { from: "human", on: "changes_requested", to: "write" },
       { from: "commit", on: "stale", to: "check" },
     ],
   },
@@ -72,7 +72,7 @@ const recipes: Record<string, object> = {
     name: "write-commit",
     description: "write and commit",
     start: "write",
-    successOutcomes: ["commit:done"],
+    successOutcomes: ["commit:success"],
     nodes: { write: { use: "touch-file" }, commit: { use: "git-commit" } },
     edges: [{ from: "write", on: "done", to: "commit" }],
   },
@@ -126,7 +126,7 @@ describe("phase 2 gate: command-only recipe on a local-only project, app user as
     await until(() => project.executor.job(id).state === "waiting");
     expect(project.executor.job(id).waiting_reason).toBe("human");
     const item = project.ctx.db.db.prepare("SELECT id, subject_hash FROM human_queue WHERE state = 'open'").get() as { id: string; subject_hash: string };
-    await project.executor.answer(item.id, "approve", "looks good", item.subject_hash);
+    await project.executor.answer(item.id, "approved", "looks good", item.subject_hash);
     await until(() => project.executor.job(id).state === "succeeded");
     const repo = join(project.ctx.dir, "repo.git");
     expect((await gitApp(repo, ["show", `factory/${id}:hello.txt`])).trim()).toBe("hello");
@@ -136,8 +136,8 @@ describe("phase 2 gate: command-only recipe on a local-only project, app user as
     expect(runs).toEqual([
       { node: "write", state: "completed", outcome: "done" },
       { node: "check", state: "completed", outcome: "passed" },
-      { node: "human", state: "completed", outcome: "approve" },
-      { node: "commit", state: "completed", outcome: "done" },
+      { node: "human", state: "completed", outcome: "approved" },
+      { node: "commit", state: "completed", outcome: "success" },
     ]);
     const types = project.executor.artifacts(id).map((a) => a.type);
     expect(types).toEqual(expect.arrayContaining(["document", "diff", "text", "reference"]));

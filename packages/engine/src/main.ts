@@ -563,7 +563,7 @@ export class Engine extends EventEmitter {
       this.projectErrors.set(id, [{ file: path, path: "", message: "project database not found" }]);
       return;
     }
-    const db: ProjectDb = new ProjectDb(path);
+    const db: ProjectDb = new ProjectDb(path, this.catalog.db);
     const loaded: Awaited<ReturnType<typeof loadProject>> = await loadProject(dir, templates, db.definition.read(), { global: this.catalog, project: db.catalog });
     if (!loaded.project) {
       db.close();

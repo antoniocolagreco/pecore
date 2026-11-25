@@ -6,16 +6,16 @@
   "account": "project.account",
   "inputs": ["spec"],
   "optionalInputs": ["document"],
-  "outcomes": ["opened", "failed"],
-  "outputs": { "opened": "reference" },
-  "failOutcomes": ["failed"],
+  "outcomes": ["success", "failure"],
+  "outputs": { "success": "reference" },
+  "failOutcomes": ["failure"],
   "changesFiles": false,
   "script": "set -e\nrepo=\"$PECORE_PROJECT_REPO_OWNER/$PECORE_PROJECT_REPO_NAME\"\ninputs=$(cat)\nurl=$(gh pr list --repo \"$repo\" --head \"$PECORE_JOB_BRANCH\" --json url --jq '.[0].url // empty')\nif printf '%s\\n' \"$inputs\" | jq -e 'has(\"document\")' >/dev/null; then\n  title=$(printf '%s\\n' \"$inputs\" | jq -er '.document.title')\n  if [ -n \"$url\" ]; then\n    printf '%s\\n' \"$inputs\" | jq -ej '.document.body' | gh pr edit \"$url\" --base \"$PECORE_JOB_TARGET\" --title \"$title\" --body-file - >/dev/null\n    printf '%s\\n' \"$url\"\n  else\n    printf '%s\\n' \"$inputs\" | jq -ej '.document.body' | gh pr create --repo \"$repo\" --base \"$PECORE_JOB_TARGET\" --head \"$PECORE_JOB_BRANCH\" --title \"$title\" --body-file -\n  fi\n  exit 0\nfi\nif [ -n \"$url\" ]; then\n  gh pr edit \"$url\" --base \"$PECORE_JOB_TARGET\" >/dev/null\n  printf '%s\\n' \"$url\"\nelse\n  printf '%s\\n' \"$inputs\" | jq -e '.spec' | gh pr create --repo \"$repo\" --base \"$PECORE_JOB_TARGET\" --head \"$PECORE_JOB_BRANCH\" \\\n    --title \"$PECORE_JOB_TITLE\" --body-file -\nfi",
   "outcomeRules": [
-    { "exitCode": 0, "outcome": "opened" },
-    { "exitCode": "other", "outcome": "failed" }
+    { "exitCode": 0, "outcome": "success" },
+    { "exitCode": "other", "outcome": "failure" }
   ],
-  "outputRules": { "opened": { "stdoutLastLine": "url" } },
+  "outputRules": { "success": { "stdoutLastLine": "url" } },
   "probe": { "script": "github-pr-probe.sh" },
   "mergedCheck": ["gh", "pr", "view", "--repo", "{project.repo.owner}/{project.repo.name}", "{job.branch}", "--json", "state", "--jq", "select(.state==\"MERGED\") | .state"],
   "timeoutSec": 120

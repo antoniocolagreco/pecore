@@ -3,16 +3,76 @@ import userEvent from "@testing-library/user-event";
 import type { DefinitionEntry, RecipeInput, RouteInput } from "@pecore/schemas";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
+import type { Connection } from "@xyflow/react";
 import { RecipeEditor } from "./RecipeEditor";
+import { recipeEnd } from "./recipeLayout";
 
 const api = vi.hoisted(() => ({ call: vi.fn() }));
 vi.mock("../api/client", () => ({ call: api.call }));
 vi.mock("../api/live", () => ({ useConnected: () => true, onLive: () => () => undefined, useLive: () => undefined }));
 vi.mock("./RecipeGraph", () => ({
-  RecipeGraph: ({ onSelect }: { onSelect(id: string): void }) => <button type="button" onClick={() => onSelect("review")}>Inspect review</button>,
+  RecipeGraph: ({ onSelect, onConnect }: { onSelect(id: string): void; onConnect(connection: Connection): void }) => <>
+    <button type="button" onClick={() => onSelect("review")}>Inspect review</button>
+    <button type="button" onClick={() => onConnect({ source: "read", target: recipeEnd, sourceHandle: "right", targetHandle: "left" })}>Connect read to End</button>
+    <button type="button" onClick={() => onConnect({ source: "read", target: "review", sourceHandle: "right", targetHandle: null })}>Connect read to review</button>
+    <button type="button" onClick={() => onConnect({ source: "review", target: recipeEnd, sourceHandle: "right", targetHandle: null })}>Connect review to End</button>
+  </>,
 }));
 
 afterEach(cleanup);
+
+it("uses one outcome selection per connection and asks for a job result only for a named path to End", async () => {
+  const template: DefinitionEntry = {
+    path: "templates/nodes/github-ticket-read.json", sha256: "node-v1", errors: [],
+    value: { name: "github-ticket-read", kind: "tracker", outcomes: ["success", "failure"] },
+  };
+  const review: DefinitionEntry = {
+    path: "templates/nodes/review.json", sha256: "node-v2", errors: [],
+    value: { name: "review", kind: "human", outcomes: ["approved", "changes_requested", "rejected"] },
+  };
+  const recipe: RecipeInput = {
+    name: "review", description: "Read and review the ticket", start: "read",
+    nodes: { read: { use: "github-ticket-read" }, review: { use: "review" } },
+    ends: [{ from: "read", on: "success", result: "succeeded" }],
+  };
+  api.call.mockClear();
+  api.call.mockImplementation(async (route: string, input?: RouteInput<"listDefinitions">) => {
+    if (route === "listDefinitions") return input?.query.dir === "templates/nodes" ? [template, review] : [];
+    if (route === "getDefinition") return { content: JSON.stringify(recipe), sha256: "recipe-v1" };
+    if (route === "getAgents") return { value: { agents: [] } };
+    if (route === "validateDefinition") return { errors: [], warnings: [] };
+    if (route === "saveDefinition") return { sha256: "recipe-v2" };
+    throw new Error(`Unexpected route ${route}`);
+  });
+  const router = createMemoryRouter([{ path: "/edit/recipe/*", element: <RecipeEditor /> }], { initialEntries: ["/edit/recipe/templates/recipes/review.json"] });
+  render(<RouterProvider router={router} />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Connect read to End" }));
+  await user.click(screen.getByRole("combobox", { name: "Outcome" }));
+  await user.click(await screen.findByRole("option", { name: "Failure" }));
+  expect(screen.queryByRole("combobox", { name: "Job result" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Connect" }));
+  await user.click(screen.getByRole("button", { name: "Connect read to review" }));
+  await user.click(screen.getByRole("combobox", { name: "Outcome" }));
+  await user.click(await screen.findByRole("option", { name: "Success" }));
+  expect(screen.queryByRole("combobox", { name: "Job result" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Connect" }));
+  await user.click(screen.getByRole("button", { name: "Connect review to End" }));
+  await user.click(screen.getByRole("combobox", { name: "Outcome" }));
+  await user.click(await screen.findByRole("option", { name: "Approved" }));
+  expect(screen.getByRole("combobox", { name: "Job result" }).textContent).toContain("Success");
+  await user.click(screen.getByRole("combobox", { name: "Job result" }));
+  await user.click(await screen.findByRole("option", { name: "Not delivered" }));
+  await user.click(screen.getByRole("button", { name: "Connect" }));
+  const save: HTMLButtonElement = screen.getByRole("button", { name: "Save" });
+  await waitFor(() => expect(save.disabled).toBe(false));
+  await user.click(save);
+  const request: RouteInput<"saveDefinition"> = api.call.mock.calls.findLast(([route]) => route === "saveDefinition")?.[1];
+  expect(JSON.parse(request.body.content)).toMatchObject({
+    edges: [{ from: "read", on: "success", to: "review" }],
+    ends: [{ from: "read", on: "failure", result: "failed" }, { from: "review", on: "approved", result: "not_delivered" }],
+  });
+});
 
 it("inherits, overrides and resets the template's session and saves the assigned agent", async () => {
   const template: DefinitionEntry = {

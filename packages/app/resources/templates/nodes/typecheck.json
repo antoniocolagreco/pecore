@@ -4,13 +4,13 @@
   "description": "Run the TypeScript type checker on the project (tsc --noEmit)",
   "kind": "command",
   "command": ["npx", "--no-install", "tsc", "--noEmit"],
-  "outcomes": ["passed", "failed"],
-  "failOutcomes": ["failed"],
+  "outcomes": ["success", "failure"],
+  "failOutcomes": ["failure"],
   "changesFiles": false,
   "scratchPaths": ["**/*.tsbuildinfo"],
   "outcomeRules": [
-    { "exitCode": 0, "outcome": "passed" },
-    { "exitCode": "other", "outcome": "failed" }
+    { "exitCode": 0, "outcome": "success" },
+    { "exitCode": "other", "outcome": "failure" }
   ],
   "timeoutSec": 600
 }

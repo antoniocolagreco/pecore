@@ -8,13 +8,13 @@
     "properties": { "suite": { "type": "string", "default": "" } }
   },
   "script": "vitest.sh",
-  "outcomes": ["passed", "failed"],
-  "failOutcomes": ["failed"],
+  "outcomes": ["success", "failure"],
+  "failOutcomes": ["failure"],
   "changesFiles": false,
   "scratchPaths": ["coverage/**"],
   "outcomeRules": [
-    { "exitCode": 0, "outcome": "passed" },
-    { "exitCode": "other", "outcome": "failed" }
+    { "exitCode": 0, "outcome": "success" },
+    { "exitCode": "other", "outcome": "failure" }
   ],
   "timeoutSec": 1800
 }

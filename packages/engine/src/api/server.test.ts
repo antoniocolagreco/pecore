@@ -82,12 +82,12 @@ describe("local API (phase 5 decisions 2-5)", () => {
     expect(why.reasons).toMatchObject([{ reason: "human", queueItemId: expect.any(String) }]);
     const [item] = await call("listQueue", { query: { state: "open" } });
     expect(item).toMatchObject({ id: why.reasons[0]!.queueItemId, projectId: "demo", jobId: id, kind: "human-node" });
-    await expect(call("answerQueue", { params: { id: item!.id }, body: { choice: "approve", hash: "0".repeat(64) } })).rejects.toMatchObject({ status: 409 });
+    await expect(call("answerQueue", { params: { id: item!.id }, body: { choice: "approved", hash: "0".repeat(64) } })).rejects.toMatchObject({ status: 409 });
     await expect(call("answerQueue", { params: { id: item!.id }, body: { choice: "maybe", hash: item!.subjectHash } })).rejects.toMatchObject({ status: 400 });
-    await call("answerQueue", { params: { id: item!.id }, body: { choice: "approve", note: "ok", hash: item!.subjectHash } });
+    await call("answerQueue", { params: { id: item!.id }, body: { choice: "approved", note: "ok", hash: item!.subjectHash } });
     await until(async () => (await call("getJob", { params: { id } })).job.state === "succeeded");
     const detail = await call("getJob", { params: { id } });
-    expect(detail.nodeRuns.map((r) => `${r.node}:${r.outcome}`)).toEqual(["write:done", "human:approve", "commit:done"]);
+    expect(detail.nodeRuns.map((r) => `${r.node}:${r.outcome}`)).toEqual(["write:done", "human:approved", "commit:success"]);
     expect(detail.job).toMatchObject({ recipe: "reviewed", projectId: "demo", archived: false });
     const write = detail.attempts.find((a) => a.nodeRunId === detail.nodeRuns[0]!.id)!;
     const log = await call("getLog", { params: { id: write.id }, query: { view: "events" } });

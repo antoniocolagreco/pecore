@@ -6,7 +6,9 @@ import type { Artifact } from "@pecore/schemas";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { tempDir } from "../../test/tmp";
-import { jobDefinitions } from "../definitions/snapshot";
+import { definitionHash, jobDefinitions, snapshotDefinitions } from "../definitions/snapshot";
+import { nextStep } from "../graph/rules";
+import { humanItem } from "../runners/human";
 import { ChatsDb, assistantChat, notificationsKept } from "./chats-db";
 import { Catalog } from "./catalog";
 import { Configuration } from "./configuration";
@@ -23,12 +25,12 @@ describe("pecore.db", () => {
   it("applies the migrations once, in WAL mode", async () => {
     const path = join(await tempDir(), "pecore.db");
     const db = new ProjectDb(path);
-    expect(db.version()).toBe(30);
+    expect(db.version()).toBe(31);
     expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_nodes') WHERE name = 'clean_checkout'").get()).toBeUndefined();
     expect(db.db.pragma("journal_mode", { simple: true })).toBe("wal");
     db.close();
     const again = new ProjectDb(path);
-    expect(again.version()).toBe(30);
+    expect(again.version()).toBe(31);
     const tables = again.db.prepare<[], string>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'catalog_%' ORDER BY name").pluck().all();
     expect(tables).toEqual([
       "artifacts", "attempt_logs", "attempts", "events", "human_queue", "jobs", "node_runs",
@@ -36,6 +38,92 @@ describe("pecore.db", () => {
       "project_knowledge_steps", "project_recipes", "project_variables", "schema_version", "tickets_seen",
     ]);
     again.close();
+  });
+
+  it("migrates catalog references, live review choices, finished outcomes and job snapshots together", async () => {
+    const path: string = join(await tempDir(), "pecore.db");
+    const old: ProjectDb = new ProjectDb(path);
+    const check: Node = Node.parse({
+      name: "check", description: "Run a check", kind: "command", outcomes: ["passed", "failed"],
+      failOutcomes: ["failed"], outputs: { passed: "text" }, outputRules: { passed: { stdoutLastLine: "report" } },
+      outcomeRules: [{ exitCode: 0, outcome: "passed" }, { exitCode: "other", outcome: "failed" }],
+      command: ["true"], changesFiles: false, timeoutSec: 5,
+    });
+    const review: Node = Node.parse({
+      name: "review", description: "Review", kind: "human", interface: "code-review",
+      outcomes: ["approve", "changes", "reject"], outputs: { changes: "text" },
+    });
+    if (review.kind !== "human") throw new Error("Expected a Human node");
+    const legacy: Recipe = Recipe.parse({
+      name: "check-then-review", description: "Check and review", start: "check",
+      nodes: { check: { use: "check" }, review: { use: "review" } },
+      edges: [{ from: "check", on: "passed", to: "review", maxRounds: 2 }, { from: "review", on: "changes", to: "check" }],
+      ends: [{ from: "check", on: "failed", result: "failed" }, { from: "review", on: "approve", result: "succeeded" },
+        { from: "review", on: "reject", result: "not_delivered" }],
+    });
+    const definitions = await snapshotDefinitions(legacy, new Map([["check", check], ["review", review]]), "");
+    old.catalog.saveNode(check);
+    old.catalog.saveNode(review);
+    old.catalog.saveRecipe(legacy);
+    old.db.prepare("UPDATE schema_version SET version = 30").run();
+    const checkRun: string = job + "/check#0";
+    const reviewRun: string = job + "/review#0";
+    const finishedJob: string = "finished";
+    const finishedRun: string = finishedJob + "/check#0";
+    const item = humanItem(reviewRun, "review", review, [], "tree");
+    old.append([
+      { ...created, payload: { ...created.payload, recipe: legacy, definitions } },
+      { jobId: job, type: "node_run.created", payload: { nodeRunId: checkRun, node: "check", round: 0, viaEdge: null } },
+      { jobId: job, type: "attempt.started", payload: { attemptId: "attempt", nodeRunId: checkRun, profile: null, connector: null,
+        harnessVersion: null, connectorVersion: null, account: null, osUser: "user" } },
+      { jobId: job, type: "attempt.ended", payload: { attemptId: "attempt", endReason: "passed", model: null, account: null,
+        tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, cost: null } },
+      { jobId: job, type: "node_run.completed", payload: { nodeRunId: checkRun, outcome: "passed", contentBefore: "tree", contentAfter: "tree", artifacts: [] } },
+      { jobId: job, type: "node_run.created", payload: { nodeRunId: reviewRun, node: "review", round: 0, viaEdge: 0 } },
+      { jobId: job, type: "queue.added", payload: { ...item, itemId: "review-item" } },
+      { jobId: job, type: "job.state_changed", payload: { state: "waiting", reason: "human" } },
+      { ...created, jobId: finishedJob, payload: { ...created.payload, recipe: legacy, definitions } },
+      { jobId: finishedJob, type: "node_run.created", payload: { nodeRunId: finishedRun, node: "check", round: 0, viaEdge: null } },
+      { jobId: finishedJob, type: "node_run.completed", payload: { nodeRunId: finishedRun, outcome: "failed", contentBefore: null, contentAfter: null, artifacts: [] } },
+      { jobId: finishedJob, type: "job.state_changed", payload: { state: "failed", reason: "check:failed" } },
+    ]);
+    old.close();
+
+    const db: ProjectDb = new ProjectDb(path);
+    try {
+      const saved = db.catalog.node("check");
+      expect(saved).toMatchObject({
+        outcomes: ["success", "failure"], failOutcomes: ["failure"], outputs: { success: "text" },
+        outcomeRules: [{ exitCode: 0, outcome: "success" }, { exitCode: "other", outcome: "failure" }],
+        outputRules: { success: { stdoutLastLine: "report" } },
+      });
+      const migrated: Recipe = db.catalog.recipe(legacy.name)!;
+      expect(migrated.edges).toEqual([
+        { from: "check", on: "success", to: "review", maxRounds: 2 },
+        { from: "review", on: "changes_requested", to: "check" },
+      ]);
+      expect(migrated.ends).toEqual([
+        { from: "check", on: "failure", result: "failed" },
+        { from: "review", on: "approved", result: "succeeded" },
+        { from: "review", on: "rejected", result: "not_delivered" },
+      ]);
+      const snapshot = jobDefinitions(db, job)!;
+      expect(snapshot.recipeHash).toBe(definitionHash(migrated));
+      expect(snapshot.nodes.check?.definition).toEqual(saved);
+      expect(db.db.prepare("SELECT state, failure_reason FROM jobs WHERE id = ?").get(finishedJob)).toEqual({ state: "failed", failure_reason: "check:failure" });
+      expect(db.db.prepare("SELECT outcome FROM node_runs WHERE id = ?").pluck().get(checkRun)).toBe("success");
+      expect(db.db.prepare("SELECT end_reason FROM attempts WHERE id = 'attempt'").pluck().get()).toBe("success");
+      expect(db.events(finishedJob).find(({ type }) => type === "node_run.completed")?.payload).toMatchObject({ outcome: "failure" });
+      const migratedItem = humanItem(reviewRun, "review", Node.parse(snapshot.nodes.review?.definition) as typeof review, [], "tree");
+      expect(db.db.prepare("SELECT subject_hash, choices FROM human_queue WHERE id = 'review-item'").get()).toEqual({
+        subject_hash: migratedItem.subjectHash, choices: '["approved","changes_requested","rejected"]',
+      });
+      expect(db.events(job).find(({ type }) => type === "queue.added")?.payload).toMatchObject({ subjectHash: migratedItem.subjectHash });
+      expect(nextStep(migrated, new Map([["check", saved!], ["review", db.catalog.node("review")!]]),
+        [{ nodeId: "check", outcome: "success", viaEdge: null }])).toEqual({ kind: "run", nodeId: "review", round: 0, viaEdge: 0 });
+    } finally {
+      db.close();
+    }
   });
 
   it("migrates credentialed Command nodes to Repository and removes credentials and checks from Command", async () => {
@@ -371,7 +459,7 @@ describe("chats.db", () => {
 
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.version()).toBe(30);
+    expect(db.version()).toBe(31);
     for (let i = 0; i < notificationsKept + 3; i++) db.addNotification({ kind: "job", title: `n${i}`, body: "" }, 1000 + i);
     const kept = db.notifications();
     expect(kept).toHaveLength(notificationsKept);
@@ -393,7 +481,7 @@ describe("chats.db", () => {
       UPDATE schema_version SET version = 5`);
     old.close();
     const db = new ChatsDb(file);
-    expect(db.version()).toBe(30);
+    expect(db.version()).toBe(31);
     expect(db.messages(assistantChat)).toEqual([]);
     db.close();
   });

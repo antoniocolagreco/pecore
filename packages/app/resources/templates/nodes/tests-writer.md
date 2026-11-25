@@ -22,4 +22,4 @@ Write the tests and interface stubs specified for the job.
 
 ## Outcomes
 
-- Use `done` when the tests and stubs type-check and the new tests fail at runtime for the expected reason.
+- Use `success` when the tests and stubs type-check and the new tests fail at runtime for the expected reason.

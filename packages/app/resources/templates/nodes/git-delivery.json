@@ -4,18 +4,18 @@
   "description": "Report the pushed job branch as the delivery.",
   "kind": "repository",
   "account": "project.account",
-  "outcomes": ["opened", "failed"],
-  "outputs": { "opened": "reference" },
-  "failOutcomes": ["failed"],
+  "outcomes": ["success", "failure"],
+  "outputs": { "success": "reference" },
+  "failOutcomes": ["failure"],
   "changesFiles": false,
   "script": "set -eu\nprintf '%s\\n' \"$PECORE_JOB_BRANCH\"",
   "probe": { "script": "git-delivery.sh" },
   "mergedCheck": { "script": "git-delivery-merged.sh" },
   "mergedCheckRules": { "stdoutJson": "state", "done": ["merged"], "notDone": ["unmerged"] },
   "outcomeRules": [
-    { "exitCode": 0, "outcome": "opened" },
-    { "exitCode": "other", "outcome": "failed" }
+    { "exitCode": 0, "outcome": "success" },
+    { "exitCode": "other", "outcome": "failure" }
   ],
-  "outputRules": { "opened": { "stdoutLastLine": "ref" } },
+  "outputRules": { "success": { "stdoutLastLine": "ref" } },
   "timeoutSec": 120
 }

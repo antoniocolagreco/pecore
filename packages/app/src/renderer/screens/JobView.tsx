@@ -58,7 +58,7 @@ function Result({ detail, definitions }: { detail: JobDetail; definitions: Retur
   const checks: NodeRunView[] = [...latestRuns(nodeRuns).values()].filter((run) => {
     const use: string | undefined = definitions?.recipe.nodes[run.node]?.use;
     const node = use ? definitions?.definitions.get(use) : undefined;
-    return node?.kind === "command" && node.outcomes.includes("passed");
+    return node?.kind === "command" && node.outcomes.some((outcome) => outcome === "success" || outcome === "passed");
   });
   return (
     <Card padded>

@@ -7,20 +7,20 @@
     "issue tracker"
   ],
   "outcomes": [
-    "done",
-    "failed"
+    "success",
+    "failure"
   ],
   "failOutcomes": [
-    "failed"
+    "failure"
   ],
   "outcomeRules": [
     {
       "exitCode": 0,
-      "outcome": "done"
+      "outcome": "success"
     },
     {
       "exitCode": "other",
-      "outcome": "failed"
+      "outcome": "failure"
     }
   ],
   "timeoutSec": 120,
@@ -40,10 +40,10 @@
   },
   "script": "set -e\nitems=$(acli jira workitem search --jql \"$PECORE_PARAMS_QUERY\" --fields key,summary --paginate --json | jq -e '(if type == \"array\" then . else .issues end) | map({id: .key, title: (.fields.summary // .summary)})')\nprintf '%s\\n' \"$items\" | jq -e '{title: \"Tickets\", body: tojson}'",
   "outputs": {
-    "done": "document"
+    "success": "document"
   },
   "outputRules": {
-    "done": {
+    "success": {
       "stdoutJson": ""
     }
   }

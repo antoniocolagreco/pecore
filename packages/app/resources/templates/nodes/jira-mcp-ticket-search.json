@@ -32,15 +32,15 @@
   },
   "inputs": [],
   "outcomes": [
-    "done"
+    "success"
   ],
   "outcomeRules": [
     {
       "exitCode": 0,
-      "outcome": "done"
+      "outcome": "success"
     }
   ],
   "outputs": {
-    "done": "document"
+    "success": "document"
   }
 }

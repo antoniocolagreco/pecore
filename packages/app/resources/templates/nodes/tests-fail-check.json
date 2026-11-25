@@ -8,12 +8,12 @@
     "properties": { "suite": { "type": "string", "default": "" } }
   },
   "script": "tests-fail-check.sh",
-  "outcomes": ["failed_as_expected", "unexpected_pass"],
+  "outcomes": ["success", "failure"],
   "changesFiles": false,
   "scratchPaths": ["coverage/**"],
   "outcomeRules": [
-    { "exitCode": 0, "outcome": "failed_as_expected" },
-    { "exitCode": "other", "outcome": "unexpected_pass" }
+    { "exitCode": 0, "outcome": "success" },
+    { "exitCode": "other", "outcome": "failure" }
   ],
   "timeoutSec": 1800
 }

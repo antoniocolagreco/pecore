@@ -3,6 +3,7 @@ import { monotonicFactory } from "ulid";
 import { EventBody, JobState, Recipe } from "@pecore/schemas";
 import { jobArtifacts } from "../jobs/stacked";
 import { subjectHash } from "../runners/human";
+import type { OutcomeLookup } from "../definitions/outcomes";
 import { migrate } from "../store/migrate";
 import { ProjectDb } from "../store/project-db";
 import type { NewEvent } from "../store/project-db";
@@ -28,7 +29,7 @@ function schema(db: ProjectDb["db"]): unknown[] {
   return db.prepare("SELECT type, name, tbl_name, sql FROM sqlite_schema ORDER BY name").raw().all();
 }
 
-export function migrateHistory(path: string, includeLogs: boolean): void {
+export function migrateHistory(path: string, includeLogs: boolean, archivedOutcomes?: OutcomeLookup): void {
   const db: ProjectDb["db"] = new Database(path, { fileMustExist: true });
   try {
     db.pragma("trusted_schema = OFF");
@@ -36,7 +37,7 @@ export function migrateHistory(path: string, includeLogs: boolean): void {
     if (tables.some(({ type }) => type !== "table") || db.prepare("SELECT 1 FROM sqlite_schema WHERE type NOT IN ('table', 'index')").get()) {
       throw new InvalidArchive("pecore.db has an unexpected SQLite schema");
     }
-    const version: number = migrate(db, "");
+    const version: number = migrate(db, "", { archivedOutcomes });
     const expected: ProjectDb = new ProjectDb(":memory:");
     try {
       if (version !== expected.version() || JSON.stringify(schema(db)) !== JSON.stringify(schema(expected.db))) {

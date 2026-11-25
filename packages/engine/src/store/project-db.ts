@@ -22,12 +22,12 @@ export class ProjectDb {
   readonly catalog: Catalog;
   onAppend: (events: StoredEvent[]) => void = () => undefined;
 
-  constructor(path: string) {
+  constructor(path: string, inherited?: Database.Database) {
     this.db = new Database(path);
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
     this.db.pragma("busy_timeout = 5000");
-    migrate(this.db, "");
+    migrate(this.db, "", { inherited });
     this.logs = new AttemptLogs(this.db);
     this.definition = new ProjectDefinition(this.db);
     this.catalog = new Catalog(this.db);

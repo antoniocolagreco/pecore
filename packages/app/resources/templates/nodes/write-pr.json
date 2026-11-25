@@ -5,8 +5,8 @@
   "kind": "agent",
   "prompt": "write-pr.md",
   "agent": { "tier": "standard" },
-  "outcomes": ["done"],
-  "outputs": { "done": "document" },
+  "outcomes": ["success"],
+  "outputs": { "success": "document" },
   "changesFiles": false,
   "timeoutSec": 300
 }

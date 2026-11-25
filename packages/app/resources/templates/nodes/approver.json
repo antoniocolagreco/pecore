@@ -6,8 +6,8 @@
   "agentSession": "new",
   "prompt": "approver.md",
   "agent": { "tier": "standard" },
-  "outcomes": ["done"],
-  "outputs": { "done": "findings" },
+  "outcomes": ["success"],
+  "outputs": { "success": "findings" },
   "changesFiles": false,
   "timeoutSec": 1200
 }

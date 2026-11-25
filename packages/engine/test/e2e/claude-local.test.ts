@@ -37,7 +37,7 @@ describe.skipIf(!real)("phase 3 gate: local-only job with Claude Code, normal mo
       const j = p.executor.job(id);
       if (j.state === "waiting" && j.waiting_reason === "human") {
         const item = p.ctx.db.db.prepare("SELECT id, subject_hash FROM human_queue WHERE state = 'open' AND kind = 'human-node'").get() as { id: string; subject_hash: string };
-        await p.executor.answer(item.id, "approve", null, item.subject_hash);
+        await p.executor.answer(item.id, "approved", null, item.subject_hash);
         continue;
       }
       if (["succeeded", "failed", "not_delivered", "stopped"].includes(j.state) || (j.state === "waiting" && j.waiting_reason !== "human" && j.waiting_reason !== "concurrency")) break;

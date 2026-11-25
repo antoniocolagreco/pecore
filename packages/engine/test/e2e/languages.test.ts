@@ -71,12 +71,12 @@ const shape = (name: string, write: string, check: string, test: string) => ({
   name,
   description: "write, type check, test, commit",
   start: "write",
-  successOutcomes: ["commit:done"],
+  successOutcomes: ["commit:success"],
   nodes: { write: { use: write }, check: { use: check }, test: { use: test }, commit: { use: "git-commit", requires: ["check", "test"] } },
   edges: [
     { from: "write", on: "done", to: "check" },
-    { from: "check", on: "passed", to: "test" },
-    { from: "test", on: "passed", to: "commit" },
+    { from: "check", on: "success", to: "test" },
+    { from: "test", on: "success", to: "commit" },
   ],
 });
 
@@ -119,9 +119,9 @@ describe("G2: the same recipe shape on a TypeScript and a Rust project, with dif
       expect(project.executor.job(id).state).toBe("succeeded");
       expect(runs).toEqual([
         { node: "write", outcome: "done" },
-        { node: "check", outcome: "passed" },
-        { node: "test", outcome: "passed" },
-        { node: "commit", outcome: "done" },
+        { node: "check", outcome: "success" },
+        { node: "test", outcome: "success" },
+        { node: "commit", outcome: "success" },
       ]);
       const tree = (await gitApp(join(project.ctx.dir, "repo.git"), ["ls-tree", "-r", "--name-only", `factory/${id}`])).trim().split("\n").sort();
       expect(tree).toEqual([".gitignore", ...files]);
@@ -135,7 +135,7 @@ describe("G2: the same recipe shape on a TypeScript and a Rust project, with dif
     expect(project.executor.job(id).state).toBe("failed");
     expect(runs).toEqual([
       { node: "write", outcome: "done" },
-      { node: "check", outcome: "failed" },
+      { node: "check", outcome: "failure" },
     ]);
     await engine.shutdown();
   }, 900_000);
@@ -145,8 +145,8 @@ describe("G2: the same recipe shape on a TypeScript and a Rust project, with dif
     expect(project.executor.job(id).state).toBe("failed");
     expect(runs).toEqual([
       { node: "write", outcome: "done" },
-      { node: "check", outcome: "passed" },
-      { node: "test", outcome: "failed" },
+      { node: "check", outcome: "success" },
+      { node: "test", outcome: "failure" },
     ]);
     await engine.shutdown();
   }, 900_000);

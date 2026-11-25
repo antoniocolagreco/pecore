@@ -9,8 +9,10 @@ import { createZstdDecompress } from "node:zlib";
 import { Unpack } from "tar";
 import { appName, ImportProjectBody, projectIdCandidate } from "@pecore/schemas";
 import type { Accounts, ImportProjectPreview, ImportProjectResult, Project } from "@pecore/schemas";
-import { loadProject } from "../definitions/load";
+import { loadProject, nodeSidecars } from "../definitions/load";
 import { importCatalog, saveLegacyJobDefinitions } from "../definitions/catalog";
+import { outcomeRenames, renameNodeOutcomes, renameOutcomeMentions, renameRecipeOutcomes } from "../definitions/outcomes";
+import type { OutcomeLookup } from "../definitions/outcomes";
 import { homePaths } from "../home/layout";
 import { forgeAccountOf, repoHost, writeCreation } from "../projects/create";
 import { ProjectDb } from "../store/project-db";
@@ -154,6 +156,34 @@ async function loadImport(dir: string): Promise<LoadedProject> {
   return { ...loaded, project: loaded.project };
 }
 
+async function matchCatalogOutcomes(loaded: LoadedProject, catalog: Catalog): Promise<OutcomeLookup> {
+  const byNode: Map<string, ReadonlyMap<string, string>> = new Map();
+  for (const [name, node] of loaded.nodes) {
+    const stored = catalog.node(name);
+    if (!stored || stored.kind !== node.kind) continue;
+    const renames: Map<string, string> = outcomeRenames(name, node.outcomes, node.kind === "human" ? node.interface : null);
+    if (!renames.size || stored.outcomes.length !== node.outcomes.length ||
+      !node.outcomes.every((outcome, index) => stored.outcomes[index] === (renames.get(outcome) ?? outcome))) continue;
+    byNode.set(name, renames);
+    renameNodeOutcomes(node, renames);
+  }
+  const lookup: OutcomeLookup = (node, outcome) => byNode.get(node)?.get(outcome) ?? outcome;
+  if (!byNode.size) return lookup;
+  const sidecars: Record<string, string> = {};
+  for (const node of loaded.nodes.values()) {
+    for (const [, file] of nodeSidecars(node)) {
+      sidecars[file] ??= await readFile(join(loaded.nodeDir, file), "utf8");
+    }
+  }
+  for (const [name, renames] of byNode) {
+    const node = loaded.nodes.get(name)!;
+    if (node.kind === "agent") sidecars[node.prompt] = renameOutcomeMentions(sidecars[node.prompt]!, renames);
+  }
+  loaded.sidecars = sidecars;
+  for (const recipe of loaded.recipes.values()) renameRecipeOutcomes(recipe, lookup);
+  return lookup;
+}
+
 type RequiredAccount = "forge" | "service" | "atlassian";
 
 function requiredAccounts(loaded: LoadedProject): Map<string, RequiredAccount> {
@@ -263,8 +293,9 @@ export async function beginImport(home: string, input: ImportProjectBody, option
     await rm(join(original, "project.json"));
     await rm(join(original, "manifest.json"));
     for (const name of ["knowledge", "work"]) await mkdir(join(original, name), { recursive: true, mode: 0o700 });
+    const archivedOutcomes: OutcomeLookup = await matchCatalogOutcomes(loaded, options.catalog);
     const dbPath: string = join(original, "pecore.db");
-    if (manifest.history) migrateHistory(dbPath, manifest.logs);
+    if (manifest.history) migrateHistory(dbPath, manifest.logs, archivedOutcomes);
     const db: ProjectDb = new ProjectDb(dbPath);
     try {
       if (manifest.history) {

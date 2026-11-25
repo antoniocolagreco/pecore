@@ -18,13 +18,13 @@ it("restarts a pending CI wait and runs a correction on the same pull request", 
     const { ctx } = engine.project("shop");
     const recipe: RecipeInput = {
       name: "with-ci", description: "Publish and wait for tests", start: "write",
-      ci: { after: "pr", on: "opened", checks: ["tests"], intervalSec: 1, timeoutSec: 30, maxCorrections: 1 },
+      ci: { after: "pr", on: "success", checks: ["tests"], intervalSec: 1, timeoutSec: 30, maxCorrections: 1 },
       nodes: {
         write: { use: "write-spec" }, fix: { use: "fix-tests", reads: ["pr"] }, commit: { use: "git-commit" }, push: { use: "git-push" }, pr: { use: "github-pr", reads: ["write"] },
       },
       edges: [
-        { from: "write", on: "done", to: "commit" }, { from: "commit", on: "done", to: "push" },
-        { from: "push", on: "pushed", to: "pr" }, { from: "pr", on: "ci_failed", to: "fix" }, { from: "fix", on: "done", to: "commit" },
+        { from: "write", on: "done", to: "commit" }, { from: "commit", on: "success", to: "push" },
+        { from: "push", on: "success", to: "pr" }, { from: "pr", on: "ci_failed", to: "fix" }, { from: "fix", on: "done", to: "commit" },
       ],
       successOutcomes: ["pr:ci_passed"],
     };

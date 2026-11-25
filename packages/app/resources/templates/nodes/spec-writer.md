@@ -20,5 +20,5 @@ Turn the ticket and relevant code into a spec that can be implemented and tested
 
 ## Outcomes
 
-- Use `accepted` when the ticket is clear, consistent, and feasible. Put the completed spec in `output`.
+- Use `success` when the ticket is clear, consistent, and feasible. Put the completed spec in `output`.
 - Use `rejected` when the ticket is unclear, contradictory, or infeasible. Explain why in `output`.

@@ -398,8 +398,8 @@ const nodeKinds: { value: Node["kind"]; label: string }[] = [
 const interfaceOptions: { value: HumanInterface; label: string }[] = HumanInterface.options.map((value) => ({ value, label: humanInterfaces[value].label }));
 const humanFields: Record<HumanInterface, Record<string, unknown>> = {
   decision: { interface: "decision", outcomes: ["yes", "no"], outputs: undefined },
-  "code-review": { interface: "code-review", outcomes: ["approve", "changes", "reject"], outputs: { changes: "text" } },
-  "report-review": { interface: "report-review", outcomes: ["approve", "changes", "reject"], outputs: { changes: "text" } },
+  "code-review": { interface: "code-review", outcomes: ["approved", "changes_requested", "rejected"], outputs: { changes_requested: "text" } },
+  "report-review": { interface: "report-review", outcomes: ["approved", "changes_requested", "rejected"], outputs: { changes_requested: "text" } },
 };
 const typeLabels: Record<ArtifactType, string> = {
   text: "Text", diff: "Diff", document: "Document", spec: "Spec", findings: "Findings", reference: "Reference",
@@ -427,19 +427,19 @@ const ruleHints: Record<string, string> = {
   file: "Path relative to the workdir, for example .pecore/spec.json",
 };
 const initialNodeFields: Record<Node["kind"], Record<string, unknown>> = {
-  agent: { outcomes: ["done"], changesFiles: false, timeoutSec: 120, agent: { tier: "standard" } },
+  agent: { outcomes: ["success"], changesFiles: false, timeoutSec: 120, agent: { tier: "standard" } },
   command: {
-    outcomes: ["passed", "failed"], failOutcomes: ["failed"], changesFiles: false, timeoutSec: 120,
-    outcomeRules: [{ exitCode: 0, outcome: "passed" }, { exitCode: "other", outcome: "failed" }],
+    outcomes: ["success", "failure"], failOutcomes: ["failure"], changesFiles: false, timeoutSec: 120,
+    outcomeRules: [{ exitCode: 0, outcome: "success" }, { exitCode: "other", outcome: "failure" }],
   },
   human: humanFields.decision,
   repository: {
-    script: "", outcomes: ["done", "failed"], failOutcomes: ["failed"],
-    outcomeRules: [{ exitCode: 0, outcome: "done" }, { exitCode: "other", outcome: "failed" }],
+    script: "", outcomes: ["success", "failure"], failOutcomes: ["failure"],
+    outcomeRules: [{ exitCode: 0, outcome: "success" }, { exitCode: "other", outcome: "failure" }],
   },
   tracker: {
-    provider: "github", script: "", outcomes: ["done", "failed"], failOutcomes: ["failed"],
-    outcomeRules: [{ exitCode: 0, outcome: "done" }, { exitCode: "other", outcome: "failed" }],
+    provider: "github", script: "", outcomes: ["success", "failure"], failOutcomes: ["failure"],
+    outcomeRules: [{ exitCode: 0, outcome: "success" }, { exitCode: "other", outcome: "failure" }],
   },
 };
 
@@ -697,12 +697,12 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
           {kind && <>
             {field("outcomes", iface === "decision" ? "Choices (comma separated)" : "Outcomes (comma separated)", <TextField label="Outcomes" value={Array.isArray(draft.outcomes) ? draft.outcomes.join(",") : ""} onValueChange={(value) => update("outcomes", value ? value.split(",").map((outcome) => outcome.trim()) : [])} />,
               iface === "decision" ? "Each choice is a button in Notifications and an outcome you can connect in the recipe. For example, yes can continue to the next node and no can go to End."
-                : human ? "Reviews use approve, changes and reject. Connect each result to the next node or End."
-                  : "Give each possible result a name so the recipe can decide where to go next. The command's exit rules or the agent's output must return one of these names.")}
+                : human ? "Reviews use approved, changes_requested and rejected. Connect each result to the next node or End."
+                  : "Use success and failure for ordinary results. Add a named outcome for a separate path. The command or agent must return one of these names.")}
             <div>
               <div className={s.fieldHeading}><span>{human ? "Notes" : "Outputs"}</span>{help(human ? "Notes" : "Outputs", human
                 ? "Choose the answers that come with a note. The note is text that the nodes reading this one receive."
-                : <>A job is a chain of nodes. Each node does its work and ends with one of its outcomes, for example accepted or rejected. With each outcome it can hand a result to the nodes that come later, which use it to do their own work.<br /><br />For each outcome, choose what this node hands on, or Nothing. For example, the Spec Writer hands on a Spec when it accepts a ticket, so the Builder knows what to build, and a Text with the reason when it rejects it, so you know why.<br /><br />The later nodes receive it only if, in the recipe, they read this node (Reads from).{typesHelp}</>)}</div>
+                : <>A job is a chain of nodes. Each node does its work and ends with one of its outcomes, for example success or rejected. With each outcome it can hand a result to the nodes that come later, which use it to do their own work.<br /><br />For each outcome, choose what this node hands on, or Nothing. For example, the Spec Writer hands on a Spec when it accepts a ticket, so the Builder knows what to build, and a Text with the reason when it rejects it, so you know why.<br /><br />The later nodes receive it only if, in the recipe, they read this node (Reads from).{typesHelp}</>)}</div>
               <OutcomeOutputs kind={mcp ? "mcp" : kind} outcomes={outcomes} outputs={object(draft.outputs)} rules={object(draft.outputRules)} disabled={!file.editable}
                 onChange={(outputs, outputRules) => updateFields({
                   outputs: Object.keys(outputs).length ? outputs : undefined,
