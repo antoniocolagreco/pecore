@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { assistantAgentId } from "./agent";
 import { DefinitionName, JsonSchemaObject, Name, Outcome, TierName } from "./common";
-import { AgentContext } from "./node";
+import { AgentSession, legacyAgentSession } from "./node";
 
 const NodeId = z.string().regex(/^[a-z][a-z0-9-]*$/);
 
@@ -21,14 +21,20 @@ const RecipeStep = z
     requires: z.array(NodeId).default([]),
     optional: z.boolean().default(false),
     agentId: Name.refine((id) => id !== assistantAgentId, "Choose an agent other than Assistant").optional(),
-    agentContext: AgentContext.optional(),
+    agentSession: AgentSession.optional(),
     skipWhenUnchanged: z.boolean().default(false),
   })
   .strict();
-export const RecipeNode = z.preprocess((input: z.input<typeof RecipeStep> & { session?: unknown }) => {
-  if (!input || typeof input !== "object" || !Object.hasOwn(input, "session")) return input;
+export const RecipeNode = z.preprocess((input: z.input<typeof RecipeStep> & { session?: unknown; agentContext?: unknown }) => {
+  if (!input || typeof input !== "object") return input;
+  const session: AgentSession | undefined = legacyAgentSession(input.agentContext);
+  if (!Object.hasOwn(input, "session") && session === undefined) return input;
   const current = { ...input };
   delete current.session;
+  if (session !== undefined) {
+    current.agentSession ??= session;
+    delete current.agentContext;
+  }
   return current;
 }, RecipeStep);
 export type RecipeNode = z.infer<typeof RecipeNode>;

@@ -6,6 +6,7 @@ import type { Artifact } from "@pecore/schemas";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { tempDir } from "../../test/tmp";
+import { jobDefinitions } from "../definitions/snapshot";
 import { ChatsDb, assistantChat, notificationsKept } from "./chats-db";
 import { Catalog } from "./catalog";
 import { Configuration } from "./configuration";
@@ -22,11 +23,11 @@ describe("pecore.db", () => {
   it("applies the migrations once, in WAL mode", async () => {
     const path = join(await tempDir(), "pecore.db");
     const db = new ProjectDb(path);
-    expect(db.version()).toBe(21);
+    expect(db.version()).toBe(24);
     expect(db.db.pragma("journal_mode", { simple: true })).toBe("wal");
     db.close();
     const again = new ProjectDb(path);
-    expect(again.version()).toBe(21);
+    expect(again.version()).toBe(24);
     const tables = again.db.prepare<[], string>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'catalog_%' ORDER BY name").pluck().all();
     expect(tables).toEqual([
       "artifacts", "attempt_logs", "attempts", "events", "human_queue", "jobs", "node_runs",
@@ -36,7 +37,7 @@ describe("pecore.db", () => {
     again.close();
   });
 
-  it("migrates old agent templates, recipe steps and attempts to the new context fields", async () => {
+  it("migrates old agent templates, recipe steps and attempts to the agent session fields", async () => {
     const path: string = join(await tempDir(), "pecore.db");
     const old: Database.Database = new Database(path);
     for (const name of ["001-init.sql", "002-orders.sql", "003-drop-usage-daily.sql", "004-drop-confirmed-hashes.sql", "005-artifacts.sql",
@@ -60,17 +61,80 @@ describe("pecore.db", () => {
     try {
       const node: Node = db.catalog.node("builder")!;
       const recipe: Recipe = db.catalog.recipe("build")!;
-      expect(node).toMatchObject({ kind: "agent", agentContext: "shared" });
+      expect(node).toMatchObject({ kind: "agent", agentSession: "job" });
       expect(node).not.toHaveProperty("resume");
       expect(recipe.nodes.build).not.toHaveProperty("session");
-      expect(recipe.nodes.build?.agentContext).toBeUndefined();
-      expect(db.db.prepare("SELECT session_id, agent_id, agent_context FROM attempts WHERE id = 'previous'").get())
-        .toEqual({ session_id: "S1", agent_id: null, agent_context: null });
+      expect(recipe.nodes.build?.agentSession).toBeUndefined();
+      expect(db.db.prepare("SELECT session_id, agent_id, agent_session FROM attempts WHERE id = 'previous'").get())
+        .toEqual({ session_id: "S1", agent_id: null, agent_session: null });
       expect(db.db.prepare("SELECT name FROM pragma_table_info('attempts') WHERE name = 'session_group'").get()).toBeUndefined();
-      db.catalog.saveNode(Node.parse({ ...node, agentContext: "isolated" }));
-      db.catalog.saveRecipe(Recipe.parse({ ...recipe, nodes: { build: { use: "builder", agentId: "reviewer", agentContext: "shared" } } }));
-      expect(db.catalog.node("builder")).toHaveProperty("agentContext", "isolated");
-      expect(db.catalog.recipe("build")?.nodes.build).toMatchObject({ agentId: "reviewer", agentContext: "shared" });
+      db.catalog.saveNode(Node.parse({ ...node, agentSession: "new" }));
+      db.catalog.saveRecipe(Recipe.parse({ ...recipe, nodes: { build: { use: "builder", agentId: "reviewer", agentSession: "job" } } }));
+      expect(db.catalog.node("builder")).toHaveProperty("agentSession", "new");
+      expect(db.catalog.recipe("build")?.nodes.build).toMatchObject({ agentId: "reviewer", agentSession: "job" });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("migrates Shared and Isolated catalog entries and attempts while keeping saved definitions readable", async () => {
+    const path: string = join(await tempDir(), "pecore.db");
+    const old: Database.Database = new Database(path);
+    for (const name of ["001-init.sql", "002-orders.sql", "003-drop-usage-daily.sql", "004-drop-confirmed-hashes.sql", "005-artifacts.sql",
+      "006-attempt-logs.sql", "007-project-definition.sql", "shared-012-catalog.sql", "shared-019-drop-recipe-node-run-limit.sql",
+      "shared-020-agent-context.sql", "021-agent-sessions.sql"]) {
+      old.exec(await readFile(new URL(`./migrations/${name}`, import.meta.url), "utf8"));
+    }
+    old.exec(`INSERT INTO schema_version VALUES (21);
+      INSERT INTO catalog_nodes (name, description, kind, shipped, timeout_sec, changes_files, retry, prompt, tier, agent_context)
+        VALUES ('builder', 'Build', 'agent', 0, 60, 1, 0, 'builder.md', 'standard', 'shared'),
+               ('reviewer', 'Review', 'agent', 0, 60, 0, 0, 'reviewer.md', 'standard', 'isolated');
+      INSERT INTO catalog_node_lists VALUES ('builder', 'outcomes', 0, 'done'), ('reviewer', 'outcomes', 0, 'done');
+      INSERT INTO catalog_recipes (name, description, shipped, start, has_start_ports, has_ends, has_layout)
+        VALUES ('build', 'Build', 0, 'build', 0, 0, 0);
+      INSERT INTO catalog_recipe_lists VALUES ('build', 'successOutcomes', 0, 'build:done');
+      INSERT INTO catalog_recipe_steps (recipe, step, position, node, optional, skip_when_unchanged, has_params, has_agent, has_provider_not, agent_context)
+        VALUES ('build', 'build', 0, 'builder', 0, 0, 0, 0, 0, 'isolated'),
+               ('build', 'review', 1, 'reviewer', 0, 0, 0, 0, 0, 'shared'),
+               ('build', 'inherit', 2, 'builder', 0, 0, 0, 0, 0, NULL);
+      INSERT INTO attempts (id, node_run_id, profile, os_user, session_id, started_at, agent_id, agent_context)
+        VALUES ('a1', 'build-run', 'profile', 'ac', 'S1', 0, 'agent-default', 'shared'),
+               ('a2', 'review-run', 'profile', 'ac', 'S2', 0, 'agent-default', 'isolated');`);
+    const hash: string = "a".repeat(64);
+    const snapshot = {
+      recipeHash: hash,
+      nodes: { reviewer: {
+        definition: {
+          name: "reviewer", description: "Review", kind: "agent", prompt: "reviewer.md", changesFiles: false,
+          timeoutSec: 60, agent: { tier: "standard" }, outcomes: ["done"], agentContext: "isolated",
+        },
+        sidecars: { "reviewer.md": "Review" },
+        hash,
+      } },
+    };
+    old.prepare("INSERT INTO events VALUES ('e1', ?, 'job.definitions_saved', ?, 0)").run(job, JSON.stringify(snapshot));
+    old.prepare("INSERT INTO events VALUES ('e2', ?, 'attempt.started', ?, 0)").run(job, JSON.stringify({
+      attemptId: "a1", nodeRunId: "build-run", profile: "profile", connector: "fake", harnessVersion: null, connectorVersion: null, account: "fake",
+      osUser: "ac", agentId: "agent-default", agentContext: "shared",
+    }));
+    old.close();
+
+    const db: ProjectDb = new ProjectDb(path);
+    try {
+      expect(db.catalog.node("builder")).toHaveProperty("agentSession", "job");
+      expect(db.catalog.node("reviewer")).toHaveProperty("agentSession", "new");
+      const recipe: Recipe = db.catalog.recipe("build")!;
+      expect(recipe.nodes.build?.agentSession).toBe("new");
+      expect(recipe.nodes.review?.agentSession).toBe("job");
+      expect(recipe.nodes.inherit?.agentSession).toBeUndefined();
+      expect(db.db.prepare("SELECT id, session_id, agent_session FROM attempts ORDER BY id").all()).toEqual([
+        { id: "a1", session_id: "S1", agent_session: "job" },
+        { id: "a2", session_id: "S2", agent_session: "new" },
+      ]);
+      const event = db.events(job).find(({ type }) => type === "attempt.started");
+      expect(event?.payload).toMatchObject({ agentId: "agent-default", agentSession: "job" });
+      expect(event?.payload).not.toHaveProperty("agentContext");
+      expect(jobDefinitions(db, job)?.nodes.reviewer).toMatchObject({ definition: { agentSession: "new" }, hash });
     } finally {
       db.close();
     }
@@ -135,7 +199,7 @@ describe("pecore.db", () => {
     db.append([created]);
     for (const id of ["A1", "A2"]) {
       db.append([
-        { jobId: job, type: "attempt.started", payload: { attemptId: id, nodeRunId: `${job}/code#0`, profile: "opus", connector: "claude-code", harnessVersion: "2.1.327", connectorVersion: "0.108.0", account: "claude", osUser: "ac", agentId: "agent-default", agentContext: "shared" } },
+        { jobId: job, type: "attempt.started", payload: { attemptId: id, nodeRunId: `${job}/code#0`, profile: "opus", connector: "claude-code", harnessVersion: "2.1.327", connectorVersion: "0.108.0", account: "claude", osUser: "ac", agentId: "agent-default", agentSession: "job" } },
       ], 10);
     }
     db.logs.write("A1", { dir: "out", msg: { id: 1 }, at: 13 });
@@ -218,7 +282,7 @@ describe("chats.db", () => {
 
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.version()).toBe(22);
+    expect(db.version()).toBe(23);
     for (let i = 0; i < notificationsKept + 3; i++) db.addNotification({ kind: "job", title: `n${i}`, body: "" }, 1000 + i);
     const kept = db.notifications();
     expect(kept).toHaveLength(notificationsKept);
@@ -240,7 +304,7 @@ describe("chats.db", () => {
       UPDATE schema_version SET version = 5`);
     old.close();
     const db = new ChatsDb(file);
-    expect(db.version()).toBe(22);
+    expect(db.version()).toBe(23);
     expect(db.messages(assistantChat)).toEqual([]);
     db.close();
   });

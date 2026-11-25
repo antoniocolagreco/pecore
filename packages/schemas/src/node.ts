@@ -93,8 +93,14 @@ export const CommandNode = z
   })
   .strict();
 
-export const AgentContext = z.enum(["shared", "isolated"]);
-export type AgentContext = z.infer<typeof AgentContext>;
+export const AgentSession = z.enum(["job", "node", "new"]);
+export type AgentSession = z.infer<typeof AgentSession>;
+
+export function legacyAgentSession(value: unknown): AgentSession | undefined {
+  if (value === "shared") return "job";
+  if (value === "isolated") return "new";
+  return undefined;
+}
 
 export const AgentNode = z
   .object({
@@ -112,7 +118,7 @@ export const AgentNode = z
       })
       .strict(),
     knowledge: z.array(z.string()).default([]),
-    agentContext: AgentContext.default("shared"),
+    agentSession: AgentSession.default("job"),
   })
   .strict();
 
@@ -215,10 +221,16 @@ const NodeShape = z.discriminatedUnion("kind", [CommandNode, AgentNode, HumanNod
 const NodeDefinition = NodeShape.superRefine((node, ctx) => {
   for (const issue of checkNode(node)) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
 });
-export const Node = z.preprocess((input: z.input<typeof NodeDefinition> & { resume?: unknown }) => {
-  if (!input || typeof input !== "object" || input.kind !== "agent" || !Object.hasOwn(input, "resume")) return input;
+export const Node = z.preprocess((input: z.input<typeof NodeDefinition> & { resume?: unknown; agentContext?: unknown }) => {
+  if (!input || typeof input !== "object" || input.kind !== "agent") return input;
+  const session: AgentSession | undefined = legacyAgentSession(input.agentContext);
+  if (!Object.hasOwn(input, "resume") && session === undefined) return input;
   const current = { ...input };
   delete current.resume;
+  if (session !== undefined) {
+    current.agentSession ??= session;
+    delete current.agentContext;
+  }
   return current;
 }, NodeDefinition);
 export type Node = z.infer<typeof Node>;

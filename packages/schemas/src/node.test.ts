@@ -51,16 +51,22 @@ describe("node schema", () => {
 
   it("accepts an agent node and fills defaults", () => {
     const n = Node.parse(builder);
-    expect(n.kind === "agent" && n.agentContext).toBe("shared");
+    expect(n.kind === "agent" && n.agentSession).toBe("job");
     const empty: Node = Node.parse({ ...builder, outputs: undefined });
     expect(empty.kind === "agent" && empty.outputs).toEqual({});
   });
 
-  it("validates agent context and drops the retired resume field from old definitions", () => {
+  it("validates agent session values and reads older agent definitions", () => {
     const node: Node = Node.parse({ ...builder, resume: true, agentContext: "isolated" });
-    expect(node).toMatchObject({ agentContext: "isolated" });
+    expect(node).toMatchObject({ agentSession: "new" });
     expect(node).not.toHaveProperty("resume");
-    expect(Node.safeParse({ ...builder, agentContext: "private" }).success).toBe(false);
+    expect(node).not.toHaveProperty("agentContext");
+    expect(Node.parse({ ...builder, agentContext: "shared" })).toMatchObject({ agentSession: "job" });
+    for (const agentSession of ["job", "node", "new"]) {
+      expect(Node.parse({ ...builder, agentSession })).toMatchObject({ agentSession });
+    }
+    expect(Node.safeParse({ ...builder, agentSession: "shared" }).success).toBe(false);
+    expect(Node.safeParse({ ...githubPr, agentSession: "node" }).success).toBe(false);
     expect(Node.safeParse({ ...githubPr, agentContext: "isolated" }).success).toBe(false);
   });
 

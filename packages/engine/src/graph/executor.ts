@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { basename, join } from "node:path";
 import { monotonicFactory } from "ulid";
 import type { RawLine, Usage } from "@pecore/agents";
-import type { AgentContext, AgentNode, Artifact, ArtifactType, FailureReason, ForgeAccount, JobDefinitions, JobState, Node, NodeAgent, Project, Settings, WaitingReason } from "@pecore/schemas";
+import type { AgentSession, AgentNode, Artifact, ArtifactType, FailureReason, ForgeAccount, JobDefinitions, JobState, Node, NodeAgent, Project, Settings, WaitingReason } from "@pecore/schemas";
 import { artifactTypes, defaultAgentId, DocumentArtifact, isHumanNode, Recipe, ReferenceArtifact, SpecArtifact } from "@pecore/schemas";
 import { spawnFor } from "../accounts/agents";
 import type { AgentServices } from "../accounts/agents";
@@ -772,7 +772,7 @@ export class JobExecutor {
     let profile: AgentProfile | null = null;
     let pools: string[] = ["jobs"];
     const agentId: string = recipeNode.agentId ?? defaultAgentId;
-    const agentContext: AgentContext | undefined = node.kind === "agent" ? recipeNode.agentContext ?? node.agentContext : undefined;
+    const agentSession: AgentSession | undefined = node.kind === "agent" ? recipeNode.agentSession ?? node.agentSession : undefined;
     if (node.kind === "agent") {
       const agents = this.ctx.agents;
       const card: NodeAgent | undefined = this.ctx.agentCard(agentId);
@@ -830,7 +830,7 @@ export class JobExecutor {
           {
             jobId: job.id,
             type: "attempt.started",
-            payload: { attemptId, nodeRunId: run.id, profile: profile?.profile ?? null, connector: profile ? (this.ctx.agents!.account(profile.account)?.connector ?? null) : null, harnessVersion: null, connectorVersion: null, account: profile?.account ?? null, osUser: this.ctx.user, ...(agentContext && { agentId, agentContext }) },
+            payload: { attemptId, nodeRunId: run.id, profile: profile?.profile ?? null, connector: profile ? (this.ctx.agents!.account(profile.account)?.connector ?? null) : null, harnessVersion: null, connectorVersion: null, account: profile?.account ?? null, osUser: this.ctx.user, ...(agentSession && { agentId, agentSession }) },
           },
         ]);
         const context = this.placeholderContext(this.job(job.id));
@@ -869,7 +869,7 @@ export class JobExecutor {
                 onStart,
                 effect: effectRecorder(this.ctx.db, job.id, run.id, run.node),
               })
-            : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, { id: agentId, context: agentContext! }, { wd, context, inputs: agentInputs, onStart, env: servicesEnv, continuation: resumed, sidecars, knowledge: definitions?.knowledgeByStep });
+            : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, { id: agentId, session: agentSession! }, { wd, context, inputs: agentInputs, onStart, env: servicesEnv, continuation: resumed, sidecars, knowledge: definitions?.knowledgeByStep });
         this.running.delete(job.id);
         if (result.log) this.ctx.db.logs.write(attemptId, { dir: "cmd", text: result.log, at: Date.now() });
         if (this.closing) return false;
@@ -1006,16 +1006,17 @@ export class JobExecutor {
     this.timers.set(job.id, setTimeout(() => void this.retryWait(job.id, nodeRunId, "auth"), delay));
   }
 
-  private resumeSession(run: NodeRunRow, agentId: string, profile: string, connector: string): string | null {
-    const attempts = this.ctx.db.db.prepare<[string, string, string], {
-      profile: string; connector: string; os_user: string; agent_context: AgentContext; session_id: string; state: string;
-    }>(`SELECT a.profile, a.connector, a.os_user, a.agent_context, a.session_id, n.state
+  private resumeSession(run: NodeRunRow, agentId: string, session: Exclude<AgentSession, "new">, profile: string, connector: string): string | null {
+    const attempts = this.ctx.db.db.prepare<[string, string], {
+      profile: string; connector: string; os_user: string; agent_session: AgentSession | null; session_id: string; state: string; node: string; node_run_id: string;
+    }>(`SELECT a.profile, a.connector, a.os_user, a.agent_session, a.session_id, n.state, n.node, a.node_run_id
         FROM attempts a JOIN node_runs n ON a.node_run_id = n.id
-        WHERE n.job_id = ? AND a.agent_id = ? AND n.id <> ? AND a.session_id IS NOT NULL
-        ORDER BY a.id DESC`).iterate(run.job_id, agentId, run.id);
+        WHERE n.job_id = ? AND a.agent_id = ? AND a.session_id IS NOT NULL
+        ORDER BY a.id DESC`).iterate(run.job_id, agentId);
     for (const attempt of attempts) {
       if (attempt.profile !== profile || attempt.connector !== connector || attempt.os_user !== this.ctx.user) return null;
-      if (attempt.agent_context === "shared" && attempt.state === "completed") return attempt.session_id;
+      if (attempt.node_run_id === run.id || attempt.agent_session !== session || attempt.state !== "completed") continue;
+      if (session === "job" || attempt.node === run.node) return attempt.session_id;
     }
     return null;
   }
@@ -1070,7 +1071,7 @@ export class JobExecutor {
     recipeNode: Recipe["nodes"][string],
     profile: AgentProfile,
     attemptId: string,
-    agent: { id: string; context: AgentContext },
+    agent: { id: string; session: AgentSession },
     x: { wd: string; context: CommandRun["context"]; inputs: AgentInput[]; onStart: (pgid: number, user: string) => void; env: Record<string, string>; continuation: (QuestionSubject & AgentContinuation) | null; sidecars: CommandRun["sidecars"]; knowledge: JobDefinitions["knowledgeByStep"] },
   ): Promise<Attempt> {
     const agents = this.ctx.agents!;
@@ -1090,8 +1091,8 @@ export class JobExecutor {
       return { kind: "failed", reason: "AGENT_UNAVAILABLE", retry: false, log: `Log in to ${account.connector} with account ${account.id}.` };
     }
     const spawn = spawnFor(this.ctx.user, { ...x.env, PECORE_JOB_ID: job.id });
-    const resumeId: string | null = agent.context === "shared" && !x.continuation
-      ? this.resumeSession(run, agent.id, profile.profile, account.connector) : null;
+    const resumeId: string | null = agent.session !== "new" && !x.continuation
+      ? this.resumeSession(run, agent.id, agent.session, profile.profile, account.connector) : null;
     const attachments: string[] = await this.copyAttachments(job.id, x.wd);
     const r = await runAgentNode({
       node,

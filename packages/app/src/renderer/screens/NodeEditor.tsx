@@ -1,7 +1,7 @@
 import { cloneElement, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { ReactElement, ReactNode, Ref } from "react";
 import { Link, useBlocker, useNavigate, useParams } from "react-router";
-import { AgentContext, ApiError, ArtifactType, HumanInterface, humanInterfaces, isNodeKindTag, Name } from "@pecore/schemas";
+import { AgentSession, ApiError, ArtifactType, HumanInterface, humanInterfaces, isNodeKindTag, Name } from "@pecore/schemas";
 import type { DefinitionFile, Node, RouteResult } from "@pecore/schemas";
 import { basicSetup, EditorView, minimalSetup } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
@@ -9,7 +9,7 @@ import { lineNumbers } from "@codemirror/view";
 import { setDiagnostics } from "@codemirror/lint";
 import type { Diagnostic } from "@codemirror/lint";
 import { highlight } from "../components/CodeSnapshot";
-import { AgentContextField } from "../components/AgentFields";
+import { AgentSessionField } from "../components/AgentFields";
 import { templateTitle } from "../components/templateTitle";
 import { markdown } from "@codemirror/lang-markdown";
 import { StreamLanguage } from "@codemirror/language";
@@ -551,7 +551,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   const inlineKeys: string[] = [
     "description", "tags", "timeoutSec",
     ...(kind === "source" ? ["credentials", ...sourceCommands.map(({ key }) => key)] : ["outcomes", "outputs", "changesFiles"]),
-    ...(kind === "agent" ? ["prompt", "agentContext", "knowledge"] : []),
+    ...(kind === "agent" ? ["prompt", "agentSession", "knowledge"] : []),
     ...(kind === "command" ? ["command", "script", "runsAs", "cleanCheckout", "inputs", "optionalInputs", "outputRules"] : []),
     ...(human ? ["interface"] : []),
   ];
@@ -615,14 +615,14 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
               }} />
             {fieldErrors("interface")}
           </>}
-          {field("description", "Description", <TextArea label="Description" value={string(draft.description)} onValueChange={(value) => update("description", value)} />,
-            iface === "decision" ? "Write the question the user will see in Notifications. The recipe can supply a different question if the node defines a question parameter."
-              : "Say what this node does so people can identify it in Templates.")}
+          <div>
+            <TextArea label="Description" value={string(draft.description)} onValueChange={(value) => update("description", value)} />
+            {fieldErrors("description")}
+          </div>
           {field("tags", "Tags (comma separated)", <TextField label="Tags" value={(file.dirty ? tags : descriptiveTags).join(",")}
             onValueChange={(value) => update("tags", value === "" ? undefined : value.split(","))} />,
           "Add terms people can search for, such as lint or deployment. The kind is already searchable.")}
           <DefinitionIconField icons={icons.data} type="node" name={string(draft.name)} value={string(draft.icon)} disabled={!file.editable}
-            labelAction={help("Icon", "Choose the symbol used for this node in Templates and recipe diagrams.")}
             onChange={(value) => update("icon", value)} />
           {kind && !human && field("timeoutSec", "Timeout (seconds)", <NumberField label="Timeout" fullWidth min={1} value={typeof draft.timeoutSec === "number" ? draft.timeoutSec : null} onValueChange={(value) => update("timeoutSec", value ?? undefined)} />,
             "Set how long one attempt can run before PeCore stops it.")}
@@ -651,9 +651,9 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
             {!human && flag("changesFiles", "Can edit files", "Allow this node to edit the job's files. PeCore records those edits as a diff for the nodes that read it. If this is off, edits fail the step.")}
           </>}
           {kind === "agent" && <>
-            <AgentContextField value={AgentContext.safeParse(draft.agentContext).data ?? "shared"} disabled={!editable}
-              onChange={(value) => update("agentContext", value)} />
-            {fieldErrors("agentContext")}
+            <AgentSessionField value={AgentSession.safeParse(draft.agentSession).data ?? "job"} disabled={!editable}
+              onChange={(value) => update("agentSession", value)} />
+            {fieldErrors("agentSession")}
           </>}
           {kind === "command" && <>
             {!draft.script && <>{commandField("Command", draft.command, (command) => update("command", command))}{fieldErrors("command")}</>}

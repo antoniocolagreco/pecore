@@ -90,13 +90,13 @@ describe("recipe check", () => {
     expect(checkRecipe(recipe({ ...local, nodes: { ...local.nodes, lint: { use: "eslint" } } }), nodes, true)).toContainEqual({ path: "nodes.lint.use", message: "node eslint not found" });
   });
 
-  it("accepts card and context overrides only on agent steps", () => {
-    const valid: Recipe = recipe({ ...local, nodes: { ...local.nodes, code: { use: "builder", agentId: "reviewer", agentContext: "isolated" } } });
+  it("accepts card and session overrides only on agent steps", () => {
+    const valid: Recipe = recipe({ ...local, nodes: { ...local.nodes, code: { use: "builder", agentId: "reviewer", agentSession: "new" } } });
     expect(checkRecipe(valid, nodes, false)).toEqual([]);
-    const invalid: Recipe = recipe({ ...local, nodes: { ...local.nodes, lint: { use: "lint", agentId: "reviewer", agentContext: "isolated" } } });
+    const invalid: Recipe = recipe({ ...local, nodes: { ...local.nodes, lint: { use: "lint", agentId: "reviewer", agentSession: "new" } } });
     expect(checkRecipe(invalid, nodes, false)).toEqual([
       { path: "nodes.lint.agentId", message: "lint is not an agent node" },
-      { path: "nodes.lint.agentContext", message: "lint is not an agent node" },
+      { path: "nodes.lint.agentSession", message: "lint is not an agent node" },
     ]);
   });
 
@@ -174,11 +174,11 @@ describe("phase 1 gate: shipped templates", () => {
 
   it("ships independent sessions for reviewers and shared sessions for the other agents", async () => {
     const { nodes } = await loadTemplates(shippedTemplates);
-    const contexts: [string, string][] = [...nodes.values()].flatMap((node): [string, string][] =>
-      node.kind === "agent" ? [[node.name, node.agentContext]] : []);
-    expect(contexts.sort(([a], [b]) => a.localeCompare(b))).toEqual([
-      ["approver", "isolated"], ["builder", "shared"], ["code-reviewer", "isolated"],
-      ["resolve-rebase-conflicts", "shared"], ["spec-writer", "shared"], ["tests-writer", "shared"], ["write-pr", "shared"],
+    const sessions: [string, string][] = [...nodes.values()].flatMap((node): [string, string][] =>
+      node.kind === "agent" ? [[node.name, node.agentSession]] : []);
+    expect(sessions.sort(([a], [b]) => a.localeCompare(b))).toEqual([
+      ["approver", "new"], ["builder", "job"], ["code-reviewer", "new"],
+      ["resolve-rebase-conflicts", "job"], ["spec-writer", "job"], ["tests-writer", "job"], ["write-pr", "job"],
     ]);
   });
 });

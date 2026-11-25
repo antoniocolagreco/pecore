@@ -57,10 +57,15 @@ const issues = (value: unknown) => {
 describe("recipe schema", () => {
   it("validates agent step overrides and ignores old session groups", () => {
     const step: RecipeNode = RecipeNode.parse({ use: "builder", agentId: "reviewer", agentContext: "isolated", session: "previous" });
-    expect(step).toMatchObject({ agentId: "reviewer", agentContext: "isolated" });
+    expect(step).toMatchObject({ agentId: "reviewer", agentSession: "new" });
     expect(step).not.toHaveProperty("session");
-    expect(RecipeNode.parse({ use: "builder" })).not.toHaveProperty("agentContext");
-    expect(RecipeNode.safeParse({ use: "builder", agentContext: "private" }).success).toBe(false);
+    expect(step).not.toHaveProperty("agentContext");
+    expect(RecipeNode.parse({ use: "builder" })).not.toHaveProperty("agentSession");
+    expect(RecipeNode.parse({ use: "builder", agentContext: "shared" })).toMatchObject({ agentSession: "job" });
+    for (const agentSession of ["job", "node", "new"]) {
+      expect(RecipeNode.parse({ use: "builder", agentSession })).toMatchObject({ agentSession });
+    }
+    expect(RecipeNode.safeParse({ use: "builder", agentSession: "isolated" }).success).toBe(false);
     expect(RecipeNode.safeParse({ use: "builder", agentId: "assistant" }).success).toBe(false);
   });
 

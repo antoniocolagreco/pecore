@@ -14,10 +14,10 @@ vi.mock("./RecipeGraph", () => ({
 
 afterEach(cleanup);
 
-it("inherits, overrides and resets the template's context and saves the assigned agent", async () => {
+it("inherits, overrides and resets the template's session and saves the assigned agent", async () => {
   const template: DefinitionEntry = {
     path: "templates/nodes/reviewer.json", sha256: "node-v1", errors: [],
-    value: { name: "reviewer", kind: "agent", outcomes: ["done"], agentContext: "isolated" },
+    value: { name: "reviewer", kind: "agent", outcomes: ["done"], agentSession: "new" },
   };
   const recipe: RecipeInput = {
     name: "review", description: "Review the change", start: "review", ends: [{ from: "review", on: "done", result: "succeeded" }],
@@ -35,21 +35,22 @@ it("inherits, overrides and resets the template's context and saves the assigned
   render(<RouterProvider router={router} />);
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Inspect review" }));
-  const context: HTMLElement = await screen.findByRole("combobox", { name: "Agent context" });
-  expect(context.textContent).toContain("Isolated");
-  await user.click(context);
-  await user.click(await screen.findByRole("option", { name: "Shared" }));
-  expect(context.textContent).toContain("Shared");
+  const session: HTMLElement = await screen.findByRole("combobox", { name: "Agent session" });
+  expect(session.textContent).toContain("New");
+  expect(screen.getByRole("button", { name: "About Agent session" })).toBeTruthy();
+  await user.click(session);
+  await user.click(await screen.findByRole("option", { name: "Node" }));
+  expect(session.textContent).toContain("Node");
   await user.click(screen.getByRole("combobox", { name: "Agent card" }));
   await user.click(await screen.findByRole("option", { name: "Peer" }));
   const save: HTMLButtonElement = screen.getByRole("button", { name: "Save" });
   await waitFor(() => expect(save.disabled).toBe(false));
   await user.click(save);
   const override: RouteInput<"saveDefinition"> = api.call.mock.calls.findLast(([route]) => route === "saveDefinition")?.[1];
-  expect(JSON.parse(override.body.content).nodes.review).toMatchObject({ agentContext: "shared", agentId: "peer" });
+  expect(JSON.parse(override.body.content).nodes.review).toMatchObject({ agentSession: "node", agentId: "peer" });
 
-  await user.click(screen.getByRole("button", { name: "Use template context" }));
-  expect(context.textContent).toContain("Isolated");
+  await user.click(screen.getByRole("button", { name: "Use template session" }));
+  expect(session.textContent).toContain("New");
   await waitFor(() => expect(save.disabled).toBe(false));
   await user.click(save);
   const inherited: RouteInput<"saveDefinition"> = api.call.mock.calls.findLast(([route]) => route === "saveDefinition")?.[1];

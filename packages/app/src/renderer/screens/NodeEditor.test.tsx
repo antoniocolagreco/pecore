@@ -51,7 +51,7 @@ it("creates a Source node through the normal template editor", async () => {
   });
 });
 
-it("edits the template's agent context and keeps the changesFiles field", async () => {
+it("edits the template's agent session and keeps the changesFiles field", async () => {
   const node: Node = Node.parse({
     name: "builder", description: "Build the change", kind: "agent", prompt: "builder.md", outcomes: ["done"],
     changesFiles: false, timeoutSec: 60, agent: { tier: "standard" },
@@ -66,15 +66,24 @@ it("edits the template's agent context and keeps the changesFiles field", async 
   const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: ["/edit/node/templates/nodes/builder.json"] });
   render(<RouterProvider router={router} />);
   const user = userEvent.setup();
-  const context: HTMLElement = await screen.findByRole("combobox", { name: "Agent context" });
-  expect(context.textContent).toContain("Shared");
+  const session: HTMLElement = await screen.findByRole("combobox", { name: "Agent session" });
+  expect(session.textContent).toContain("Job");
+  expect(screen.queryByRole("button", { name: "About Description" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "About Icon" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "About Agent session" }));
+  const help: HTMLElement = await screen.findByRole("dialog", { name: "Agent session" });
+  expect(help.textContent).toContain("Job: the agent, while working on this node, uses a session shared across the whole job, in every node it works on. Different agents never share a session.");
+  expect(help.textContent).toContain("Node: the agent uses the same session each time it works on this node. The session is not shared outside it.");
+  expect(help.textContent).toContain("New: the agent starts a new session every time it works on this node.");
+  await user.keyboard("{Escape}");
   expect(screen.queryByRole("checkbox", { name: "Resume session" })).toBeNull();
-  await user.click(context);
-  await user.click(await screen.findByRole("option", { name: "Isolated" }));
+  await user.click(session);
+  expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["Job", "Node", "New"]);
+  await user.click(await screen.findByRole("option", { name: "Node" }));
   await user.click(screen.getByRole("checkbox", { name: "Can edit files" }));
   const save: HTMLButtonElement = screen.getByRole("button", { name: "Save" });
   await waitFor(() => expect(save.disabled).toBe(false));
   await user.click(save);
   const saved: RouteInput<"saveDefinition"> = api.call.mock.calls.findLast(([route]) => route === "saveDefinition")?.[1];
-  expect(JSON.parse(saved.body.content)).toMatchObject({ agentContext: "isolated", changesFiles: true });
+  expect(JSON.parse(saved.body.content)).toMatchObject({ agentSession: "node", changesFiles: true });
 });

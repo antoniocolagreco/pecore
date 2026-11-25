@@ -323,7 +323,7 @@ Fields by kind:
     *   `agent`: legacy tier, profile and provider fields remain readable in existing definitions. The template uses Default Agent. The recipe can assign a different card to a step.
     *   The agent returns `{ "outcome": "<outcome>", "output": <value> }` in its final message. The prompt includes the schema. The outcome determines whether `output` is required and which type it holds (5.8).
     *   `knowledge`: names of the project's knowledge files the node receives, for example `["architecture.md", "naming.md"]`. Node templates are shared, so the node editor offers the knowledge file names found in all projects; each project gives its own file with that name, and a project without it gives nothing. An older entry with a glob (for example `*.md`) still matches the file names.
-    *   `agentContext`: `shared` by default. `isolated` starts a separate session for each run. The shipped Code Reviewer and Approver use Isolated.
+    *   `agentSession` selects Job, Node or New (`job`, `node`, `new`). Job is the default. The shipped Code Reviewer and Approver use New.
 *   **`human`**
     *   `interface`: the component the person uses to respond, from a list the app can extend:
         *   `decision` asks a question in Notifications and shows what the node reads.
@@ -456,7 +456,7 @@ Recipe fields:
 | `nodes.<id>.reads` | the steps whose latest outputs this step receives (see above) |
 | `nodes.<id>.requires` | nodes whose latest outcome must be `passed` on the current content state (4.4) |
 | `nodes.<id>.optional` | runs only if the `spec` names it (4.2) |
-| `nodes.<id>.agentContext` | optional Shared or Isolated override for an agent step. When absent, the step uses its node template's setting |
+| `nodes.<id>.agentSession` | optional Job, Node or New override for an agent step. When absent, the step uses its node template's setting |
 | `nodes.<id>.skipWhenUnchanged` | after a base change, if the rebase was clean and the job's own changes are identical to before (same `git patch-id` of the job's diff), the node ends at once with its previous outcome instead of running, and that outcome is bound to the new content state (4.4): an approval of the same patch carries over. Used to avoid repeating reviews and human approvals; checks never use it |
 | `edges` | `from`, `on` (outcome), `to`, optional `maxRounds`. The editor can save `sourcePort` and `targetPort` (left, right, top or bottom) for each arrow |
 
@@ -745,8 +745,9 @@ Each built-in connector ships with recorded ACP traffic of these cases, used by 
 
 #### 5.5 Agent sessions and timeout
 
-*   Shared steps use one harness session per job and agent card. Each step continues from the latest completed Shared run for that card. A change to its account, model or effort starts a new session for the next node. A different connector or OS user also requires a fresh session.
-*   An Isolated step starts a fresh session for the run and leaves the Shared conversation untouched. An answer to an agent question continues the session of that same run. Attempts record the card, context mode and harness session ID. Historical attempts created before this change remain in the job history, and a job starts its Shared session on its next agent step.
+*   Job steps continue the latest completed Job session for that agent card within the job. Node steps continue the latest completed Node session for that card and recipe step within the job. New steps start a fresh session on each run. Different agent cards have separate sessions.
+*   A change to the account, model, effort, connector or OS user requires a new session on the next run. An answer to an agent question continues the session of that same run.
+*   Attempts record the card, session mode and harness session ID. Existing Shared settings and attempts become Job, and Isolated becomes New. The loader also reads the old values in saved job snapshots and archives.
 *   If the connector cannot resume it, a new session starts with the same prompt, and the attempt records `resumed: false`. The prompt always contains the node's inputs, so a new session has what it needs; only the conversation history is lost.
 *   The node's `timeoutSec` covers the whole attempt, correction messages included. `runners/agent.ts` owns it: `cancel()`, then `stop()` 5 seconds later.
 
@@ -1018,7 +1019,7 @@ Tables (`src/store/migrations/`):
 |---|---|
 | `jobs` | `id` pk, `title`, `recipe` (resolved recipe at job creation), `state`, `waiting_reason`, `failure_reason`, `parent_job_id`, `base_branch`, `base`, `old_base`, `target`, `branch`, `archived`, `merged_at`, `created_at`, `updated_at`; index on `state`, `parent_job_id` |
 | `node_runs` | `id` pk (`<job>/<node>#<round>`), `job_id`, `node`, `round`, `via_edge`, `state`, `outcome`, `waiting_reason`, `reset_at`, `queue_item_id`, `auth_account`, `auth_os_user`, `auth_kind`, `failure_reason`, `content_before`, `content_after`, `git_before` (JSON), `pgid`, `os_user`, `started_at`, `ended_at`; index on `job_id` |
-| `attempts` | `id` pk (ULID), `node_run_id`, `profile`, `connector`, `harness_version`, `connector_version`, `model`, `account`, `os_user`, `agent_id`, `agent_context`, `session_id`, `resumed`, `tokens_in`, `tokens_out`, `cache_read`, `cache_write`, `cost`, `end_reason`, `log_omitted`, `started_at`, `ended_at` |
+| `attempts` | `id` pk (ULID), `node_run_id`, `profile`, `connector`, `harness_version`, `connector_version`, `model`, `account`, `os_user`, `agent_id`, `agent_session`, `session_id`, `resumed`, `tokens_in`, `tokens_out`, `cache_read`, `cache_write`, `cost`, `end_reason`, `log_omitted`, `started_at`, `ended_at` |
 | `attempt_logs` | `attempt_id` and `sequence` form the primary key. `direction`, `at` and `payload` describe the message |
 | `human_queue` | `id` pk, `job_id` (nullable), `kind` (`human-node`, `agent-question`, `engine-node`, `source-node`, `connector`, `recipe-change`, `import`, `ticket`, `services`, `round-limit`, `outbound`), `subject` (JSON: a snapshot of everything the user must see to decide, for example the full node definition and script, never re-read from disk at decision time), `subject_hash` (sha256 of `subject`), `state` (`open`, `resolved`, `cancelled`), `choices` (JSON), `choice`, `note`, `created_at`, `resolved_at` |
 | `tickets_seen` | `source`, `ticket_id`, `seen_at`; pk on both |

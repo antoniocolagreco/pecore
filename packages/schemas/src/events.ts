@@ -2,7 +2,7 @@ import { z } from "zod";
 import { Artifact } from "./artifacts";
 import { AuthKind, FailureReason, JobState, JobWaitingReason, NodeRunState, PauseReason, WaitingReason } from "./errors";
 import { JobDefinitions } from "./job-definitions";
-import { AgentContext } from "./node";
+import { AgentSession } from "./node";
 
 const Tokens = z.object({
   input: z.number().int().nonnegative(),
@@ -132,7 +132,7 @@ export const EventBody = z.discriminatedUnion("type", [
       account: z.string().nullable(),
       osUser: z.string(),
       agentId: z.string().optional(),
-      agentContext: AgentContext.optional(),
+      agentSession: AgentSession.optional(),
     }),
   ),
   ev("attempt.session_started", z.object({ attemptId: z.string(), sessionId: z.string(), resumed: z.boolean() })),

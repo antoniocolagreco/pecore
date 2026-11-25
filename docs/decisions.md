@@ -379,3 +379,9 @@
 - Decision: Add missing GitHub, GitLab and CodeCommit accounts from the app user's forge CLI sessions. Manual accounts ask for the service and its server or AWS profile. Author details start with global Git settings. GitHub and GitLab fill the username after login. Account settings can be edited afterwards.
 - Why: The CLIs already know the authenticated identities and Git already knows the commit author.
 - Replaces: Entering every forge account, username and commit author by hand.
+
+## 2026-11-25: Agent sessions can follow a job or node
+
+- Decision: Agent session offers Job (default), Node and New in agent templates and recipe steps. Job continues the card's session across the job. Node continues the card's session for the same step. New starts fresh on each run. Code Reviewer and Approver use New. Changing account, model or effort starts a fresh session on the next run.
+- Why: A step that repeats can keep its own conversation separate from the rest of the job.
+- Replaces: Agent context with Shared and Isolated. Shared becomes Job and Isolated becomes New.

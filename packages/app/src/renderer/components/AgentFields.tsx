@@ -1,4 +1,4 @@
-import { AgentContext } from "@pecore/schemas";
+import { AgentSession } from "@pecore/schemas";
 import type { Account, BuiltInHarness } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
@@ -11,18 +11,22 @@ import { Combobox, Select } from "../ds/select";
 import { install } from "../shell/SetupBanner";
 import s from "../screens/Settings.module.css";
 
-export function AgentContextField({ value, disabled, description, onChange }: {
-  value: AgentContext;
+export function AgentSessionField({ value, disabled, description, onChange }: {
+  value: AgentSession;
   disabled: boolean;
   description?: string;
-  onChange(value: AgentContext): void;
+  onChange(value: AgentSession): void;
 }) {
-  return <Select label="Agent context" value={value} disabled={disabled} description={description}
-    labelAction={<FieldHelp title="Agent context">Shared continues this agent's conversation for the job. Isolated starts a fresh conversation for this run.</FieldHelp>}
-    options={[{ value: "shared", label: "Shared" }, { value: "isolated", label: "Isolated" }]}
+  return <Select label="Agent session" value={value} disabled={disabled} description={description}
+    labelAction={<FieldHelp title="Agent session">
+      Job: the agent, while working on this node, uses a session shared across the whole job, in every node it works on. Different agents never share a session.<br />
+      Node: the agent uses the same session each time it works on this node. The session is not shared outside it.<br />
+      New: the agent starts a new session every time it works on this node.
+    </FieldHelp>}
+    options={[{ value: "job", label: "Job" }, { value: "node", label: "Node" }, { value: "new", label: "New" }]}
     onValueChange={(next) => {
-      const context: AgentContext | undefined = AgentContext.safeParse(next).data;
-      if (context) onChange(context);
+      const session: AgentSession | undefined = AgentSession.safeParse(next).data;
+      if (session) onChange(session);
     }} />;
 }
 

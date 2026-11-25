@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import type { Connection, XYPosition } from "@xyflow/react";
-import { AgentContext, assistantAgentId, builtInAgentNames, defaultAgentId, EdgePort, HumanInterface, humanInterfaces, KnowledgeFileName, Name, Outcome, ProjectId, RecipeEnd, RecipeEndResult } from "@pecore/schemas";
+import { AgentSession, assistantAgentId, builtInAgentNames, defaultAgentId, EdgePort, HumanInterface, humanInterfaces, KnowledgeFileName, Name, Outcome, ProjectId, RecipeEnd, RecipeEndResult } from "@pecore/schemas";
 import type { DefinitionEntry, NodeAgent } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { defaultDefinitionIcon, definitionIconName, DefinitionIcon, DefinitionIconField, useDefinitionIcons } from "../components/DefinitionIcon";
-import { AgentContextField } from "../components/AgentFields";
+import { AgentSessionField } from "../components/AgentFields";
 import { restorePageScroll } from "../components/usePageScroll";
 import { ErrorText, Page } from "../components/ui";
 import { Button, IconButton } from "../ds/button";
@@ -124,8 +124,8 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
     ...(agents ?? []).filter(({ id }) => id !== assistantAgentId && id !== defaultAgentId).map(({ id, name }) => ({ value: id, label: name })),
   ];
   if (!agentOptions.some(({ value }) => value === selectedAgentId)) agentOptions.push({ value: selectedAgentId, label: `${selectedAgentId} (Unavailable)` });
-  const templateContext: AgentContext = AgentContext.safeParse(nodeValue.agentContext).data ?? "shared";
-  const stepContext: AgentContext | undefined = AgentContext.safeParse(selectedNode.agentContext).data;
+  const templateSession: AgentSession = AgentSession.safeParse(nodeValue.agentSession).data ?? "job";
+  const stepSession: AgentSession | undefined = AgentSession.safeParse(selectedNode.agentSession).data;
   const recipeName: string = string(draft?.name);
   const projectRecipes: unknown = projectConfig?.recipes;
   const knowledgeEditable: boolean = projectFile.editable && !!projectConfig &&
@@ -365,10 +365,10 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
                 {selectedKind === "agent" && <>
                   <Select label="Agent card" value={selectedAgentId} options={agentOptions} disabled={!editable || !agents}
                     onValueChange={(id) => { if (id) updateNode("agentId", id === defaultAgentId ? undefined : id); }} />
-                  <AgentContextField value={stepContext ?? templateContext} disabled={!editable}
-                    description={stepContext === undefined ? "Uses the node template setting." : "Overrides the node template setting."}
-                    onChange={(value) => updateNode("agentContext", value)} />
-                  {stepContext !== undefined && <Button variant="ghost" disabled={!editable} onClick={() => updateNode("agentContext", undefined)}>Use template context</Button>}
+                  <AgentSessionField value={stepSession ?? templateSession} disabled={!editable}
+                    description={stepSession === undefined ? "Uses the node template setting." : "Overrides the node template setting."}
+                    onChange={(value) => updateNode("agentSession", value)} />
+                  {stepSession !== undefined && <Button variant="ghost" disabled={!editable} onClick={() => updateNode("agentSession", undefined)}>Use template session</Button>}
                 </>}
                 {!!inspectorOutcomes.length && <div className={s.inspectorOutcomes}>
                   <strong>Outcomes</strong>

@@ -329,20 +329,48 @@ describe("agent nodes with the fake agent (5.4)", () => {
     await engine.shutdown();
   }, 30000);
 
-  it("uses the same Shared session when a node repeats", async () => {
-    const first = [...init, ...newSession, prompt, output({ outcome: "again" }), usageAnswer];
-    const second = [...init, ...resumeSession, prompt, output({ outcome: "done" }), usageAnswer];
-    const { engine, p, id } = await setup([first, second]);
-    const j = await until(final(p, id));
-    expect(j.state).toBe("succeeded");
-    expect(p.ctx.db.db.prepare("SELECT session_id, resumed FROM attempts ORDER BY started_at").all()).toEqual([
-      { session_id: "S1", resumed: 0 },
-      { session_id: "S1", resumed: 1 },
-    ]);
-    await engine.shutdown();
+  it.each([
+    { mode: "job", session: "S1", resumed: 1 },
+    { mode: "node", session: "S1", resumed: 1 },
+    { mode: "new", session: "S2", resumed: 0 },
+  ])("uses $mode session rules when a step repeats", async ({ mode, session, resumed }) => {
+    const { engine, p, id } = await setup([
+      [...init, ...newSession, prompt, output({ outcome: "again" }), usageAnswer],
+      [...init, ...(resumed ? resumeSession : startSession("S2")), prompt, output({ outcome: "done" }, session), usageAnswer],
+    ], agentNode({ agentSession: mode }));
+    try {
+      expect(await until(final(p, id))).toMatchObject({ state: "succeeded" });
+      expect(p.ctx.db.db.prepare("SELECT session_id, resumed FROM attempts ORDER BY id").all()).toEqual([
+        { session_id: "S1", resumed: 0 },
+        { session_id: session, resumed },
+      ]);
+    } finally {
+      await engine.shutdown();
+    }
   });
 
-  it("starts a separate Shared session for a different job with the same card", async () => {
+  it("keeps Node sessions separate for two steps that use the same template and from the Job session", async () => {
+    const { engine, p, id } = await setup([
+      [...init, ...newSession, prompt, output({ outcome: "again" }), usageAnswer],
+      [...init, ...startSession("S2"), prompt, output({ outcome: "done" }, "S2"), usageAnswer],
+      [...init, ...startSession("S3"), prompt, output({ outcome: "done" }, "S3"), usageAnswer],
+      [...init, ...resumeSession, prompt, output({ outcome: "done" }), usageAnswer],
+    ], agentNode({ agentSession: "node" }), {
+      nodes: { x: { use: "agent-x" }, y: { use: "agent-x" }, z: { use: "agent-x", agentSession: "job" } },
+      edges: [{ from: "x", on: "again", to: "y" }, { from: "y", on: "done", to: "z" }, { from: "z", on: "done", to: "x" }],
+    });
+    try {
+      expect(await until(final(p, id))).toMatchObject({ state: "succeeded" });
+      expect(p.ctx.db.db.prepare("SELECT session_id, resumed FROM attempts ORDER BY id").all()).toEqual([
+        { session_id: "S1", resumed: 0 }, { session_id: "S2", resumed: 0 },
+        { session_id: "S3", resumed: 0 }, { session_id: "S1", resumed: 1 },
+      ]);
+    } finally {
+      await engine.shutdown();
+    }
+  });
+
+  it("starts a separate Job session for a different job with the same card", async () => {
     const { engine, p, id } = await setup([
       [...init, ...newSession, prompt, output({ outcome: "done" }), usageAnswer],
       [...init, ...startSession("S2"), prompt, output({ outcome: "done" }, "S2"), usageAnswer],
@@ -359,34 +387,34 @@ describe("agent nodes with the fake agent (5.4)", () => {
     }
   });
 
-  it("keeps separate Shared sessions per card across nodes and skips Isolated runs", async () => {
+  it("keeps separate Job sessions per card across nodes and skips New runs", async () => {
     const { engine, p, id } = await setup([
       [...init, ...newSession, prompt, output({ outcome: "done" }), usageAnswer],
       [...init, ...startSession("S2"), prompt, output({ outcome: "done" }, "S2"), usageAnswer],
       [...init, ...startSession("S3"), prompt, output({ outcome: "done" }, "S3"), usageAnswer],
       [...init, ...resumeSession, prompt, output({ outcome: "done" }), usageAnswer],
       [...init, ...resumeSession, prompt, output({ outcome: "done" }, "S3"), usageAnswer],
-    ], agentNode({ agentContext: "isolated" }), {
+    ], agentNode({ agentSession: "new" }), {
       nodes: {
-        x: { use: "agent-x", agentContext: "shared" }, isolated: { use: "agent-x" },
-        review: { use: "agent-x", agentId: "reviewer", agentContext: "shared" },
-        build: { use: "agent-x", agentContext: "shared" },
-        verify: { use: "agent-x", agentId: "reviewer", agentContext: "shared" },
+        x: { use: "agent-x", agentSession: "job" }, "new-run": { use: "agent-x" },
+        review: { use: "agent-x", agentId: "reviewer", agentSession: "job" },
+        build: { use: "agent-x", agentSession: "job" },
+        verify: { use: "agent-x", agentId: "reviewer", agentSession: "job" },
       },
       successOutcomes: ["verify:done"],
       edges: [
-        { from: "x", on: "done", to: "isolated" }, { from: "isolated", on: "done", to: "review" },
+        { from: "x", on: "done", to: "new-run" }, { from: "new-run", on: "done", to: "review" },
         { from: "review", on: "done", to: "build" }, { from: "build", on: "done", to: "verify" },
       ],
     });
     try {
       expect(await until(final(p, id))).toMatchObject({ state: "succeeded" });
-      expect(p.ctx.db.db.prepare("SELECT agent_id, agent_context, session_id, resumed FROM attempts ORDER BY id").all()).toEqual([
-        { agent_id: "agent-default", agent_context: "shared", session_id: "S1", resumed: 0 },
-        { agent_id: "agent-default", agent_context: "isolated", session_id: "S2", resumed: 0 },
-        { agent_id: "reviewer", agent_context: "shared", session_id: "S3", resumed: 0 },
-        { agent_id: "agent-default", agent_context: "shared", session_id: "S1", resumed: 1 },
-        { agent_id: "reviewer", agent_context: "shared", session_id: "S3", resumed: 1 },
+      expect(p.ctx.db.db.prepare("SELECT agent_id, agent_session, session_id, resumed FROM attempts ORDER BY id").all()).toEqual([
+        { agent_id: "agent-default", agent_session: "job", session_id: "S1", resumed: 0 },
+        { agent_id: "agent-default", agent_session: "new", session_id: "S2", resumed: 0 },
+        { agent_id: "reviewer", agent_session: "job", session_id: "S3", resumed: 0 },
+        { agent_id: "agent-default", agent_session: "job", session_id: "S1", resumed: 1 },
+        { agent_id: "reviewer", agent_session: "job", session_id: "S3", resumed: 1 },
       ]);
       const attemptId: string = p.ctx.db.db.prepare<[], string>("SELECT id FROM attempts WHERE agent_id = 'reviewer' ORDER BY id LIMIT 1").pluck().get()!;
       const text: string = JSON.stringify(p.ctx.db.logs.read(attemptId));
@@ -401,12 +429,16 @@ describe("agent nodes with the fake agent (5.4)", () => {
     { account: "fake-alt", model: "m-default", effort: null },
     { account: "fake", model: "m-next", effort: null },
     { account: "fake", model: "m-default", effort: "high" },
-  ])("starts a fresh session after the card changes to $account/$model/$effort", async (model: NonNullable<NodeAgent["model"]>) => {
+  ].flatMap((model: NonNullable<NodeAgent["model"]>) => [
+    { mode: "job", model },
+    { mode: "node", model },
+  ]))("starts a fresh $mode session after the card changes to $model.account/$model.model/$model.effort", async ({ mode, model }) => {
+    const repeat: boolean = mode === "node";
     const { engine, p, id } = await setup([
       [...init, ...newSession, prompt, output({ question: "Continue?" }), usageAnswer],
-      [...init, ...resumeSession, prompt, output({ outcome: "done" }), usageAnswer],
+      [...init, ...resumeSession, prompt, output({ outcome: repeat ? "again" : "done" }), usageAnswer],
       [...init, ...startSession("S2"), prompt, output({ outcome: "done" }, "S2"), usageAnswer],
-    ], agentNode(), {
+    ], agentNode({ agentSession: mode }), repeat ? {} : {
       nodes: { x: { use: "agent-x" }, y: { use: "agent-x" } },
       successOutcomes: ["y:done"],
       edges: [{ from: "x", on: "done", to: "y" }],
