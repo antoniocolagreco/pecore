@@ -8,3 +8,4 @@ export { mergeConnectors, parseConnector } from "./connectors";
 export { classify, errorMessage } from "./errors";
 export { readerFor } from "./readers";
 export * from "./types";
+export { AcpClient, RpcError } from "./acp/client";

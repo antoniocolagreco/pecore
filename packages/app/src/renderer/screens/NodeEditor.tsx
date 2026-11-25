@@ -1,7 +1,7 @@
 import { cloneElement, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { ReactElement, ReactNode, Ref } from "react";
 import { Link, useBlocker, useNavigate, useParams } from "react-router";
-import { AgentSession, ApiError, ArtifactType, HumanInterface, humanInterfaces, isNodeKindTag, Name, TrackerProvider } from "@pecore/schemas";
+import { AgentSession, ApiError, ArtifactType, atlassianAccount, HumanInterface, humanInterfaces, isNodeKindTag, Name, TrackerProvider } from "@pecore/schemas";
 import type { DefinitionFile, Node, RouteResult } from "@pecore/schemas";
 import { basicSetup, EditorView, minimalSetup } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
@@ -532,6 +532,9 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   const human: boolean = kind === "human";
   const tracker: boolean = kind === "tracker";
   const repository: boolean = kind === "repository";
+  const mcp: boolean = tracker && draft?.mode === "mcp";
+  const [argumentsDraft, setArgumentsDraft] = useState<string>();
+  useEffect(() => { setArgumentsDraft(undefined); }, [file.sha256, mcp]);
   const remote: boolean = tracker || repository;
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [approvedHash, setApprovedHash] = useState<string>();
@@ -545,12 +548,15 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   const provider = TrackerProvider.safeParse(draft?.provider).data;
   const accounts = useData(() => remote ? call("getAccounts") : Promise.resolve(null), [remote],
     (event) => remote && event.type === "configuration.changed" && event.kind === "accounts");
-  const jira = useData(() => tracker && provider === "jira" ? call("getActiveJira") : Promise.resolve(null), [tracker, provider]);
-  const options: { value: string; label: string }[] = provider === "jira"
+  const jira = useData(() => tracker && !mcp && provider === "jira" ? call("getActiveJira") : Promise.resolve(null), [tracker, provider, mcp]);
+  const options: { value: string; label: string }[] = mcp
+    ? (accounts.data?.value.accounts ?? []).flatMap((account) => account.kind === "service" && account.tool === draft?.server
+      ? [{ value: account.id, label: account.user }] : [])
+    : provider === "jira"
     ? jira.data ? [{ value: jira.data.account.id, label: `${jira.data.account.user} · ${jira.data.site}` }] : []
     : (accounts.data?.value.accounts ?? []).flatMap((account) => account.kind === "forge" && (repository || account.forge === provider)
       ? [{ value: account.id, label: `${account.user || account.id} · ${account.host}` }] : []);
-  if (repository || draft?.account === "project.account" || (provider && provider !== "jira")) {
+  if (!mcp && (repository || draft?.account === "project.account" || (provider && provider !== "jira"))) {
     options.unshift({ value: "project.account", label: provider === "jira" ? "Active Jira login" : "Project account" });
   }
   if (typeof draft?.account === "string" && !options.some(({ value }) => value === draft.account)) {
@@ -581,7 +587,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   const inlineKeys: string[] = [
     "description", "tags", "timeoutSec",
     "outcomes", "outputs", "changesFiles",
-    ...(remote ? ["provider", "account", "script", "inputs", "optionalInputs", "outputRules"] : []),
+    ...(remote ? ["provider", "mode", "server", "tool", "arguments", "account", "script", "inputs", "optionalInputs", "outputRules"] : []),
     ...(kind === "agent" ? ["prompt", "agentSession", "knowledge"] : []),
     ...(kind === "command" ? ["command", "script", "inputs", "optionalInputs", "outputRules"] : []),
     ...(human ? ["interface"] : []),
@@ -621,17 +627,22 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
     {file.feedback}
     {remote && approval && !approval.approved && approvedHash !== approval.hash && <Alert tone="warning">
       <div className={ui.row}>
-        <span>To approve · This script needs your approval before the Project Manager can run it from chat.</span>
+        <span>To approve · This node needs your approval before the Project Manager can run it from chat.</span>
         <Button disabled={file.dirty || !editable} onClick={() => { approve.clear(); setApprovalOpen(true); }}>Approve</Button>
       </div>
     </Alert>}
-    {approval && <Dialog open={approvalOpen} onOpenChange={setApprovalOpen} title="Approve script for chat?"
+    {approval && <Dialog open={approvalOpen} onOpenChange={setApprovalOpen} title={mcp ? "Approve MCP tool for chat?" : "Approve script for chat?"}
       footer={<>
         <Button disabled={approve.busy} onClick={() => setApprovalOpen(false)}>Cancel</Button>
-        <Button variant="primary" loading={approve.busy} disabled={file.dirty || !editable} onClick={() => void approve.run()}>Approve script</Button>
+        <Button variant="primary" loading={approve.busy} disabled={file.dirty || !editable} onClick={() => void approve.run()}>{mcp ? "Approve tool" : "Approve script"}</Button>
       </>}>
-      <p>The Project Manager can run this script with the node’s account. Review the code before approving it.</p>
-      <Sidecar content={string(draft?.script)} disabled change={() => undefined} isMarkdown={false} />
+      {mcp ? <>
+        <p>Review the server, tool and arguments before letting the Project Manager call it.</p>
+        <pre>{JSON.stringify({ server: draft?.server, tool: draft?.tool, arguments: draft?.arguments }, null, 2)}</pre>
+      </> : <>
+        <p>The Project Manager can run this script with the node’s account. Review the code before approving it.</p>
+        <Sidecar content={string(draft?.script)} disabled change={() => undefined} isMarkdown={false} />
+      </>}
       {Object.entries(approval.checks).map(([name, body]) => <div key={name}><strong>Saved check</strong><pre>{body}</pre></div>)}
       {Array.isArray(draft?.probe) && <div><strong>Repeat check</strong><pre>{JSON.stringify(draft.probe)}</pre></div>}
       {Array.isArray(draft?.mergedCheck) && <div><strong>Merge check</strong><pre>{JSON.stringify(draft.mergedCheck)}</pre></div>}
@@ -692,10 +703,10 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
               <div className={s.fieldHeading}><span>{human ? "Notes" : "Outputs"}</span>{help(human ? "Notes" : "Outputs", human
                 ? "Choose the answers that come with a note. The note is text that the nodes reading this one receive."
                 : <>A job is a chain of nodes. Each node does its work and ends with one of its outcomes, for example accepted or rejected. With each outcome it can hand a result to the nodes that come later, which use it to do their own work.<br /><br />For each outcome, choose what this node hands on, or Nothing. For example, the Spec Writer hands on a Spec when it accepts a ticket, so the Builder knows what to build, and a Text with the reason when it rejects it, so you know why.<br /><br />The later nodes receive it only if, in the recipe, they read this node (Reads from).{typesHelp}</>)}</div>
-              <OutcomeOutputs kind={kind} outcomes={outcomes} outputs={object(draft.outputs)} rules={object(draft.outputRules)} disabled={!file.editable}
+              <OutcomeOutputs kind={mcp ? "mcp" : kind} outcomes={outcomes} outputs={object(draft.outputs)} rules={object(draft.outputRules)} disabled={!file.editable}
                 onChange={(outputs, outputRules) => updateFields({
                   outputs: Object.keys(outputs).length ? outputs : undefined,
-                  ...(kind === "command" || remote ? { outputRules: Object.keys(outputRules).length ? outputRules : undefined } : {}),
+                  ...(!mcp && (kind === "command" || remote) ? { outputRules: Object.keys(outputRules).length ? outputRules : undefined } : {}),
                 })} />
               {fieldErrors("outputs")}{fieldErrors("outputRules")}
             </div>
@@ -713,17 +724,32 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
           {remote && <>
             {check("readOnly", "Reads only", "Run this node from chat without asking for confirmation. Protected mode still requires script approval.",
               draft.readOnly === true, (checked) => update("readOnly", checked ? true : undefined))}
-            {tracker && <><Select label="Tracker" value={provider ?? null} options={[
+            {tracker && <Select label="Mode" value={mcp ? "mcp" : "cli"}
+              options={[{ value: "cli", label: "CLI" }, { value: "mcp", label: "MCP server" }]}
+              onValueChange={(mode) => updateFields(mode === "mcp"
+                ? { mode, provider: "jira", server: "atlassian", account: atlassianAccount.id, tool: undefined, arguments: {}, script: undefined, repeatCheck: undefined, outputRules: undefined }
+                : { mode: undefined, server: undefined, tool: undefined, arguments: undefined, account: undefined, script: "" })} />}
+            {tracker && !mcp && <><Select label="Tracker" value={provider ?? null} options={[
               { value: "github", label: "GitHub Issues" }, { value: "gitlab", label: "GitLab Issues" }, { value: "jira", label: "Jira" },
             ]} onValueChange={(value) => updateFields({ provider: value, account: undefined })} />
             {fieldErrors("provider", "Tracker")}</>}
             <Select label="Account" value={string(draft.account) || null} options={options} onValueChange={(value) => update("account", value ?? undefined)} />
             {fieldErrors("account", "Account")}
-            <div role="group" aria-label={repository ? "Repository script" : "Tracker script"}>
+            {mcp ? <>
+              <Select label="Server" value={string(draft.server) || null} options={[{ value: "atlassian", label: "Atlassian Rovo" }]}
+                onValueChange={(value) => update("server", value ?? undefined)} />
+              {fieldErrors("server", "Server")}
+              <TextField label="Tool" value={string(draft.tool)} onValueChange={(value) => update("tool", value)} />
+              {fieldErrors("tool", "Tool")}
+              <TextArea label="Arguments" value={argumentsDraft ?? (typeof draft.arguments === "string" ? draft.arguments : JSON.stringify(draft.arguments ?? {}, null, 2))}
+                onValueChange={(value) => { setArgumentsDraft(value); try { update("arguments", JSON.parse(value) as unknown); } catch { update("arguments", value); } }} />
+              {fieldErrors("arguments", "Arguments")}
+              <p className={ui.muted}>Use a JSON object. A value such as <code>{"{params.cloudId}"}</code>, <code>{"{ticket.id}"}</code> or <code>{"{inputs.text}"}</code> takes its value from the call or job.</p>
+            </> : <div role="group" aria-label={repository ? "Repository script" : "Tracker script"}>
               <div className={s.fieldHeading}><span>Script</span></div>
               <Sidecar content={string(draft.script)} disabled={!editable} change={(value) => update("script", value)} isMarkdown={false} />
               {fieldErrors("script", "Script")}
-            </div>
+            </div>}
           </>}
         </fieldset>
       ) : <ErrorText error="Unable to read the node definition." />}

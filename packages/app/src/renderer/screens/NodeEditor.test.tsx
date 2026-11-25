@@ -13,6 +13,29 @@ vi.mock("../api/live", () => ({ useConnected: () => true, onLive: () => () => un
 
 afterEach(cleanup);
 
+it("shows MCP server, tool and arguments in a Tracker editor", async () => {
+  const path: string = "templates/nodes/read-jira-mcp.json";
+  const node: Node = Node.parse({
+    kind: "tracker", mode: "mcp", provider: "jira", name: "read-jira-mcp", description: "Read Jira",
+    server: "atlassian", tool: "getJiraIssue", account: "atlassian", arguments: { cloudId: "{params.cloudId}" },
+    outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }],
+  });
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "getDefinition") return { content: JSON.stringify(node), sha256: "node-v1" };
+    if (route === "getAccounts") return { value: { accounts: [{ kind: "service", id: "atlassian", tool: "atlassian", user: "Atlassian account" }] } };
+    if (route === "validateDefinition") return { errors: [], warnings: [] };
+    if (route === "getNodeTemplateUsage" || route === "listDefinitions") return [];
+    throw new Error("Unexpected route " + route);
+  });
+  const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: ["/edit/node/" + path] });
+  render(<RouterProvider router={router} />);
+  expect((await screen.findByRole("combobox", { name: "Mode" })).textContent).toContain("MCP server");
+  expect(screen.getByRole("combobox", { name: "Server" }).textContent).toContain("Atlassian Rovo");
+  expect(screen.getByRole<HTMLInputElement>("textbox", { name: "Tool" }).value).toBe("getJiraIssue");
+  expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Arguments" }).value).toContain("{params.cloudId}");
+  expect(screen.queryByRole("group", { name: "Tracker script" })).toBeNull();
+});
+
 it("shows the saved script before approving it for chat in protected mode", async () => {
   const rect: DOMRect = new DOMRect();
   Object.defineProperty(Range.prototype, "getClientRects", { configurable: true, value: () => [rect] });

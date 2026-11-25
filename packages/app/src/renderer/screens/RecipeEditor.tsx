@@ -153,6 +153,7 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
   const parameters = object(object(nodeValue.params).properties);
   const questionParameter = object(parameters.question);
   const trackerParameters: { key: string; label: string }[] = [
+    { key: "cloudId", label: "Jira site" },
     { key: "query", label: "Query" }, { key: "ticket", label: "Ticket ID or link" }, { key: "comment", label: "Comment" },
   ];
   const update = (changes: Record<string, unknown>): void => file.update(JSON.stringify({ ...draft, ...changes }, null, 2) + "\n");

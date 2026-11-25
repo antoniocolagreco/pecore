@@ -16,6 +16,7 @@ import { HttpError } from "./api/server";
 import type { CompleteProjectImportBody, ExportProjectBody, ExportProjectResult, ImportProjectBody, ImportProjectPreview, ImportProjectResult } from "@pecore/schemas";
 import { AgentServices, protectedUser, spawnFor } from "./accounts/agents";
 import type { AgentPaths, LoginInfo } from "./accounts/agents";
+import { checkAtlassian, TrackerMcpAuthError } from "./accounts/atlassian";
 import { LoginRunner } from "./accounts/login";
 import { discoverForgeAccounts, forgeLoginUser, newForgeAccounts } from "./accounts/forges";
 import { identityOk } from "./runners/forge-env";
@@ -463,7 +464,17 @@ export class Engine extends EventEmitter {
       if (ok) await this.releaseAuth(id, null);
       return ok ? "logged_in" : "logged_out";
     }
-    if (a.kind === "service") return "unknown";
+    if (a.kind === "service") {
+      if (a.tool !== "atlassian" || this.loginRunner.isActive(`tool:${id}`)) return "unknown";
+      try {
+        await checkAtlassian(id);
+        await this.releaseAuth(id, null);
+        return "logged_in";
+      } catch (error) {
+        if (error instanceof TrackerMcpAuthError) return "logged_out";
+        throw error;
+      }
+    }
     const states = [];
     for (const l of ((await this.agents?.logins()) ?? []).filter((x) => x.account === id)) states.push((await this.checkLoginInfo(l)).state);
     return states.includes("logged_out") ? "logged_out" : states.length > 0 && states.every((s) => s === "logged_in") ? "logged_in" : "unknown";
@@ -471,6 +482,11 @@ export class Engine extends EventEmitter {
 
   async startAccountLogin(id: string): Promise<string> {
     const a = this.account(id);
+    if (a.kind === "service" && a.tool === "atlassian") {
+      const loginId: string = `tool:${id}`;
+      await this.loginRunner.atlassian(loginId, id, () => this.releaseAuth(id, null));
+      return loginId;
+    }
     if (a.kind !== "forge") throw new Error(`account ${id} has no tool login in ${appName}; log in with ${a.kind === "service" ? a.tool : "the harness"} and recheck`);
     const loginId = `tool:${id}`;
     await this.loginRunner.tool(loginId, a, async () => {
@@ -585,6 +601,7 @@ export class Engine extends EventEmitter {
       },
       setupEnded: (state) => this.setupEnded(id, state),
       forgeAccount: (accountId) => this.accounts.accounts.find((a): a is ForgeAccount => a.kind === "forge" && a.id === accountId),
+      serviceAccount: (accountId) => this.accounts.accounts.find((a): a is Extract<Account, { kind: "service" }> => a.kind === "service" && a.id === accountId),
       agentCard: (agentId) => this.catalogAgent(agentId),
       agentContext: (agentId) => this.agentContext(agentId),
       live: (attemptId, line) => {

@@ -6,6 +6,7 @@ import type { ForgeAccount } from "@pecore/schemas";
 import { appUser, baseEnv, run, spawnAs } from "../runners/process";
 import type { Proc } from "../runners/process";
 import { writeFileAs } from "../workdir/fs-as";
+import { checkAtlassian } from "./atlassian";
 import type { AgentServices, LoginInfo } from "./agents";
 
 export type LoginProgress = { loginId: string; text: string; url: string | null; done: boolean };
@@ -51,6 +52,29 @@ export class LoginRunner {
     proc.stdin.on("error", () => undefined);
     if (account.tool === "gh") proc.stdin.write("\n");
     this.stream(loginId, proc, /https:\/\/\S+/, (code) => code === 0 ? done() : Promise.resolve("logged_out"));
+  }
+
+  async atlassian(loginId: string, account: string, done: () => Promise<void>): Promise<void> {
+    if (this.active.has(loginId)) return;
+    await new Promise<void>((started, failed) => {
+      void checkAtlassian(account, {
+        interactive: true,
+        onStart: (proc) => {
+          this.active.set(loginId, proc);
+          this.progress({ loginId, text: "Connecting to Atlassian…", url: null, done: false });
+          started();
+        },
+        onAuthorize: (url) => this.progress({ loginId, text: "Complete Atlassian sign-in in your browser.", url, done: false }),
+      }).then(async () => {
+        await done();
+        this.active.delete(loginId);
+        this.progress({ loginId, text: "Connected to Atlassian.", url: null, done: true });
+      }).catch((error: unknown) => {
+        failed(error);
+        this.active.delete(loginId);
+        this.progress({ loginId, text: (error as Error).message, url: null, done: true });
+      });
+    });
   }
 
   sendCode(loginId: string, code: string): void {

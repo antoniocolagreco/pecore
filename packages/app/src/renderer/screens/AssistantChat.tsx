@@ -281,6 +281,7 @@ function FormCard({ action, form, connected }: { action: ChatActionView; form: C
       <div className={s.actionHead}><SparkIcon /><strong>{form.title ?? "Questions"}</strong><span className={s.actionMeta}>{state === "answered" ? "Answered" : state === "approved" ? "Completed" : state === "cancelled" ? "Rejected" : state === "running" ? "Running" : state === "failed" ? "Failed" : state === "interrupted" ? "Interrupted" : "Not answered"}</span></div>
       {typeof target.details === "string" && <pre className={s.actionDetails}>{target.details}</pre>}
       <ErrorText error={string(target.error)} />
+      {target.loginNeeded === true && <Link to="/settings?section=accounts">Log in to Atlassian</Link>}
       {state === "answered" && <ul className={s.formAnswers}>{form.questions.map(({ id, prompt }) => <li key={id}>
         <span className={s.actionMeta}>{prompt}</span> {[...(given[id]?.choices ?? []), ...(given[id]?.text ? [given[id].text] : [])].join(", ")}
       </li>)}</ul>}
@@ -380,10 +381,11 @@ function ActionCard({ action, connected }: { action: ChatActionView; connected: 
         <SparkIcon />
         <span className={s.tool}>{action.tool.replaceAll("_", " ")}</span>
         {project && action.tool !== "create_project" && <span className={s.actionMeta}>{project}</span>}
-        {state && <span className={s.actionMeta}>{state}</span>}
+        {state && <span className={s.actionMeta}>{state === "login_needed" ? "Sign-in needed" : state}</span>}
         {ticket && <span className={s.actionMeta}>Ticket {ticket}</span>}
       </div>
       <ErrorText error={error} />
+      {state === "login_needed" && <Link to="/settings?section=accounts">Log in to Atlassian</Link>}
       {links.length > 0 && <ul className={s.links}>
         {links.map(({ to, label }) => <li key={to}>{connected ? <Link to={to}>{label}</Link> : <span>{label}</span>}</li>)}
       </ul>}

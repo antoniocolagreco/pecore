@@ -23,12 +23,12 @@ describe("pecore.db", () => {
   it("applies the migrations once, in WAL mode", async () => {
     const path = join(await tempDir(), "pecore.db");
     const db = new ProjectDb(path);
-    expect(db.version()).toBe(29);
+    expect(db.version()).toBe(30);
     expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_nodes') WHERE name = 'clean_checkout'").get()).toBeUndefined();
     expect(db.db.pragma("journal_mode", { simple: true })).toBe("wal");
     db.close();
     const again = new ProjectDb(path);
-    expect(again.version()).toBe(29);
+    expect(again.version()).toBe(30);
     const tables = again.db.prepare<[], string>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'catalog_%' ORDER BY name").pluck().all();
     expect(tables).toEqual([
       "artifacts", "attempt_logs", "attempts", "events", "human_queue", "jobs", "node_runs",
@@ -68,6 +68,33 @@ describe("pecore.db", () => {
         kind: "repository", account: "project.account", script: expect.stringContaining("PECORE_PROJECT_REPO_OWNER"),
       });
       expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_nodes') WHERE name = 'runs_as'").get()).toBeUndefined();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("keeps a saved CLI tracker after adding MCP and round-trips typed MCP arguments", async () => {
+    const path: string = join(await tempDir(), "pecore.db");
+    const old: Database.Database = new Database(path);
+    const dir: URL = new URL("./migrations/", import.meta.url);
+    const migrations: string[] = (await readdir(dir)).filter((name) => /^(?:shared-)?0[0-2]\d-.*\.sql$/.test(name))
+      .sort((a, b) => a.replace("shared-", "").localeCompare(b.replace("shared-", "")));
+    for (const name of migrations) old.exec(await readFile(new URL(name, dir), "utf8"));
+    old.exec("INSERT INTO schema_version VALUES (29);" +
+      "INSERT INTO catalog_nodes (name, description, kind, shipped, timeout_sec, changes_files, retry, tracker_provider, tracker_account, tracker_script) VALUES ('read', 'Read', 'tracker', 0, 60, 0, 1, 'jira', 'project.account', 'echo ticket');" +
+      "INSERT INTO catalog_node_lists VALUES ('read', 'outcomes', 0, 'done');" +
+      "INSERT INTO catalog_outcome_rules (node, position, outcome, exit_code) VALUES ('read', 0, 'done', 0);");
+    old.close();
+    const db: ProjectDb = new ProjectDb(path);
+    try {
+      expect(db.catalog.node("read")).toMatchObject({ kind: "tracker", script: "echo ticket" });
+      const node: Node = Node.parse({
+        kind: "tracker", mode: "mcp", provider: "jira", name: "read-mcp", description: "Read a ticket", account: "atlassian",
+        server: "atlassian", tool: "getJiraIssue", arguments: { cloudId: "example", fields: ["summary"], limit: 5 },
+        outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }],
+      });
+      db.catalog.saveNode(node);
+      expect(db.catalog.node("read-mcp")).toEqual(node);
     } finally {
       db.close();
     }
@@ -344,7 +371,7 @@ describe("chats.db", () => {
 
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.version()).toBe(29);
+    expect(db.version()).toBe(30);
     for (let i = 0; i < notificationsKept + 3; i++) db.addNotification({ kind: "job", title: `n${i}`, body: "" }, 1000 + i);
     const kept = db.notifications();
     expect(kept).toHaveLength(notificationsKept);
@@ -366,7 +393,7 @@ describe("chats.db", () => {
       UPDATE schema_version SET version = 5`);
     old.close();
     const db = new ChatsDb(file);
-    expect(db.version()).toBe(29);
+    expect(db.version()).toBe(30);
     expect(db.messages(assistantChat)).toEqual([]);
     db.close();
   });

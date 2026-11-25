@@ -75,7 +75,9 @@ async function createJobInProject(ctx: ProjectContext, req: CreateJob): Promise<
     const node = entry.definition;
     if (node.kind === "tracker" || node.kind === "repository") {
       try {
-        const account: string = node.kind === "tracker" ? (await trackerLogin(ctx, node)).id : repositoryAccount(ctx, node).id;
+        const account: string = node.kind === "repository" ? repositoryAccount(ctx, node).id
+          : node.mode === "mcp" ? ctx.project.credentials?.[node.account] ?? node.account
+          : (await trackerLogin(ctx, node)).id;
         const definition = { ...node, account };
         entry.definition = definition;
         entry.hash = definitionHash({ definition, sidecars: entry.sidecars });

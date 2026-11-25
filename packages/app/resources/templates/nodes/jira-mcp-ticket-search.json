@@ -1,0 +1,46 @@
+{
+  "name": "jira-mcp-ticket-search",
+  "description": "Search Jira tickets using JQL through Atlassian Rovo.",
+  "kind": "tracker",
+  "provider": "jira",
+  "mode": "mcp",
+  "server": "atlassian",
+  "account": "atlassian",
+  "tool": "searchJiraIssuesUsingJql",
+  "readOnly": true,
+  "arguments": {
+    "cloudId": "{params.cloudId}",
+    "jql": "{params.query}"
+  },
+  "params": {
+    "type": "object",
+    "properties": {
+      "cloudId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Atlassian Cloud site ID."
+      },
+      "query": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "required": [
+      "cloudId",
+      "query"
+    ]
+  },
+  "inputs": [],
+  "outcomes": [
+    "done"
+  ],
+  "outcomeRules": [
+    {
+      "exitCode": 0,
+      "outcome": "done"
+    }
+  ],
+  "outputs": {
+    "done": "document"
+  }
+}

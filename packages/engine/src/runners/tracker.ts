@@ -1,11 +1,19 @@
-import type { ArtifactType, ForgeAccount, TrackerNode } from "@pecore/schemas";
+import type { ArtifactType, ForgeAccount, ServiceAccount, TrackerNode } from "@pecore/schemas";
+import { TrackerMcpAuthError } from "../accounts/atlassian";
 import { activeJiraAccount } from "../accounts/jira";
 import type { ProjectContext } from "../graph/executor";
 import { outcomeOutputs, runCommandNode } from "./command";
 import type { CommandOutcome, CommandRun } from "./command";
 import { forgeEnv } from "./forge-env";
+import { runMcpTracker } from "./tracker-mcp";
 
-export async function trackerLogin(ctx: ProjectContext, node: TrackerNode): Promise<{ id: string; forge?: ForgeAccount; jiraSite?: string }> {
+export async function trackerLogin(ctx: ProjectContext, node: TrackerNode): Promise<{ id: string; forge?: ForgeAccount; jiraSite?: string; mcp?: ServiceAccount }> {
+  if (node.mode === "mcp") {
+    const id: string = ctx.project.credentials?.[node.account] ?? node.account;
+    const account: ServiceAccount | undefined = ctx.serviceAccount?.(id);
+    if (!account || account.tool !== node.server) throw new TrackerMcpAuthError(id);
+    return { id, mcp: account };
+  }
   const configured: string | undefined = ctx.project.tracker?.provider === node.provider ? ctx.project.tracker.account : undefined;
   const fallback: string | undefined = configured ?? (node.provider === "jira" ? "active-jira" : ctx.project.repo?.account);
   const choice: string | undefined = node.account === "project.account" ? fallback : node.account;
@@ -27,6 +35,7 @@ export async function runTrackerNode(
   resolved?: Awaited<ReturnType<typeof trackerLogin>>,
 ): Promise<CommandOutcome<ArtifactType>> {
   const login = resolved ?? await trackerLogin(ctx, node);
+  if (node.mode === "mcp") return runMcpTracker(node, login.id, options);
   return runCommandNode({
     ...options,
     node: { name: node.name, timeoutSec: node.timeoutSec, outcomeRules: node.outcomeRules },

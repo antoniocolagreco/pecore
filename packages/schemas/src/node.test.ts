@@ -143,6 +143,16 @@ it("validates Tracker's provider, account and inline script", () => {
   expect(Node.safeParse({ ...input, kind: "source" }).success).toBe(false);
 });
 
+it("validates MCP Tracker definitions separately from CLI scripts", () => {
+  const node: NodeInput = { kind: "tracker", mode: "mcp", provider: "jira", name: "jira-mcp", description: "Read Jira",
+    server: "atlassian", tool: "getJiraIssue", account: "atlassian", arguments: { cloudId: "{params.cloudId}" },
+    outcomes: ["done"], outputs: { done: "document" }, outcomeRules: [{ exitCode: 0, outcome: "done" }] };
+  expect(Node.parse(node)).toMatchObject({ mode: "mcp", server: "atlassian", tool: "getJiraIssue" });
+  expect(Node.safeParse({ ...node, script: "echo invalid" }).success).toBe(false);
+  expect(Node.safeParse({ ...node, tool: "" }).success).toBe(false);
+  expect(Node.safeParse({ ...node, server: "unconfigured" }).success).toBe(false);
+});
+
 it("reads a saved delivery with its old script and repeat check", () => {
   const old: Record<string, unknown> = {
     name: "publish", kind: "command", description: "Publish the branch", runsAs: "engine",

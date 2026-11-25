@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { appName, ArchiveReviewBody, ChatForm, Compaction, InstantiateBody, Name, NodeAgent, NodeAgentCatalog, OrderPlan, ProjectExportOptions, builtInAgentNames, defaultAgentColor } from "@pecore/schemas";
 import type { ExportProjectResult, ImportProjectPreview } from "@pecore/schemas";
+import { TrackerMcpAuthError } from "../accounts/atlassian";
 import { definitionOperations } from "../api/routes/definitions";
 import { globalFileHandlers } from "../api/routes/settings";
 import { jobHandlers } from "../api/routes/jobs";
@@ -377,7 +378,7 @@ export function chatTools(engine: Engine): {
         return textResult(output.value, output.isError);
       } catch (error) {
         const messageText: string = error instanceof Error ? error.message : String(error);
-        chats.finishAction(message, actionId, { state: "rejected", error: messageText });
+        chats.finishAction(message, actionId, { state: error instanceof TrackerMcpAuthError ? "login_needed" : "rejected", error: messageText });
         return textResult({ error: messageText }, true);
       }
     },

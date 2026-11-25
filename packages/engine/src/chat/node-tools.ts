@@ -1,8 +1,9 @@
 import { join } from "node:path";
 import { Ajv } from "ajv";
 import { ArtifactType, ChatForm, TicketSnapshot } from "@pecore/schemas";
-import type { ChatForm as Form, ForgeAccount } from "@pecore/schemas";
+import type { ChatForm as Form, ForgeAccount, ServiceAccount } from "@pecore/schemas";
 import { z } from "zod";
+import { TrackerMcpAuthError } from "../accounts/atlassian";
 import { definitionHash } from "../definitions/snapshot";
 import { outputProblem } from "../graph/executor";
 import type { Engine } from "../main";
@@ -11,6 +12,7 @@ import { outcomeOutputs, runCommandNode } from "../runners/command";
 import type { CommandInput, CommandRun } from "../runners/command";
 import { paramsWithDefaults } from "../runners/placeholders";
 import { repositoryAccount, repositoryEnv } from "../runners/repository";
+import { trackerMcpArguments } from "../runners/tracker-mcp";
 import { runTrackerNode, trackerLogin } from "../runners/tracker";
 
 const Input = z.strictObject({
@@ -91,7 +93,7 @@ async function prepare(engine: Engine, invocation: Invocation) {
   const catalog = invocation.template ? engine.catalog : catalogFor(engine, invocation.project);
   const entry = catalog.chatNode(invocation.name);
   if (!entry) throw new Error("This node is not available in the project.");
-  if (engine.global().settings.protectedMode && !entry.approved) throw new Error("This node needs approval. Open the node in the app and review its script.");
+  if (engine.global().settings.protectedMode && !entry.approved) throw new Error("This node needs approval. Open the node in the app and review the saved action.");
   const { node, checks, hash } = entry;
   const params: Record<string, unknown> = paramsWithDefaults(node.params, input.params);
   if (!validateParams.validate(node.params, params)) throw new Error(validateParams.errorsText());
@@ -111,12 +113,13 @@ async function prepare(engine: Engine, invocation: Invocation) {
   if (input.ticketId) context.ticketId = input.ticketId;
   const forge: ForgeAccount | undefined = node.kind === "repository" ? repositoryAccount(ctx, node) : undefined;
   const login = node.kind === "tracker" ? await trackerLogin(ctx, node) : undefined;
-  const account: ForgeAccount | string | undefined = forge ?? login?.forge ?? login?.id;
+  const account: ForgeAccount | ServiceAccount | string | undefined = forge ?? login?.forge ?? login?.mcp ?? login?.id;
   const options: Omit<CommandRun, "node" | "outputs"> = {
     params, inputs, context, sidecars: checks, nodeDir: ctx.defs.nodeDir, user: ctx.user, workdir: ctx.dir, redactCredentials: true,
   };
-  return { node, forge, login, options, account, catalog, hash, direct: node.readOnly === true,
-    fingerprint: definitionHash({ hash, account, params, inputs, context }) };
+  const mcp = node.kind === "tracker" && node.mode === "mcp" ? { server: node.server, tool: node.tool, arguments: trackerMcpArguments(node, options) } : undefined;
+  return { node, forge, login, options, account, catalog, hash, mcp, direct: node.readOnly === true,
+    fingerprint: definitionHash({ hash, account, params, inputs, context, mcp }) };
 }
 
 async function runPrepared(engine: Engine, project: string, prepared: Awaited<ReturnType<typeof prepare>>): Promise<Output> {
@@ -128,7 +131,10 @@ async function runPrepared(engine: Engine, project: string, prepared: Awaited<Re
   }
   const result = await (node.kind === "tracker" ? runTrackerNode(ctx, node, options, login) : repositoryEnv(ctx, forge!).then((env) => runCommandNode({
     ...options, node, outputs: outcomeOutputs(node), inlineScript: node.script, remote: true, extraEnv: env,
-  }))).catch(() => { throw new Error(node.name + " could not run. Check the account and node settings."); });
+  }))).catch((error: unknown) => {
+    if (error instanceof TrackerMcpAuthError) throw error;
+    throw new Error(node.name + " could not run. Check the account and node settings.");
+  });
   if (result.kind !== "completed" || node.failOutcomes.includes(result.outcome)) throw new Error(node.name + " did not complete. Check the inputs and account.");
   return result.outputs.map(({ type, content }) => {
     if (outputProblem(type, content)) throw new Error(node.name + " returned invalid output.");
@@ -154,7 +160,7 @@ export async function callNodeTool(engine: Engine, project: string, name: string
     const { params, inputs, context } = prepared.options;
     const details: string = JSON.stringify({
       node, project, account: typeof prepared.account === "object" ? prepared.account.id : prepared.account,
-      repository: context.project.repoUrl, job: context.job, ticket: context.ticketId, params, inputs: Object.fromEntries(inputs.map(({ type, content }) => [type, content])),
+      mcp: prepared.mcp, repository: context.project.repoUrl, job: context.job, ticket: context.ticketId, params, inputs: Object.fromEntries(inputs.map(({ type, content }) => [type, content])),
     }, null, 2);
     return { value: { state: "awaiting_answer" }, target: {
       state: "awaiting_answer", form, details, project, node,

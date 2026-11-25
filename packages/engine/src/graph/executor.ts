@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { basename, join } from "node:path";
 import { monotonicFactory } from "ulid";
 import type { RawLine, Usage } from "@pecore/agents";
-import type { AgentSession, AgentNode, Artifact, ArtifactType, FailureReason, ForgeAccount, JobDefinitions, JobState, Node, NodeAgent, Project, Settings, WaitingReason } from "@pecore/schemas";
+import type { AgentSession, AgentNode, Artifact, ArtifactType, FailureReason, ForgeAccount, JobDefinitions, JobState, Node, NodeAgent, Project, ServiceAccount, Settings, WaitingReason } from "@pecore/schemas";
 import { artifactTypes, defaultAgentId, DocumentArtifact, isHumanNode, Recipe, ReferenceArtifact, SpecArtifact } from "@pecore/schemas";
+import { TrackerMcpAuthError } from "../accounts/atlassian";
 import { spawnFor } from "../accounts/agents";
 import type { AgentServices } from "../accounts/agents";
 import { knowledgeClosure } from "../definitions/knowledge";
@@ -92,6 +93,7 @@ export type ProjectContext = {
   released(): void;
   agents: AgentServices | null;
   forgeAccount(id: string): ForgeAccount | undefined;
+  serviceAccount?(id: string): ServiceAccount | undefined;
   setupEnded?: (state: JobState) => void;
   held?: () => boolean;
   agentCard(id: string): NodeAgent | undefined;
@@ -107,7 +109,7 @@ type Attempt =
   | (AttemptExtra & { kind: "completed"; outcome: string; outputs: { type: ArtifactType; content: string }[]; quotaRejected?: { resetAt?: number } | null })
   | (AttemptExtra & { kind: "question"; pending: AgentQuestion; quotaRejected: { resetAt?: number } | null })
   | (AttemptExtra & { kind: "failed"; reason: FailureReason; retry?: false })
-  | (AttemptExtra & { kind: "waiting"; reason: "network" | "quota" | "rate_limit" | "auth"; resetAt?: number });
+  | (AttemptExtra & { kind: "waiting"; reason: "network" | "quota" | "rate_limit" | "auth"; resetAt?: number; authAccount?: string });
 
 type AgentProfile = NonNullable<NodeAgent["model"]> & { profile: string };
 type QuestionSubject = AgentQuestion & {
@@ -366,7 +368,7 @@ export class JobExecutor {
       if (node?.kind !== "tracker" && node?.kind !== "repository") continue;
       try {
         if (node.kind === "repository") repositoryAccount(this.ctx, node);
-        else await trackerLogin(this.ctx, node);
+        else if (node.mode !== "mcp") await trackerLogin(this.ctx, node);
       } catch (error) {
         this.setState(job.id, "queued", "auth", undefined, (error as Error).message);
         return false;
@@ -892,7 +894,9 @@ export class JobExecutor {
                 nodeDir: this.ctx.defs.nodeDir, params: paramsWithDefaults(node.params, recipeNode.params),
                 user: this.ctx.user, workdir: wd, context, inputs: commandInputs, onStart,
                 effect: effectRecorder(this.ctx.db, job.id, run.id, run.node),
-              }).catch((error: unknown) => ({ kind: "failed" as const, reason: "HARNESS_ERROR" as const, log: (error as Error).message }))
+              }).catch((error: unknown): Attempt => error instanceof TrackerMcpAuthError
+                ? { kind: "waiting", reason: "auth", authAccount: error.account, log: error.message }
+                : { kind: "failed", reason: "HARNESS_ERROR", log: (error as Error).message })
             : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, { id: agentId, session: agentSession! }, { wd, context, inputs: agentInputs, onStart, env: servicesEnv, continuation: resumed, sidecars, knowledge: definitions?.knowledgeByStep });
         this.running.delete(job.id);
         if (result.log) this.ctx.db.logs.write(attemptId, { dir: "cmd", text: result.log, at: Date.now() });
@@ -939,6 +943,8 @@ export class JobExecutor {
               this.setState(job.id, "waiting", "network");
               this.timers.set(job.id, setTimeout(() => void this.retryWait(job.id, run.id, "network"), delay));
             }
+          } else if (result.reason === "auth" && result.authAccount) {
+            this.waitAuth(job, run.id, result.authAccount, false);
           } else if (result.reason === "auth") {
             this.ctx.db.append([{ jobId: job.id, type: "node_run.state_changed", payload: { nodeRunId: run.id, state: "waiting", waitingReason: "auth", auth: { account: profile!.account, osUser: this.ctx.user, kind: "harness" } } }]);
             this.setState(job.id, "waiting", "auth");
@@ -1021,12 +1027,12 @@ export class JobExecutor {
     return backoffMs[Math.min(n, backoffMs.length - 1)]!;
   }
 
-  private waitAuth(job: JobRow, nodeRunId: string, account: string): void {
-    const delay = this.backoff(nodeRunId);
-    this.ctx.db.append([{ jobId: job.id, type: "node_run.state_changed", payload: { nodeRunId, state: "waiting", waitingReason: "auth", resetAt: Date.now() + delay, auth: { account, osUser: appUser, kind: "tool" } } }]);
+  private waitAuth(job: JobRow, nodeRunId: string, account: string, retry = true): void {
+    const delay: number | undefined = retry ? this.backoff(nodeRunId) : undefined;
+    this.ctx.db.append([{ jobId: job.id, type: "node_run.state_changed", payload: { nodeRunId, state: "waiting", waitingReason: "auth", ...(delay === undefined ? {} : { resetAt: Date.now() + delay }), auth: { account, osUser: appUser, kind: "tool" } } }]);
     this.setState(job.id, "waiting", "auth");
     this.ctx.notify({ kind: "login", title: job.title, body: `the login of ${account} expired or does not match`, jobId: job.id });
-    this.timers.set(job.id, setTimeout(() => void this.retryWait(job.id, nodeRunId, "auth"), delay));
+    if (delay !== undefined) this.timers.set(job.id, setTimeout(() => void this.retryWait(job.id, nodeRunId, "auth"), delay));
   }
 
   private resumeSession(run: NodeRunRow, agentId: string, session: Exclude<AgentSession, "new">, profile: string, connector: string): string | null {

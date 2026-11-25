@@ -69,6 +69,9 @@ export function nextForgeAccountId(tool: ForgeAccount["tool"], hint: string, tak
   return id;
 }
 export type ServiceAccount = z.infer<typeof ServiceAccount>;
+export const atlassianAccount: ServiceAccount = {
+  id: "atlassian", kind: "service", service: "Atlassian", tool: "atlassian", user: "Atlassian account",
+};
 
 export const Accounts = z
   .object({

@@ -130,7 +130,7 @@ export type HumanNode = z.infer<typeof HumanNode>;
 export const TrackerProvider = z.enum(["github", "gitlab", "jira"]);
 export type TrackerProvider = z.infer<typeof TrackerProvider>;
 
-export const TrackerNode = CommandNode.pick({
+const TrackerFields = CommandNode.pick({
   inputs: true, optionalInputs: true, outcomeRules: true, outputRules: true,
 }).extend({
   ...Base,
@@ -140,13 +140,27 @@ export const TrackerNode = CommandNode.pick({
   changesFiles: z.literal(false).default(false),
   provider: TrackerProvider,
   account: z.string({ error: "Choose an account for this tracker." }).trim().min(1, "Choose an account for this tracker."),
-  script: z.string().trim().min(1, "Enter a script for this tracker."),
-  repeatCheck: z.literal(true).optional(),
   readOnly: z.literal(true).optional(),
 }).strict();
+
+const CliTrackerNode = TrackerFields.extend({
+  mode: z.literal("cli").optional(),
+  script: z.string().trim().min(1, "Enter a script for this tracker."),
+  repeatCheck: z.literal(true).optional(),
+});
+export const TrackerMcpServer = z.enum(["atlassian"]);
+export const McpTrackerNode = TrackerFields.extend({
+  mode: z.literal("mcp"),
+  provider: z.literal("jira"),
+  server: TrackerMcpServer,
+  tool: z.string().trim().min(1, "Choose an MCP tool."),
+  arguments: z.record(z.string(), z.json()).default({}),
+});
+export type McpTrackerNode = z.infer<typeof McpTrackerNode>;
+export const TrackerNode = z.discriminatedUnion("mode", [CliTrackerNode, McpTrackerNode]);
 export type TrackerNode = z.infer<typeof TrackerNode>;
 
-export const RepositoryNode = TrackerNode.omit({ provider: true, repeatCheck: true }).extend({
+export const RepositoryNode = CliTrackerNode.omit({ provider: true, repeatCheck: true, mode: true }).extend({
   kind: z.literal("repository"),
   account: z.string({ error: "Choose a Git hosting account." }).trim().min(1, "Choose a Git hosting account."),
   script: z.string().trim().min(1, "Enter a repository script."),
@@ -211,7 +225,7 @@ function checkNode(node: z.infer<typeof NodeShape>): Issue[] {
       if (node.outputs[outcome] === undefined) issues.push({ path: ["outputRules", outcome], message: `${outcome} has no output` });
     }
     for (const outcome of Object.keys(node.outputs)) {
-      if (node.outputRules[outcome] === undefined) issues.push({ path: ["outputs", outcome], message: `${outcome} needs an output rule` });
+      if (!(node.kind === "tracker" && node.mode === "mcp") && node.outputRules[outcome] === undefined) issues.push({ path: ["outputs", outcome], message: `${outcome} needs an output rule` });
     }
     for (const [i, type] of node.optionalInputs.entries()) {
       if (node.inputs.includes(type)) issues.push({ path: ["optionalInputs", i], message: `${type} is already a required input` });

@@ -21,6 +21,8 @@ type NodeRow = {
   repository_script: string | null;
   tracker_provider: string | null;
   tracker_account: string | null;
+  tracker_server: string | null;
+  tracker_tool: string | null;
   tracker_script: string | null;
   tracker_repeat_check: number | null;
 };
@@ -124,8 +126,11 @@ export class Catalog {
     const remote = row.reads_only ? { readOnly: true } : {};
     if (row.kind === "tracker") return Node.parse({
       ...remote,
-      ...common, ...inputs, provider: row.tracker_provider, account: row.tracker_account, script: row.tracker_script,
-      outputRules: command?.outputRules, ...(row.tracker_repeat_check ? { repeatCheck: true } : {}),
+      ...common, ...inputs, provider: row.tracker_provider, account: row.tracker_account,
+      ...(row.tracker_server ? { mode: "mcp", server: row.tracker_server, tool: row.tracker_tool,
+        arguments: this.params("SELECT name, value FROM catalog_tracker_arguments WHERE node = ? ORDER BY name", name),
+      } : { script: row.tracker_script, ...(row.tracker_repeat_check ? { repeatCheck: true } : {}) }),
+      outputRules: command?.outputRules,
     });
     if (row.kind === "repository") return Node.parse({
       ...remote,
@@ -164,8 +169,8 @@ export class Catalog {
       const approved: string | null = this.chatApprovedHash(name);
       this.delete("nodes", name);
       this.db.prepare(`INSERT INTO catalog_nodes
-        (name, description, icon, kind, shipped, timeout_sec, changes_files, retry, prompt, tier, agent_session, human_interface, repository_account, repository_script, tracker_provider, tracker_account, tracker_script, tracker_repeat_check, chat_approved_hash, reads_only)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        (name, description, icon, kind, shipped, timeout_sec, changes_files, retry, prompt, tier, agent_session, human_interface, repository_account, repository_script, tracker_provider, tracker_account, tracker_script, tracker_repeat_check, chat_approved_hash, reads_only, tracker_server, tracker_tool)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         name, node.description, node.icon ?? null, node.kind, Number(shipped),
         "timeoutSec" in node ? node.timeoutSec : null, "changesFiles" in node ? Number(node.changesFiles) : null,
         "retry" in node ? node.retry : null, node.kind === "agent" ? node.prompt : null,
@@ -173,8 +178,9 @@ export class Catalog {
         node.kind === "human" ? node.interface : null,
         node.kind === "repository" ? node.account : null, node.kind === "repository" ? node.script : null,
         node.kind === "tracker" ? node.provider : null, node.kind === "tracker" ? node.account : null,
-        node.kind === "tracker" ? node.script : null, node.kind === "tracker" && node.repeatCheck ? 1 : null,
+        node.kind === "tracker" && node.mode !== "mcp" ? node.script : null, node.kind === "tracker" && node.mode !== "mcp" && node.repeatCheck ? 1 : null,
         approved, "readOnly" in node && node.readOnly ? 1 : null,
+        node.kind === "tracker" && node.mode === "mcp" ? node.server : null, node.kind === "tracker" && node.mode === "mcp" ? node.tool : null,
       );
       this.writeParams("INSERT INTO catalog_node_params (node, name, value) VALUES (?, ?, ?)", [name], node.params);
       this.writeLists("INSERT INTO catalog_node_lists (node, field, position, value) VALUES (?, ?, ?, ?)", [name], {
@@ -186,6 +192,7 @@ export class Catalog {
         const insert: Database.Statement<[string, string, string]> = this.db.prepare("INSERT INTO catalog_node_outputs (node, outcome, type) VALUES (?, ?, ?)");
         for (const [outcome, type] of Object.entries(node.outputs)) insert.run(name, outcome, type);
       }
+      if (node.kind === "tracker" && node.mode === "mcp") this.writeParams("INSERT INTO catalog_tracker_arguments (node, name, value) VALUES (?, ?, ?)", [name], node.arguments);
       if ("inputs" in node) this.saveCommandNode(node);
     })();
   }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { appName, BuiltInHarness, codeCommitProfile, ForgeAccount, ForgeDiscovery, ForgeKind, forgeHost, forgeServices, harnessColor, harnesses, nextForgeAccountId, Settings as SettingsSchema } from "@pecore/schemas";
+import { appName, atlassianAccount, BuiltInHarness, codeCommitProfile, ForgeAccount, ForgeDiscovery, ForgeKind, forgeHost, forgeServices, harnessColor, harnesses, nextForgeAccountId, Settings as SettingsSchema } from "@pecore/schemas";
 import type { Account, HarnessInfo, LiveMessage, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useAutoSave, useData } from "../api/hooks";
@@ -213,7 +213,7 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
   useEffect(() => {
     if (!connected) return;
     const due: [string, boolean][] = [];
-    for (const account of visible) if (account.kind !== "model") due.push([account.id, false]);
+    for (const account of visible) if (account.kind === "forge") due.push([account.id, false]);
     for (const login of modelLogins) if (login.state === "unchecked" && !loginRunning(login.id, login.running)) due.push([login.id, true]);
     for (const [id, isModel] of due) {
       if (autoChecked.current.has(id)) continue;
@@ -269,14 +269,14 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
           name={account.kind === "forge" ? [forgeServices[account.forge].label, account.user].filter(Boolean).join(" · ") : account.service}
           detail={account.kind === "forge"
             ? account.forge === "codecommit" ? `${account.host} · ${codeCommitProfile(account)}` : account.host
-            : `Log in with ${account.tool}, then check again.`}
+            : "Atlassian Rovo MCP server"}
           state={state} checking={checking.has(account.id)}
           actions={<>
-            {account.kind === "forge" && (account.tool === "gh" || account.tool === "glab") && state !== "logged_in" &&
+            {(account.tool === "gh" || account.tool === "glab" || account.tool === "atlassian") && state !== "logged_in" &&
               <Button size="sm" variant="primary" disabled={locked || busy} onClick={() => void start.run(account)}>Log in</Button>}
             {account.kind === "forge" && onEdit && <Button size="sm" disabled={locked || busy} onClick={() => onEdit(account)}>Edit</Button>}
           </>}>
-          {id && <LoginOutput id={id} progress={output} running={!output?.done} />}
+          {id && <LoginOutput id={id} progress={output} running={!output?.done && account.tool !== "atlassian"} />}
         </AccountRow>;
       })}
     </ul>}
@@ -349,6 +349,14 @@ export function Settings() {
   const [disableDialog, setDisableDialog] = useState(false);
   const [forgeDialog, setForgeDialog] = useState<ForgeAccount | "new">();
   const [pendingLogin, setPendingLogin] = useState<string>();
+  const [atlassianLogin, setAtlassianLogin] = useState<string>();
+  const atlassian = (accounts.current?.accounts ?? []).filter((account) => account.kind === "service" && account.tool === "atlassian");
+  const addAtlassian = useAction(async () => {
+    if (!accounts.value) return;
+    if (!await accounts.commit({ accounts: [...accounts.value.accounts, atlassianAccount] })) return;
+    setAtlassianLogin(atlassianAccount.id);
+    accounts.reload();
+  });
   const [showUnavailable, setShowUnavailable] = useState(false);
   const [active, setActive] = useState<string>(sections[0]!.id);
   const actualProtected: boolean = settings.current?.protectedMode ?? false;
@@ -409,6 +417,13 @@ export function Settings() {
                 <p className={s.groupText}>Add an account, on a public service or on your own server, to push branches and open pull requests.</p>}
               <DiscoveringProviders providers={pendingForges} />
             </LoginControls>
+            {atlassian.length > 0 ? <LoginControls title="Atlassian" kind="tool" accounts={atlassian} pendingLogin={atlassianLogin}
+              onLoginStarted={() => setAtlassianLogin(undefined)} />
+              : <Card title="Atlassian" actions={<Button size="sm" icon={<PlusIcon />} disabled={!connected || !accounts.value || accounts.saving}
+                loading={addAtlassian.busy} onClick={() => void addAtlassian.run()}>Add Atlassian account</Button>}>
+                <ErrorText error={addAtlassian.error} />
+                <p className={s.groupText}>Connect Jira sites through the Atlassian MCP server.</p>
+              </Card>}
             <Card title="Jira" actions={<Button size="sm" aria-label="Check Jira login" disabled={jira.loading} onClick={jira.reload}>Check</Button>}>
               <p className={s.groupText}>{jira.data ? `${jira.data.account.user} · ${jira.data.site}` : jira.loading ? "Checking Jira login…" : "Sign in to the Atlassian CLI to connect Jira."}</p>
             </Card>

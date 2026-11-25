@@ -415,3 +415,9 @@
 - Decision: Project Managers can call Repository and Tracker nodes in chat. Reads run directly. Changes need confirmation for the exact action. Protected mode also requires the current script to match the authorization recorded by the app. Shipped nodes and user saves authorize the saved script. Agent saves do not. Job execution follows its existing rules.
 - Why: The Project Manager needs to find tickets and plan one job per ticket while keeping Git hosting and tracker logins inside the app.
 - Replaces: Dedicated ticket actions as the only chat access to project trackers and direct posting of comments on request.
+
+## 2026-11-25: Tracker nodes can call Atlassian MCP
+
+- Decision: Tracker nodes choose CLI or MCP server. The latter saves the server, tool and arguments. The app launches a local stdio bridge on demand. The bridge owns browser OAuth and its tokens. Adding the Atlassian service account starts sign-in. An expired login pauses a job node until sign-in succeeds. Chat actions offer sign-in in Accounts. The existing chat confirmation and protected-mode authorization cover MCP calls.
+- Why: One Atlassian login can reach several Jira sites and each call can choose its site by cloudId.
+- Replaces: CLI as the only Tracker mode.
