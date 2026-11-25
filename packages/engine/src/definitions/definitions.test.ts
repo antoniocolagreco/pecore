@@ -152,7 +152,7 @@ describe("recipe check", () => {
   it("rejects params overrides on runsAs: engine nodes", () => {
     const engine = check("push", ["pushed", "failed"], { runsAs: "engine", probe: ["true"] });
     const r = recipe({ start: "push", successOutcomes: ["push:pushed"], nodes: { push: { use: "push", params: { x: 1 } } } });
-    expect(checkRecipe(r, new Map([["push", engine]]), true)).toContainEqual({ path: "nodes.push.params", message: "params cannot be overridden on a runsAs: engine node" });
+    expect(checkRecipe(r, new Map([["push", engine]]), true)).toContainEqual({ path: "nodes.push.params", message: "Recipes cannot change parameters for nodes that use source control credentials." });
   });
 
   it("rejects a node that needs the project's remote repository only when the project has none (decision 72)", () => {

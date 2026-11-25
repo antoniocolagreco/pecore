@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { codeCommitProfile, CommitAuthor, forgeHost, forgeServices, nextForgeAccountId } from "@pecore/schemas";
-import type { Accounts, ForgeAccount } from "@pecore/schemas";
+import type { Accounts, ForgeAccount, ForgeDiscovery } from "@pecore/schemas";
 import { readGitAuthor } from "../workdir/git-as";
 
 const exec = promisify(execFile);
@@ -85,7 +85,10 @@ async function codeCommitLogins(): Promise<Identity[]> {
   return found.filter((entry): entry is Identity => entry !== null);
 }
 
-export async function discoverForgeAccounts(): Promise<Identity[]> {
+export async function discoverForgeAccounts(forge?: ForgeDiscovery): Promise<Identity[]> {
+  if (forge === "github") return githubLogins();
+  if (forge === "gitlab") return gitlabLogins();
+  if (forge === "codecommit") return codeCommitLogins();
   return (await Promise.all([githubLogins(), gitlabLogins(), codeCommitLogins()])).flat();
 }
 

@@ -864,7 +864,6 @@ export class JobExecutor {
                 workdir: wd,
                 context,
                 inputs: commandInputs,
-                cleanTree: node.cleanCheckout ? before : null,
                 extraEnv: { ...servicesEnv, ...toolEnv, ...(previousCi ? { PECORE_CI_EXPECTED_HEAD: previousCi.commit } : {}) },
                 onStart,
                 effect: effectRecorder(this.ctx.db, job.id, run.id, run.node),

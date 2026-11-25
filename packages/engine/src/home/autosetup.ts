@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { harnessVersion, listOptions, satisfies } from "@pecore/agents";
 import type { ResolvedConnector, Spawn } from "@pecore/agents";
-import { BuiltInHarness, Compaction, ModelAccount, TierName, agentKindColor, builtInAgentNames, defaultAgentColor, defaultAgentId } from "@pecore/schemas";
-import type { AgentDefinition, NodeAgent, Profile, Profiles, SetupView, Tiers } from "@pecore/schemas";
+import { Compaction, ModelAccount, TierName, agentKindColor, builtInAgentNames, defaultAgentColor, defaultAgentId } from "@pecore/schemas";
+import type { AgentDefinition, BuiltInHarness, NodeAgent, Profile, Profiles, SetupView, Tiers } from "@pecore/schemas";
 import { spawnFor } from "../accounts/agents";
 import type { AgentServices, LoginInfo } from "../accounts/agents";
 import { validateGlobal } from "../definitions/load";
@@ -18,9 +18,8 @@ type Harness = SetupView["harnesses"][number];
 type Options = NonNullable<Awaited<ReturnType<typeof listOptions>>>;
 type ProfileOffer = Record<TierName, { model: string; effort: string | null | undefined }>;
 type EffortProbe = Pick<Parameters<typeof listOptions>[0], "connector" | "login" | "spawn" | "allowUnknownIdentity">;
-type Finding = { harness: Harness; title: string; account: ModelAccount | undefined; provider: string; offer: ProfileOffer | null };
+type Finding = { harness: Harness; title: string; provider: string; offer: ProfileOffer | null };
 type Changes = { message: string; changed: (keyof Global)[] };
-type SetupResult = { harnesses: SetupView["harnesses"]; changes: Changes | null };
 
 async function readOptional(file: string): Promise<string | null> {
   return readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => {
@@ -99,10 +98,9 @@ async function profileOffer(options: Options, base: Options | null, probe: Effor
   };
 }
 
-async function findHarness(agents: AgentServices, name: BuiltInHarness, accounts: Global["accounts"]): Promise<Finding> {
-  const account: ModelAccount | undefined = accounts.accounts.find((a): a is ModelAccount => a.kind === "model" && a.connector === name);
+export async function findHarness(agents: AgentServices, name: BuiltInHarness): Promise<Finding> {
   const harness: Harness = { connector: name, installed: false, version: null, loggedIn: false };
-  const finding: Finding = { harness, title: name, provider: name === "claude-code" ? "anthropic" : name === "codex" ? "openai" : "opencode", account, offer: null };
+  const finding: Finding = { harness, title: name, provider: name === "claude-code" ? "anthropic" : name === "codex" ? "openai" : "opencode", offer: null };
   const connector: ResolvedConnector | null = await agents.resolve(name).catch(() => null);
   if (!connector) return finding;
   finding.title = connector.title;
@@ -133,27 +131,31 @@ async function findHarness(agents: AgentServices, name: BuiltInHarness, accounts
   return finding;
 }
 
-export async function autoSetup(configuration: Configuration, agents: AgentServices): Promise<SetupResult> {
+export function registerHarnessAccount(configuration: Configuration, { harness, provider }: Finding): boolean {
+  if (!harness.loggedIn) return false;
+  const current: Global["accounts"] = configuration.accounts();
+  const name: BuiltInHarness = harness.connector;
+  if (current.accounts.some((entry) => entry.id === name || (entry.kind === "model" && entry.connector === name))) return false;
+  const account: ModelAccount = ModelAccount.parse({ id: name, kind: "model", provider, connector: name, login: "subscription" });
+  configuration.write({ accounts: { accounts: [...current.accounts, account] } });
+  return true;
+}
+
+export function saveHarnessProfiles(configuration: Configuration, findings: Finding[], added: ReadonlySet<BuiltInHarness>): Changes | null {
   const current: Global = configuration.read();
   const { accounts, profiles, tiers } = current;
-  const findings: Finding[] = await Promise.all(BuiltInHarness.options.map((name) => findHarness(agents, name, accounts)));
-  const harnesses: Harness[] = findings.map((finding) => finding.harness);
-  const eligible: Finding[] = findings.filter(({ harness, account }) => harness.loggedIn && (account || !accounts.accounts.some((a) => a.id === harness.connector)));
-  if (!eligible.length) return { harnesses, changes: null };
   const tracking: Profiles = configuration.autoSetupProfiles();
   const lastWritten: Map<string, Profile> = new Map(tracking.profiles.map((profile) => [profile.id, profile]));
-  const newAccounts: ModelAccount[] = [];
   const newProfiles: Profile[] = [];
   const refreshedProfiles: Map<number, Profile> = new Map();
   const additions: Record<TierName, string[]> = { frontier: [], strong: [], standard: [], cheap: [] };
   const titles: Set<string> = new Set();
-  for (const { harness, title, account, provider, offer } of eligible) {
+  for (const { harness, title, offer } of findings) {
     const name: BuiltInHarness = harness.connector;
-    const id: string = account?.id ?? name;
-    if (!account) {
-      newAccounts.push(ModelAccount.parse({ id, kind: "model", provider, connector: name, login: "subscription" }));
-      titles.add(title);
-    }
+    if (added.has(name)) titles.add(title);
+    const account: ModelAccount | undefined = accounts.accounts.find((entry): entry is ModelAccount => entry.kind === "model" && entry.connector === name);
+    if (!harness.loggedIn || !account) continue;
+    const id: string = account.id;
     if (offer) {
       for (const tier of TierName.options) {
         const profileId: string = `${name}-${tier}`;
@@ -175,7 +177,6 @@ export async function autoSetup(configuration: Configuration, agents: AgentServi
     }
   }
   const changes: Partial<Global> = {};
-  if (newAccounts.length) changes.accounts = { accounts: [...accounts.accounts, ...newAccounts] };
   if (newProfiles.length || refreshedProfiles.size) {
     changes.profiles = { profiles: [...profiles.profiles.map((profile, index) => refreshedProfiles.get(index) ?? profile), ...newProfiles] };
   }
@@ -185,19 +186,16 @@ export async function autoSetup(configuration: Configuration, agents: AgentServi
     changes.tiers = { tiers: entries };
   }
   const changed: (keyof Global)[] = Object.keys(changes) as (keyof Global)[];
-  if (!changed.length) return { harnesses, changes: null };
-  if (!isDeepStrictEqual(configuration.read(), current) || !isDeepStrictEqual(configuration.autoSetupProfiles(), tracking)) {
-    throw new Error("Configuration changed during auto-setup");
-  }
+  if (!changed.length && !added.size) return null;
   const errors: DefinitionError[] = validateGlobal({ ...current, ...changes });
   if (errors.length) throw new Error(errors.map((error) => error.message).join("\n"));
-  configuration.write(changes, changes.profiles ? { profiles: [...lastWritten.values()] } : undefined);
+  if (changed.length) configuration.write(changes, changes.profiles ? { profiles: [...lastWritten.values()] } : undefined);
   const profileSummary: string[] = [];
   if (newProfiles.length) profileSummary.push(`${newProfiles.length} ${newProfiles.length === 1 ? "profile" : "profiles"} added`);
   if (refreshedProfiles.size) profileSummary.push(`${refreshedProfiles.size} ${refreshedProfiles.size === 1 ? "profile" : "profiles"} updated`);
-  const summary: string = profileSummary.length ? profileSummary.join(", ") : `${newAccounts.length} model ${newAccounts.length === 1 ? "account" : "accounts"}`;
+  const summary: string = profileSummary.length ? profileSummary.join(", ") : `${added.size} model ${added.size === 1 ? "account" : "accounts"}`;
   const message: string = `Set up ${new Intl.ListFormat("en").format([...titles])}: ${summary}`;
-  return { harnesses, changes: { message, changed } };
+  return { message, changed };
 }
 
 export function ensureBuiltInAgents(configuration: Configuration, fillModels: boolean): boolean {

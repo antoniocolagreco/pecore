@@ -88,7 +88,7 @@ describe("node schema", () => {
   });
 
   it("requires a probe on runsAs: engine", () => {
-    expect(issues({ ...githubPr, probe: undefined })).toContain("probe: a runsAs: engine node needs a probe");
+    expect(issues({ ...githubPr, probe: undefined })).toContain("probe: Enter a check command that can tell whether the remote action already happened.");
   });
 
   it("requires exactly one of command and script", () => {
@@ -97,7 +97,7 @@ describe("node schema", () => {
   });
 
   it("rejects credentials on project-user nodes", () => {
-    expect(issues({ ...githubPr, runsAs: "project-user" })).toContain("credentials: credentials need runsAs: engine");
+    expect(issues({ ...githubPr, runsAs: "project-user" })).toContain("credentials: Turn on Use source control credentials to use the accounts saved on this node.");
   });
 
   it("rejects failOutcomes and rule outcomes not in outcomes", () => {

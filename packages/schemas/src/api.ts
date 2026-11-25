@@ -149,6 +149,7 @@ export const LiveMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("project.updated"), projectId: ProjectId }),
   z.object({ type: z.literal("definition.changed"), path: z.string(), sha256: z.string().nullable() }),
   z.object({ type: z.literal("configuration.changed"), kind: z.enum(["settings", "agents", "accounts", "profiles", "tiers"]) }),
+  z.object({ type: z.literal("accounts.discovery_changed") }),
   z.object({ type: z.literal("log.line"), attemptId: z.string(), event: LogEvent }),
   z.object({ type: z.literal("login.progress"), loginId: z.string(), text: z.string(), url: z.string().nullable(), done: z.boolean() }),
   z.object({ type: z.literal("chat.changed"), project: ProjectId.nullable() }),
@@ -480,6 +481,11 @@ export type PrerequisiteView = z.infer<typeof PrerequisiteView>;
 export const BuiltInHarness = z.enum(["claude-code", "codex", "opencode"]);
 export type BuiltInHarness = z.infer<typeof BuiltInHarness>;
 
+export const ForgeDiscovery = z.enum(["github", "gitlab", "codecommit"]);
+export type ForgeDiscovery = z.infer<typeof ForgeDiscovery>;
+export const AccountDiscovery = z.union([BuiltInHarness, ForgeDiscovery]);
+export type AccountDiscovery = z.infer<typeof AccountDiscovery>;
+
 const SetupHarness = z.object({
   connector: BuiltInHarness,
   installed: z.boolean(),
@@ -624,6 +630,7 @@ export const routes = {
   refreshAccountOptions: { method: "POST", path: "/accounts/:id/options/refresh", params: IdParams, response: AccountOptions.nullable() },
   checkPrerequisites: { method: "POST", path: "/prerequisites/check", response: z.array(PrerequisiteView) },
   getSetup: { method: "GET", path: "/setup", response: SetupView },
+  getAccountDiscovery: { method: "GET", path: "/accounts/discovery", response: z.array(AccountDiscovery) },
   startSetupLogin: { method: "POST", path: "/setup/:connector/login", params: z.object({ connector: BuiltInHarness }), response: z.object({ loginId: z.string() }) },
   getLog: { method: "GET", path: "/logs/:id", params: IdParams, query: LogQuery, response: z.union([z.object({ view: z.literal("raw"), lines: z.array(z.unknown()) }), z.object({ view: z.literal("events"), events: z.array(LogEvent) })]) },
 } as const satisfies Record<string, RouteDef>;

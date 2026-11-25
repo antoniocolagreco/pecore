@@ -2,7 +2,6 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ArtifactType, CommandNode, FailureReason, OutcomeRule, OutputRule } from "@pecore/schemas";
-import { createCleanCheckout, removeCleanCheckout } from "../workdir/content-state";
 import { FsAsError, readFileAs } from "../workdir/fs-as";
 import { gitIdentityEnv } from "../workdir/git-as";
 import { placeholderEnv, placeholderValues, substituteArgv } from "./placeholders";
@@ -15,7 +14,7 @@ import type { ProbeResult } from "./probe";
 export type CommandInput = { type: ArtifactType; content: string };
 
 export type CommandRun<Output extends string = ArtifactType> = {
-  node: Pick<CommandNode, "name" | "runsAs" | "cleanCheckout" | "timeoutSec" | "command" | "script" | "probe" | "probeRules" | "mergedCheck" | "mergedCheckRules" | "outcomeRules">;
+  node: Pick<CommandNode, "name" | "runsAs" | "timeoutSec" | "command" | "script" | "probe" | "probeRules" | "mergedCheck" | "mergedCheckRules" | "outcomeRules">;
   outputs: (outcome: string) => [Output, OutputRule][];
   nodeDir: string;
   sidecars?: Readonly<Record<string, string>> | undefined;
@@ -24,7 +23,6 @@ export type CommandRun<Output extends string = ArtifactType> = {
   workdir: string;
   context: Omit<PlaceholderContext, "params" | "workdir">;
   inputs: CommandInput[];
-  cleanTree: string | null;
   comment?: string;
   extraEnv?: Record<string, string>;
   onStart?: (pgid: number, user: string) => void;
@@ -111,17 +109,11 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
   const engine = c.node.runsAs === "engine";
   const user = engine ? appUser : c.user;
   const temp: string[] = [];
-  let cleanDir: string | null = null;
   let cwd = c.workdir;
   try {
     if (engine) {
       cwd = await mkdtemp(join(tmpdir(), "pecore-engine-"));
       temp.push(cwd);
-    } else if (c.node.cleanCheckout && c.cleanTree) {
-      cleanDir = join(c.workdir, "..", `.clean-${c.context.job!.id}`);
-      await removeCleanCheckout(c.user, c.workdir, cleanDir);
-      await createCleanCheckout(c.user, c.workdir, c.cleanTree, cleanDir);
-      cwd = cleanDir;
     }
     const input: string = commandInput(c.inputs, c.comment);
     const values = placeholderValues({ ...c.context, params: c.params, workdir: cwd });
@@ -177,7 +169,6 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
     }
     return { kind: "completed", outcome, outputs, log, fromProbe: false };
   } finally {
-    if (cleanDir) await removeCleanCheckout(c.user, c.workdir, cleanDir);
     for (const d of temp) await rm(d, { recursive: true, force: true });
   }
 }

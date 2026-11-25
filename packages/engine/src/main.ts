@@ -7,10 +7,11 @@ import { join, relative } from "node:path";
 import { removeAs } from "./workdir/fs-as";
 import { definitionOperations } from "./api/routes/definitions";
 import { globalFileHandlers } from "./api/routes/settings";
-import { appName, assistantAgentId, BuiltInHarness, defaultAgentId, defaultJobLimit, freeProjectManager, projectManagerClash, projectManagers, withForgeHosts } from "@pecore/schemas";
+import { appName, assistantAgentId, BuiltInHarness, defaultAgentId, defaultJobLimit, ForgeDiscovery, freeProjectManager, projectManagerClash, projectManagers, withForgeHosts } from "@pecore/schemas";
 import { listOptions, satisfies } from "@pecore/agents";
 import type { LoginState } from "@pecore/agents";
 import type { Account, AccountOptions, Accounts, AgentDefinitions, ChatAgent, ForgeAccount, JobState, LiveMessage, LoginView, NodeAgent, NodeAgentCatalog, NotificationTarget, ProjectManagerAgent, Profiles, ProjectInput, ProjectManagerIdentity, Settings, SetupView, Tiers, WhyView } from "@pecore/schemas";
+import type { AccountDiscovery } from "@pecore/schemas";
 import { HttpError } from "./api/server";
 import type { CompleteProjectImportBody, ExportProjectBody, ExportProjectResult, ImportProjectBody, ImportProjectPreview, ImportProjectResult } from "@pecore/schemas";
 import { AgentServices, protectedUser, spawnFor } from "./accounts/agents";
@@ -33,7 +34,7 @@ import type { CreateJob } from "./jobs/create";
 import type { TicketOrder } from "./jobs/plan";
 import { homePaths, initHome } from "./home/layout";
 import { closeHome, moveLegacyFolders } from "./home/legacy";
-import { autoSetup, ensureBuiltInAgents, openCodeModels } from "./home/autosetup";
+import { ensureBuiltInAgents, findHarness, openCodeModels, registerHarnessAccount, saveHarnessProfiles } from "./home/autosetup";
 import { takeLock } from "./home/lock";
 import { beginProject, cancelCreation, finishProject, prepareRepo, readCreation, repoCreated, setupJobId } from "./projects/create";
 import type { CreateOptions } from "./projects/create";
@@ -95,6 +96,8 @@ export class Engine extends EventEmitter {
   private startupReads: Promise<void> = Promise.resolve();
   private runtimeDetection: Promise<void> = Promise.resolve();
   setupDone: Promise<void> = Promise.resolve();
+  private modelSetupDone: Promise<void> = Promise.resolve();
+  private readonly discovering = new Set<AccountDiscovery>();
   private setupHarnesses: SetupView["harnesses"] = BuiltInHarness.options.map((connector) => ({ connector, installed: false, version: null, loggedIn: false }));
   globalPause = false;
   private readonly loginRunner = new LoginRunner((p) => this.live({ type: "login.progress", ...p }));
@@ -144,7 +147,10 @@ export class Engine extends EventEmitter {
       return null;
     });
     this.agentChats = new AgentChats(this, this.chats, (message) => this.live(message));
-    this.setupDone = this.runAutoSetup(this.opts.discoverForges === true).catch((error: unknown) => console.error("auto-setup:", error));
+    this.modelSetupDone = this.setupModels(BuiltInHarness.options).catch((error: unknown) => console.error("model setup:", error));
+    const forgeSetup: Promise<void> = this.opts.discoverForges
+      ? this.setupForges().catch((error: unknown) => console.error("forge setup:", error)) : Promise.resolve();
+    this.setupDone = Promise.all([this.modelSetupDone, forgeSetup]).then(() => undefined);
     if (this.opts.detectRuntime && this.settings.servicesRuntime === null) {
       this.runtimeDetection = this.detectServicesRuntime(this.opts.detectRuntime).catch((error: unknown) => console.error("services runtime detection:", error));
     }
@@ -180,7 +186,7 @@ export class Engine extends EventEmitter {
     this.stopCiWatch = ciWatch.stop;
     this.wakeCiWatch = ciWatch.wake;
     if (this.agents && this.opts.checkLogins !== false) {
-      this.startupReads = this.setupDone.then(() => this.checkAllLogins()).then(() => this.emit("logins")).catch((error: unknown) => console.error("login check:", error))
+      this.startupReads = this.modelSetupDone.then(() => this.checkAllLogins()).then(() => this.emit("logins")).catch((error: unknown) => console.error("login check:", error))
         .then(async () => {
           if (this.shuttingDown) return;
           const reads: Promise<unknown>[] = this.accounts.accounts.filter(({ kind }) => kind === "model").map(({ id }) => this.accountOptions(id));
@@ -246,33 +252,69 @@ export class Engine extends EventEmitter {
     return result;
   }
 
-  private async runAutoSetup(discoverForges: boolean = false): Promise<void> {
+  accountDiscovery(): AccountDiscovery[] {
+    return [...this.discovering];
+  }
+
+  private async discoverAccount<T>(provider: AccountDiscovery, work: () => Promise<T>): Promise<T | undefined> {
+    this.discovering.add(provider);
+    this.live({ type: "accounts.discovery_changed" });
+    try {
+      return await work();
+    } catch (error) {
+      console.error(`Discovering ${provider} accounts:`, error);
+      return undefined;
+    } finally {
+      this.discovering.delete(provider);
+      this.live({ type: "accounts.discovery_changed" });
+    }
+  }
+
+  private async setupModels(providers: readonly BuiltInHarness[]): Promise<void> {
     const agents: AgentServices | null = this.agents;
     if (this.shuttingDown) return;
+    const added = new Set<BuiltInHarness>();
+    const findings = agents && this.opts.checkLogins !== false ? await Promise.all(providers.map((provider) => this.discoverAccount(provider, async () => {
+      const result = await findHarness(agents, provider);
+      this.setupHarnesses = this.setupHarnesses.map((harness) => harness.connector === provider ? result.harness : harness);
+      if (!this.shuttingDown) await this.withConfiguration(async () => {
+        if (!registerHarnessAccount(this.configuration, result)) return;
+        added.add(provider);
+        this.accounts = withForgeHosts(this.configuration.accounts());
+        this.configurationChanged("accounts");
+      });
+      return result;
+    }))) : [];
+    if (this.shuttingDown) return;
     await this.withConfiguration(async () => {
-      const [result, forgeLogins] = await Promise.all([
-        agents && this.opts.checkLogins !== false
-          ? autoSetup(this.configuration, agents).catch((error: unknown) => { console.error("auto-setup:", error); return null; }) : null,
-        discoverForges ? discoverForgeAccounts() : [],
-      ]);
-      const accounts: Accounts = this.configuration.accounts();
-      const forges: ForgeAccount[] = await newForgeAccounts(accounts, forgeLogins);
-      if (forges.length) this.configuration.write({ accounts: { accounts: [...accounts.accounts, ...forges] } });
-      if (result) this.setupHarnesses = result.harnesses;
+      const changes = saveHarnessProfiles(this.configuration, findings.filter((result) => result !== undefined), added);
       const cardsChanged: boolean = ensureBuiltInAgents(this.configuration, true);
-      const changes = result?.changes;
-      if (!changes && !cardsChanged && !forges.length) return;
+      if (!changes && !cardsChanged) return;
       await this.reloadGlobal();
       if (changes) {
         this.notify({ kind: "auto-setup", title: `${appName} setup`, body: changes.message });
         for (const kind of changes.changed) this.configurationChanged(kind);
       }
       if (cardsChanged) this.configurationChanged("agents");
-      if (forges.length) {
-        this.notify({ kind: "auto-setup", title: `${appName} setup`, body: `Added ${forges.length} Git hosting ${forges.length === 1 ? "account" : "accounts"}.` });
-        if (!changes?.changed.includes("accounts")) this.configurationChanged("accounts");
-      }
     });
+  }
+
+  private async setupForges(): Promise<void> {
+    const counts: (number | undefined)[] = await Promise.all(ForgeDiscovery.options.map((forge) => this.discoverAccount(forge, async () => {
+      const logins = await discoverForgeAccounts(forge);
+      if (!logins.length || this.shuttingDown) return 0;
+      return this.withConfiguration(async () => {
+        const accounts: Accounts = this.configuration.accounts();
+        const added: ForgeAccount[] = await newForgeAccounts(accounts, logins);
+        if (!added.length) return 0;
+        this.configuration.write({ accounts: { accounts: [...accounts.accounts, ...added] } });
+        this.accounts = withForgeHosts(this.configuration.accounts());
+        this.configurationChanged("accounts");
+        return added.length;
+      });
+    })));
+    const added: number = counts.reduce<number>((sum, count) => sum + (count ?? 0), 0);
+    if (added) this.notify({ kind: "auto-setup", title: `${appName} setup`, body: `Added ${added} Git hosting ${added === 1 ? "account" : "accounts"}.` });
   }
 
   private async detectServicesRuntime(detect: () => Promise<Settings["servicesRuntime"]>): Promise<void> {
@@ -286,7 +328,7 @@ export class Engine extends EventEmitter {
   }
 
   async setupView(): Promise<SetupView> {
-    await this.setupDone;
+    await this.modelSetupDone;
     const logins: LoginView[] = await this.loginViews().catch(() => []);
     const modelAccountWorks: boolean = logins.some((login) => {
       const harness: SetupView["harnesses"][number] | undefined = this.setupHarnesses.find((item) => item.connector === login.connector);
@@ -430,7 +472,9 @@ export class Engine extends EventEmitter {
     try {
       return (await this.checkLoginInfo(login)).state;
     } finally {
-      await this.runAutoSetup();
+      await this.modelSetupDone;
+      const provider = BuiltInHarness.safeParse(login.connector);
+      if (provider.success) await this.setupModels([provider.data]);
     }
   }
 

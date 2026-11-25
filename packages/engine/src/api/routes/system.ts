@@ -49,6 +49,7 @@ export function systemHandlers(engine: Engine) {
     refreshAccountOptions: async ({ params }) => engine.accountOptions(params.id, null, true),
     checkPrerequisites: async (): Promise<PrerequisiteView[]> => (await prerequisites(engine)).map((p) => ({ ...p, setting: prerequisiteSetting[p.tool] ?? null })),
     getSetup: async () => engine.setupView(),
+    getAccountDiscovery: async () => engine.accountDiscovery(),
     startSetupLogin: async ({ params }) => ({ loginId: await conflictOn(() => engine.startSetupLogin(params.connector)) }),
   } satisfies Partial<Handlers>;
 }

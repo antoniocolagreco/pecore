@@ -143,7 +143,7 @@ export function checkRecipe(recipe: Recipe, nodes: Map<string, Node>, remote: bo
       continue;
     }
     resolved.set(id, node);
-    if (r.params && node.kind === "command" && node.runsAs === "engine") issues.push({ path: `nodes.${id}.params`, message: "params cannot be overridden on a runsAs: engine node" });
+    if (r.params && node.kind === "command" && node.runsAs === "engine") issues.push({ path: `nodes.${id}.params`, message: "Recipes cannot change parameters for nodes that use source control credentials." });
     if (r.agent && node.kind !== "agent") issues.push({ path: `nodes.${id}.agent`, message: `${r.use} is not an agent node` });
     if (r.agentId !== undefined && node.kind !== "agent") issues.push({ path: `nodes.${id}.agentId`, message: `${r.use} is not an agent node` });
     if (r.agentSession !== undefined && node.kind !== "agent") issues.push({ path: `nodes.${id}.agentSession`, message: `${r.use} is not an agent node` });

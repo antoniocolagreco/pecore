@@ -13,6 +13,45 @@ vi.mock("../api/live", () => ({ useConnected: () => true, onLive: () => () => un
 
 afterEach(cleanup);
 
+it("shows the required check and saves the command with source control credentials", async () => {
+  const node: Node = Node.parse({
+    name: "publish", description: "Publish a result", kind: "command", command: ["fixture-cli", "publish"],
+    changesFiles: true, timeoutSec: 60, outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }],
+  });
+  const path: string = "templates/nodes/publish.json";
+  api.call.mockImplementation(async (route: string, input?: RouteInput<"validateDefinition">) => {
+    if (route === "listDefinitions") return [];
+    if (route === "getDefinition") return { content: JSON.stringify(node), sha256: "node-v1" };
+    if (route === "validateDefinition") {
+      const parsed = Node.safeParse(JSON.parse(input?.body.content ?? ""));
+      return { errors: parsed.success ? [] : parsed.error.issues.map(({ path, message }) => ({ path: path.join("."), message })), warnings: [] };
+    }
+    if (route === "saveDefinition") return { sha256: "node-v2" };
+    throw new Error(`Unexpected route ${route}`);
+  });
+  const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: [`/edit/node/${path}`] });
+  render(<RouterProvider router={router} />);
+  const user = userEvent.setup();
+  const credentials: HTMLElement = await screen.findByRole("checkbox", { name: "Use source control credentials" });
+  expect(screen.queryByRole("textbox", { name: "Check command" })).toBeNull();
+  await user.click(credentials);
+  const check: HTMLElement = screen.getByRole("textbox", { name: "Check command" });
+  expect(await screen.findByText(/Enter a check command that can tell whether the remote action already happened/)).toBeTruthy();
+  expect(screen.getByText(/Turn off Can edit files when using source control credentials/)).toBeTruthy();
+  expect(screen.queryByText(/runsAs/)).toBeNull();
+  const save: HTMLButtonElement = screen.getByRole("button", { name: "Save" });
+  expect(save.disabled).toBe(true);
+
+  await user.click(screen.getByRole("checkbox", { name: "Can edit files" }));
+  await user.type(check, 'fixture-cli status "example branch"');
+  await waitFor(() => expect(save.disabled).toBe(false));
+  await user.click(save);
+  const saved: RouteInput<"saveDefinition"> = api.call.mock.calls.findLast(([route]) => route === "saveDefinition")?.[1];
+  expect(Node.parse(JSON.parse(saved.body.content))).toMatchObject({
+    runsAs: "engine", changesFiles: false, command: ["fixture-cli", "publish"], probe: ["fixture-cli", "status", "example branch"],
+  });
+});
+
 it("creates a Source node through the normal template editor", async () => {
   api.call.mockImplementation(async (route: string, input?: RouteInput<"validateDefinition"> | RouteInput<"saveDefinition">) => {
     if (route === "listDefinitions") return [];

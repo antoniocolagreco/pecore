@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { appName, codeCommitProfile, ForgeAccount, ForgeKind, forgeHost, forgeServices, harnessColor, harnesses, nextForgeAccountId, Settings as SettingsSchema } from "@pecore/schemas";
+import { appName, BuiltInHarness, codeCommitProfile, ForgeAccount, ForgeDiscovery, ForgeKind, forgeHost, forgeServices, harnessColor, harnesses, nextForgeAccountId, Settings as SettingsSchema } from "@pecore/schemas";
 import type { Account, HarnessInfo, LiveMessage, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useAutoSave, useData } from "../api/hooks";
@@ -10,9 +10,9 @@ import { ErrorText, Page, ui } from "../components/ui";
 import { harnessName } from "../components/AgentFields";
 import { Button } from "../ds/button";
 import { Switch } from "../ds/choice";
-import { Alert, Badge, Card, Spinner } from "../ds/feedback";
+import { Alert, Badge, Card } from "../ds/feedback";
 import { PasswordField, TextField } from "../ds/field";
-import { CheckCircleIcon, AlertIcon, PlusIcon, RefreshIcon } from "../ds/icons";
+import { CheckCircleIcon, AlertIcon, EyeIcon, EyeOffIcon, PlusIcon, RefreshIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
 import { ColorPicker, NumberField, Segmented } from "../ds/values";
@@ -41,10 +41,7 @@ function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (b
     || (message.type === "configuration.changed" && message.kind === name));
   return {
     ...useAutoSave(remote, put, valid),
-    feedback: <>
-      {remote.loading && !remote.data && <Spinner />}
-      <ErrorText error={remote.error} />
-    </>,
+    loadError: remote.error,
   };
 }
 
@@ -134,12 +131,21 @@ function AccountRow({ name, detail, state, checking, actions, color, muted, chil
   </li>;
 }
 
-function LoginControls({ accounts, protectedOnly = false, kind = "model", harnessColors, hideMissing = false, pendingLogin, onLoginStarted, onEdit }: {
+function DiscoveringProviders({ providers }: { providers: { id: string; name: string }[] }) {
+  if (!providers.length) return null;
+  return <ul className={s.rows} aria-label="Checking for accounts">
+    {providers.map(({ id, name }) => <AccountRow key={id} name={name} state="unchecked" checking actions={null} />)}
+  </ul>;
+}
+
+function LoginControls({ title, actions, children, accounts, protectedOnly = false, kind = "model", harnessColors, hideMissing = false, pendingLogin, onLoginStarted, onEdit }: {
+  title?: string; actions?: ReactNode; children?: ReactNode;
   accounts: Account[]; protectedOnly?: boolean; kind?: "model" | "tool"; harnessColors?: HarnessColors; hideMissing?: boolean;
   pendingLogin?: string; onLoginStarted?(): void; onEdit?(account: ForgeAccount): void;
 }) {
   const connected: boolean = useConnected();
-  const logins = useData(() => call("listLogins"), [], (message) => (message.type === "login.progress" && message.done) || (message.type === "configuration.changed" && ["settings", "accounts"].includes(message.kind)));
+  const logins = useData(() => kind === "model" ? call("listLogins") : Promise.resolve([]), [kind],
+    (message) => kind === "model" && ((message.type === "login.progress" && message.done) || (message.type === "configuration.changed" && ["settings", "accounts"].includes(message.kind))));
   const [progress, setProgress] = useState<Record<string, Progress>>({});
   const [toolRuns, setToolRuns] = useState<Record<string, string>>({});
   const [toolStates, setToolStates] = useState<Record<string, string>>({});
@@ -201,13 +207,14 @@ function LoginControls({ accounts, protectedOnly = false, kind = "model", harnes
     }
   });
   const visible = accounts.filter((account) => kind === "model" ? account.kind === "model" : account.kind !== "model" && !protectedOnly);
+  const modelLogins = (logins.data ?? []).filter((login) => (login.osUser === "pecore-agent") === protectedOnly
+    && visible.some((account) => account.kind === "model" && account.id === login.account));
+  const loginRunning = (id: string, running: boolean = false): boolean => progress[id] ? !progress[id].done : running;
   useEffect(() => {
     if (!connected) return;
     const due: [string, boolean][] = [];
-    for (const account of visible) {
-      if (account.kind !== "model") due.push([account.id, false]);
-      else for (const login of logins.data ?? []) if (login.account === account.id && login.state === "unchecked" && !login.running) due.push([login.id, true]);
-    }
+    for (const account of visible) if (account.kind !== "model") due.push([account.id, false]);
+    for (const login of modelLogins) if (login.state === "unchecked" && !loginRunning(login.id, login.running)) due.push([login.id, true]);
     for (const [id, isModel] of due) {
       if (autoChecked.current.has(id)) continue;
       autoChecked.current.add(id);
@@ -215,9 +222,16 @@ function LoginControls({ accounts, protectedOnly = false, kind = "model", harnes
     }
   }, [connected, logins.data, visible.map(({ id }) => id).join(",")]);
   const locked: boolean = !connected || start.busy;
-  const checkButton = (id: string, isModel: boolean, disabled: boolean): ReactNode =>
-    <Button size="sm" icon={<RefreshIcon />} loading={checking.has(id)} disabled={locked || disabled || checking.has(id)} onClick={() => void recheck.run(id, isModel)}>Check</Button>;
-  return <>
+  const targets: [id: string, isModel: boolean][] = kind === "model"
+    ? modelLogins.filter((login) => !loginRunning(login.id, login.running)).map((login) => [login.id, true])
+    : visible.filter(({ id }) => !loginRunning(toolRuns[id] ?? `tool:${id}`)).map(({ id }) => [id, false]);
+  const available: [string, boolean][] = targets.filter(([id]) => !checking.has(id));
+  const checkPanel = useAction(async () => {
+    await Promise.all(available.map(([id, isModel]) => recheck.run(id, isModel)));
+  });
+  const checkButton: ReactNode = <Button size="sm" icon={<RefreshIcon />} loading={checkPanel.busy}
+    disabled={locked || checkPanel.busy || !available.length} onClick={() => void checkPanel.run()}>Check</Button>;
+  const rows: ReactNode = <>
     <ErrorText error={start.error ?? recheck.error ?? logins.error} />
     {protectedOnly && !visible.length && <p className={s.groupText}>No AI tools yet.</p>}
     {!!visible.length && <ul className={s.rows}>
@@ -227,12 +241,12 @@ function LoginControls({ accounts, protectedOnly = false, kind = "model", harnes
           const harness: HarnessInfo = harnesses.find(({ id }) => id === account.connector) ?? { id: account.connector, name, color: harnessColor(account.connector, {}), supported: true };
           const color: string | undefined = harnessColors && harnessColor(harness.id, harnessColors.colors);
           const colorButton: ReactNode = harnessColors && <HarnessColorButton harness={harness} {...harnessColors} />;
-          const items = logins.data?.filter((login) => login.account === account.id && (protectedOnly ? login.osUser === "pecore-agent" : login.osUser !== "pecore-agent")) ?? [];
+          const items = modelLogins.filter((login) => login.account === account.id);
           if (!items.length && !logins.loading && hideMissing) return null;
           if (!items.length) return <AccountRow key={account.id} name={name} color={color} detail={logins.loading ? "Loading…" : "No login found."} state="unknown" checking={logins.loading} actions={colorButton} />;
           return items.map((login) => {
             const current: Progress | undefined = progress[login.id];
-            const running: boolean = current ? !current.done : login.running;
+            const running: boolean = loginRunning(login.id, login.running);
             const checked: string = login.state === "unchecked" && autoChecked.current.has(login.id) && !checking.has(login.id) ? "unknown" : login.state;
             const state: string = login.connector === "opencode" && checked === "unknown" ? "no_models" : checked;
             const detail: string = login.email
@@ -241,7 +255,6 @@ function LoginControls({ accounts, protectedOnly = false, kind = "model", harnes
               : state === "logged_out" && login.defaultDir ? `Log in with ${name} on this computer, then check again.` : protectedOnly ? "As pecore-agent" : "";
             return <AccountRow key={login.id} name={name} color={color} detail={detail} state={state} checking={checking.has(login.id)} actions={<>
               {!login.defaultDir && login.state !== "logged_in" && <Button size="sm" variant="primary" disabled={locked || running} onClick={() => void start.run(account, login.osUser, login.id)}>Log in</Button>}
-              {checkButton(login.id, true, running)}
               {colorButton}
             </>}>
               {(current || running) && <LoginOutput id={login.id} progress={current} running={running} />}
@@ -261,14 +274,16 @@ function LoginControls({ accounts, protectedOnly = false, kind = "model", harnes
           actions={<>
             {account.kind === "forge" && (account.tool === "gh" || account.tool === "glab") && state !== "logged_in" &&
               <Button size="sm" variant="primary" disabled={locked || busy} onClick={() => void start.run(account)}>Log in</Button>}
-            {checkButton(account.id, false, busy)}
             {account.kind === "forge" && onEdit && <Button size="sm" disabled={locked || busy} onClick={() => onEdit(account)}>Edit</Button>}
           </>}>
           {id && <LoginOutput id={id} progress={output} running={!output?.done} />}
         </AccountRow>;
       })}
     </ul>}
+    {children}
   </>;
+  if (title) return <Card title={title} actions={<div className={s.panelActions}>{checkButton}{actions}</div>}>{rows}</Card>;
+  return <>{visible.length > 0 && <div className={s.sectionActions}>{checkButton}</div>}{rows}</>;
 }
 
 function ForgeAccountDialog({ account, onClose, onSave, taken }: { account?: ForgeAccount; onClose(): void; onSave(account: ForgeAccount): Promise<boolean>; taken: string[] }) {
@@ -327,6 +342,7 @@ export function Settings() {
   const { search } = useLocation();
   const settings = useGlobalFile("settings", () => call("getSettings"), (body) => call("putSettings", { body }), (value) => SettingsSchema.safeParse(value).success);
   const accounts = useGlobalFile("accounts", () => call("getAccounts"), (body) => call("putAccounts", { body }));
+  const discovery = useData(() => call("getAccountDiscovery"), [], (message) => message.type === "accounts.discovery_changed");
   const status = useData(() => call("getStatus"), []);
   const [checks, setChecks] = useState<RouteResult<"checkPrerequisites">>();
   const [disableDialog, setDisableDialog] = useState(false);
@@ -346,6 +362,10 @@ export function Settings() {
   const problems = value ? SettingsSchema.safeParse(value).error?.issues : undefined;
   const update = settings.update;
   const prefs: ThemePrefs = themePrefs(value?.ui);
+  const pendingHarnesses = BuiltInHarness.options.filter((id) => discovery.data?.includes(id)
+    && !accounts.current?.accounts.some((account) => account.kind === "model" && account.connector === id))
+    .flatMap((id) => harnesses.filter((harness) => harness.id === id));
+  const pendingForges = ForgeDiscovery.options.filter((id) => discovery.data?.includes(id)).map((id) => ({ id, name: forgeServices[id].label }));
   const harnessColors: HarnessColors | undefined = value && {
     colors: value.harnessColors,
     onColor: (harness, color) => update({ ...value, harnessColors: { ...value.harnessColors, [harness]: color } }),
@@ -371,21 +391,23 @@ export function Settings() {
           <TextField label="Your name" value={value.user.name ?? ""} disabled={!connected}            onValueChange={(name) => update({ ...value, user: { name: name.trim() ? name : null } })} />
         </Section>}
         <Section id="accounts" title="Accounts" description={`The AI tools and the code hosting accounts ${appName} works with.`} plain>
-          {accounts.feedback}
-          <ErrorText error={accounts.error} />
+          <ErrorText error={accounts.error ?? accounts.loadError ?? discovery.error} />
           <div className={s.groups}>
-            <Card title="AI tools" actions={<Button size="sm" variant="ghost" aria-pressed={showUnavailable} onClick={() => setShowUnavailable(!showUnavailable)}>{showUnavailable ? "Hide unavailable" : "Show unavailable"}</Button>}>
-              {(accounts.current?.accounts ?? []).some(({ kind }) => kind === "model")
-                ? <LoginControls accounts={accounts.current?.accounts ?? []} harnessColors={harnessColors} hideMissing={!showUnavailable} />
-                : <p className={s.groupText}>No AI tools yet. The ones you log in to on this computer show up here on their own.</p>}
+            <LoginControls title="AI tools" accounts={accounts.current?.accounts ?? []} harnessColors={harnessColors} hideMissing={!showUnavailable}
+              actions={<Button size="sm" icon={showUnavailable ? <EyeOffIcon /> : <EyeIcon />} aria-pressed={showUnavailable}
+                onClick={() => setShowUnavailable(!showUnavailable)}>{showUnavailable ? "Hide unavailable" : "Show unavailable"}</Button>}>
+              {!accounts.current?.accounts.some(({ kind }) => kind === "model") && !pendingHarnesses.length && accounts.current && discovery.data &&
+                <p className={s.groupText}>No AI tools yet. The ones you log in to on this computer show up here on their own.</p>}
+              <DiscoveringProviders providers={pendingHarnesses} />
               {harnessColors && showUnavailable && <ComingSoonTools {...harnessColors} />}
-            </Card>
-            <Card title="Git hosting" actions={<Button size="sm" icon={<PlusIcon />} disabled={!connected || !accounts.value || accounts.saving} onClick={() => setForgeDialog("new")}>Add account</Button>}>
-              {(accounts.current?.accounts ?? []).some(({ kind }) => kind !== "model")
-                ? <LoginControls accounts={accounts.current?.accounts ?? []} kind="tool" pendingLogin={pendingLogin}
-                  onLoginStarted={() => setPendingLogin(undefined)} onEdit={setForgeDialog} />
-                : <p className={s.groupText}>Add an account, on a public service or on your own server, to push branches and open pull requests.</p>}
-            </Card>
+            </LoginControls>
+            <LoginControls title="Git hosting" accounts={accounts.current?.accounts ?? []} kind="tool" pendingLogin={pendingLogin}
+              onLoginStarted={() => setPendingLogin(undefined)} onEdit={setForgeDialog}
+              actions={<Button size="sm" icon={<PlusIcon />} disabled={!connected || !accounts.value || accounts.saving} onClick={() => setForgeDialog("new")}>Add account</Button>}>
+              {!accounts.current?.accounts.some(({ kind }) => kind !== "model") && !pendingForges.length && accounts.current && discovery.data &&
+                <p className={s.groupText}>Add an account, on a public service or on your own server, to push branches and open pull requests.</p>}
+              <DiscoveringProviders providers={pendingForges} />
+            </LoginControls>
           </div>
         </Section>
         {forgeDialog && <ForgeAccountDialog account={forgeDialog === "new" ? undefined : forgeDialog} onClose={() => setForgeDialog(undefined)}
@@ -398,7 +420,7 @@ export function Settings() {
             return true;
           }} />}
 
-        {settings.feedback}
+        <ErrorText error={settings.loadError} />
         {value && <>
 
           <Section id="projects" title="Projects" description="Where the code of new projects goes.">

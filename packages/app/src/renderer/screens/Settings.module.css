@@ -149,6 +149,14 @@
   color: var(--text-2);
 }
 
+.panelActions {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .rowActions {
   display: flex;
   flex: none;

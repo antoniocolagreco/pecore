@@ -35,7 +35,6 @@ async function runSourceAtLocation(ctx: ProjectContext, request: SourceRequest):
     ...command,
     name: `${node.name}-${request.command}`,
     runsAs: "engine",
-    cleanCheckout: false,
     timeoutSec: node.timeoutSec,
     outcomeRules: [{ exitCode: 0, outcome: "ok" }],
   };
@@ -53,7 +52,6 @@ async function runSourceAtLocation(ctx: ProjectContext, request: SourceRequest):
       project: { repoDir: join(ctx.dir, "repo.git"), repoUrl: repo?.url ?? null, baseBranch },
     },
     inputs: [],
-    cleanTree: null,
     extraEnv: env,
     comment: "comment" in request ? request.comment : undefined,
   });

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { tempDir } from "../../test/tmp";
 import { appUser } from "../runners/process";
-import { commitTree, contentState, createCleanCheckout, deleteScratch, recordGit, removeCleanCheckout, restoreState, undoInterrupted } from "./content-state";
+import { contentState, deleteScratch, recordGit, restoreState, undoInterrupted } from "./content-state";
 import { gitWork } from "./git-as";
 import { branchHead, createLocalRepo } from "./repo";
 import { addWorktree, removeWorktree } from "./worktrees";
@@ -90,21 +90,6 @@ describe("content state", () => {
     await undoInterrupted(u, wd, "J1", rec, before);
     expect(await recordGit(u, wd, "J1")).toEqual(rec);
     expect(await contentState(u, wd)).toBe(before);
-  });
-
-  it("runs a clean checkout of the content state without ignored files", async () => {
-    const { project, wd } = await setup();
-    await writeFile(join(wd, ".gitignore"), "build/\n");
-    await writeFile(join(wd, "a.txt"), "a");
-    await mkdir(join(wd, "build"));
-    await writeFile(join(wd, "build", "out"), "");
-    const state = await contentState(u, wd);
-    const clean = join(project, "work", "clean-J1");
-    await createCleanCheckout(u, wd, state, clean);
-    expect((await readdir(clean)).sort()).toEqual([".git", ".gitignore", "a.txt"]);
-    await removeCleanCheckout(u, wd, clean);
-    await expect(readdir(clean)).rejects.toThrow();
-    expect(await commitTree(u, wd)).toBe("4b825dc642cb6eb9a060e54bf8d69288fbee4904");
   });
 
   it("removes a worktree", async () => {

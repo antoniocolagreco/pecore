@@ -62,18 +62,3 @@ export async function undoInterrupted(user: string, workdir: string, jobId: stri
   if (rec.head && rec.head !== rec.branch) await gitWork(user, workdir, ["update-ref", "--no-deref", "HEAD", rec.head]);
   await restoreState(user, workdir, contentBefore);
 }
-
-export async function commitTree(user: string, workdir: string): Promise<string> {
-  return (await gitWork(user, workdir, ["rev-parse", "HEAD^{tree}"])).trim();
-}
-
-export async function createCleanCheckout(user: string, workdir: string, tree: string, dir: string): Promise<void> {
-  const parent = (await gitWork(user, workdir, ["rev-parse", "HEAD"])).trim();
-  const commit = (await gitWork(user, workdir, ["commit-tree", tree, "-p", parent, "-m", "pecore clean checkout"])).trim();
-  await gitWork(user, workdir, ["worktree", "add", "-q", "--detach", dir, commit]);
-}
-
-export async function removeCleanCheckout(user: string, workdir: string, dir: string): Promise<void> {
-  await gitWorkResult(user, workdir, ["worktree", "remove", "--force", "--force", dir]);
-  await gitWorkResult(user, workdir, ["worktree", "prune"]);
-}

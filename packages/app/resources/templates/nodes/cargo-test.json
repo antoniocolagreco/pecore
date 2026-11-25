@@ -1,10 +1,9 @@
 {
   "name": "cargo-test",
   "tags": ["test"],
-  "description": "Run the Rust tests with cargo test in a clean checkout",
+  "description": "Run the Rust tests with cargo test",
   "kind": "command",
   "command": ["cargo", "test"],
-  "cleanCheckout": true,
   "outcomes": ["passed", "failed"],
   "failOutcomes": ["failed"],
   "changesFiles": false,

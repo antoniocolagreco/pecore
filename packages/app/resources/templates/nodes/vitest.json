@@ -1,14 +1,13 @@
 {
   "name": "vitest",
   "tags": ["test"],
-  "description": "Install dependencies in a clean checkout and run the Vitest tests; the suite param selects a Vitest project, empty runs all",
+  "description": "Run Vitest. The suite parameter selects a Vitest project. Leave it empty to run all projects.",
   "kind": "command",
   "params": {
     "type": "object",
     "properties": { "suite": { "type": "string", "default": "" } }
   },
   "script": "vitest.sh",
-  "cleanCheckout": true,
   "outcomes": ["passed", "failed"],
   "failOutcomes": ["failed"],
   "changesFiles": false,

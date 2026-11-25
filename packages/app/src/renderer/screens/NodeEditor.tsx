@@ -372,13 +372,15 @@ function formatCommand(argv: string[]): string {
   return argv.map((arg) => /^[^\s"']+$/.test(arg) ? arg : arg.includes("\"") ? `'${arg}'` : `"${arg}"`).join(" ");
 }
 
-function CommandInput({ label, labelAction, value, onChange }: { label: string; labelAction: ReactNode; value: string[]; onChange(command: string[] | undefined): void }) {
+function CommandInput({ label, labelAction, description = "Write it as in a terminal, for example npx eslint . Put an argument with spaces in quotes.", value, onChange }: {
+  label: string; labelAction: ReactNode; description?: string; value: string[]; onChange(command: string[] | undefined): void;
+}) {
   const [text, setText] = useState<string>(() => formatCommand(value));
   useEffect(() => {
     if (JSON.stringify(parseCommand(text)) !== JSON.stringify(value)) setText(formatCommand(value));
   }, [value]);
   return <TextField label={label} labelAction={labelAction} mono value={text}
-    description={"Write it as in a terminal, for example npx eslint . Put an argument with spaces in quotes."}
+    description={description}
     onValueChange={(next) => {
       setText(next);
       const argv: string[] = parseCommand(next);
@@ -526,6 +528,9 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   const draft = parseDraft(file.content);
   const kind: string = string(draft?.kind);
   const human: boolean = kind === "human";
+  const usesCredentials: boolean = kind === "command" && draft?.runsAs === "engine";
+  const checkScript: string = string(object(draft?.probe).script);
+  const checkLabel: string = checkScript ? "Check script name" : "Check command";
   const iface: HumanInterface | undefined = HumanInterface.safeParse(draft?.interface).data;
   const outcomes: string[] = Array.isArray(draft?.outcomes) ? draft.outcomes.map(string).filter(Boolean) : [];
   const tags: string[] = Array.isArray(draft?.tags) ? draft.tags.map(string) : [];
@@ -552,13 +557,16 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
     "description", "tags", "timeoutSec",
     ...(kind === "source" ? ["credentials", ...sourceCommands.map(({ key }) => key)] : ["outcomes", "outputs", "changesFiles"]),
     ...(kind === "agent" ? ["prompt", "agentSession", "knowledge"] : []),
-    ...(kind === "command" ? ["command", "script", "runsAs", "cleanCheckout", "inputs", "optionalInputs", "outputRules"] : []),
+    ...(kind === "command" ? ["command", "script", "runsAs", "inputs", "optionalInputs", "outputRules",
+      ...(usesCredentials || draft?.probe !== undefined ? ["probe"] : [])] : []),
     ...(human ? ["interface"] : []),
   ];
   const updateFields = (fields: Record<string, unknown>): void => file.update(JSON.stringify({
     ...draft, ...(descriptiveTags.length !== tags.length ? { tags: descriptiveTags } : {}), ...fields,
   }, null, 2) + "\n");
-  const fieldErrors = (key: string): ReactNode => <DefinitionErrors errors={file.errors?.filter(({ path }) => path.split(".")[0] === key)} />;
+  const fieldErrors = (key: string, label?: string): ReactNode => <DefinitionErrors errors={file.errors
+    ?.filter(({ path }) => path.split(".")[0] === key)
+    .map((error) => label ? { ...error, path: label } : error)} />;
   const help = (label: string, text: ReactNode): ReactNode => <FieldHelp title={label}>{text}</FieldHelp>;
   const field = (key: string, label: string, input: ReactElement<{ label?: string; labelAction?: ReactNode }>, text: string): ReactNode => <div>
     {cloneElement(input, { label, labelAction: help(label, text) })}
@@ -571,7 +579,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
       <Checkbox label={label} checked={checked} disabled={!file.editable} onCheckedChange={onChange} />
       {help(label, text)}
     </div>
-    {fieldErrors(key)}
+    {fieldErrors(key, label)}
   </div>;
   const flag = (key: string, label: string, text: string): ReactNode => check(key, label, text, draft?.[key] === true, (checked) => update(key, checked));
   const commandField = (label: string, value: unknown, onChange: (command: string[] | undefined) => void): ReactNode => (
@@ -658,9 +666,19 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
           {kind === "command" && <>
             {!draft.script && <>{commandField("Command", draft.command, (command) => update("command", command))}{fieldErrors("command")}</>}
             {!draft.command && textField("script", "Script name", "Enter the name of the saved .sh script. Choose either a command or a script.")}
-            {check("runsAs", "Use source control credentials", "Turn this on only if the command must act on GitHub or GitLab with your account, for example to push, open a pull request or comment on an issue. Builds, tests and linters do not need it. With it on, the command must not change the job's files and needs a probe.",
-              draft.runsAs === "engine", (checked) => update("runsAs", checked ? "engine" : undefined))}
-            {flag("cleanCheckout", "Clean checkout", "Run a project-user command on a temporary clean copy of the job's files.")}
+            {check("runsAs", "Use source control credentials", "Turn this on only if the command must act on GitHub or GitLab with your account, for example to push, open a pull request or comment on an issue. With it on, provide a check and turn off Can edit files.",
+              usesCredentials, (checked) => update("runsAs", checked ? "engine" : undefined))}
+            {(usesCredentials || draft.probe !== undefined) && <div>
+              {checkScript ? <TextField label={checkLabel} mono value={checkScript} description="Enter the name of a saved .sh script that checks whether the remote action is already complete."
+                onValueChange={(script) => update("probe", script ? { script } : undefined)} />
+                : <CommandInput label={checkLabel} value={Array.isArray(draft.probe) ? draft.probe.map(string) : []}
+                  description="Checks whether the remote action is already complete before running the main command."
+                  labelAction={help(checkLabel, draft.probeRules
+                    ? "The check uses this node’s saved rules to read its output."
+                    : "Read the remote state without changing it. Exit successfully and print a result if the action is already complete. Exit successfully with no output if the action is still needed. Exit with an error if you cannot tell.")}
+                  onChange={(command) => update("probe", command)} />}
+              {fieldErrors("probe", checkLabel)}
+            </div>}
           </>}
           {kind === "source" && sourceCommands.map(({ key, label }) => {
             const action = object(draft[key]);

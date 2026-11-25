@@ -64,14 +64,14 @@ async function setup() {
   await writeFile(join(process.env.HOME, ".config", "opencode", "opencode.jsonc"), opencodeConfig);
   const harnesses = await fakeHarnesses(root);
   const notices: Notice[] = [];
-  const start = async () => {
+  const start = async (waitForDiscovery: boolean = true) => {
     const engine = await Engine.start({
       home,
       templates: shippedTemplates,
       agents: { connectorsDir: harnesses.connectorsDir, adaptersDir: join(root, "adapters"), adapters: {} },
       notify: (n) => notices.push(n),
     });
-    await engine.setupDone;
+    if (waitForDiscovery) await engine.setupDone;
     const api = await startApi(engine, { handlers: handlers("0.0.0-test"), validateResponses: true });
     const call = apiClient({ port: api.port, token: api.token });
     return { engine, call, close: async () => { await api.close(); await engine.shutdown(); } };
@@ -81,6 +81,25 @@ async function setup() {
 }
 
 describe("auto-setup", () => {
+  it("makes a model account available before the other harnesses finish checking", async () => {
+    const s = await setup();
+    await s.harnesses.set("claude-code", claude);
+    const gate: string = join(await tempDir(), "release");
+    await writeFile(join(s.harnesses.connectorsDir, "..", "bin", "opencode"),
+      `#!/bin/sh\nwhile [ ! -f "${gate}" ]; do /bin/sleep 0.05; done\nexit 1\n`, { mode: 0o700 });
+    const app = await s.start(false);
+    try {
+      await until(() => app.engine.global().accounts.accounts.some(({ id }) => id === "claude-code")
+        && !app.engine.accountDiscovery().includes("claude-code"), 3000);
+      expect(await app.call("getAccountDiscovery")).toContain("opencode");
+      expect((await app.call("getAccounts")).value.accounts).toContainEqual(expect.objectContaining({ id: "claude-code" }));
+      expect((await app.call("getSettings")).value).toHaveProperty("projectsFolder");
+    } finally {
+      await writeFile(gate, "");
+      await app.close();
+    }
+  });
+
   it("sets up every logged-in harness at start with models and efforts read from the harness", async () => {
     const s = await setup();
     await s.harnesses.set("claude-code", claude);
@@ -89,13 +108,13 @@ describe("auto-setup", () => {
     await mkdir(s.home, { recursive: true });
     const app = await s.start();
 
-    expect((await s.records()).accounts).toEqual({
-      accounts: [
+    const { accounts } = (await s.records()).accounts;
+    expect(accounts).toHaveLength(3);
+    expect(accounts).toEqual(expect.arrayContaining([
         expect.objectContaining({ id: "claude-code", kind: "model", provider: "anthropic", connector: "claude-code", login: "subscription" }),
         expect.objectContaining({ id: "codex", kind: "model", provider: "openai", connector: "codex", login: "subscription" }),
         expect.objectContaining({ id: "opencode", kind: "model", provider: "opencode", connector: "opencode", login: "subscription" }),
-      ],
-    });
+    ]));
     const profiles = [
       { id: "claude-code-frontier", account: "claude-code", model: "claude-opus-9", effort: "max" },
       { id: "claude-code-strong", account: "claude-code", model: "claude-sonnet-9", effort: "high" },

@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CommandNode } from "@pecore/schemas";
 import { tempDir } from "../../test/tmp";
-import { contentState } from "../workdir/content-state";
 import { createLocalRepo } from "../workdir/repo";
 import { addWorktree } from "../workdir/worktrees";
 import { outcomeOutputs, pickOutcome, runCommandNode } from "./command";
@@ -45,7 +44,6 @@ async function setup() {
     workdir: wd,
     context: { job: { id: "J1", title: "Fix it", branch: "factory/J1", base, oldBase: base, target: "main", commit: null }, ticketId: null, project: { repoDir: join(project, "repo.git"), repoUrl: null, baseBranch: "main" } },
     inputs: [],
-    cleanTree: null,
     ...extra,
   });
   return { project, wd, nodeDir, ctx };
@@ -193,16 +191,6 @@ describe("command nodes", () => {
     await expect(readFile(marker)).rejects.toThrow();
     expect(await runCommandNode(ctx(n(["true"])))).toMatchObject({ kind: "completed", fromProbe: false });
     expect(await readFile(marker, "utf8")).toBe("");
-  });
-
-  it("runs cleanCheckout nodes in a checkout of the content state, without ignored files", async () => {
-    const { wd, ctx } = await setup();
-    await writeFile(join(wd, ".gitignore"), "secret\n");
-    await writeFile(join(wd, "secret"), "");
-    await writeFile(join(wd, "a.txt"), "");
-    const tree = await contentState(u, wd);
-    const r = await runCommandNode(ctx(node({ command: ["/bin/sh", "-c", "test -f a.txt && test ! -f secret"], cleanCheckout: true }), { cleanTree: tree }));
-    expect(r).toMatchObject({ kind: "completed", outcome: "passed" });
   });
 });
 

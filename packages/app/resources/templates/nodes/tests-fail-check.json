@@ -1,14 +1,13 @@
 {
   "name": "tests-fail-check",
   "tags": ["test"],
-  "description": "Run Vitest in a clean checkout to check that the tests fail before the fix.",
+  "description": "Run Vitest to check that the tests fail before the fix.",
   "kind": "command",
   "params": {
     "type": "object",
     "properties": { "suite": { "type": "string", "default": "" } }
   },
   "script": "tests-fail-check.sh",
-  "cleanCheckout": true,
   "outcomes": ["failed_as_expected", "unexpected_pass"],
   "changesFiles": false,
   "scratchPaths": ["coverage/**"],

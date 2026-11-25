@@ -1,7 +1,7 @@
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Accounts, Settings as SettingsSchema } from "@pecore/schemas";
-import type { LiveMessage, RouteInput } from "@pecore/schemas";
+import type { LiveMessage, LoginView, RouteInput, RouteResult } from "@pecore/schemas";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Settings } from "./Settings";
@@ -13,7 +13,10 @@ vi.mock("../api/live", async () => {
   const { useEffect } = await import("react");
   return {
     useConnected: () => true,
-    onLive: () => () => undefined,
+    onLive(listener: (message: LiveMessage) => void): () => void {
+      api.listeners.add(listener);
+      return () => { api.listeners.delete(listener); };
+    },
     useLive(listener: (message: LiveMessage) => void): void {
       useEffect(() => {
         api.listeners.add(listener);
@@ -28,6 +31,8 @@ beforeEach(() => {
   api.call.mockImplementation(async (route: string) => {
     if (route === "getSettings") return { value: SettingsSchema.parse({}), sha256: "settings-v1" };
     if (route === "getAccounts") return { value: Accounts.parse({}), sha256: "accounts-v1" };
+    if (route === "getAccountDiscovery") return [];
+    if (route === "listLogins") return [];
     if (route === "getStatus") return { homeFindings: [], globalPause: false, notifications: 0, interrupted: 0, version: "test" };
     if (route === "putSettings") return { sha256: "settings-v2" };
     if (route === "getForgeAccountDefaults") return { author: { name: "Local Author", email: "local@example.com" }, codeCommit: null };
@@ -36,6 +41,86 @@ beforeEach(() => {
 });
 
 afterEach(cleanup);
+
+it("checks only the accounts in the selected panel and keeps Check out of account rows", async () => {
+  const fallback = api.call.getMockImplementation()!;
+  const accounts: Accounts = Accounts.parse({ accounts: [
+    { id: "claude", kind: "model", provider: "anthropic", connector: "claude-code", login: "subscription" },
+    { id: "codex", kind: "model", provider: "openai", connector: "codex", login: "subscription" },
+    { id: "github", kind: "forge", forge: "github", tool: "gh", host: "github.com", user: "ada", author: { name: "", email: "" } },
+    { id: "gitlab", kind: "forge", forge: "gitlab", tool: "glab", host: "gitlab.com", user: "lin", author: { name: "", email: "" } },
+  ] });
+  const logins: LoginView[] = [
+    { id: "claude:local", account: "claude", osUser: "local", connector: "claude-code", defaultDir: true, state: "logged_in", email: null, plan: null, running: false },
+    { id: "codex:local", account: "codex", osUser: "local", connector: "codex", defaultDir: true, state: "logged_in", email: null, plan: null, running: false },
+    { id: "codex:pecore-agent", account: "codex", osUser: "pecore-agent", connector: "codex", defaultDir: false, state: "logged_in", email: null, plan: null, running: false },
+  ];
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "getAccounts") return { value: accounts, sha256: "accounts-v1" };
+    if (route === "listLogins") return logins;
+    if (route === "recheckAccount") return { state: "logged_in" };
+    if (route === "recheckLogin") return logins[0];
+    return fallback(route);
+  });
+  const user = userEvent.setup();
+  render(<MemoryRouter><Settings /></MemoryRouter>);
+  const modelHeader: HTMLElement = (await screen.findByRole("heading", { name: "AI tools" })).closest("header")!;
+  const forgeHeader: HTMLElement = screen.getByRole("heading", { name: "Git hosting" }).closest("header")!;
+  const modelCheck: HTMLButtonElement = within(modelHeader).getByRole("button", { name: "Check" });
+  const forgeCheck: HTMLButtonElement = within(forgeHeader).getByRole("button", { name: "Check" });
+  await waitFor(() => {
+    expect(modelCheck.disabled).toBe(false);
+    expect(forgeCheck.disabled).toBe(false);
+  });
+  expect(screen.getAllByRole("button", { name: "Check" })).toHaveLength(2);
+
+  api.call.mockClear();
+  await user.click(modelCheck);
+  expect(api.call.mock.calls.filter(([route]) => route.startsWith("recheck"))).toEqual([
+    ["recheckLogin", { params: { id: "claude:local" } }],
+    ["recheckLogin", { params: { id: "codex:local" } }],
+  ]);
+
+  api.call.mockClear();
+  await user.click(forgeCheck);
+  expect(api.call.mock.calls.filter(([route]) => route.startsWith("recheck"))).toEqual([
+    ["recheckAccount", { params: { id: "github" } }],
+    ["recheckAccount", { params: { id: "gitlab" } }],
+  ]);
+});
+
+it("shows checking only in the pending provider rows and keeps other settings usable", async () => {
+  const fallback = api.call.getMockImplementation()!;
+  let pending: RouteResult<"getAccountDiscovery"> = ["claude-code", "github", "codecommit"];
+  const accounts: Accounts = { accounts: [] };
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "getAccountDiscovery") return pending;
+    if (route === "getAccounts") return { value: { accounts: [...accounts.accounts] }, sha256: String(accounts.accounts.length) };
+    if (route === "listLogins") return [];
+    if (route === "recheckAccount") return { state: "logged_in" };
+    return fallback(route);
+  });
+  render(<MemoryRouter><Settings /></MemoryRouter>);
+  expect(await screen.findByRole("textbox", { name: "Your name" })).toBeTruthy();
+  const pendingRows = await screen.findAllByRole("list", { name: "Checking for accounts" });
+  expect(within(pendingRows[0]!).getByText("Claude Code")).toBeTruthy();
+  expect(within(pendingRows[1]!).getByText("GitHub")).toBeTruthy();
+  expect(within(pendingRows[1]!).getByText("AWS CodeCommit")).toBeTruthy();
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: "Add account" }).disabled).toBe(false);
+  expect(screen.queryByText(/No AI tools yet/)).toBeNull();
+
+  pending = ["claude-code", "codecommit"];
+  accounts.accounts.push({ id: "gh-ada", kind: "forge", forge: "github", tool: "gh", host: "github.com", user: "ada", author: { name: "", email: "" } });
+  act(() => {
+    for (const listener of api.listeners) {
+      listener({ type: "configuration.changed", kind: "accounts" });
+      listener({ type: "accounts.discovery_changed" });
+    }
+  });
+  expect(await screen.findByText("GitHub · ada")).toBeTruthy();
+  await waitFor(() => expect(screen.queryByText("GitHub")).toBeNull());
+  expect(within(pendingRows[1]!).getByText("AWS CodeCommit")).toBeTruthy();
+});
 
 it("loads preferences and saves the updated name with its current revision", async () => {
   const user: ReturnType<typeof userEvent.setup> = userEvent.setup();
@@ -109,6 +194,7 @@ it.each([
   api.call.mockImplementation(async (route: string, input?: RouteInput<"putAccounts"> | RouteInput<"getForgeAccountDefaults">) => {
     if (route === "getSettings") return { value: SettingsSchema.parse({}), sha256: "settings-v1" };
     if (route === "getAccounts") return { value: accounts, sha256: hash };
+    if (route === "getAccountDiscovery") return [];
     if (route === "getStatus") return { homeFindings: [], globalPause: false, notifications: 0, interrupted: 0, version: "test" };
     if (route === "getForgeAccountDefaults") return {
       author: { name: "", email: "" },

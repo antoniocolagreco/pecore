@@ -15,7 +15,6 @@ type NodeRow = {
   agent_session: string | null;
   human_interface: string | null;
   runs_as: string | null;
-  clean_checkout: number | null;
 };
 
 type RecipeRow = {
@@ -119,7 +118,7 @@ export class Catalog {
       return json_value === null ? { outcome, stdoutJson: json_field, other: true } : { outcome, stdoutJson: json_field, value: JSON.parse(json_value) };
     });
     return Node.parse({
-      ...common, ...command, credentials, cleanCheckout: !!row.clean_checkout, runsAs: row.runs_as,
+      ...common, ...command, credentials, runsAs: row.runs_as,
       inputs: list("inputs"), optionalInputs: list("optionalInputs"), outcomeRules,
       probe: probe?.command ?? (probe?.script ? { script: probe.script } : undefined), probeRules: probe?.rules,
       mergedCheck: merged?.command ?? (merged?.script ? { script: merged.script } : undefined), mergedCheckRules: merged?.rules,
@@ -151,14 +150,13 @@ export class Catalog {
     this.db.transaction(() => {
       this.delete("nodes", name);
       this.db.prepare(`INSERT INTO catalog_nodes
-        (name, description, icon, kind, shipped, timeout_sec, changes_files, retry, prompt, tier, agent_session, human_interface, runs_as, clean_checkout)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        (name, description, icon, kind, shipped, timeout_sec, changes_files, retry, prompt, tier, agent_session, human_interface, runs_as)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         name, node.description, node.icon ?? null, node.kind, Number(shipped),
         "timeoutSec" in node ? node.timeoutSec : null, "changesFiles" in node ? Number(node.changesFiles) : null,
         "retry" in node ? node.retry : null, node.kind === "agent" ? node.prompt : null,
         node.kind === "agent" ? node.agent.tier ?? null : null, node.kind === "agent" ? node.agentSession : null,
         node.kind === "human" ? node.interface : null, node.kind === "command" ? node.runsAs : null,
-        node.kind === "command" ? Number(node.cleanCheckout) : null,
       );
       this.writeParams("INSERT INTO catalog_node_params (node, name, value) VALUES (?, ?, ?)", [name], node.params);
       this.writeLists("INSERT INTO catalog_node_lists (node, field, position, value) VALUES (?, ?, ?, ?)", [name], {

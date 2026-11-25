@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { apiClient } from "@pecore/schemas";
 import type { ForgeAccount, LiveMessage } from "@pecore/schemas";
 import { setTestConfiguration } from "../../test/configuration";
+import { until } from "../../test/forge-project";
 import { shippedTemplates, tempDir } from "../../test/tmp";
 import { handlers } from "../api/handlers";
 import { startApi } from "../api/server";
@@ -89,11 +90,12 @@ it("adds missing accounts on engine startup, preserves matches and uses the conf
   try {
     const accounts = engine.global().accounts.accounts;
     expect(accounts.slice(0, 3)).toEqual(existing);
-    expect(accounts.slice(3)).toEqual([
+    expect(accounts).toHaveLength(6);
+    expect(accounts.slice(3)).toEqual(expect.arrayContaining([
       { id: "gh-grace", kind: "forge", forge: "github", host: "github.com", tool: "gh", user: "grace", author: { name: "Local Author", email: "local@example.com" } },
       { id: "gh-enterprise", kind: "forge", forge: "github", host: "github.example.com", tool: "gh", user: "enterprise", author: { name: "Local Author", email: "local@example.com" } },
       { id: "glab-sam", kind: "forge", forge: "gitlab", host: "gitlab.example.com", tool: "glab", user: "sam", author: { name: "Local Author", email: "local@example.com" } },
-    ]);
+    ]));
   } finally {
     await engine.shutdown();
   }
@@ -103,6 +105,26 @@ it("adds missing accounts on engine startup, preserves matches and uses the conf
     expect(reopened.global().accounts.accounts).toHaveLength(6);
   } finally {
     await reopened.shutdown();
+  }
+});
+
+it("publishes ready accounts and serves settings while another forge is still checking", async () => {
+  const gate: string = join(await tempDir(), "release");
+  const home: string = await cliFixture({
+    gh: github, glab: "exit 1",
+    aws: `while [ ! -f "${gate}" ]; do /bin/sleep 0.05; done\nexit 1`,
+  });
+  const engine: Engine = await Engine.start({ home, templates: shippedTemplates, discoverForges: true });
+  try {
+    await until(() => engine.global().accounts.accounts.some(({ id }) => id === "gh-ada") && !engine.accountDiscovery().includes("github"), 3000);
+    expect(engine.accountDiscovery()).toContain("codecommit");
+    expect(engine.accountDiscovery()).not.toContain("github");
+    const settings = await handlers("test")(engine).getSettings({ params: undefined, query: undefined, body: undefined });
+    expect(settings.value).toHaveProperty("projectsFolder");
+    expect(engine.accountDiscovery()).toContain("codecommit");
+  } finally {
+    await writeFile(gate, "");
+    await engine.shutdown();
   }
 });
 

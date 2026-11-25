@@ -82,7 +82,6 @@ export const CommandNode = z
     runsAs: z.enum(["project-user", "engine"]).default("project-user"),
     command: Argv.optional(),
     script: z.string().regex(/^[A-Za-z0-9._-]+\.sh$/).optional(),
-    cleanCheckout: z.boolean().default(false),
     credentials: z.array(z.string()).default([]),
     outcomeRules: z.array(OutcomeRule).min(1),
     outputRules: z.record(Outcome, OutputRule).default({}),
@@ -181,9 +180,9 @@ function checkNode(node: z.infer<typeof CommandNode> | z.infer<typeof AgentNode>
   }
   if (node.kind === "command") {
     if ((node.command === undefined) === (node.script === undefined)) issues.push({ path: ["command"], message: "exactly one of command and script" });
-    if (node.runsAs !== "engine" && node.credentials.length > 0) issues.push({ path: ["credentials"], message: "credentials need runsAs: engine" });
-    if (node.runsAs === "engine" && !node.probe) issues.push({ path: ["probe"], message: "a runsAs: engine node needs a probe" });
-    if (node.runsAs === "engine" && node.changesFiles) issues.push({ path: ["changesFiles"], message: "a runsAs: engine node cannot change files" });
+    if (node.runsAs !== "engine" && node.credentials.length > 0) issues.push({ path: ["credentials"], message: "Turn on Use source control credentials to use the accounts saved on this node." });
+    if (node.runsAs === "engine" && !node.probe) issues.push({ path: ["probe"], message: "Enter a check command that can tell whether the remote action already happened." });
+    if (node.runsAs === "engine" && node.changesFiles) issues.push({ path: ["changesFiles"], message: "Turn off Can edit files when using source control credentials." });
     if (node.probeRules && !node.probe) issues.push({ path: ["probeRules"], message: "probeRules without probe" });
     if (node.mergedCheckRules && !node.mergedCheck) issues.push({ path: ["mergedCheckRules"], message: "mergedCheckRules without mergedCheck" });
     for (const [i, r] of node.outcomeRules.entries()) {
@@ -221,8 +220,14 @@ const NodeShape = z.discriminatedUnion("kind", [CommandNode, AgentNode, HumanNod
 const NodeDefinition = NodeShape.superRefine((node, ctx) => {
   for (const issue of checkNode(node)) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
 });
-export const Node = z.preprocess((input: z.input<typeof NodeDefinition> & { resume?: unknown; agentContext?: unknown }) => {
-  if (!input || typeof input !== "object" || input.kind !== "agent") return input;
+export const Node = z.preprocess((input: z.input<typeof NodeDefinition> & { resume?: unknown; agentContext?: unknown; cleanCheckout?: unknown }) => {
+  if (!input || typeof input !== "object") return input;
+  if (input.kind === "command" && Object.hasOwn(input, "cleanCheckout")) {
+    const current = { ...input };
+    delete current.cleanCheckout;
+    return current;
+  }
+  if (input.kind !== "agent") return input;
   const session: AgentSession | undefined = legacyAgentSession(input.agentContext);
   if (!Object.hasOwn(input, "resume") && session === undefined) return input;
   const current = { ...input };

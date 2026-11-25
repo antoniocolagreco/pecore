@@ -23,11 +23,12 @@ describe("pecore.db", () => {
   it("applies the migrations once, in WAL mode", async () => {
     const path = join(await tempDir(), "pecore.db");
     const db = new ProjectDb(path);
-    expect(db.version()).toBe(24);
+    expect(db.version()).toBe(25);
+    expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_nodes') WHERE name = 'clean_checkout'").get()).toBeUndefined();
     expect(db.db.pragma("journal_mode", { simple: true })).toBe("wal");
     db.close();
     const again = new ProjectDb(path);
-    expect(again.version()).toBe(24);
+    expect(again.version()).toBe(25);
     const tables = again.db.prepare<[], string>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'catalog_%' ORDER BY name").pluck().all();
     expect(tables).toEqual([
       "artifacts", "attempt_logs", "attempts", "events", "human_queue", "jobs", "node_runs",
@@ -103,14 +104,24 @@ describe("pecore.db", () => {
     const hash: string = "a".repeat(64);
     const snapshot = {
       recipeHash: hash,
-      nodes: { reviewer: {
-        definition: {
-          name: "reviewer", description: "Review", kind: "agent", prompt: "reviewer.md", changesFiles: false,
-          timeoutSec: 60, agent: { tier: "standard" }, outcomes: ["done"], agentContext: "isolated",
+      nodes: {
+        reviewer: {
+          definition: {
+            name: "reviewer", description: "Review", kind: "agent", prompt: "reviewer.md", changesFiles: false,
+            timeoutSec: 60, agent: { tier: "standard" }, outcomes: ["done"], agentContext: "isolated",
+          },
+          sidecars: { "reviewer.md": "Review" },
+          hash,
         },
-        sidecars: { "reviewer.md": "Review" },
-        hash,
-      } },
+        tests: {
+          definition: {
+            name: "tests", description: "Test", kind: "command", changesFiles: false, timeoutSec: 60,
+            outcomes: ["passed"], command: ["true"], outcomeRules: [{ exitCode: 0, outcome: "passed" }], cleanCheckout: true,
+          },
+          sidecars: {},
+          hash,
+        },
+      },
     };
     old.prepare("INSERT INTO events VALUES ('e1', ?, 'job.definitions_saved', ?, 0)").run(job, JSON.stringify(snapshot));
     old.prepare("INSERT INTO events VALUES ('e2', ?, 'attempt.started', ?, 0)").run(job, JSON.stringify({
@@ -134,7 +145,10 @@ describe("pecore.db", () => {
       const event = db.events(job).find(({ type }) => type === "attempt.started");
       expect(event?.payload).toMatchObject({ agentId: "agent-default", agentSession: "job" });
       expect(event?.payload).not.toHaveProperty("agentContext");
-      expect(jobDefinitions(db, job)?.nodes.reviewer).toMatchObject({ definition: { agentSession: "new" }, hash });
+      const saved = jobDefinitions(db, job);
+      expect(saved?.nodes.reviewer).toMatchObject({ definition: { agentSession: "new" }, hash });
+      expect(saved?.nodes.tests).toMatchObject({ definition: { kind: "command", command: ["true"] }, hash });
+      expect(saved?.nodes.tests?.definition).not.toHaveProperty("cleanCheckout");
     } finally {
       db.close();
     }
@@ -282,7 +296,7 @@ describe("chats.db", () => {
 
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.version()).toBe(23);
+    expect(db.version()).toBe(25);
     for (let i = 0; i < notificationsKept + 3; i++) db.addNotification({ kind: "job", title: `n${i}`, body: "" }, 1000 + i);
     const kept = db.notifications();
     expect(kept).toHaveLength(notificationsKept);
@@ -304,7 +318,7 @@ describe("chats.db", () => {
       UPDATE schema_version SET version = 5`);
     old.close();
     const db = new ChatsDb(file);
-    expect(db.version()).toBe(23);
+    expect(db.version()).toBe(25);
     expect(db.messages(assistantChat)).toEqual([]);
     db.close();
   });

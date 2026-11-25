@@ -385,3 +385,15 @@
 - Decision: Agent session offers Job (default), Node and New in agent templates and recipe steps. Job continues the card's session across the job. Node continues the card's session for the same step. New starts fresh on each run. Code Reviewer and Approver use New. Changing account, model or effort starts a fresh session on the next run.
 - Why: A step that repeats can keep its own conversation separate from the rest of the job.
 - Replaces: Agent context with Shared and Isolated. Shared becomes Job and Isolated becomes New.
+
+## 2026-11-25: Show the required check for source control commands
+
+- Decision: Use source control credentials reveals Check command in the node editor. A saved script check appears as Check script name. Validation explains what to enter.
+- Why: The check prevents repeating an action that already happened remotely. Users need a way to supply it before saving.
+- Replaces: Requiring a check that the node editor did not expose.
+
+## 2026-11-25: Run checks in the job's workdir
+
+- Decision: Remove Clean checkout. Run build, lint and test commands in the job's workdir.
+- Why: Repository CI catches checks that pass only because of local files Git ignores.
+- Replaces: The Clean checkout option, the temporary worktree it created and the extra dependency install in the Vitest checks.
