@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { assistantAgentId, builtInAgentNames, NodeAgentCatalog, Compaction, compactionSizes, defaultAgentColor } from "@pecore/schemas";
 import type { Account, AgentDefinition, ModelAccount, NodeAgent } from "@pecore/schemas";
@@ -128,7 +128,6 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, providersA
   const [draft, setDraft] = useState<{ content: string; sha256: string | undefined } | null>(null);
   const formId: string = useId();
   const contextLabelId: string = useId();
-  const upload = useRef<HTMLInputElement>(null);
   const context = useData(() => !creating ? call("getAgentContext", { params: { id: agent.id } }) : Promise.resolve(undefined), [agent.id, creating],
     (event) => event.type === "configuration.changed" && event.kind === "agents");
   const content: string = draft?.content ?? context.data?.content ?? "";
@@ -166,7 +165,6 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, providersA
     setRemoving(false);
     setCompleted(true);
   });
-  const readContext = useAction(async (file: File) => changeContent(await file.text()));
   const busy: boolean = save.busy || destroy.busy;
   const editable: boolean = !disabled && !busy && !completed;
   const contextEditable: boolean = editable && (creating || context.data !== undefined);
@@ -209,17 +207,9 @@ function AgentEditor({ initial, baseSha256, catalog, title, accounts, providersA
         {project && <TextArea label="Custom context" rows={10} value={content} onValueChange={changeContent}
           disabled={!contextEditable} error={contextError} />}
         {!project && <div className={s.context} role="group" aria-labelledby={contextLabelId}>
-          <div className={s.contextHeader}>
-            <span id={contextLabelId}>Custom context</span>
-            <Button disabled={!contextEditable || readContext.busy} onClick={() => upload.current?.click()}>Upload Markdown</Button>
-          </div>
-          <input type="file" ref={upload} accept=".md,text/markdown" hidden onChange={(event) => {
-            const file: File | undefined = event.target.files?.[0];
-            event.target.value = "";
-            if (file) void readContext.run(file);
-          }} />
+          <span id={contextLabelId}>Custom context</span>
           <Sidecar isMarkdown paper content={content} disabled={!contextEditable} change={changeContent} className={s.markdown} />
-          <ErrorText error={contextError ?? readContext.error} />
+          <ErrorText error={contextError} />
         </div>}
         <ErrorText error={save.error} />
       </div>
