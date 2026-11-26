@@ -5,14 +5,18 @@ import { ToolAuthError } from "../runners/forge-env";
 import { appUser, baseEnv, spawnAs, SpawnError } from "../runners/process";
 import type { Proc } from "../runners/process";
 
-const remoteUrl: string = "https://mcp.atlassian.com/v2/mcp";
+const servers = {
+  atlassian: { name: "Atlassian", url: "https://mcp.atlassian.com/v2/mcp", authHost: "auth.atlassian.com" },
+  linear: { name: "Linear", url: "https://mcp.linear.app/mcp", authHost: "linear.app" },
+};
+export type TrackerBridge = keyof typeof servers;
 const authRequired = /\b(?:unauthorized|unauthenticated|invalid[_ ](?:grant|token)|authentication required|sign.in required|login required|401)\b/i;
 const authorize = /please authorize this client|open(?:ing|ed) (?:the |a )?browser|waiting for (?:oauth|authorization)/i;
 const Result = z.object({ content: z.array(z.object({ type: z.string(), text: z.string().optional() })).default([]), structuredContent: z.unknown().optional(), isError: z.boolean().optional() });
 
 export class TrackerMcpAuthError extends ToolAuthError {
-  constructor(account: string) {
-    super(account, "Sign in to Atlassian in Settings → Accounts.");
+  constructor(account: string, server: TrackerBridge = "atlassian") {
+    super(account, `Sign in to ${servers[server].name} in Settings → Accounts.`);
   }
 }
 
@@ -23,14 +27,15 @@ type BridgeOptions = {
   timeoutMs?: number;
 };
 
-async function withBridge<T>(account: string, options: BridgeOptions, run: (client: AcpClient) => Promise<T>): Promise<T> {
+async function withBridge<T>(account: string, server: TrackerBridge, options: BridgeOptions, run: (client: AcpClient) => Promise<T>): Promise<T> {
+  const { name, url: remoteUrl, authHost } = servers[server];
   const env: Record<string, string> = await baseEnv(appUser);
   for (const key of ["DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "XAUTHORITY"]) {
     const value: string | undefined = process.env[key];
     if (value) env[key] = value;
   }
   const proc: Proc = await spawnAs({ user: appUser, argv: ["mcp-remote", remoteUrl, "--auth-timeout", options.interactive ? "180" : "5"], env, cwd: env.HOME! }).catch((error: unknown) => {
-    if (error instanceof SpawnError && error.code === "not_found") throw new Error("Install mcp-remote on this computer to connect Atlassian.");
+    if (error instanceof SpawnError && error.code === "not_found") throw new Error(`Install mcp-remote on this computer to connect ${name}.`);
     throw error;
   });
   const lines = createInterface({ input: proc.stderr });
@@ -41,7 +46,7 @@ async function withBridge<T>(account: string, options: BridgeOptions, run: (clie
   lines.on("line", (line: string) => {
     needsAuth ||= authRequired.test(line) || authorize.test(line);
     if (authorize.test(line)) {
-      if (!options.interactive) rejectAuth(new TrackerMcpAuthError(account));
+      if (!options.interactive) rejectAuth(new TrackerMcpAuthError(account, server));
       else {
         authPrompt = true;
         options.onAuthorize?.(null);
@@ -49,7 +54,7 @@ async function withBridge<T>(account: string, options: BridgeOptions, run: (clie
     }
     if (!authPrompt || !options.onAuthorize) return;
     const url: URL | null = URL.parse(line.trim());
-    if (url?.protocol === "https:" && url.hostname === "auth.atlassian.com") options.onAuthorize(url.href);
+    if (url?.protocol === "https:" && url.hostname === authHost) options.onAuthorize(url.href);
   });
   const timeout: number = options.timeoutMs ?? (options.interactive ? 195_000 : 20_000);
   const client: AcpClient = new AcpClient(proc, [], timeout);
@@ -57,7 +62,7 @@ async function withBridge<T>(account: string, options: BridgeOptions, run: (clie
     const result = await client.request<{ protocolVersion?: string }>("initialize", {
       protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "pecore", version: "1" },
     });
-    if (!result?.protocolVersion) throw new Error("The Atlassian bridge did not initialize.");
+    if (!result?.protocolVersion) throw new Error(`The ${name} bridge did not initialize.`);
     client.notify("notifications/initialized", {});
     return run(client);
   })();
@@ -65,9 +70,9 @@ async function withBridge<T>(account: string, options: BridgeOptions, run: (clie
     options.onStart?.(proc);
     return await Promise.race([response, blocked]);
   } catch (error) {
-    if (error instanceof TrackerMcpAuthError || needsAuth || (error instanceof RpcError && authRequired.test(error.message))) throw new TrackerMcpAuthError(account);
+    if (error instanceof TrackerMcpAuthError || needsAuth || (error instanceof RpcError && authRequired.test(error.message))) throw new TrackerMcpAuthError(account, server);
     if (error instanceof McpToolError) throw error;
-    throw new Error("Could not connect to the Atlassian MCP server. Check the bridge and try again.", { cause: error });
+    throw new Error(`Could not connect to the ${name} MCP server. Check the bridge and try again.`, { cause: error });
   } finally {
     lines.close();
     client.endInput();
@@ -76,16 +81,14 @@ async function withBridge<T>(account: string, options: BridgeOptions, run: (clie
 }
 
 class McpToolError extends Error {}
-export class TrackerMcpRefusedError extends McpToolError {}
-
-export async function checkAtlassian(account: string, options: BridgeOptions = {}): Promise<void> {
-  await atlassianTool(account, "atlassianUserInfo", {}, options);
+export async function checkTrackerBridge(account: string, server: TrackerBridge, options: BridgeOptions = {}): Promise<void> {
+  await trackerBridgeTool(account, server, server === "atlassian" ? "atlassianUserInfo" : "list_issues", server === "atlassian" ? {} : { limit: 1 }, options);
 }
 
-export async function atlassianTool(account: string, name: string, args: Record<string, unknown>, options: BridgeOptions): Promise<unknown> {
-  return withBridge(account, options, async (client) => {
+export async function trackerBridgeTool(account: string, server: TrackerBridge, name: string, args: Record<string, unknown>, options: BridgeOptions = {}): Promise<unknown> {
+  return withBridge(account, server, options, async (client) => {
     const result = Result.safeParse(await client.request("tools/call", { name, arguments: args }));
-    if (!result.success) throw new McpToolError("The Atlassian tool returned an invalid result.");
+    if (!result.success) throw new McpToolError(`The ${servers[server].name} tool returned an invalid result.`);
     const { content, structuredContent, isError } = result.data;
     const texts: string[] = content.flatMap((item) => item.type === "text" && item.text !== undefined ? [item.text] : []);
     let output: unknown = structuredContent ?? texts;
@@ -93,8 +96,8 @@ export async function atlassianTool(account: string, name: string, args: Record<
       try { output = JSON.parse(texts[0]!) as unknown; } catch { output = texts[0]; }
     }
     if (isError || (output && typeof output === "object" && "error" in output && output.error === true)) {
-      if (texts.some((part) => authRequired.test(part)) || authRequired.test(JSON.stringify(output ?? null))) throw new TrackerMcpAuthError(account);
-      throw new TrackerMcpRefusedError("The Atlassian tool refused the request. Check the site, tool arguments and your Jira permissions.");
+      if (texts.some((part) => authRequired.test(part)) || authRequired.test(JSON.stringify(output ?? null))) throw new TrackerMcpAuthError(account, server);
+      throw new McpToolError(`The ${servers[server].name} tool refused the request. Check the account, target and tool arguments.`);
     }
     return output;
   });

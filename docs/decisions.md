@@ -463,3 +463,15 @@
 - Decision: The Project Manager reads the ticket and supporting links, combines their relevant details with the chat order, and creates one job with the original files it selects. The engine saves the request as Start's document. Start runs nothing. Spec Writer reads the document and can open the files by path. Later steps can also read Start.
 - Why: The same recipe should work whether the request comes from a ticket, a web page, chat or attached files.
 - Replaces: Treating a ticket as the only job context and requiring a recipe step to fetch missing context.
+
+## 2026-11-26: Give Agent nodes tracker access
+
+- Decision: Agent nodes can read or update tickets through an account and the app's tracker tools. The Project Manager uses the same tools and asks for approval before writes. Saved Tracker nodes become Agent nodes with their existing routes and output types. Bug Fix to PR ends with an Agent that updates the ticket.
+- Why: Choosing a status, writing comments and updating fields require judgment.
+- Replaces: The Tracker node kind and its shipped scripts and MCP tool definitions.
+
+## 2026-11-26: Remove the Tracker node kind from saved jobs and imports
+
+- Decision: Upgrade saved Tracker nodes and job definitions to Agent nodes. Preserve custom actions as reference text. Reject old Tracker definitions when validating new edits and imports.
+- Why: Tracker access belongs to Agent nodes, including when an existing job resumes.
+- Replaces: Keeping the Tracker runner for existing jobs and accepting Tracker definitions in project archives.

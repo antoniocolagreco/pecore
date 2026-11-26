@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { checkLogin, startSession, StartError } from "@pecore/agents";
-import type { AgentEvent, Login, RawLine, ResolvedConnector, Session, Spawn, TurnResult, Usage } from "@pecore/agents";
-import { artifactTypes, recipeStart } from "@pecore/schemas";
+import type { AgentEvent, Login, McpServer, RawLine, ResolvedConnector, Session, Spawn, TurnResult, Usage } from "@pecore/agents";
+import { appName, artifactTypes, recipeStart } from "@pecore/schemas";
 import type { AgentNode, ArtifactType, FailureReason } from "@pecore/schemas";
 import { z } from "zod";
 import { renamedOutcome } from "../definitions/outcomes";
@@ -33,6 +33,7 @@ export type AgentRun = {
   spawn: Spawn;
   model: string;
   effort: string | null;
+  mcpServers?: McpServer[];
   resumeId: string | null;
   continuation?: AgentContinuation;
   timeoutMs: number;
@@ -173,7 +174,8 @@ export async function runAgentNode(r: AgentRun): Promise<AgentOutcome> {
   if (template === undefined) throw new Error(`${r.node.name}: missing saved prompt ${r.node.prompt}`);
   const prompt: string = substitute(template, values);
   const context: string = r.agentContext?.trim() ?? "";
-  let text = buildPrompt(context ? `${prompt}\n\n## Initial context from the user\n\n${context}` : prompt, r.node, r.inputs, knowledge, r.attachments, r.development);
+  const tracker: string = r.node.tracker ? `\n\nUse the ${appName} tracker tools for tracker actions. Job ticket: ${JSON.stringify(r.context.ticketId)}. Node parameters: ${JSON.stringify(r.params)}.` : "";
+  let text = buildPrompt((context ? `${prompt}\n\n## Initial context from the user\n\n${context}` : prompt) + tracker, r.node, r.inputs, knowledge, r.attachments, r.development);
 
   let pgid: number | null = null;
   const spawn: Spawn = async (p) => {
@@ -186,7 +188,7 @@ export async function runAgentNode(r: AgentRun): Promise<AgentOutcome> {
   let session: Session;
   try {
     const resumeId: string | null = r.continuation?.sessionId ?? r.resumeId;
-    session = await startSession({ connector: r.connector, login: r.login, spawn, cwd: r.workdir, model: r.model, effort: r.effort, ...(resumeId ? { resumeId } : {}) });
+    session = await startSession({ connector: r.connector, login: r.login, spawn, cwd: r.workdir, model: r.model, effort: r.effort, ...(r.mcpServers ? { mcpServers: r.mcpServers } : {}), ...(resumeId ? { resumeId } : {}) });
   } catch (e) {
     const err = e instanceof StartError ? e : new StartError("other", String(e));
     if (err.traffic && r.onRaw) {

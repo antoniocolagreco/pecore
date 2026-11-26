@@ -4,6 +4,7 @@ import type Database from "better-sqlite3";
 import type { OutcomeLookup } from "../definitions/outcomes";
 import { migrateOutcomes } from "./migrate-outcomes";
 import { migrateRecipeAnchors } from "./migrate-recipe-anchors";
+import { migrateAgentTrackers } from "./migrate-agent-tracker";
 
 const migrationsDir = fileURLToPath(new URL("./migrations/", import.meta.url));
 
@@ -21,6 +22,10 @@ export function migrate(db: Database.Database, prefix: string, options?: { inher
       const sql: string = readFileSync(migrationsDir + file, "utf8");
       if (file === "shared-031-node-outcomes.sql") migrateOutcomes(db, sql, prefix === "", options);
       else if (file === "shared-033-drop-recipe-anchors.sql") migrateRecipeAnchors(db, sql, prefix === "");
+      else if (file === "shared-034-agent-tracker-access.sql") {
+        if (!db.prepare("SELECT 1 FROM pragma_table_info('catalog_nodes') WHERE name = 'agent_tracker_access'").get()) db.exec(sql);
+      }
+      else if (file === "shared-035-remove-tracker-nodes.sql") migrateAgentTrackers(db, sql, prefix === "");
       else db.exec(sql);
       db.prepare("DELETE FROM schema_version").run();
       db.prepare("INSERT INTO schema_version (version) VALUES (?)").run(version);

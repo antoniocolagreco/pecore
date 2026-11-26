@@ -16,7 +16,7 @@ import { HttpError } from "./api/server";
 import type { CompleteProjectImportBody, ExportProjectBody, ExportProjectResult, ImportProjectBody, ImportProjectPreview, ImportProjectResult } from "@pecore/schemas";
 import { AgentServices, protectedUser, spawnFor } from "./accounts/agents";
 import type { AgentPaths, LoginInfo } from "./accounts/agents";
-import { checkAtlassian, TrackerMcpAuthError } from "./accounts/atlassian";
+import { checkTrackerBridge, TrackerMcpAuthError } from "./accounts/atlassian";
 import { LoginRunner } from "./accounts/login";
 import { discoverForgeAccounts, forgeLoginUser, newForgeAccounts } from "./accounts/forges";
 import { identityOk } from "./runners/forge-env";
@@ -465,9 +465,9 @@ export class Engine extends EventEmitter {
       return ok ? "logged_in" : "logged_out";
     }
     if (a.kind === "service") {
-      if (a.tool !== "atlassian" || this.loginRunner.isActive(`tool:${id}`)) return "unknown";
+      if ((a.tool !== "atlassian" && a.tool !== "linear") || this.loginRunner.isActive(`tool:${id}`)) return "unknown";
       try {
-        await checkAtlassian(id);
+        await checkTrackerBridge(id, a.tool);
         await this.releaseAuth(id, null);
         return "logged_in";
       } catch (error) {
@@ -482,9 +482,9 @@ export class Engine extends EventEmitter {
 
   async startAccountLogin(id: string): Promise<string> {
     const a = this.account(id);
-    if (a.kind === "service" && a.tool === "atlassian") {
+    if (a.kind === "service" && (a.tool === "atlassian" || a.tool === "linear")) {
       const loginId: string = `tool:${id}`;
-      await this.loginRunner.atlassian(loginId, id, () => this.releaseAuth(id, null));
+      await this.loginRunner.trackerBridge(loginId, id, a.tool, () => this.releaseAuth(id, null));
       return loginId;
     }
     if (a.kind !== "forge") throw new Error(`account ${id} has no tool login in ${appName}; log in with ${a.kind === "service" ? a.tool : "the harness"} and recheck`);
@@ -604,6 +604,7 @@ export class Engine extends EventEmitter {
       serviceAccount: (accountId) => this.accounts.accounts.find((a): a is Extract<Account, { kind: "service" }> => a.kind === "service" && a.id === accountId),
       agentCard: (agentId) => this.catalogAgent(agentId),
       agentContext: (agentId) => this.agentContext(agentId),
+      openTrackerRun: (...args) => this.agentChats.openTrackerRun(...args),
       live: (attemptId, line) => {
         this.emit("log", { projectId: id, attemptId, line });
         for (const event of logEvents(line)) this.live({ type: "log.line", attemptId, event });

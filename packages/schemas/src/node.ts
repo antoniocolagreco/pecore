@@ -95,6 +95,13 @@ export function legacyAgentSession(value: unknown): AgentSession | undefined {
   return undefined;
 }
 
+export const TrackerAccess = z.enum(["read", "read-write"]);
+export const AgentTracker = z.strictObject({
+  access: TrackerAccess,
+  account: z.string().trim().min(1, "Choose a tracker account."),
+});
+export type AgentTracker = z.infer<typeof AgentTracker>;
+
 export const AgentNode = z
   .object({
     ...Base,
@@ -112,6 +119,7 @@ export const AgentNode = z
       .strict(),
     knowledge: z.array(z.string()).default([]),
     agentSession: AgentSession.default("job"),
+    tracker: AgentTracker.optional(),
   })
   .strict();
 
@@ -127,42 +135,19 @@ export const humanInterfaces: Readonly<Record<HumanInterface, { readonly label: 
 export const HumanNode = z.strictObject({ ...Base, ...Runnable, kind: z.literal("human"), interface: HumanInterface });
 export type HumanNode = z.infer<typeof HumanNode>;
 
-export const TrackerProvider = z.enum(["github", "gitlab", "jira"]);
+export const TrackerProvider = z.enum(["github", "gitlab", "jira", "linear"]);
 export type TrackerProvider = z.infer<typeof TrackerProvider>;
 
-const TrackerFields = CommandNode.pick({
+export const RepositoryNode = CommandNode.pick({
   inputs: true, optionalInputs: true, outcomeRules: true, outputRules: true,
 }).extend({
   ...Base,
   ...Runnable,
-  kind: z.literal("tracker"),
+  kind: z.literal("repository"),
   timeoutSec: Timeout.default(120),
   changesFiles: z.literal(false).default(false),
-  provider: TrackerProvider,
-  account: z.string({ error: "Choose an account for this tracker." }).trim().min(1, "Choose an account for this tracker."),
-  readOnly: z.literal(true).optional(),
-}).strict();
-
-const CliTrackerNode = TrackerFields.extend({
-  mode: z.literal("cli").optional(),
-  script: z.string().trim().min(1, "Enter a script for this tracker."),
-  repeatCheck: z.literal(true).optional(),
-});
-export const TrackerMcpServer = z.enum(["atlassian"]);
-export const McpTrackerNode = TrackerFields.extend({
-  mode: z.literal("mcp"),
-  provider: z.literal("jira"),
-  server: TrackerMcpServer,
-  tool: z.string().trim().min(1, "Choose an MCP tool."),
-  arguments: z.record(z.string(), z.json()).default({}),
-});
-export type McpTrackerNode = z.infer<typeof McpTrackerNode>;
-export const TrackerNode = z.discriminatedUnion("mode", [CliTrackerNode, McpTrackerNode]);
-export type TrackerNode = z.infer<typeof TrackerNode>;
-
-export const RepositoryNode = CliTrackerNode.omit({ provider: true, repeatCheck: true, mode: true }).extend({
-  kind: z.literal("repository"),
   account: z.string({ error: "Choose a Git hosting account." }).trim().min(1, "Choose a Git hosting account."),
+  readOnly: z.literal(true).optional(),
   script: z.string().trim().min(1, "Enter a repository script."),
   probe: CommandOrScript.optional(),
   probeRules: JsonRule.optional(),
@@ -225,7 +210,7 @@ function checkNode(node: z.infer<typeof NodeShape>): Issue[] {
       if (node.outputs[outcome] === undefined) issues.push({ path: ["outputRules", outcome], message: `${outcome} has no output` });
     }
     for (const outcome of Object.keys(node.outputs)) {
-      if (!(node.kind === "tracker" && node.mode === "mcp") && node.outputRules[outcome] === undefined) issues.push({ path: ["outputs", outcome], message: `${outcome} needs an output rule` });
+      if (node.outputRules[outcome] === undefined) issues.push({ path: ["outputs", outcome], message: `${outcome} needs an output rule` });
     }
     for (const [i, type] of node.optionalInputs.entries()) {
       if (node.inputs.includes(type)) issues.push({ path: ["optionalInputs", i], message: `${type} is already a required input` });
@@ -247,7 +232,9 @@ function checkNode(node: z.infer<typeof NodeShape>): Issue[] {
   return issues;
 }
 
-const NodeShape = z.discriminatedUnion("kind", [CommandNode, AgentNode, HumanNode, TrackerNode, RepositoryNode]);
+const NodeShape = z.discriminatedUnion("kind", [CommandNode, AgentNode, HumanNode, RepositoryNode], {
+  error: "Choose Agent, Command, Human or Repository.",
+});
 const NodeDefinition = NodeShape.superRefine((node, ctx) => {
   for (const issue of checkNode(node)) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
 });

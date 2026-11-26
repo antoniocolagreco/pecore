@@ -7,7 +7,6 @@ import type { JobRow, ProjectContext } from "../graph/executor";
 import { ProjectLocationConflict, withProjectLocation } from "../projects/location";
 import { jobBranch } from "../workdir/repo";
 import { repositoryAccount } from "../runners/repository";
-import { trackerLogin } from "../runners/tracker";
 import { fetchBase, jobCommit } from "./stacked";
 
 const ulid = monotonicFactory();
@@ -74,11 +73,9 @@ async function createJobInProject(ctx: ProjectContext, req: CreateJob): Promise<
   definitions.recipeHash = recipeHash;
   for (const entry of Object.values(definitions.nodes)) {
     const node = entry.definition;
-    if (node.kind === "tracker" || node.kind === "repository") {
+    if (node.kind === "repository") {
       try {
-        const account: string = node.kind === "repository" ? repositoryAccount(ctx, node).id
-          : node.mode === "mcp" ? ctx.project.credentials?.[node.account] ?? node.account
-          : (await trackerLogin(ctx, node)).id;
+        const account: string = repositoryAccount(ctx, node).id;
         const definition = { ...node, account };
         entry.definition = definition;
         entry.hash = definitionHash({ definition, sidecars: entry.sidecars });

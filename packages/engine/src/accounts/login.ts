@@ -6,7 +6,8 @@ import type { ForgeAccount } from "@pecore/schemas";
 import { appUser, baseEnv, run, spawnAs } from "../runners/process";
 import type { Proc } from "../runners/process";
 import { writeFileAs } from "../workdir/fs-as";
-import { checkAtlassian } from "./atlassian";
+import { checkTrackerBridge } from "./atlassian";
+import type { TrackerBridge } from "./atlassian";
 import type { AgentServices, LoginInfo } from "./agents";
 
 export type LoginProgress = { loginId: string; text: string; url: string | null; done: boolean };
@@ -54,21 +55,22 @@ export class LoginRunner {
     this.stream(loginId, proc, /https:\/\/\S+/, (code) => code === 0 ? done() : Promise.resolve("logged_out"));
   }
 
-  async atlassian(loginId: string, account: string, done: () => Promise<void>): Promise<void> {
+  async trackerBridge(loginId: string, account: string, server: TrackerBridge, done: () => Promise<void>): Promise<void> {
     if (this.active.has(loginId)) return;
+    const name: string = server === "atlassian" ? "Atlassian" : "Linear";
     await new Promise<void>((started, failed) => {
-      void checkAtlassian(account, {
+      void checkTrackerBridge(account, server, {
         interactive: true,
         onStart: (proc) => {
           this.active.set(loginId, proc);
-          this.progress({ loginId, text: "Connecting to Atlassian…", url: null, done: false });
+          this.progress({ loginId, text: `Connecting to ${name}…`, url: null, done: false });
           started();
         },
-        onAuthorize: (url) => this.progress({ loginId, text: "Complete Atlassian sign-in in your browser.", url, done: false }),
+        onAuthorize: (url) => this.progress({ loginId, text: `Complete ${name} sign-in in your browser.`, url, done: false }),
       }).then(async () => {
         await done();
         this.active.delete(loginId);
-        this.progress({ loginId, text: "Connected to Atlassian.", url: null, done: true });
+        this.progress({ loginId, text: `Connected to ${name}.`, url: null, done: true });
       }).catch((error: unknown) => {
         failed(error);
         this.active.delete(loginId);

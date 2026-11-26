@@ -172,12 +172,12 @@ export function migrateOutcomes(db: Database.Database, sql: string, project: boo
   const approved: string[] = [];
   db.exec("CREATE TEMP TABLE outcome_renames (node TEXT, old TEXT, new TEXT, PRIMARY KEY (node, old))");
   const insert = db.prepare("INSERT INTO outcome_renames (node, old, new) VALUES (?, ?, ?)");
-  const approval = db.prepare("SELECT chat_approved_hash FROM catalog_nodes WHERE name = ?");
+  const approval = db.prepare("SELECT chat_approved_hash FROM catalog_nodes WHERE name = ? AND kind = 'repository'");
   const prompt = db.prepare<[string], string | null>(`SELECT node.prompt FROM catalog_nodes node WHERE node.name = ?\n    AND (SELECT count(*) FROM catalog_nodes sibling WHERE sibling.prompt = node.prompt) = 1`).pluck();
   const updatePrompt = db.prepare("UPDATE catalog_node_content SET body = ? WHERE name = ?");
   for (const [name, renames] of byNode) {
     if (!renames.size) continue;
-    if ((approval.get(name) as { chat_approved_hash: string | null }).chat_approved_hash && catalog.chatNode(name)?.approved) approved.push(name);
+    if ((approval.get(name) as { chat_approved_hash: string | null } | undefined)?.chat_approved_hash && catalog.chatNode(name)?.approved) approved.push(name);
     const key: string | null | undefined = prompt.get(name);
     const body: string | null = key ? catalog.content(key) : null;
     if (body !== null) updatePrompt.run(renameOutcomeMentions(body, renames), key);

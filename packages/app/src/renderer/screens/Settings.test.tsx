@@ -56,7 +56,10 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-it("adds the Atlassian service account and starts browser sign-in", async () => {
+it.each([
+  { id: "atlassian", name: "Atlassian" },
+  { id: "linear", name: "Linear" },
+])("adds the $name service account and starts browser sign-in", async ({ id, name }) => {
   const fallback = api.call.getMockImplementation()!;
   let accounts: Accounts = { accounts: [] };
   let sha256: string = "accounts-v1";
@@ -67,16 +70,16 @@ it("adds the Atlassian service account and starts browser sign-in", async () => 
       sha256 = "accounts-v2";
       return { sha256 };
     }
-    if (route === "startAccountLogin") return { loginId: "tool:atlassian" };
+    if (route === "startAccountLogin") return { loginId: `tool:${id}` };
     return fallback(route);
   });
   render(<MemoryRouter><Settings /></MemoryRouter>);
   const user = userEvent.setup();
-  const add: HTMLButtonElement = await screen.findByRole("button", { name: "Add Atlassian account" });
+  const add: HTMLButtonElement = await screen.findByRole("button", { name: `Add ${name} account` });
   await waitFor(() => expect(add.disabled).toBe(false));
   await user.click(add);
-  await waitFor(() => expect(api.call).toHaveBeenCalledWith("startAccountLogin", { params: { id: "atlassian" } }));
-  expect(accounts.accounts).toEqual([{ id: "atlassian", kind: "service", service: "Atlassian", tool: "atlassian", user: "Atlassian account" }]);
+  await waitFor(() => expect(api.call).toHaveBeenCalledWith("startAccountLogin", { params: { id } }));
+  expect(accounts.accounts).toEqual([{ id, kind: "service", service: name, tool: id, user: `${name} account` }]);
   expect(screen.queryByLabelText("Login code")).toBeNull();
 });
 

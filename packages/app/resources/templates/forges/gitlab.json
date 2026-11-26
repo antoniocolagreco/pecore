@@ -3,6 +3,6 @@
   "tool": "glab",
   "credentialHelper": "!glab auth git-credential",
   "delivery": "gitlab-mr",
-  "comment": "gitlab-issue-comment",
+  "comment": "post-delivery-to-ticket",
   "createRepo": "gitlab-create-repo"
 }

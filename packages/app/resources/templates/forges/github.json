@@ -3,6 +3,6 @@
   "tool": "gh",
   "credentialHelper": "!gh auth git-credential",
   "delivery": "github-pr",
-  "comment": "github-issue-comment",
+  "comment": "post-delivery-to-ticket",
   "createRepo": "github-create-repo"
 }

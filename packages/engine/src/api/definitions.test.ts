@@ -39,6 +39,24 @@ describe("definition routes", () => {
     await close();
   });
 
+  it("rejects a former Tracker node during validation and save", async () => {
+    const { engine, call, close } = await apiProject();
+    try {
+      const path: string = "templates/nodes/old-tracker.json";
+      const content: string = JSON.stringify({
+        kind: "tracker", name: "old-tracker", description: "Read a ticket", provider: "github", account: "project.account",
+        script: "echo ticket", outcomes: ["success"], outcomeRules: [{ exitCode: 0, outcome: "success" }],
+      });
+      expect((await call("validateDefinition", { body: { path, content } })).errors).toMatchObject([
+        { path: "kind", message: "Choose Agent, Command, Human or Repository." },
+      ]);
+      await expect(call("saveDefinition", { params: { path }, body: { content, baseSha256: null } })).rejects.toMatchObject({ status: 400 });
+      expect(engine.catalog.node("old-tracker")).toBeNull();
+    } finally {
+      await close();
+    }
+  });
+
   it("deletes unused templates and protects references and newer revisions", async () => {
     const { engine, call, close } = await apiProject();
     try {

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { argvShellScript, Node, Recipe } from "@pecore/schemas";
-import type { CommandNode, OutcomeRule, OutputRule, RepositoryNode, TrackerNode } from "@pecore/schemas";
+import type { CommandNode, OutcomeRule, OutputRule, RepositoryNode } from "@pecore/schemas";
 import type Database from "better-sqlite3";
 
 type NodeRow = {
@@ -14,17 +14,13 @@ type NodeRow = {
   prompt: string | null;
   tier: string | null;
   agent_session: string | null;
+  agent_tracker_access: string | null;
+  agent_tracker_account: string | null;
   human_interface: string | null;
   chat_approved_hash: string | null;
   reads_only: number | null;
   repository_account: string | null;
   repository_script: string | null;
-  tracker_provider: string | null;
-  tracker_account: string | null;
-  tracker_server: string | null;
-  tracker_tool: string | null;
-  tracker_script: string | null;
-  tracker_repeat_check: number | null;
 };
 
 type RecipeRow = {
@@ -104,6 +100,7 @@ export class Catalog {
       const profiles: string[] = list("profiles");
       return Node.parse({
         ...common, prompt: row.prompt, agentSession: row.agent_session ?? undefined, knowledge: list("knowledge"),
+        ...(row.agent_tracker_access ? { tracker: { access: row.agent_tracker_access, account: row.agent_tracker_account } } : {}),
         agent: { tier: row.tier ?? undefined, ...(profiles.length ? { profiles } : {}), providerNot: list("providerNot") },
       });
     }
@@ -119,14 +116,6 @@ export class Catalog {
     });
     const inputs = { inputs: list("inputs"), optionalInputs: list("optionalInputs"), outcomeRules };
     const remote = row.reads_only ? { readOnly: true } : {};
-    if (row.kind === "tracker") return Node.parse({
-      ...remote,
-      ...common, ...inputs, provider: row.tracker_provider, account: row.tracker_account,
-      ...(row.tracker_server ? { mode: "mcp", server: row.tracker_server, tool: row.tracker_tool,
-        arguments: this.params("SELECT name, value FROM catalog_tracker_arguments WHERE node = ? ORDER BY name", name),
-      } : { script: row.tracker_script, ...(row.tracker_repeat_check ? { repeatCheck: true } : {}) }),
-      outputRules: command?.outputRules,
-    });
     if (row.kind === "repository") return Node.parse({
       ...remote,
       ...common, ...inputs, account: row.repository_account,
@@ -164,18 +153,16 @@ export class Catalog {
       const approved: string | null = this.chatApprovedHash(name);
       this.delete("nodes", name);
       this.db.prepare(`INSERT INTO catalog_nodes
-        (name, description, icon, kind, shipped, timeout_sec, changes_files, retry, prompt, tier, agent_session, human_interface, repository_account, repository_script, tracker_provider, tracker_account, tracker_script, tracker_repeat_check, chat_approved_hash, reads_only, tracker_server, tracker_tool)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        (name, description, icon, kind, shipped, timeout_sec, changes_files, retry, prompt, tier, agent_session, human_interface, repository_account, repository_script, chat_approved_hash, reads_only, agent_tracker_access, agent_tracker_account)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         name, node.description, node.icon ?? null, node.kind, Number(shipped),
         "timeoutSec" in node ? node.timeoutSec : null, "changesFiles" in node ? Number(node.changesFiles) : null,
         "retry" in node ? node.retry : null, node.kind === "agent" ? node.prompt : null,
         node.kind === "agent" ? node.agent.tier ?? null : null, node.kind === "agent" ? node.agentSession : null,
         node.kind === "human" ? node.interface : null,
         node.kind === "repository" ? node.account : null, node.kind === "repository" ? node.script : null,
-        node.kind === "tracker" ? node.provider : null, node.kind === "tracker" ? node.account : null,
-        node.kind === "tracker" && node.mode !== "mcp" ? node.script : null, node.kind === "tracker" && node.mode !== "mcp" && node.repeatCheck ? 1 : null,
         approved, "readOnly" in node && node.readOnly ? 1 : null,
-        node.kind === "tracker" && node.mode === "mcp" ? node.server : null, node.kind === "tracker" && node.mode === "mcp" ? node.tool : null,
+        node.kind === "agent" ? node.tracker?.access ?? null : null, node.kind === "agent" ? node.tracker?.account ?? null : null,
       );
       this.writeParams("INSERT INTO catalog_node_params (node, name, value) VALUES (?, ?, ?)", [name], node.params);
       this.writeLists("INSERT INTO catalog_node_lists (node, field, position, value) VALUES (?, ?, ?, ?)", [name], {
@@ -187,7 +174,6 @@ export class Catalog {
         const insert: Database.Statement<[string, string, string]> = this.db.prepare("INSERT INTO catalog_node_outputs (node, outcome, type) VALUES (?, ?, ?)");
         for (const [outcome, type] of Object.entries(node.outputs)) insert.run(name, outcome, type);
       }
-      if (node.kind === "tracker" && node.mode === "mcp") this.writeParams("INSERT INTO catalog_tracker_arguments (node, name, value) VALUES (?, ?, ?)", [name], node.arguments);
       if ("inputs" in node) this.saveCommandNode(node);
     })();
   }
@@ -198,12 +184,10 @@ export class Catalog {
 
   chatNode(name: string) {
     const node: Node | null = this.node(name);
-    if (node?.kind !== "repository" && node?.kind !== "tracker") return null;
+    if (node?.kind !== "repository") return null;
     const checks: Record<string, string> = {};
-    if (node.kind === "repository") {
-      for (const check of [node.probe, node.mergedCheck]) {
-        if (check && !Array.isArray(check)) checks[check.script] = this.content(check.script) ?? "";
-      }
+    for (const check of [node.probe, node.mergedCheck]) {
+      if (check && !Array.isArray(check)) checks[check.script] = this.content(check.script) ?? "";
     }
     const executable = { ...node, description: undefined, tags: undefined, icon: undefined };
     const hash: string = createHash("sha256").update(JSON.stringify({ executable, checks })).digest("hex");
@@ -216,7 +200,7 @@ export class Catalog {
     return true;
   }
 
-  private saveCommandNode(node: CommandNode | RepositoryNode | TrackerNode): void {
+  private saveCommandNode(node: CommandNode | RepositoryNode): void {
     this.saveCommand(node.name, "command", node.kind === "command" ? node : { outputRules: node.outputRules });
     if (node.kind === "repository") {
       if (node.probe) this.saveCommand(node.name, "probe", Array.isArray(node.probe) ? { command: node.probe } : node.probe, node.probeRules);

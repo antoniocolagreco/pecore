@@ -72,6 +72,9 @@ export type ServiceAccount = z.infer<typeof ServiceAccount>;
 export const atlassianAccount: ServiceAccount = {
   id: "atlassian", kind: "service", service: "Atlassian", tool: "atlassian", user: "Atlassian account",
 };
+export const linearAccount: ServiceAccount = {
+  id: "linear", kind: "service", service: "Linear", tool: "linear", user: "Linear account",
+};
 
 export const Accounts = z
   .object({

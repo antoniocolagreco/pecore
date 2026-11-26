@@ -1,0 +1,13 @@
+{
+  "name": "post-delivery-to-ticket",
+  "description": "Link the delivered pull request on the job's ticket.",
+  "kind": "agent",
+  "agent": { "tier": "standard" },
+  "tracker": { "access": "read-write", "account": "project.account" },
+  "changesFiles": false,
+  "timeoutSec": 120,
+  "retry": 0,
+  "prompt": "post-delivery-to-ticket.md",
+  "outcomes": ["success", "failure"],
+  "failOutcomes": ["failure"]
+}

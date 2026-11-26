@@ -71,10 +71,6 @@
   --recipe-node-stripe: light-dark(#ad6500, #ffc866);
 }
 
-.tracker {
-  --recipe-node-kind: light-dark(#a3207a, #f28fd4);
-}
-
 .repository {
   --recipe-node-kind: var(--status-success);
 }

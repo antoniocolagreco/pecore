@@ -11,7 +11,7 @@ const requestSchema = z.object({
 });
 const initializeSchema = z.object({ protocolVersion: z.string() });
 const callSchema = z.object({ name: z.string().min(1), arguments: z.record(z.string(), z.unknown()).optional() });
-const querySchema = z.object({ chat: z.string().optional() });
+const querySchema = z.strictObject({ chat: z.string().optional(), tracker: z.string().optional() });
 const protocolVersion = "2025-11-25";
 const protocolVersions: Set<string> = new Set(["2024-11-05", "2025-03-26", "2025-06-18", protocolVersion]);
 
@@ -27,6 +27,8 @@ export function mcpRoute(app: FastifyInstance, engine: Engine): void {
     const query = querySchema.safeParse(req.query);
     if (!query.success) return failure(-32602, "Invalid chat identifier");
     const routeKey: string | undefined = query.data.chat;
+    const tracker = query.data.tracker ? engine.agentChats.trackerRun(query.data.tracker) : undefined;
+    if (query.data.tracker !== undefined && (!tracker || routeKey !== undefined)) return reply.code(401).send();
     const chatId: string | undefined = routeKey ? engine.agentChats.chatId(routeKey) : undefined;
     if (routeKey !== undefined && !chatId) return reply.code(401).send();
     const { method, params } = parsed.data;
@@ -47,14 +49,22 @@ export function mcpRoute(app: FastifyInstance, engine: Engine): void {
       case "notifications/initialized":
         return failure(-32600, "initialized must be a notification");
       case "tools/list":
+        if (tracker) return success({ tools: tracker.list() });
         return success({ tools: tools.list(chatId ? engine.agentChats.access(chatId) : "assistant", chatId ? engine.agentChats.project(chatId) : null) });
       case "tools/call": {
-        if (!chatId) return failure(-32602, "A chat identifier is required for tools/call");
+        if (!chatId && !tracker) return failure(-32602, "A chat identifier is required for tools/call");
         const input = callSchema.safeParse(params);
         if (!input.success) return failure(-32602, "Invalid tools/call params");
         try {
           const { name, arguments: args } = input.data;
-          return success(await engine.agentChats.inTurn(chatId, (message) => tools.call(name, args, message)));
+          if (tracker) {
+            try {
+              return success({ content: [{ type: "text", text: JSON.stringify(await tracker.call(name, args)) }] });
+            } catch (error) {
+              return success({ isError: true, content: [{ type: "text", text: error instanceof Error ? error.message : "Tracker action failed." }] });
+            }
+          }
+          return success(await engine.agentChats.inTurn(chatId!, (message) => tools.call(name, args, message)));
         } catch (e) {
           return failure(-32000, e instanceof Error ? e.message : String(e));
         }

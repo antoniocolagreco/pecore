@@ -1,10 +1,9 @@
 import { createHash } from "node:crypto";
 import { basename, join } from "node:path";
 import { monotonicFactory } from "ulid";
-import type { RawLine, Usage } from "@pecore/agents";
+import type { Usage } from "@pecore/agents";
 import type { AgentSession, AgentNode, Artifact, ArtifactType, FailureReason, ForgeAccount, JobDefinitions, JobState, Node, NodeAgent, Project, ServiceAccount, Settings, WaitingReason } from "@pecore/schemas";
 import { artifactTypes, defaultAgentId, DocumentArtifact, isHumanNode, Recipe, recipeStart, ReferenceArtifact, SpecArtifact } from "@pecore/schemas";
-import { TrackerMcpAuthError } from "../accounts/atlassian";
 import { spawnFor } from "../accounts/agents";
 import type { AgentServices } from "../accounts/agents";
 import { knowledgeClosure } from "../definitions/knowledge";
@@ -14,6 +13,8 @@ import { effectRecorder } from "../jobs/effects";
 import { checkGithubCi, githubHead } from "../jobs/github-ci";
 import type { JobAttachment } from "../jobs/create";
 import { runAgentNode } from "../runners/agent";
+import type { AgentChats } from "../chat/chat";
+import type { LogLine } from "../observability/logs";
 import type { AgentContinuation, AgentInput, AgentQuestion } from "../runners/agent";
 import { fetchBase, jobArtifacts, jobCommit, latestReference, reentryPending } from "../jobs/stacked";
 import type { JobArtifact } from "../jobs/stacked";
@@ -27,7 +28,6 @@ import { enoughDisk } from "../scheduler/disk";
 import type { Pools } from "../scheduler/pools";
 import type { NewEvent, ProjectDb } from "../store/project-db";
 import { repositoryAccount, repositoryEnv } from "../runners/repository";
-import { runTrackerNode, trackerLogin } from "../runners/tracker";
 import { contentState, deleteScratch, recordGit, restoreState, undoInterrupted } from "../workdir/content-state";
 import type { GitRecord } from "../workdir/content-state";
 import { gitAppResult, gitWork } from "../workdir/git-as";
@@ -98,7 +98,8 @@ export type ProjectContext = {
   held?: () => boolean;
   agentCard(id: string): NodeAgent | undefined;
   agentContext(id: string): string;
-  live?: (attemptId: string, line: RawLine) => void;
+  openTrackerRun?: AgentChats["openTrackerRun"];
+  live?: (attemptId: string, line: LogLine) => void;
   orderAttachments?: (orderId: string, attachmentIds: string[]) => Promise<JobAttachment[]>;
   agentQuestion?: (itemId: string) => void;
   ciScheduled?: () => void;
@@ -365,10 +366,9 @@ export class JobExecutor {
     const nodes: Map<string, Node> = jobNodes(definitions, this.ctx.defs.nodes);
     for (const use of new Set(Object.values(this.recipe(job).nodes).map((step) => step.use))) {
       const node: Node | undefined = nodes.get(use);
-      if (node?.kind !== "tracker" && node?.kind !== "repository") continue;
+      if (node?.kind !== "repository") continue;
       try {
-        if (node.kind === "repository") repositoryAccount(this.ctx, node);
-        else if (node.mode !== "mcp") await trackerLogin(this.ctx, node);
+        repositoryAccount(this.ctx, node);
       } catch (error) {
         this.setState(job.id, "queued", "auth", undefined, (error as Error).message);
         return false;
@@ -890,13 +890,6 @@ export class JobExecutor {
                 onStart,
                 effect: effectRecorder(this.ctx.db, job.id, run.id, run.node),
               })
-            : node.kind === "tracker" ? await runTrackerNode(this.ctx, node, {
-                nodeDir: this.ctx.defs.nodeDir, params: paramsWithDefaults(node.params, recipeNode.params),
-                user: this.ctx.user, workdir: wd, context, inputs: commandInputs, onStart,
-                effect: effectRecorder(this.ctx.db, job.id, run.id, run.node),
-              }).catch((error: unknown): Attempt => error instanceof TrackerMcpAuthError
-                ? { kind: "waiting", reason: "auth", authAccount: error.account, log: error.message }
-                : { kind: "failed", reason: "HARNESS_ERROR", log: (error as Error).message })
             : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, { id: agentId, session: agentSession! }, { wd, context, inputs: agentInputs, onStart, env: servicesEnv, continuation: resumed, sidecars, knowledge: definitions?.knowledgeByStep });
         this.running.delete(job.id);
         if (result.log) this.ctx.db.logs.write(attemptId, { dir: "cmd", text: result.log, at: Date.now() });
@@ -961,7 +954,7 @@ export class JobExecutor {
           await undoInterrupted(this.ctx.user, wd, job.id, git, before);
           if (attempt + 1 < attempts && result.reason !== "INVALID_OUTPUT" && !("retry" in result && result.retry === false)) continue;
           this.saveArtifact(job.id, runDir, "text", result.log, before, "log");
-          this.fail(job, run.id, result.reason, result.reason === "AGENT_UNAVAILABLE" || node.kind === "tracker" ? result.log : undefined);
+          this.fail(job, run.id, result.reason, result.reason === "AGENT_UNAVAILABLE" ? result.log : undefined);
           return false;
         }
         end(result.outcome);
@@ -1123,6 +1116,11 @@ export class JobExecutor {
     const resumeId: string | null = agent.session !== "new" && !x.continuation
       ? this.resumeSession(run, agent.id, agent.session, profile.profile, account.connector) : null;
     const attachments: string[] = await this.copyAttachments(job.id, x.wd);
+    const log = (line: LogLine): void => {
+      this.ctx.db.logs.write(attemptId, line);
+      this.ctx.live?.(attemptId, line);
+    };
+    const tracker = node.tracker ? await this.ctx.openTrackerRun?.(this.ctx, node.tracker, connector, log) : undefined;
     const r = await runAgentNode({
       node,
       nodeDir: this.ctx.defs.nodeDir,
@@ -1141,18 +1139,20 @@ export class JobExecutor {
       spawn,
       model: profile.model,
       effort: profile.effort,
+      ...(tracker ? { mcpServers: tracker.servers } : {}),
       resumeId,
       continuation: x.continuation ?? undefined,
       timeoutMs: node.timeoutSec * 1000,
       onStart: (pgid) => x.onStart(pgid, this.ctx.user),
       onSession: (sessionId, resumed) => this.ctx.db.append([{ jobId: job.id, type: "attempt.session_started", payload: { attemptId, sessionId, resumed } }]),
-      onRaw: (line) => {
-        this.ctx.db.logs.write(attemptId, line);
-        this.ctx.live?.(attemptId, line);
-      },
-    });
+      onRaw: log,
+    }).finally(async () => { await tracker?.close(); });
     const usage = r.usage;
     const common = { usage, ...(r.model ? { model: r.model } : {}), cost: r.costUsd ?? null, log: `${r.kind === "completed" ? "" : `${"detail" in r ? r.detail : ""}\n`}${r.text}` };
+    const trackerLoginError: ToolAuthError | undefined = tracker?.loginError();
+    if (trackerLoginError && (r.kind === "failed" || (r.kind === "completed" && node.failOutcomes.includes(r.outcome)))) {
+      return { ...common, kind: "waiting", reason: "auth", authAccount: trackerLoginError.account, log: trackerLoginError.message };
+    }
     if (r.kind === "completed") return { ...common, kind: "completed", outcome: r.outcome, outputs: r.outputs, quotaRejected: r.quotaRejected };
     if (r.kind === "question") return { ...common, kind: "question", pending: r.pending, quotaRejected: r.quotaRejected };
     if (r.kind === "waiting") return { ...common, kind: "waiting", reason: r.reason, ...(r.resetAt !== undefined ? { resetAt: r.resetAt } : {}) };

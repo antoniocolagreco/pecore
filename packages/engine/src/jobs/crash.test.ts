@@ -6,18 +6,16 @@ import { jobCommit } from "./stacked";
 const deliveryNodes = [
   { node: "push", hang: "git push" },
   { node: "pr", hang: "pr create" },
-  { node: "comment", hang: "issue comment" },
 ] as const;
 
 describe("crash during delivery (G12, 4.8)", () => {
-  it("a job without a crash delivers once: push, one pull request, one comment", async () => {
+  it("a job without a crash pushes and opens one pull request", async () => {
     const { forge, engine } = await forgeProject();
     const p = engine.project("shop");
     const id = await engine.createJob("shop", { title: "Add hello", ticket: { text: "x", id: "7" } });
     await until(() => p.executor.job(id).state === "succeeded");
     const s = await forge.state();
     expect(s.prs).toMatchObject([{ head: `factory/${id}`, base: "main", state: "OPEN" }]);
-    expect(s.comments).toEqual([{ issue: "7", body: s.prs[0]!.url }]);
     const sha: string | null = jobCommit(p.ctx.db, p.ctx.db.events(id));
     expect(sha).toMatch(/^[0-9a-f]{40}$/);
     expect(forge.remoteHead("acme/shop", `factory/${id}`)).toBe(sha);
@@ -42,9 +40,7 @@ describe("crash during delivery (G12, 4.8)", () => {
       await until(() => q.executor.job(id).state === "succeeded");
       const s = await forge.state();
       expect(s.prs).toHaveLength(1);
-      expect(s.comments).toHaveLength(1);
       expect(s.calls.filter((c) => c.startsWith("pr create"))).toHaveLength(1);
-      expect(s.calls.filter((c) => c.startsWith("issue comment"))).toHaveLength(1);
       const requested = q.ctx.db.events(id).filter((e) => e.type === "effect.requested" && e.payload.node === node);
       expect(requested).toHaveLength(1);
       await again.shutdown();

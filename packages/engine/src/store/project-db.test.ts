@@ -22,6 +22,17 @@ function restoreLegacyAnchors(db: Database.Database): void {
     ALTER TABLE catalog_recipe_edges ADD COLUMN source_port TEXT;
     ALTER TABLE catalog_recipe_edges ADD COLUMN target_port TEXT;`);
 }
+async function restoreTrackerColumns(db: Database.Database): Promise<void> {
+  db.exec(`ALTER TABLE catalog_nodes ADD COLUMN old_kind TEXT NOT NULL DEFAULT 'command' CHECK (old_kind IN ('command', 'agent', 'human', 'tracker', 'repository'));
+    UPDATE catalog_nodes SET old_kind = kind;
+    ALTER TABLE catalog_nodes DROP COLUMN kind;
+    ALTER TABLE catalog_nodes RENAME COLUMN old_kind TO kind;
+    ALTER TABLE catalog_nodes ADD COLUMN tracker_provider TEXT;
+    ALTER TABLE catalog_nodes ADD COLUMN tracker_account TEXT;
+    ALTER TABLE catalog_nodes ADD COLUMN tracker_script TEXT;
+    ALTER TABLE catalog_nodes ADD COLUMN tracker_repeat_check INTEGER;`);
+  db.exec(await readFile(new URL("./migrations/shared-030-tracker-mcp.sql", import.meta.url), "utf8"));
+}
 const created = {
   jobId: job,
   type: "job.created" as const,
@@ -32,6 +43,7 @@ describe("pecore.db", () => {
   it("drops only graph anchors from catalog recipes, job recipes and their saved events", async () => {
     const path: string = join(await tempDir(), "pecore.db");
     const old: ProjectDb = new ProjectDb(path);
+    await restoreTrackerColumns(old.db);
     const current: Recipe = Recipe.parse({
       name: "run", description: "Two checks", start: "one",
       nodes: { one: { use: "check" }, two: { use: "check" } },
@@ -61,7 +73,7 @@ describe("pecore.db", () => {
     old.close();
     const db: ProjectDb = new ProjectDb(path);
     try {
-      expect(db.version()).toBe(33);
+      expect(db.version()).toBe(35);
       expect(db.catalog.recipe(current.name)).toEqual(current);
       expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_recipes') WHERE name LIKE '%port%'").all()).toEqual([]);
       expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_recipe_edges') WHERE name LIKE '%port%'").all()).toEqual([]);
@@ -79,12 +91,15 @@ describe("pecore.db", () => {
   it("applies the migrations once, in WAL mode", async () => {
     const path = join(await tempDir(), "pecore.db");
     const db = new ProjectDb(path);
-    expect(db.version()).toBe(33);
+    expect(db.version()).toBe(35);
+    expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_nodes') WHERE name IN ('tracker_provider', 'tracker_script', 'tracker_account')").all()).toEqual([]);
+    expect(db.db.prepare("SELECT name FROM sqlite_master WHERE name = 'catalog_tracker_arguments'").get()).toBeUndefined();
+    expect(() => db.db.exec("INSERT INTO catalog_nodes (name, description, kind, shipped) VALUES ('legacy', 'Old tracker', 'tracker', 0)")).toThrow(/CHECK constraint failed/);
     expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_nodes') WHERE name = 'clean_checkout'").get()).toBeUndefined();
     expect(db.db.pragma("journal_mode", { simple: true })).toBe("wal");
     db.close();
     const again = new ProjectDb(path);
-    expect(again.version()).toBe(33);
+    expect(again.version()).toBe(35);
     const tables = again.db.prepare<[], string>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'catalog_%' ORDER BY name").pluck().all();
     expect(tables).toEqual([
       "artifacts", "attempt_logs", "attempts", "events", "human_queue", "jobs", "node_runs",
@@ -98,16 +113,11 @@ describe("pecore.db", () => {
     const path: string = join(await tempDir(), "chats.db");
     const old: ChatsDb = new ChatsDb(path);
     const catalog: Catalog = new Catalog(old.db);
-    catalog.saveNode(Node.parse({
-      name: "jira-mcp-ticket-read", description: "Read Jira", kind: "tracker", mode: "mcp", provider: "jira",
-      account: "atlassian", server: "atlassian", tool: "getJiraIssue", arguments: {},
-      outcomes: ["success"], outcomeRules: [{ exitCode: 0, outcome: "success" }],
-    }), true);
-    catalog.saveNode(Node.parse({
-      name: "jira-mcp-ticket-search", description: "Find Jira tickets", kind: "tracker", mode: "mcp", provider: "jira",
-      account: "atlassian", server: "atlassian", tool: "searchJiraIssuesUsingJql", arguments: {},
-      outcomes: ["success"], outcomeRules: [{ exitCode: 0, outcome: "success" }],
-    }));
+    await restoreTrackerColumns(old.db);
+    old.db.exec(`INSERT INTO catalog_nodes (name, description, kind, shipped, timeout_sec, changes_files, retry, tracker_provider, tracker_account, tracker_server, tracker_tool)
+      VALUES ('jira-mcp-ticket-read', 'Read Jira', 'tracker', 1, 120, 0, 1, 'jira', 'atlassian', 'atlassian', 'getJiraIssue'),
+      ('jira-mcp-ticket-search', 'Find Jira tickets', 'tracker', 0, 120, 0, 1, 'jira', 'atlassian', 'atlassian', 'searchJiraIssuesUsingJql');
+      INSERT INTO catalog_node_lists VALUES ('jira-mcp-ticket-read', 'outcomes', 0, 'success'), ('jira-mcp-ticket-search', 'outcomes', 0, 'success');`);
     catalog.saveRecipe(Recipe.parse({
       name: "jira", description: "Read and search Jira", start: "read",
       nodes: { read: { use: "jira-mcp-ticket-read" }, search: { use: "jira-mcp-ticket-search" } },
@@ -125,6 +135,76 @@ describe("pecore.db", () => {
         { from: "search", on: "success", result: "succeeded" },
         { from: "read", on: "failure", result: "failed" },
       ]);
+      const migrated = new Catalog(db.db);
+      expect(migrated.node("jira-mcp-ticket-read")).toMatchObject({
+        kind: "agent", tracker: { access: "read", account: "atlassian" }, outcomes: ["success", "failure"],
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("adapts a saved recipe and converts its job snapshots without changing results or reading connections", async () => {
+    const path: string = join(await tempDir(), "pecore.db");
+    const old: ProjectDb = new ProjectDb(path);
+    const read = {
+      name: "github-ticket-read", description: "Read a ticket", kind: "tracker", provider: "github", account: "project.account",
+      script: "echo ticket", readOnly: true, outcomes: ["success", "failure"], failOutcomes: ["failure"],
+      outcomeRules: [{ exitCode: 0, outcome: "success" }, { exitCode: "other", outcome: "failure" }],
+      outputs: { success: "document" }, outputRules: { success: { stdoutJson: "" } },
+    };
+    const next: Node = Node.parse({
+      name: "consume", description: "Consume the ticket", kind: "command", command: ["cat"], changesFiles: false, timeoutSec: 30,
+      inputs: ["document"], outcomes: ["success"], outcomeRules: [{ exitCode: 0, outcome: "success" }],
+    });
+    const recipe: Recipe = Recipe.parse({
+      name: "use-ticket", description: "Read then consume a ticket", start: "read",
+      nodes: { read: { use: read.name }, consume: { use: next.name, reads: ["read"] } },
+      edges: [{ from: "read", on: "success", to: "consume" }],
+      ends: [{ from: "consume", on: "success", result: "succeeded" }, { from: "read", on: "failure", result: "failed" }],
+    });
+    await restoreTrackerColumns(old.db);
+    old.db.exec(`INSERT INTO catalog_nodes (name, description, kind, shipped, timeout_sec, changes_files, retry, tracker_provider, tracker_account, tracker_script, reads_only)
+      VALUES ('github-ticket-read', 'Read a ticket', 'tracker', 1, 120, 0, 1, 'github', 'project.account', 'echo ticket', 1);
+      INSERT INTO catalog_node_lists VALUES ('github-ticket-read', 'outcomes', 0, 'success'), ('github-ticket-read', 'outcomes', 1, 'failure'),
+        ('github-ticket-read', 'failOutcomes', 0, 'failure');
+      INSERT INTO catalog_node_outputs VALUES ('github-ticket-read', 'success', 'document');`);
+    old.catalog.saveNode(next);
+    old.catalog.saveRecipe(recipe);
+    const [first, last] = old.append([
+      { ...created, payload: { ...created.payload, recipe } },
+      { jobId: job, type: "job.definitions_saved", payload: { recipeHash: definitionHash(recipe), nodes: {} } },
+    ]);
+    const readSnapshot = { definition: read, sidecars: {}, hash: definitionHash({ definition: read, sidecars: {} }) };
+    const definitions = {
+      recipeHash: definitionHash(recipe),
+      nodes: { [read.name]: readSnapshot, [next.name]: { definition: next, sidecars: {}, hash: definitionHash({ definition: next, sidecars: {} }) } },
+    };
+    const customDefinition = { ...read, name: "custom-read", script: "echo custom action" };
+    const customSnapshot = { definition: customDefinition, sidecars: {}, hash: definitionHash(customDefinition) };
+    const save = old.db.prepare("UPDATE events SET payload = ? WHERE id = ?");
+    save.run(JSON.stringify({ ...first!.payload, definitions }), first!.id);
+    save.run(JSON.stringify({ ...definitions, nodes: { ...definitions.nodes, [customDefinition.name]: customSnapshot } }), last!.id);
+    old.db.exec("UPDATE schema_version SET version = 34");
+    old.close();
+    const db: ProjectDb = new ProjectDb(path);
+    try {
+      expect(db.catalog.recipe(recipe.name)).toEqual(recipe);
+      expect(db.catalog.node(read.name)).toMatchObject({
+        kind: "agent", tracker: { account: "project.account", access: "read" },
+        outputs: { success: "document" }, outcomes: ["success", "failure"],
+      });
+      expect(db.catalog.content("github-ticket-read-tracker-agent.md")).toContain("Read the specified ticket");
+      const history = db.events(job).find((event) => event.type === "job.created");
+      expect(history?.payload.definitions?.nodes[read.name]?.definition).toMatchObject({ kind: "agent", outputs: { success: "document" } });
+      const snapshot = jobDefinitions(db, job)!;
+      const changed = snapshot.nodes[read.name]!;
+      expect(changed.definition).toEqual(db.catalog.node(read.name));
+      expect(changed.hash).toBe(definitionHash({ definition: changed.definition, sidecars: changed.sidecars }));
+      expect(snapshot.nodes[next.name]).toEqual(definitions.nodes[next.name]);
+      expect(snapshot.nodes["custom-read"]?.definition).toMatchObject({ kind: "agent", tracker: { access: "read" } });
+      expect(snapshot.nodes["custom-read"]?.sidecars["custom-read-previous-tracker.md"]).toContain("echo custom action");
+      expect(snapshot.recipeHash).toBe(definitions.recipeHash);
     } finally {
       db.close();
     }
@@ -133,6 +213,7 @@ describe("pecore.db", () => {
   it("migrates catalog references, live review choices, finished outcomes and job snapshots together", async () => {
     const path: string = join(await tempDir(), "pecore.db");
     const old: ProjectDb = new ProjectDb(path);
+    await restoreTrackerColumns(old.db);
     const check: Node = Node.parse({
       name: "check", description: "Run a check", kind: "command", outcomes: ["passed", "failed"],
       failOutcomes: ["failed"], outputs: { passed: "text" }, outputRules: { passed: { stdoutLastLine: "report" } },
@@ -252,7 +333,7 @@ describe("pecore.db", () => {
     }
   });
 
-  it("keeps a saved CLI tracker after adding MCP and round-trips typed MCP arguments", async () => {
+  it("converts a custom CLI tracker and keeps its old definition for reference", async () => {
     const path: string = join(await tempDir(), "pecore.db");
     const old: Database.Database = new Database(path);
     const dir: URL = new URL("./migrations/", import.meta.url);
@@ -266,14 +347,11 @@ describe("pecore.db", () => {
     old.close();
     const db: ProjectDb = new ProjectDb(path);
     try {
-      expect(db.catalog.node("read")).toMatchObject({ kind: "tracker", script: "echo ticket" });
-      const node: Node = Node.parse({
-        kind: "tracker", mode: "mcp", provider: "jira", name: "read-mcp", description: "Read a ticket", account: "atlassian",
-        server: "atlassian", tool: "getJiraIssue", arguments: { cloudId: "example", fields: ["summary"], limit: 5 },
-        outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }],
+      expect(db.catalog.node("read")).toMatchObject({
+        kind: "agent", prompt: "read-tracker-agent.md", tracker: { access: "read", account: "active-jira" },
       });
-      db.catalog.saveNode(node);
-      expect(db.catalog.node("read-mcp")).toEqual(node);
+      expect(db.catalog.content("read-previous-tracker.md")).toContain('"script": "echo ticket"');
+      expect(db.catalog.content("read-tracker-agent.md")).toContain("Ask the user");
     } finally {
       db.close();
     }
@@ -383,7 +461,7 @@ describe("pecore.db", () => {
     try {
       expect(db.catalog.node("github-issues")).toBeNull();
       expect(db.catalog.node("github-issue-comment")).toMatchObject({
-        kind: "tracker", provider: "github", account: "gh-alice", script: "printf posted",
+        kind: "agent", tracker: { access: "read", account: "gh-alice" },
       });
       expect(db.definition.read()?.tracker).toEqual({ provider: "github", account: "gh-alice" });
       expect(db.catalog.node("builder")).toHaveProperty("agentSession", "job");
@@ -550,7 +628,7 @@ describe("chats.db", () => {
 
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.version()).toBe(33);
+    expect(db.version()).toBe(35);
     for (let i = 0; i < notificationsKept + 3; i++) db.addNotification({ kind: "job", title: `n${i}`, body: "" }, 1000 + i);
     const kept = db.notifications();
     expect(kept).toHaveLength(notificationsKept);
@@ -572,7 +650,7 @@ describe("chats.db", () => {
       UPDATE schema_version SET version = 5`);
     old.close();
     const db = new ChatsDb(file);
-    expect(db.version()).toBe(33);
+    expect(db.version()).toBe(35);
     expect(db.messages(assistantChat)).toEqual([]);
     db.close();
   });

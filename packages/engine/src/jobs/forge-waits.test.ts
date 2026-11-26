@@ -78,12 +78,4 @@ describe("auth versus network on forge nodes (decision 4)", () => {
     await engine.shutdown();
   });
 
-  it("the ticket id reaches {ticket.id}: the comment goes to issue 7", async () => {
-    const { forge, engine } = await forgeProject();
-    const p = engine.project("shop");
-    const id = await engine.createJob("shop", { title: "Add hello", ticket: { text: "x", id: "7" } });
-    await until(() => p.executor.job(id).state === "succeeded");
-    expect((await forge.state()).calls).toContain(`issue comment --repo acme/shop 7 --body ${(await forge.state()).prs[0]!.url}`);
-    await engine.shutdown();
-  });
 });

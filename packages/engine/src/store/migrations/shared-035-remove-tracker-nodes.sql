@@ -1,0 +1,11 @@
+ALTER TABLE catalog_nodes ADD COLUMN next_kind TEXT NOT NULL DEFAULT 'command' CHECK (next_kind IN ('command', 'agent', 'human', 'repository'));
+UPDATE catalog_nodes SET next_kind = kind;
+ALTER TABLE catalog_nodes DROP COLUMN kind;
+ALTER TABLE catalog_nodes RENAME COLUMN next_kind TO kind;
+ALTER TABLE catalog_nodes DROP COLUMN tracker_provider;
+ALTER TABLE catalog_nodes DROP COLUMN tracker_account;
+ALTER TABLE catalog_nodes DROP COLUMN tracker_script;
+ALTER TABLE catalog_nodes DROP COLUMN tracker_repeat_check;
+ALTER TABLE catalog_nodes DROP COLUMN tracker_server;
+ALTER TABLE catalog_nodes DROP COLUMN tracker_tool;
+DROP TABLE catalog_tracker_arguments;

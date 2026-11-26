@@ -21,15 +21,14 @@ const writeSpec = {
 
 const deliver = {
   name: "deliver",
-  description: "write, commit, push, pull request, issue comment",
+  description: "Write, commit, push and open a pull request",
   start: "write",
-  successOutcomes: ["comment:success"],
-  nodes: { write: { use: "write-spec" }, commit: { use: "git-commit" }, push: { use: "git-push" }, pr: { use: "github-pr", reads: ["write"] }, comment: { use: "github-issue-comment", reads: ["pr"] } },
+  successOutcomes: ["pr:success"],
+  nodes: { write: { use: "write-spec" }, commit: { use: "git-commit" }, push: { use: "git-push" }, pr: { use: "github-pr", reads: ["write"] } },
   edges: [
     { from: "write", on: "done", to: "commit" },
     { from: "commit", on: "success", to: "push" },
     { from: "push", on: "success", to: "pr" },
-    { from: "pr", on: "success", to: "comment" },
   ],
 };
 

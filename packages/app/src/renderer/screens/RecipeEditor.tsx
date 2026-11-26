@@ -432,7 +432,7 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
                 {humanInterface === "decision" && questionParameter.type === "string" && <TextField label="Question"
                   value={string(object(selectedNode.params).question)} placeholder={string(questionParameter.default)} disabled={!editable}
                   onValueChange={(question) => updateNode("params", { ...object(selectedNode.params), question: question.trim() ? question : undefined })} />}
-                {selectedKind === "tracker" && trackerParameters.filter(({ key }) => object(parameters[key]).type === "string").map(({ key, label }) =>
+                {selectedKind === "agent" && nodeValue.tracker && trackerParameters.filter(({ key }) => object(parameters[key]).type === "string").map(({ key, label }) =>
                   <TextField key={key} label={label} value={string(object(selectedNode.params)[key])} placeholder={string(object(parameters[key]).default)}
                     disabled={!editable} onValueChange={(value) => updateNode("params", { ...object(selectedNode.params), [key]: value.trim() ? value : undefined })} />)}
                 <MultiCombobox label="Requires" placeholder="Choose nodes" value={required} disabled={!editable}

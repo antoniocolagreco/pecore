@@ -1,9 +1,8 @@
 import { join } from "node:path";
 import { Ajv } from "ajv";
-import { ArtifactType, ChatForm, TicketSnapshot } from "@pecore/schemas";
-import type { ChatForm as Form, ForgeAccount, ServiceAccount } from "@pecore/schemas";
+import { ArtifactType, ChatForm } from "@pecore/schemas";
+import type { ChatForm as Form } from "@pecore/schemas";
 import { z } from "zod";
-import { TrackerMcpAuthError } from "../accounts/atlassian";
 import { definitionHash } from "../definitions/snapshot";
 import { outputProblem } from "../graph/executor";
 import type { Engine } from "../main";
@@ -12,8 +11,7 @@ import { outcomeOutputs, runCommandNode } from "../runners/command";
 import type { CommandInput, CommandRun } from "../runners/command";
 import { paramsWithDefaults } from "../runners/placeholders";
 import { repositoryAccount, repositoryEnv } from "../runners/repository";
-import { trackerMcpArguments } from "../runners/tracker-mcp";
-import { runTrackerNode, trackerLogin } from "../runners/tracker";
+import { bindTrackerSite, callTracker, trackerAccount, trackerTool } from "./tracker-tools";
 
 const Input = z.strictObject({
   jobId: z.string().min(1).optional(),
@@ -31,8 +29,30 @@ const Invocation = z.strictObject({
 type Invocation = z.infer<typeof Invocation>;
 type Output = { type: ArtifactType; content: unknown }[];
 
-export const NodeProposal = z.object({ invocation: Invocation, fingerprint: z.string() });
+const TrackerProposal = z.object({
+  invocation: z.strictObject({ project: z.string(), trackerTool: z.string(), args: z.record(z.string(), z.unknown()) }),
+  fingerprint: z.string(),
+});
+export const NodeProposal = z.union([z.object({ invocation: Invocation, fingerprint: z.string() }), TrackerProposal]);
 const validateParams = new Ajv({ strict: false });
+
+export async function callProjectTracker(engine: Engine, project: string, name: string, input: Record<string, unknown>) {
+  return withProjectLocation(engine.project(project).ctx, async () => {
+    const { ctx } = engine.project(project);
+    const account = await trackerAccount(ctx, "project.account");
+    const call = await bindTrackerSite(account, trackerTool(name, input, "read-write"));
+    if (!call.write) return { value: await callTracker(ctx, account, call), target: { project, state: "completed" } };
+    const form: Form = ChatForm.parse({
+      title: call.name === "comment_ticket" ? "Post a ticket comment" : call.name === "change_ticket_status" ? "Change ticket status" : "Update ticket fields",
+      questions: [{ id: "decision", kind: "single", prompt: "Allow this change to the ticket?", options: [{ label: "Approve" }, { label: "Reject" }] }],
+    });
+    const target = { ...call.args, repository: ctx.project.repo?.url, account: account.id };
+    return { value: { state: "awaiting_answer" }, target: {
+      state: "awaiting_answer", form, project, details: JSON.stringify(target, null, 2),
+      nodeProposal: { invocation: { project, trackerTool: name, args: call.args }, fingerprint: definitionHash({ account, repo: ctx.project.repo, call }) },
+    } };
+  });
+}
 
 function catalogFor(engine: Engine, project: string) {
   const { ctx } = engine.project(project);
@@ -73,20 +93,6 @@ export function listNodeTools(engine: Engine, project: string): { name: string; 
   });
 }
 
-export function ticketInvocation(engine: Engine, project: string, ticketId: string, comment?: string): Invocation {
-  const { ctx } = engine.project(project);
-  const { repo, tracker } = ctx.project;
-  const forge = repo ? ctx.forgeAccount(repo.account)?.forge : undefined;
-  const jira: boolean = /^(?:https:\/\/[^/]+\/browse\/)?[A-Z][A-Z0-9]+-\d+$/.test(ticketId);
-  const provider = tracker?.provider ?? (jira ? "jira" : forge === "github" || forge === "gitlab" ? forge : undefined);
-  if (!provider) throw new Error("Connect a GitHub or GitLab repository, or configure Jira for this project.");
-  const name: string = provider + (comment === undefined ? "-ticket-read" : "-issue-comment");
-  return {
-    project, name, input: { ticketId, ...(comment === undefined ? {} : { inputs: { text: comment } }) },
-    template: catalogFor(engine, project).node(name) === null,
-  };
-}
-
 async function prepare(engine: Engine, invocation: Invocation) {
   const { ctx, executor } = engine.project(invocation.project);
   const { input } = invocation;
@@ -111,28 +117,24 @@ async function prepare(engine: Engine, invocation: Invocation) {
     ticketId: null, project: { repoDir: join(ctx.dir, "repo.git"), repoUrl: ctx.project.repo?.url ?? null, baseBranch: ctx.project.baseBranch },
   };
   if (input.ticketId) context.ticketId = input.ticketId;
-  const forge: ForgeAccount | undefined = node.kind === "repository" ? repositoryAccount(ctx, node) : undefined;
-  const login = node.kind === "tracker" ? await trackerLogin(ctx, node) : undefined;
-  const account: ForgeAccount | ServiceAccount | string | undefined = forge ?? login?.forge ?? login?.mcp ?? login?.id;
+  const forge = repositoryAccount(ctx, node);
   const options: Omit<CommandRun, "node" | "outputs"> = {
     params, inputs, context, sidecars: checks, nodeDir: ctx.defs.nodeDir, user: ctx.user, workdir: ctx.dir, redactCredentials: true,
   };
-  const mcp = node.kind === "tracker" && node.mode === "mcp" ? { server: node.server, tool: node.tool, arguments: trackerMcpArguments(node, options) } : undefined;
-  return { node, forge, login, options, account, catalog, hash, mcp, direct: node.readOnly === true,
-    fingerprint: definitionHash({ hash, account, params, inputs, context, mcp }) };
+  return { node, forge, options, catalog, hash, direct: node.readOnly === true,
+    fingerprint: definitionHash({ hash, account: forge, params, inputs, context }) };
 }
 
 async function runPrepared(engine: Engine, project: string, prepared: Awaited<ReturnType<typeof prepare>>): Promise<Output> {
   const { ctx } = engine.project(project);
-  const { node, forge, login, options, catalog, hash } = prepared;
+  const { node, forge, options, catalog, hash } = prepared;
   const latest = catalog.chatNode(node.name);
   if (latest?.hash !== hash || (engine.global().settings.protectedMode && !latest.approved)) {
     throw new Error("The node changed or needs approval. Review the saved node before trying again.");
   }
-  const result = await (node.kind === "tracker" ? runTrackerNode(ctx, node, options, login) : repositoryEnv(ctx, forge!).then((env) => runCommandNode({
+  const result = await repositoryEnv(ctx, forge).then((env) => runCommandNode({
     ...options, node, outputs: outcomeOutputs(node), inlineScript: node.script, remote: true, extraEnv: env,
-  }))).catch((error: unknown) => {
-    if (error instanceof TrackerMcpAuthError) throw error;
+  })).catch(() => {
     throw new Error(node.name + " could not run. Check the account and node settings.");
   });
   if (result.kind !== "completed" || node.failOutcomes.includes(result.outcome)) throw new Error(node.name + " did not complete. Check the inputs and account.");
@@ -142,25 +144,23 @@ async function runPrepared(engine: Engine, project: string, prepared: Awaited<Re
   });
 }
 
-export async function callNodeTool(engine: Engine, project: string, name: string, input: unknown, options?: { invocation: Invocation; ticketRead?: boolean; forceConfirmation?: boolean }) {
-  const invocation: Invocation = options?.invocation ?? { project, name, input: Input.parse(input) };
+export async function callNodeTool(engine: Engine, project: string, name: string, input: unknown) {
+  const invocation: Invocation = { project, name, input: Input.parse(input) };
   return withProjectLocation(engine.project(project).ctx, async () => {
     const prepared = await prepare(engine, invocation);
     const node: string = prepared.node.name;
-    if (prepared.direct && !options?.forceConfirmation) {
+    if (prepared.direct) {
       const output: Output = await runPrepared(engine, project, prepared);
-      const value: unknown = options?.ticketRead ? { untrusted: true, ticket: TicketSnapshot.parse(output[0]?.content) } : output;
-      return { value, target: { state: "completed", project, node, readOnly: true } };
+      return { value: output, target: { state: "completed", project, node, readOnly: true } };
     }
-    if (options?.ticketRead) throw new Error("This ticket reader needs review before it can run from chat.");
     const form: Form = ChatForm.parse({
       title: "Confirm " + node,
       questions: [{ id: "decision", kind: "single", prompt: "Allow this node to make the change shown below?", options: [{ label: "Approve" }, { label: "Reject" }] }],
     });
     const { params, inputs, context } = prepared.options;
     const details: string = JSON.stringify({
-      node, project, account: typeof prepared.account === "object" ? prepared.account.id : prepared.account,
-      mcp: prepared.mcp, repository: context.project.repoUrl, job: context.job, ticket: context.ticketId, params, inputs: Object.fromEntries(inputs.map(({ type, content }) => [type, content])),
+      node, project, account: prepared.forge.id,
+      repository: context.project.repoUrl, job: context.job, ticket: context.ticketId, params, inputs: Object.fromEntries(inputs.map(({ type, content }) => [type, content])),
     }, null, 2);
     return { value: { state: "awaiting_answer" }, target: {
       state: "awaiting_answer", form, details, project, node,
@@ -169,8 +169,17 @@ export async function callNodeTool(engine: Engine, project: string, name: string
   });
 }
 
-export async function runApprovedNode(engine: Engine, proposal: z.infer<typeof NodeProposal>): Promise<Output> {
+export async function runApprovedNode(engine: Engine, proposal: z.infer<typeof NodeProposal>): Promise<unknown> {
   const { invocation, fingerprint } = proposal;
+  if ("trackerTool" in invocation) return withProjectLocation(engine.project(invocation.project).ctx, async () => {
+    const { ctx } = engine.project(invocation.project);
+    const call = trackerTool(invocation.trackerTool, invocation.args, "read-write");
+    const account = await trackerAccount(ctx, "project.account");
+    if (!call.write || fingerprint !== definitionHash({ account, repo: ctx.project.repo, call })) {
+      throw new Error("The account or ticket target changed. Ask for a new confirmation.");
+    }
+    return callTracker(ctx, account, call);
+  });
   return withProjectLocation(engine.project(invocation.project).ctx, async () => {
     const prepared = await prepare(engine, invocation);
     if (fingerprint !== prepared.fingerprint) throw new Error("The script, account or target changed. Ask for a new confirmation.");

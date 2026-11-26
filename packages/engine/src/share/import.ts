@@ -184,15 +184,19 @@ async function matchCatalogOutcomes(loaded: LoadedProject, catalog: Catalog): Pr
   return lookup;
 }
 
-type RequiredAccount = "forge" | "service" | "atlassian";
+type RequiredAccount = "forge" | "tracker";
 
 function requiredAccounts(loaded: LoadedProject): Map<string, RequiredAccount> {
   const ids: Map<string, RequiredAccount> = new Map();
   if (loaded.project.repo) ids.set(loaded.project.repo.account, "forge");
-  if (loaded.project.tracker?.account) ids.set(loaded.project.tracker.account, loaded.project.tracker.provider === "jira" ? "service" : "forge");
   const aliases: Record<string, string> = loaded.project.credentials ?? {};
+  const trackerAccount: string | undefined = loaded.project.tracker?.account;
+  if (trackerAccount && trackerAccount !== "active-jira" && !ids.has(trackerAccount)) ids.set(trackerAccount, "tracker");
   for (const node of loaded.nodes.values()) {
-    if (node.kind === "tracker" && node.account !== "project.account") ids.set(aliases[node.account] ?? node.account, node.mode === "mcp" ? "atlassian" : node.provider === "jira" ? "service" : "forge");
+    if (node.kind === "agent" && node.tracker && !["project.account", "active-jira"].includes(node.tracker.account)) {
+      const id: string = aliases[node.tracker.account] ?? node.tracker.account;
+      if (!ids.has(id)) ids.set(id, "tracker");
+    }
     if (node.kind !== "repository") continue;
     if (node.account !== "project.account") ids.set(aliases[node.account] ?? node.account, "forge");
     else if (!loaded.project.repo) throw new InvalidArchive(`node ${node.name} needs a project Git hosting account`);
@@ -204,11 +208,15 @@ function requiredAccounts(loaded: LoadedProject): Map<string, RequiredAccount> {
 async function accountChoices(ids: Map<string, RequiredAccount>, project: Project, accounts: Accounts): Promise<ImportProjectPreview["accounts"]> {
   const repoAccount: string | undefined = project.repo?.account;
   const host: string | null = project.repo ? repoHost(project.repo.url) : null;
-  const jira = [...ids.values()].includes("service") ? await activeJiraAccount() : null;
+  const jira = [...ids.values()].includes("tracker") ? await activeJiraAccount() : null;
   return [...ids].sort(([left], [right]) => left.localeCompare(right)).map(([id, kind]) => ({
     id,
-    choices: kind === "service" ? (jira ? [{ id: jira.account.id, label: `${jira.account.user} · ${jira.site}` }] : [])
-      : kind === "atlassian" ? accounts.accounts.flatMap((account) => account.kind === "service" && account.tool === "atlassian" ? [{ id: account.id, label: account.user }] : [])
+    choices: kind === "tracker" ? [
+        ...accounts.accounts.flatMap((account) => ((account.kind === "service" && (account.tool === "atlassian" || account.tool === "linear"))
+          || (account.kind === "forge" && (account.forge === "github" || account.forge === "gitlab")))
+          ? [{ id: account.id, label: account.user || account.id }] : []),
+        ...(jira ? [{ id: jira.account.id, label: `${jira.account.user} · ${jira.site}` }] : []),
+      ]
       : accounts.accounts.flatMap((account) => account.kind === "forge" && (repoAccount !== id || account.host === host)
         ? [{ id: account.id, label: `${account.id} · ${account.host}` }] : []),
   }));
@@ -259,27 +267,31 @@ export async function beginImport(home: string, input: ImportProjectBody, option
     checkId(dest, id, options.knownProject);
     const ids = requiredAccounts(loaded);
     const accounts: AccountMapping = body.accounts ?? {};
-    const missing = [...ids].filter(([id]) => !Object.hasOwn(accounts, id)).sort().map(([id, kind]) => ({ id, kind: kind === "atlassian" ? "service" as const : kind }));
+    const missing = [...ids].filter(([id]) => !Object.hasOwn(accounts, id)).sort().map(([id, kind]) => ({ id, kind: kind === "forge" ? "forge" as const : "service" as const }));
     if (missing.length > 0) return { state: "needs-accounts", accounts: missing };
-    const jira = [...ids.values()].includes("service") ? await activeJiraAccount() : null;
     for (const [id, kind] of ids) {
       const target: string = accounts[id]!;
-      if (kind === "service") {
-        if (jira?.account.id !== target) throw new InvalidArchive("Choose the active Jira account in Settings → Accounts.");
-      } else if (kind === "atlassian") {
-        if (!options.accounts.accounts.some((account) => account.id === target && account.kind === "service" && account.tool === "atlassian")) throw new InvalidArchive("Choose an Atlassian MCP account in Settings → Accounts.");
+      if (kind === "tracker") {
+        if (!(await accountChoices(new Map([[id, kind]]), project, options.accounts))[0]?.choices.some((choice) => choice.id === target)) throw new InvalidArchive("Choose a tracker account in Settings → Accounts.");
       } else if (!options.accounts.accounts.some((account) => account.id === target && account.kind === "forge")) {
         throw new InvalidArchive(`forge account ${target} not found`);
       }
     }
     if (project.repo) project.repo.account = accounts[project.repo.account]!;
-    if (project.tracker?.account) project.tracker.account = accounts[project.tracker.account]!;
+    if (project.tracker?.account && project.tracker.account !== "active-jira") {
+      project.tracker.account = accounts[project.tracker.account]!;
+      const selected = options.accounts.accounts.find(({ id }) => id === project.tracker?.account);
+      project.tracker.provider = selected?.kind === "service" && selected.tool === "linear" ? "linear"
+        : selected?.kind === "forge" && (selected.forge === "github" || selected.forge === "gitlab") ? selected.forge : "jira";
+    }
     forgeAccountOf(project, options.accounts);
     const aliases: Record<string, string> = project.credentials ?? {};
     const mapped: Record<string, string> = Object.fromEntries([
       ...Object.entries(aliases).map(([key, account]) => [key, accounts[account]!]),
       ...[...loaded.nodes.values()].flatMap((node) => {
-        if (node.kind === "tracker" && node.account !== "project.account") return [[node.account, accounts[aliases[node.account] ?? node.account]!]];
+        if (node.kind === "agent" && node.tracker && !["project.account", "active-jira"].includes(node.tracker.account)) {
+          return [[node.tracker.account, accounts[aliases[node.tracker.account] ?? node.tracker.account]!]];
+        }
         if (node.kind === "repository" && node.account !== "project.account") return [[node.account, accounts[aliases[node.account] ?? node.account]!]];
         return [];
       }),

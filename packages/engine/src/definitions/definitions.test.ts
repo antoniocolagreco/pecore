@@ -196,9 +196,14 @@ describe("phase 1 gate: shipped templates", () => {
 
   it("identifies the base-change route that bypasses the spec after adding Read Ticket", async () => {
     const library = await loadTemplates(shippedTemplates);
+    library.nodes.set("read-ticket", Node.parse({
+      name: "read-ticket", kind: "agent", description: "Read a ticket", prompt: "read-ticket.md", agent: { tier: "standard" },
+      tracker: { access: "read", account: "project.account" }, timeoutSec: 120, changesFiles: false,
+      outcomes: ["success", "failure"], failOutcomes: ["failure"], outputs: { success: "document" },
+    }));
     const bugfix: Recipe = library.recipes.get("bugfix-to-pr")!;
     const draft: Recipe = Recipe.parse({
-      ...bugfix, start: "ticket", nodes: { ...bugfix.nodes, ticket: { use: "github-ticket-read" } },
+      ...bugfix, start: "ticket", nodes: { ...bugfix.nodes, ticket: { use: "read-ticket" } },
       edges: [...bugfix.edges, { from: "ticket", on: "success", to: "spec" }],
       ends: [...bugfix.ends!, { from: "ticket", on: "failure", result: "failed" }],
     });
@@ -241,7 +246,9 @@ describe("phase 1 gate: shipped templates", () => {
     };
     const spec = { ...recipe.nodes.spec };
     if (spec.reads?.length === 1 && spec.reads[0] === "@start") delete spec.reads;
-    const graph = { ...recipe, nodes: { ...recipe.nodes, spec }, edges: recipe.edges.map(route), ends: recipe.ends!.map(route) };
+    const graph = { ...recipe, nodes: {
+      ...recipe.nodes, spec, ...(name === "bugfix-to-pr" ? { comment: { ...recipe.nodes.comment, use: "github-issue-comment" } } : {}),
+    }, edges: recipe.edges.map(route), ends: recipe.ends!.map(route) };
     expect(createHash("sha256").update(JSON.stringify(graph)).digest("hex")).toBe(before);
   });
 
@@ -261,14 +268,13 @@ describe("phase 1 gate: shipped templates", () => {
     ]);
   });
 
-  it("ships failure routes for Jira MCP operations and leaves successful agent completions alone", async () => {
-    const { nodes } = await loadTemplates(shippedTemplates);
-    for (const name of ["jira-mcp-ticket-read", "jira-mcp-ticket-search", "jira-mcp-issue-comment"]) {
-      expect(nodes.get(name)).toMatchObject({
-        outcomes: ["success", "failure"], failOutcomes: ["failure"],
-        outcomeRules: [{ exitCode: 0, outcome: "success" }, { exitCode: "other", outcome: "failure" }],
-      });
-    }
+  it("ships a final Agent for the ticket update and leaves other Agent outcomes alone", async () => {
+    const { nodes, recipes } = await loadTemplates(shippedTemplates);
+    expect([...nodes.keys()].filter((name) => /^(?:github|gitlab|jira(?:-mcp)?)-(?:issue-comment|ticket-read|ticket-search)$/.test(name))).toEqual([]);
+    expect(nodes.get("post-delivery-to-ticket")).toMatchObject({
+      kind: "agent", tracker: { access: "read-write", account: "project.account" }, outcomes: ["success", "failure"], failOutcomes: ["failure"],
+    });
+    expect(recipes.get("bugfix-to-pr")?.nodes.comment).toMatchObject({ use: "post-delivery-to-ticket", reads: ["pr"] });
     for (const name of ["approver", "tests-writer", "write-pr"]) expect(nodes.get(name)?.outcomes).toEqual(["success"]);
   });
 
@@ -282,7 +288,7 @@ describe("phase 1 gate: shipped templates", () => {
     const sessions: [string, string][] = [...nodes.values()].flatMap((node): [string, string][] =>
       node.kind === "agent" ? [[node.name, node.agentSession]] : []);
     expect(sessions.sort(([a], [b]) => a.localeCompare(b))).toEqual([
-      ["approver", "new"], ["builder", "job"], ["code-reviewer", "new"],
+      ["approver", "new"], ["builder", "job"], ["code-reviewer", "new"], ["post-delivery-to-ticket", "job"],
       ["resolve-rebase-conflicts", "job"], ["spec-writer", "job"], ["tests-writer", "job"], ["write-pr", "job"],
     ]);
   });

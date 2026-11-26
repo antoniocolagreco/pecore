@@ -6,12 +6,12 @@ import { useData } from "../api/hooks";
 import { Badge, Card } from "../ds/feedback";
 import s from "./NodeCard.module.css";
 
-export type RecipeNodeKind = "agent" | "command" | "human" | "tracker" | "repository";
+export type RecipeNodeKind = Node["kind"];
 
-export const nodeKindLabels: Record<Node["kind"], string> = { agent: "Agent", command: "Command", human: "Human", tracker: "Tracker", repository: "Repository" };
+export const nodeKindLabels: Record<Node["kind"], string> = { agent: "Agent", command: "Command", human: "Human", repository: "Repository" };
 
 export function recipeNodeKind(kind: unknown): RecipeNodeKind | undefined {
-  if (kind === "agent" || kind === "command" || kind === "human" || kind === "tracker" || kind === "repository") return kind;
+  if (kind === "agent" || kind === "command" || kind === "human" || kind === "repository") return kind;
   if (kind === "human-decision" || kind === "human-review") return "human";
   return undefined;
 }

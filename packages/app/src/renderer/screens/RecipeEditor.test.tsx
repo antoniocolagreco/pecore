@@ -102,7 +102,7 @@ it("shows the validation sentence and lets the user clear the base-change step",
 it("uses one outcome selection per connection and asks for a job result only for a named path to End", async () => {
   const template: DefinitionEntry = {
     path: "templates/nodes/github-ticket-read.json", sha256: "node-v1", errors: [],
-    value: { name: "github-ticket-read", kind: "tracker", outcomes: ["success", "failure"] },
+    value: { name: "github-ticket-read", kind: "agent", outcomes: ["success", "failure"] },
   };
   const review: DefinitionEntry = {
     path: "templates/nodes/review.json", sha256: "node-v2", errors: [],

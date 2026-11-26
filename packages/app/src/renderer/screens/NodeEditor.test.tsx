@@ -13,27 +13,50 @@ vi.mock("../api/live", () => ({ useConnected: () => true, onLive: () => () => un
 
 afterEach(cleanup);
 
-it("shows MCP server, tool and arguments in a Tracker editor", async () => {
+it("offers only the four editable node kinds", async () => {
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "listDefinitions") return [];
+    if (route === "validateDefinition") return { errors: [], warnings: [] };
+    throw new Error("Unexpected route " + route);
+  });
+  const router = createMemoryRouter([{ path: "/new", element: <NodeEditor newTemplate /> }], { initialEntries: ["/new"] });
+  render(<RouterProvider router={router} />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("combobox", { name: "Kind" }));
+  expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Agent", "Command", "Human", "Repository"]);
+});
+
+it("sets Tracker access and account on an Agent", async () => {
   const path: string = "templates/nodes/read-jira-mcp.json";
   const node: Node = Node.parse({
-    kind: "tracker", mode: "mcp", provider: "jira", name: "read-jira-mcp", description: "Read Jira",
-    server: "atlassian", tool: "getJiraIssue", account: "atlassian", arguments: { cloudId: "{params.cloudId}" },
-    outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }],
+    kind: "agent", name: "read-jira-mcp", description: "Read Jira", prompt: "read-jira-mcp.md",
+    changesFiles: false, timeoutSec: 120, outcomes: ["success"], agent: { tier: "standard" },
   });
   api.call.mockImplementation(async (route: string) => {
     if (route === "getDefinition") return { content: JSON.stringify(node), sha256: "node-v1" };
-    if (route === "getAccounts") return { value: { accounts: [{ kind: "service", id: "atlassian", tool: "atlassian", user: "Atlassian account" }] } };
+    if (route === "getAccounts") return { value: { accounts: [{ kind: "service", id: "atlassian", tool: "atlassian", service: "Atlassian", user: "Atlassian account" }] } };
+    if (route === "getActiveJira") return null;
     if (route === "validateDefinition") return { errors: [], warnings: [] };
     if (route === "getNodeTemplateUsage" || route === "listDefinitions") return [];
+    if (route === "saveDefinition") return { sha256: "node-v2" };
     throw new Error("Unexpected route " + route);
   });
   const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: ["/edit/node/" + path] });
   render(<RouterProvider router={router} />);
-  expect((await screen.findByRole("combobox", { name: "Mode" })).textContent).toContain("MCP server");
-  expect(screen.getByRole("combobox", { name: "Server" }).textContent).toContain("Atlassian Rovo");
-  expect(screen.getByRole<HTMLInputElement>("textbox", { name: "Tool" }).value).toBe("getJiraIssue");
-  expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Arguments" }).value).toContain("{params.cloudId}");
-  expect(screen.queryByRole("group", { name: "Tracker script" })).toBeNull();
+  const user = userEvent.setup();
+  const permission: HTMLElement = await screen.findByRole("combobox", { name: "Tracker" });
+  expect(permission.textContent).toContain("None");
+  expect(screen.queryByRole("combobox", { name: "Tracker account" })).toBeNull();
+  await user.click(permission);
+  expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["None", "Read", "Read and write"]);
+  await user.click(screen.getByRole("option", { name: "Read" }));
+  await user.click(screen.getByRole("combobox", { name: "Tracker account" }));
+  await user.click(await screen.findByRole("option", { name: "Atlassian · Atlassian account" }));
+  const save: HTMLButtonElement = screen.getByRole("button", { name: "Save" });
+  await waitFor(() => expect(save.disabled).toBe(false));
+  await user.click(save);
+  const saved: RouteInput<"saveDefinition"> = api.call.mock.calls.findLast(([route]) => route === "saveDefinition")?.[1];
+  expect(Node.parse(JSON.parse(saved.body.content))).toMatchObject({ tracker: { access: "read", account: "atlassian" } });
 });
 
 it("shows the saved script before approving it for chat in protected mode", async () => {
@@ -100,10 +123,7 @@ it("edits a Command without showing account or check controls", async () => {
 });
 
 
-it.each([
-  { label: "Tracker", kind: "tracker", provider: { provider: "github" } },
-  { label: "Repository", kind: "repository", provider: {} },
-])("creates a $label node with a shell script and requires its account", async ({ label, kind, provider }) => {
+it("creates a Repository node with a shell script and requires its account", async () => {
   const rect = new DOMRect();
   Object.defineProperty(Range.prototype, "getClientRects", { configurable: true, value: () => [rect] });
   Object.defineProperty(Range.prototype, "getBoundingClientRect", { configurable: true, value: () => rect });
@@ -125,9 +145,10 @@ it.each([
   const user = userEvent.setup();
   await user.type(await screen.findByRole("textbox", { name: "Name" }), "issue-tracker");
   await user.click(screen.getByRole("combobox", { name: "Kind" }));
-  await user.click(await screen.findByRole("option", { name: label }));
+  expect(screen.queryByRole("option", { name: "Tracker" })).toBeNull();
+  await user.click(await screen.findByRole("option", { name: "Repository" }));
   await user.type(screen.getByRole("textbox", { name: "Description" }), "Read test issues");
-  const script = screen.getByRole("group", { name: `${label} script` }).querySelector<HTMLElement>(".cm-content")!;
+  const script = screen.getByRole("group", { name: "Repository script" }).querySelector<HTMLElement>(".cm-content")!;
   await user.click(script);
   await user.paste("echo checked");
   expect(await screen.findByText(/Choose (a Git hosting|an) account/)).toBeTruthy();
@@ -143,7 +164,7 @@ it.each([
   }));
   const saved: RouteInput<"saveDefinition"> = api.call.mock.calls.findLast(([route]) => route === "saveDefinition")?.[1];
   expect(Node.parse(JSON.parse(saved.body.content))).toMatchObject({
-    kind, ...provider, account: "gh-alice", script: "echo checked",
+    kind: "repository", account: "gh-alice", script: "echo checked",
   });
 });
 

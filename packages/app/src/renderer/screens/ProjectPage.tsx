@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { appName } from "@pecore/schemas";
-import type { DefinitionEntry, ForgeAccount, Project, ProjectView } from "@pecore/schemas";
+import type { DefinitionEntry, ForgeAccount, Project, ProjectView, TrackerProvider } from "@pecore/schemas";
 import { ProjectManagerSettings } from "./Agents";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
@@ -91,7 +91,7 @@ function Recipes({ id }: { id: string }) {
 }
 
 
-type SettingsForm = { name: string; baseBranch: string; services: string; folder: string; remote: boolean; account: string; url: string };
+type SettingsForm = { name: string; baseBranch: string; services: string; folder: string; remote: boolean; account: string; url: string; tracker: string };
 
 function useProjectDefinition(id: string) {
   const path: string = `projects/${id}/project.json`;
@@ -111,10 +111,21 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
   const { path, file, raw } = useProjectDefinition(id);
   const accounts = useData(() => call("getAccounts"), [], (m) => m.type === "configuration.changed" && m.kind === "accounts");
   const forgeAccounts: ForgeAccount[] = (accounts.data?.value.accounts ?? []).filter((account) => account.kind === "forge");
+  const trackerAccounts: { value: string; label: string; provider: TrackerProvider }[] = [];
+  for (const account of accounts.data?.value.accounts ?? []) {
+    if (account.kind === "forge" && (account.forge === "github" || account.forge === "gitlab")) {
+      trackerAccounts.push({ value: account.id, label: `${account.user || account.id} · ${account.host}`, provider: account.forge });
+    }
+    if (account.kind === "service" && (account.tool === "atlassian" || account.tool === "linear")) {
+      trackerAccounts.push({ value: account.id, label: account.service, provider: account.tool === "linear" ? "linear" : "jira" });
+    }
+  }
+  trackerAccounts.push({ value: "active-jira", label: "Active Jira CLI account", provider: "jira" });
   const [draft, setDraft] = useState<{ values: SettingsForm; sha256: string } | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
   const repo: Project["repo"] = raw?.repo as Project["repo"] | undefined ?? null;
+  const tracker: Project["tracker"] = raw?.tracker as Project["tracker"] | undefined ?? null;
   const current: SettingsForm | null = raw && {
     name: String(raw.name ?? ""),
     baseBranch: String(raw.baseBranch ?? "main"),
@@ -123,6 +134,7 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
     remote: repo !== null,
     account: repo?.account ?? "",
     url: repo?.url ?? "",
+    tracker: tracker?.account ?? (tracker?.provider === "jira" ? "active-jira" : "project.account"),
   };
   const value: SettingsForm | null = draft?.values ?? current;
   const dirty: boolean = draft !== null && JSON.stringify(draft.values) !== JSON.stringify(current);
@@ -131,6 +143,7 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
   };
   const save = useAction(async () => {
     if (!raw || !value || !draft) return;
+    const trackerAccount = trackerAccounts.find(({ value: id }) => id === value.tracker);
     const next = {
       ...raw,
       name: value.name.trim(),
@@ -139,6 +152,7 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
       folder: value.folder.trim() || null,
       repo: value.remote ? { url: value.url.trim(), account: value.account } : null,
       createRepo: value.remote && value.url.trim() === repo?.url ? raw.createRepo ?? null : null,
+      tracker: value.tracker === current?.tracker ? tracker : trackerAccount ? { provider: trackerAccount.provider, account: trackerAccount.value } : null,
     };
     Reflect.deleteProperty(next, "limits");
     Reflect.deleteProperty(next, "defaultRecipe");
@@ -173,6 +187,11 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
       <RadioGroup label="Repository" value={value.remote ? "remote" : "local"} disabled={disabled}
         options={[{ value: "local", label: "Local only" }, { value: "remote", label: "Existing remote repository" }]}
         onValueChange={(mode) => set({ remote: mode === "remote", account: value.account || (forgeAccounts.length === 1 ? forgeAccounts[0]!.id : "") })} />
+      <Select label="Tracker account" value={value.tracker} disabled={disabled}
+        description="Used by the Project Manager and by Agent nodes set to Project account."
+        options={[{ value: "project.account", label: "Use repository account" }, ...trackerAccounts,
+          ...(value.tracker !== "project.account" && !trackerAccounts.some(({ value: id }) => id === value.tracker) ? [{ value: value.tracker, label: "Account unavailable" }] : [])]}
+        onValueChange={(tracker) => set({ tracker: tracker ?? "project.account" })} />
       {value.remote && <div className={s.pair}>
         <Select label="Forge account" value={account?.id ?? null} disabled={disabled || forgeAccounts.length === 0}
           options={forgeAccounts.map(({ id, host }) => ({ value: id, label: `${id} · ${host}` }))} placeholder="Select an account"

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { JobDefinitions } from "./job-definitions";
 import type { NodeInput } from "./node";
-import { automaticOutputs, Node, placeholderEnvName, unknownPlaceholders } from "./node";
+import { AgentNode, automaticOutputs, Node, placeholderEnvName, unknownPlaceholders } from "./node";
 
 const githubPr = {
   name: "github-pr",
@@ -44,6 +44,15 @@ const issues = (value: unknown) => {
 };
 
 describe("node schema", () => {
+  it("validates Tracker permissions only on Agent nodes", () => {
+    expect(AgentNode.parse(builder).tracker).toBeUndefined();
+    expect(AgentNode.parse({ ...builder, tracker: { access: "read", account: "atlassian" } }).tracker)
+      .toEqual({ access: "read", account: "atlassian" });
+    expect(AgentNode.safeParse({ ...builder, tracker: { access: "read-write" } }).success).toBe(false);
+    expect(AgentNode.safeParse({ ...builder, tracker: { access: "none", account: "atlassian" } }).success).toBe(false);
+    expect(Node.safeParse({ ...githubPr, tracker: { access: "read", account: "atlassian" } }).success).toBe(false);
+  });
+
   it("accepts the delivery node of design 3.1", () => {
     expect(issues(githubPr)).toEqual([]);
     const n = Node.parse(githubPr);
@@ -134,23 +143,17 @@ describe("node schema", () => {
   });
 });
 
-it("validates Tracker's provider, account and inline script", () => {
+it("rejects the former CLI Tracker kind", () => {
   const input = { kind: "tracker", name: "read-ticket", description: "Read a ticket", provider: "github",
     account: "project.account", script: "echo checked", outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }] };
-  expect(Node.parse(input)).toMatchObject({ kind: "tracker", changesFiles: false, account: "project.account", script: "echo checked" });
-  expect(Node.safeParse({ ...input, account: "" }).success).toBe(false);
-  expect(Node.safeParse({ ...input, script: "" }).success).toBe(false);
-  expect(Node.safeParse({ ...input, kind: "source" }).success).toBe(false);
+  expect(Node.safeParse(input).success).toBe(false);
 });
 
-it("validates MCP Tracker definitions separately from CLI scripts", () => {
-  const node: NodeInput = { kind: "tracker", mode: "mcp", provider: "jira", name: "jira-mcp", description: "Read Jira",
+it("rejects the former MCP Tracker kind", () => {
+  const node = { kind: "tracker", mode: "mcp", provider: "jira", name: "jira-mcp", description: "Read Jira",
     server: "atlassian", tool: "getJiraIssue", account: "atlassian", arguments: { cloudId: "{params.cloudId}" },
     outcomes: ["done"], outputs: { done: "document" }, outcomeRules: [{ exitCode: 0, outcome: "done" }] };
-  expect(Node.parse(node)).toMatchObject({ mode: "mcp", server: "atlassian", tool: "getJiraIssue" });
-  expect(Node.safeParse({ ...node, script: "echo invalid" }).success).toBe(false);
-  expect(Node.safeParse({ ...node, tool: "" }).success).toBe(false);
-  expect(Node.safeParse({ ...node, server: "unconfigured" }).success).toBe(false);
+  expect(Node.safeParse(node).success).toBe(false);
 });
 
 it("reads a saved delivery with its old script and repeat check", () => {

@@ -17,7 +17,7 @@ describe("project defaults (decision 8)", () => {
     const d = await projectDefaults(shippedTemplates, repo, "gitlab");
     expect(d.rename).toMatchObject({
       "github-pr": "gitlab-mr",
-      "github-issue-comment": "gitlab-issue-comment",
+      "post-delivery-to-ticket": "post-delivery-to-ticket",
       "github-create-repo": "gitlab-create-repo",
       "gitlab-mr": "gitlab-mr",
     });
@@ -34,7 +34,7 @@ describe("project defaults (decision 8)", () => {
     expect(forge).toEqual({ forge: "git", tool: "git", credentialHelper: null, delivery: "git-delivery", comment: null, createRepo: null });
     const d = await projectDefaults(shippedTemplates, { url: "git@git.example.com:team/app.git", account: "git-dev" }, "git");
     expect(d.rename).toMatchObject({ "github-pr": "git-delivery", "gitlab-mr": "git-delivery" });
-    expect(d.rename).not.toHaveProperty("github-issue-comment");
+    expect(d.rename).not.toHaveProperty("post-delivery-to-ticket");
     expect(d.rename).not.toHaveProperty("github-create-repo");
     expect(d.rename).not.toHaveProperty("github-issues");
   });
@@ -52,7 +52,7 @@ describe("project defaults (decision 8)", () => {
       await engine.reloadProject("demo");
       const r = await call("instantiate", { body: { kind: "recipe", name: "bugfix-to-pr", project: "demo" } });
       expect(ctx.db.catalog.recipe("bugfix-to-pr")?.nodes.pr?.use).toBe("gitlab-mr");
-      expect(ctx.db.catalog.recipe("bugfix-to-pr")?.nodes.comment?.use).toBe("gitlab-issue-comment");
+      expect(ctx.db.catalog.recipe("bugfix-to-pr")?.nodes.comment?.use).toBe("post-delivery-to-ticket");
       expect(r.created).toContain("projects/demo/nodes/gitlab-mr.json");
       expect(r.created.some((path) => path.includes("github-"))).toBe(false);
     } finally {

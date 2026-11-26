@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { appName, atlassianAccount, BuiltInHarness, codeCommitProfile, ForgeAccount, ForgeDiscovery, ForgeKind, forgeHost, forgeServices, harnessColor, harnesses, nextForgeAccountId, Settings as SettingsSchema } from "@pecore/schemas";
+import { appName, atlassianAccount, BuiltInHarness, codeCommitProfile, ForgeAccount, ForgeDiscovery, ForgeKind, forgeHost, forgeServices, harnessColor, harnesses, linearAccount, nextForgeAccountId, Settings as SettingsSchema } from "@pecore/schemas";
+import type { ServiceAccount } from "@pecore/schemas";
 import type { Account, HarnessInfo, LiveMessage, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useAutoSave, useData } from "../api/hooks";
@@ -272,11 +273,11 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
             : "Atlassian Rovo MCP server"}
           state={state} checking={checking.has(account.id)}
           actions={<>
-            {(account.tool === "gh" || account.tool === "glab" || account.tool === "atlassian") && state !== "logged_in" &&
+            {(account.tool === "gh" || account.tool === "glab" || account.tool === "atlassian" || account.tool === "linear") && state !== "logged_in" &&
               <Button size="sm" variant="primary" disabled={locked || busy} onClick={() => void start.run(account)}>Log in</Button>}
             {account.kind === "forge" && onEdit && <Button size="sm" disabled={locked || busy} onClick={() => onEdit(account)}>Edit</Button>}
           </>}>
-          {id && <LoginOutput id={id} progress={output} running={!output?.done && account.tool !== "atlassian"} />}
+          {id && <LoginOutput id={id} progress={output} running={!output?.done && account.tool !== "atlassian" && account.tool !== "linear"} />}
         </AccountRow>;
       })}
     </ul>}
@@ -349,12 +350,11 @@ export function Settings() {
   const [disableDialog, setDisableDialog] = useState(false);
   const [forgeDialog, setForgeDialog] = useState<ForgeAccount | "new">();
   const [pendingLogin, setPendingLogin] = useState<string>();
-  const [atlassianLogin, setAtlassianLogin] = useState<string>();
-  const atlassian = (accounts.current?.accounts ?? []).filter((account) => account.kind === "service" && account.tool === "atlassian");
-  const addAtlassian = useAction(async () => {
+  const [trackerLogin, setTrackerLogin] = useState<string>();
+  const addTracker = useAction(async (account: ServiceAccount) => {
     if (!accounts.value) return;
-    if (!await accounts.commit({ accounts: [...accounts.value.accounts, atlassianAccount] })) return;
-    setAtlassianLogin(atlassianAccount.id);
+    if (!await accounts.commit({ accounts: [...accounts.value.accounts, account] })) return;
+    setTrackerLogin(account.id);
     accounts.reload();
   });
   const [showUnavailable, setShowUnavailable] = useState(false);
@@ -417,13 +417,16 @@ export function Settings() {
                 <p className={s.groupText}>Add an account, on a public service or on your own server, to push branches and open pull requests.</p>}
               <DiscoveringProviders providers={pendingForges} />
             </LoginControls>
-            {atlassian.length > 0 ? <LoginControls title="Atlassian" kind="tool" accounts={atlassian} pendingLogin={atlassianLogin}
-              onLoginStarted={() => setAtlassianLogin(undefined)} />
-              : <Card title="Atlassian" actions={<Button size="sm" icon={<PlusIcon />} disabled={!connected || !accounts.value || accounts.saving}
-                loading={addAtlassian.busy} onClick={() => void addAtlassian.run()}>Add Atlassian account</Button>}>
-                <ErrorText error={addAtlassian.error} />
-                <p className={s.groupText}>Connect Jira sites through the Atlassian MCP server.</p>
-              </Card>}
+            {[atlassianAccount, linearAccount].map((account) => {
+              const configured = (accounts.current?.accounts ?? []).filter((entry) => entry.kind === "service" && entry.tool === account.tool);
+              return configured.length > 0 ? <LoginControls key={account.id} title={account.service} kind="tool" accounts={configured}
+                pendingLogin={trackerLogin === account.id ? trackerLogin : undefined} onLoginStarted={() => setTrackerLogin(undefined)} />
+                : <Card key={account.id} title={account.service} actions={<Button size="sm" icon={<PlusIcon />} disabled={!connected || !accounts.value || accounts.saving}
+                  loading={addTracker.busy} onClick={() => void addTracker.run(account)}>Add {account.service} account</Button>}>
+                  <ErrorText error={addTracker.error} />
+                  <p className={s.groupText}>{account.tool === "atlassian" ? "Connect Jira sites through the Atlassian MCP server." : "Connect a Linear workspace."}</p>
+                </Card>;
+            })}
             <Card title="Jira" actions={<Button size="sm" aria-label="Check Jira login" disabled={jira.loading} onClick={jira.reload}>Check</Button>}>
               <p className={s.groupText}>{jira.data ? `${jira.data.account.user} · ${jira.data.site}` : jira.loading ? "Checking Jira login…" : "Sign in to the Atlassian CLI to connect Jira."}</p>
             </Card>

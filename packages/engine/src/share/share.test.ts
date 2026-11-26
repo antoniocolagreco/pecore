@@ -431,6 +431,10 @@ describe("project import (share/, CUJ 7)", () => {
       ["no db with history", [manifest(true), ...base], "history and logs flags"],
       ["artifact files", [manifest(false), ...base, { name: "artifacts/j/r/out.txt", body: "x" }], "artifacts/j/r/out.txt"],
       ["invalid node", [manifest(false), ...base, { name: "nodes/broken.json", body: JSON.stringify({ name: "broken", kind: "command" }) }], "broken"],
+      ["tracker node", [manifest(false), ...base, { name: "nodes/legacy-tracker.json", body: JSON.stringify({
+        kind: "tracker", name: "legacy-tracker", description: "Read a ticket", provider: "github", account: "project.account",
+        script: "echo ticket", outcomes: ["success"], outcomeRules: [{ exitCode: 0, outcome: "success" }],
+      }) }], "nodes/legacy-tracker.json kind"],
     ];
     for (const [name, list, message] of bad) {
       await expect(b.call("importProject", { body: { path: rawArchive(join(t, `${name}.tar.zst`), list), id: "evil" } }), name).rejects.toMatchObject({ status: 400, message: expect.stringContaining(message) });

@@ -139,20 +139,20 @@ async function setup(build: (root: string) => object[][], extra: { tracker?: boo
   await createProjectWithRecipes(first.engine, { id: "demo", name: "Demo", repo: null }, ["reviewed", "big"]);
   if (extra.tracker) {
     const { ctx } = first.engine.project("demo");
-    const forge = { id: "github-alice", kind: "forge", forge: "github", host: "github.com", tool: "git", user: "alice", author: { name: "Alice", email: "alice@example.test" } } as const;
+    const forge = { id: "github-alice", kind: "forge", forge: "github", host: "github.com", tool: "gh", user: "alice", author: { name: "Alice", email: "alice@example.test" } } as const;
     ctx.forgeAccount = (id) => id === forge.id ? forge : undefined;
-    for (const [name, script] of [
-      ["github-ticket-read", "printf '%s' '{\"title\":\"Login broken\",\"body\":\"Login fails\",\"author\":\"alice\"}'"],
-      ["github-issue-comment", `cat >> '${join(root, "comments")}'`],
-    ] as const) {
-      first.engine.catalog.saveNode(Node.parse({
-        name, description: "Handle a GitHub ticket", kind: "tracker", provider: "github", account: "project.account", script,
-        outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }],
-        ...(name.endsWith("read") ? { readOnly: true, outputs: { done: "document" }, outputRules: { done: { stdoutJson: "" } } } : { optionalInputs: ["text"] }),
-      }));
-      const approval = first.engine.catalog.chatNode(name)!;
-      first.engine.catalog.approveChatNode(name, approval.hash);
-    }
+    const bin: string = join(root, "tracker-bin");
+    await mkdir(bin);
+    await writeFile(join(bin, "gh"), `#!/bin/sh
+if [ "$1" = "auth" ]; then printf private-fixture-token; exit 0; fi
+[ "$GH_TOKEN" = private-fixture-token ] || exit 2
+case "$5" in
+  GET) printf '%s' '{"title":"Login broken","body":"Login fails","author":"alice"}' ;;
+  POST|PATCH) cat >> '${join(root, "comments")}'; printf '{}';;
+  *) exit 2 ;;
+esac
+`, { mode: 0o700 });
+    process.env.PATH = bin + ":" + process.env.PATH;
     ctx.db.definition.write({ ...ctx.project, tracker: { provider: "github", account: forge.id } });
     expect(await first.engine.reloadProject("demo")).toEqual([]);
   }
@@ -185,6 +185,64 @@ afterEach(() => {
 });
 
 describe("Assistant and Project Manager chats with the MCP shim (section 6, Phase 6 decisions 1, 3 and 4)", () => {
+  it.each([
+    { access: undefined, names: [] },
+    { access: "read", names: ["read_ticket", "search_tickets"] },
+    { access: "read-write", names: ["read_ticket", "search_tickets", "comment_ticket", "change_ticket_status", "update_ticket_fields"] },
+  ] as const)("gives a job Agent only its tracker tools ($access)", async ({ access, names }) => {
+    const t = await setup(() => [init()], { tracker: true, pm: (root) => [[
+      ...init(), newSession[0]!, { dump: join(root, "job-session.json") }, newSession[1]!,
+      { expect: "session/prompt" }, { waitFile: join(root, "job-done") }, ...replyWith('{"outcome":"success"}'),
+    ]] });
+    try {
+      const { ctx, executor } = t.engine.project("demo");
+      t.engine.catalog.saveContent("check-tracker.md", "Check tracker access.");
+      t.engine.catalog.saveNode(Node.parse({
+        kind: "agent", name: "check-tracker", description: "Check tracker access", prompt: "check-tracker.md", outcomes: ["success"],
+        timeoutSec: 30, changesFiles: false, agent: { tier: "standard" },
+        ...(access ? { tracker: { access, account: "project.account" } } : {}),
+      }));
+      t.engine.catalog.saveRecipe(Recipe.parse({
+        name: "tracker-access", description: "Check tracker access", start: "check", nodes: { check: { use: "check-tracker" } },
+        ends: [{ from: "check", on: "success", result: "succeeded" }],
+      }));
+      ctx.db.definition.write({ ...ctx.project, recipes: ["tracker-access"] });
+      expect(await t.engine.reloadProject("demo")).toEqual([]);
+      const job: string = await t.engine.createJob("demo", { title: "Check access", ticket: { text: "Check access" }, recipe: "tracker-access" });
+      const dump: string = join(t.root, "job-session.json");
+      await until(() => existsSync(dump));
+      const session: { params: { mcpServers: { args: string[]; env: unknown[] }[] } } = JSON.parse(await readFile(dump, "utf8"));
+      if (!access) expect(session.params.mcpServers).toEqual([]);
+      else {
+        const [server] = session.params.mcpServers;
+        expect(server?.env).toEqual([]);
+        const api = mcp(server!.args[1]!);
+        try {
+          const listed = await api.rpc("tools/list", {});
+          expect(listed.result?.tools?.map(({ name }) => name)).toEqual(names);
+          const ticketId: string = "https://github.com/example/demo/issues/7";
+          const read = await api.tool("read_ticket", { ticketId });
+          expect(JSON.parse(read.result!.content![0]!.text)).toMatchObject({ untrusted: true, ticket: { title: "Login broken" } });
+          expect(JSON.stringify(read)).not.toContain("private-fixture-token");
+          const write = await api.tool("comment_ticket", { ticketId, text: "From the Agent" });
+          if (access === "read") expect(write.result?.isError).toBe(true);
+          else expect(write.result?.isError).toBeUndefined();
+          expect(existsSync(join(t.root, "comments"))).toBe(access === "read-write");
+          expect((await api.tool("list_projects", {})).result?.isError).toBe(true);
+          const audit = ctx.db.db.prepare("SELECT payload FROM attempt_logs WHERE payload LIKE 'Tracker tool completed:%' ORDER BY sequence").pluck().all();
+          expect(audit).toEqual(access === "read" ? ["Tracker tool completed: read_ticket"] : ["Tracker tool completed: read_ticket", "Tracker tool completed: comment_ticket"]);
+        } finally {
+          api.close();
+        }
+      }
+      await writeFile(join(t.root, "job-done"), "");
+      await expect.poll(() => executor.job(job).state).toBe("succeeded");
+      if (access) expect(existsSync(session.params.mcpServers[0]!.args[1]!)).toBe(false);
+    } finally {
+      await t.close();
+    }
+  }, 30000);
+
   it("exposes partial replies before the prompt ends and saves one complete reply", async () => {
     const t = await setup((root) => [[
       ...init(),
@@ -1005,9 +1063,9 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect((await m.tool("get_project", { project: "other" })).result!.isError).toBe(true);
       expect((await m.tool("update_project", { project: "demo", changes: { name: "Blocked" } })).result!.isError).toBe(true);
       expect((await m.tool("delete_project", { project: "demo" })).result!.isError).toBe(true);
-      const read = await m.tool("read_ticket", { project: "demo", ticketId: "7" });
+      const read = await m.tool("read_ticket", { project: "demo", ticketId: "https://github.com/example/demo/issues/7" });
       expect(JSON.parse(read.result!.content![0]!.text)).toMatchObject({ untrusted: true, ticket: { title: "Login broken" } });
-      expect((await m.tool("comment_ticket", { project: "demo", ticketId: "7", text: "Which browser?" })).result!.content?.[0]?.text).toBe('{"state":"awaiting_answer"}');
+      expect((await m.tool("comment_ticket", { project: "demo", ticketId: "https://github.com/example/demo/issues/7", text: "Which browser?" })).result!.content?.[0]?.text).toBe('{"state":"awaiting_answer"}');
       expect((await m.tool("create_jobs", { project: "demo", plan })).result!.isError).not.toBe(true);
       await m.tool("create_jobs", { project: "demo", plan: [{ key: "other", title: "Other", ticketText: "x", recipe: "reviewed", dependsOn: [] }] });
       expect(ctx.db.db.prepare("SELECT order_key FROM jobs WHERE order_id = ? ORDER BY order_key").all(sent.id)).toEqual([{ order_key: "api" }, { order_key: "ui" }]);
@@ -1075,7 +1133,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       vi.stubEnv("PATH", bin + ":" + process.env.PATH);
       const script: string = 'printf \'{"title":"Ticket","body":"%s"}\' "$GH_TOKEN"';
       const inspect: Node = Node.parse({
-        kind: "tracker", name: "inspect-ticket", description: "Inspect a ticket", provider: "github", account: forge.id,
+        kind: "repository", name: "inspect-ticket", description: "Inspect a ticket", account: forge.id,
         readOnly: true, script, outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }],
         outputs: { done: "document" }, outputRules: { done: { stdoutJson: "" } },
       });
@@ -1086,7 +1144,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       const m = mcp(tokenFileOf(intakeChat(t)));
       try {
         const names = async (): Promise<string[]> => (await m.rpc("tools/list", {})).result!.tools!.map(({ name }) => name);
-        expect(await names()).toEqual(expect.arrayContaining(["node_inspect-ticket", "node_git-push", "node_github-ticket-search"]));
+        expect(await names()).toEqual(expect.arrayContaining(["node_inspect-ticket", "node_git-push", "search_tickets"]));
         const read = await m.tool("node_inspect-ticket", {});
         expect(read.result!.isError).toBeUndefined();
         expect(JSON.parse(read.result!.content![0]!.text)).toEqual([{ type: "document", content: { title: "Ticket", body: "[redacted]" } }]);
