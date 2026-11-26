@@ -1,9 +1,11 @@
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Accounts, Settings as SettingsSchema } from "@pecore/schemas";
 import type { LiveMessage, LoginView, RouteInput, RouteResult } from "@pecore/schemas";
-import { MemoryRouter } from "react-router";
+import { createMemoryRouter, MemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { ui } from "../components/ui";
+import { ViewHistoryProvider } from "../components/ViewHistoryProvider";
 import { Settings } from "./Settings";
 
 const api = vi.hoisted(() => ({ call: vi.fn(), listeners: new Set<(message: LiveMessage) => void>() }));
@@ -32,7 +34,7 @@ it("shows the active Jira CLI identity and refreshes it independently", async ()
   api.call.mockImplementation(async (route: string) => route === "getActiveJira" ? {
     site, account: { id: "jira-login", kind: "service", service: "Jira", tool: "acli", user: "alice@example.test" },
   } : fallback(route));
-  render(<MemoryRouter><Settings /></MemoryRouter>);
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
   await screen.findByText("alice@example.test · first.atlassian.net");
   site = "second.atlassian.net";
   await userEvent.setup().click(screen.getByRole("button", { name: "Check Jira login" }));
@@ -56,6 +58,26 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
+it("restores the Settings filter and scroll without jumping to the original section again", async () => {
+  const user = userEvent.setup();
+  const router = createMemoryRouter([
+    { path: "/settings", element: <Settings /> },
+    { path: "/elsewhere", element: <p>Elsewhere</p> },
+  ], { initialEntries: ["/settings?section=accounts"] });
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
+  const viewport = () => screen.getByRole("heading", { name: "Settings", level: 1 }).closest<HTMLElement>(`.${ui.page}`)!;
+  await screen.findByRole("heading", { name: "Appearance" });
+  await user.click(screen.getByRole("button", { name: "Show unavailable" }));
+  viewport().scrollTop = 760;
+  fireEvent.scroll(viewport());
+
+  await act(() => router.navigate("/elsewhere"));
+  await act(() => router.navigate(-1));
+  await screen.findByRole("heading", { name: "Appearance" });
+  expect(screen.getByRole("button", { name: "Hide unavailable" }).getAttribute("aria-pressed")).toBe("true");
+  expect(viewport().scrollTop).toBe(760);
+});
+
 it.each([
   { id: "atlassian", name: "Atlassian" },
   { id: "linear", name: "Linear" },
@@ -73,7 +95,7 @@ it.each([
     if (route === "startAccountLogin") return { loginId: `tool:${id}` };
     return fallback(route);
   });
-  render(<MemoryRouter><Settings /></MemoryRouter>);
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
   const user = userEvent.setup();
   const add: HTMLButtonElement = await screen.findByRole("button", { name: `Add ${name} account` });
   await waitFor(() => expect(add.disabled).toBe(false));
@@ -104,7 +126,7 @@ it("checks only the accounts in the selected panel and keeps Check out of accoun
     return fallback(route);
   });
   const user = userEvent.setup();
-  render(<MemoryRouter><Settings /></MemoryRouter>);
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
   const modelHeader: HTMLElement = (await screen.findByRole("heading", { name: "AI tools" })).closest("header")!;
   const forgeHeader: HTMLElement = screen.getByRole("heading", { name: "Git hosting" }).closest("header")!;
   const modelCheck: HTMLButtonElement = within(modelHeader).getByRole("button", { name: "Check" });
@@ -141,7 +163,7 @@ it("shows checking only in the pending provider rows and keeps other settings us
     if (route === "recheckAccount") return { state: "logged_in" };
     return fallback(route);
   });
-  render(<MemoryRouter><Settings /></MemoryRouter>);
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
   expect(await screen.findByRole("textbox", { name: "Your name" })).toBeTruthy();
   const pendingRows = await screen.findAllByRole("list", { name: "Checking for accounts" });
   expect(within(pendingRows[0]!).getByText("Claude Code")).toBeTruthy();
@@ -165,7 +187,7 @@ it("shows checking only in the pending provider rows and keeps other settings us
 
 it("loads preferences and saves the updated name with its current revision", async () => {
   const user: ReturnType<typeof userEvent.setup> = userEvent.setup();
-  render(<MemoryRouter><Settings /></MemoryRouter>);
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
   const name: HTMLElement = await screen.findByRole("textbox", { name: "Your name" });
   expect(screen.queryByRole("button", { name: "Assistant" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Project Manager" })).toBeNull();
@@ -178,7 +200,7 @@ it("loads preferences and saves the updated name with its current revision", asy
 
 it("selects a bundled theme from Appearance", async () => {
   const user: ReturnType<typeof userEvent.setup> = userEvent.setup();
-  render(<MemoryRouter><Settings /></MemoryRouter>);
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
   const theme: HTMLElement = await screen.findByRole("combobox", { name: "Theme" });
   await user.click(theme);
   await user.click(await screen.findByRole("option", { name: "Autumn" }));
@@ -194,7 +216,7 @@ it.each([
   { service: "Private Git server", placeholder: "git.example.com", server: true, aws: false, required: true },
 ])("only asks for the fields needed by $service", async ({ service, placeholder, server, aws, required }) => {
   const user: ReturnType<typeof userEvent.setup> = userEvent.setup();
-  render(<MemoryRouter><Settings /></MemoryRouter>);
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
   const add: HTMLButtonElement = await screen.findByRole("button", { name: "Add account" });
   await waitFor(() => expect(add.disabled).toBe(false));
   await user.click(add);
@@ -252,7 +274,7 @@ it.each([
     throw new Error(`Unexpected route ${route}`);
   });
   const user: ReturnType<typeof userEvent.setup> = userEvent.setup();
-  render(<MemoryRouter><Settings /></MemoryRouter>);
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
   const add: HTMLButtonElement = await screen.findByRole("button", { name: "Add account" });
   await waitFor(() => expect(add.disabled).toBe(false));
   await user.click(add);

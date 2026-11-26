@@ -12,6 +12,7 @@ import { ChatPanel } from "../screens/AssistantChat";
 import { CommandPalette } from "./CommandPalette";
 import { SetupBanner } from "./SetupBanner";
 import { SidebarSlot } from "./sidebar";
+import { useHistoryShortcuts } from "./useHistoryShortcuts";
 import s from "./Layout.module.css";
 
 type Badge = "notifications";
@@ -33,6 +34,7 @@ const nav: { group: string | null; items: { to: string; label: string; icon: Rea
 ];
 
 export function Layout() {
+  useHistoryShortcuts();
   const connected = useConnected();
   const [menu, setMenu] = useState<boolean>(false);
   const [chatWidth, setChatWidth] = useState<number>();

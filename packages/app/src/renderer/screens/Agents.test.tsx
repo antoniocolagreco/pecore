@@ -2,6 +2,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
+import { ViewHistoryProvider } from "../components/ViewHistoryProvider";
 import { AgentCatalogEditor, ProjectManagerSettings } from "./Agents";
 
 const api = vi.hoisted(() => ({ call: vi.fn() }));
@@ -24,7 +25,7 @@ it("can create an unconfigured card while the provider controls show Unavailable
     { path: "/agents/edit", element: <AgentCatalogEditor /> },
     { path: "/agents", element: <span>Agents list</span> },
   ], { initialEntries: ["/agents/edit"] });
-  render(<RouterProvider router={router} />);
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   const user = userEvent.setup();
   await user.type(await screen.findByRole("textbox", { name: "Name" }), "Reviewer");
   const provider = screen.getByRole("combobox", { name: "Provider" });

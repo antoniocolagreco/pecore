@@ -481,3 +481,15 @@
 - Decision: Nodes exchange Spec, Diff, Code Review, Code Analysis, SHA, Pull Request, Feedback and Log. Specs describe BDD scenarios. Human Review sends its general note and inline comments together. The job stores the title, request and attachments. Recipes use explicit branches. Node runs record the files hash. Write PR drafts the title and body for GitHub or GitLab. Git and CodeCommit keep the same recipes with Push connected directly to Git Delivery. Upgrade saved definitions and discard job history in the old format.
 - Why: Each node needs inputs with a known purpose. Delivery still works on servers that only offer Git.
 - Replaces: Generic artifact contracts, the stored ticket output from Start, optional steps selected by the spec, and content state.
+
+## 2026-11-26: Restore pages on Back and Forward
+
+- Decision: Keep filters, search text, tabs, expanded sections and scroll for each visit during the app session. A new visit starts with defaults. An editor's Back link restores its list.
+- Why: Opening a node, job or recipe should not make the user find their place again.
+- Replaces: Reopening a previous page with its defaults.
+
+## 2026-11-26: Use mouse buttons for Back and Forward
+
+- Decision: Mouse Back and Forward buttons use the same history as the keyboard.
+- Why: A mouse press should return to the same place as a keyboard shortcut.
+- Replaces: App shortcuts that only handled keyboard input.

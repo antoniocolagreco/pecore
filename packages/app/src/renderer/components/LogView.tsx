@@ -5,6 +5,8 @@ import { call } from "../api/client";
 import { useData } from "../api/hooks";
 import { onLive, subscribeLog, useConnected } from "../api/live";
 import { ErrorText, ui } from "./ui";
+import { usePageScroll } from "./usePageScroll";
+import { useViewState } from "./useViewState";
 import { Button } from "../ds/button";
 import { EmptyState } from "../ds/feedback";
 import s from "./LogView.module.css";
@@ -50,7 +52,7 @@ function Events({ attemptId, running }: { attemptId: string; running: boolean })
   const [live, setLive] = useState<LogEvent[]>([]);
   const [error, setError] = useState<Error | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [page, setPage] = useState<number>(0);
+  const [page, setPage] = useViewState(`log.events:${attemptId}`, 0);
   useEffect(() => {
     let current: boolean = true;
     let pending: LogEvent[] = [];
@@ -99,13 +101,18 @@ function Events({ attemptId, running }: { attemptId: string; running: boolean })
       {(!running || events.length === 0) && <ErrorText error={error} />}
       {!events.length && <EmptyState title={loading ? "Loading log…" : "No log events."} />}
       {!!events.length && (
-        <div className={s.log} aria-label="Log events">
-          {events.slice(Math.max(0, end - pageSize), end).map((event, index) => <EventLine key={`${end - Math.min(end, pageSize) + index}-${event.at}`} event={event} />)}
-        </div>
+        <EventLines attemptId={attemptId} events={events.slice(Math.max(0, end - pageSize), end)} offset={Math.max(0, end - pageSize)} />
       )}
       <LogPages page={offset} pages={pages} setPage={setPage} />
     </>
   );
+}
+
+function EventLines({ attemptId, events, offset }: { attemptId: string; events: LogEvent[]; offset: number }) {
+  const { page } = usePageScroll(`log.events:${attemptId}`);
+  return <div ref={page} className={s.log} aria-label="Log events">
+    {events.map((event, index) => <EventLine key={`${offset + index}-${event.at}`} event={event} />)}
+  </div>;
 }
 
 function LogPages({ page, pages, setPage }: { page: number; pages: number; setPage(page: number): void }) {
@@ -121,7 +128,7 @@ function LogPages({ page, pages, setPage }: { page: number; pages: number; setPa
 
 function RawLog({ attemptId, running }: { attemptId: string; running: boolean }) {
   const log = useData(() => call("getLog", { params: { id: attemptId }, query: { view: "raw" } }), [attemptId, running]);
-  const [page, setPage] = useState<number>(0);
+  const [page, setPage] = useViewState(`log.rawPage:${attemptId}`, 0);
   const lines: unknown[] = log.data?.view === "raw" ? log.data.lines : [];
   const pages: number = Math.max(0, Math.ceil(lines.length / pageSize) - 1);
   const offset: number = Math.min(page, pages);
@@ -130,15 +137,20 @@ function RawLog({ attemptId, running }: { attemptId: string; running: boolean })
   return (
     <>
       <ErrorText error={log.error} />
-      {lines.length ? <pre className={s.log}>{lines.slice(Math.max(0, end - pageSize), end).map((line) => JSON.stringify(line)).join("\n")}</pre> : <EmptyState title={log.loading ? "Loading log…" : "No log lines."} />}
+      {lines.length ? <RawLines attemptId={attemptId} text={lines.slice(Math.max(0, end - pageSize), end).map((line) => JSON.stringify(line)).join("\n")} /> : <EmptyState title={log.loading ? "Loading log…" : "No log lines."} />}
       <LogPages page={offset} pages={pages} setPage={setPage} />
     </>
   );
 }
 
+function RawLines({ attemptId, text }: { attemptId: string; text: string }) {
+  const { page } = usePageScroll<HTMLPreElement>(`log.raw:${attemptId}`);
+  return <pre ref={page} className={s.log}>{text}</pre>;
+}
+
 export function LogView({ attemptId, running }: { attemptId: string; running: boolean }) {
   const connected: boolean = useConnected();
-  const [raw, setRaw] = useState<boolean>(false);
+  const [raw, setRaw] = useViewState(`log.raw:${attemptId}`, false);
   return (
     <section className={ui.stack} aria-label="Attempt log">
       <div className={ui.row}><strong>Log</strong><Button disabled={!connected} aria-pressed={raw} onClick={() => setRaw(!raw)}>Raw</Button></div>

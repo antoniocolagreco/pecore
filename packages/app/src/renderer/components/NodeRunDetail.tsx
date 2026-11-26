@@ -6,6 +6,7 @@ import { artifactKey, ArtifactView, latestAnalysis } from "./ArtifactView";
 import { DefinitionIcon, useDefinitionIcons } from "./DefinitionIcon";
 import { LogView } from "./LogView";
 import { duration, ui } from "./ui";
+import { useViewState } from "./useViewState";
 import { Button } from "../ds/button";
 import { Details } from "../ds/data";
 import { Card, EmptyState } from "../ds/feedback";
@@ -29,10 +30,10 @@ export function NodeRunDetail({ detail, run, nodeName, icon, onSelect }: {
 }) {
   const connected: boolean = useConnected();
   const icons = useDefinitionIcons();
-  const [selected, setSelected] = useState<string | null>(null);
-  const [attemptPage, setAttemptPage] = useState<number>(0);
-  const [runPage, setRunPage] = useState<number>(0);
-  const [artifactPage, setArtifactPage] = useState<number>(0);
+  const [selected, setSelected] = useViewState<string | null>(`run.artifact:${run.id}`, null);
+  const [attemptPage, setAttemptPage] = useViewState(`run.attemptPage:${run.id}`, 0);
+  const [runPage, setRunPage] = useViewState(`run.runPage:${run.id}`, 0);
+  const [artifactPage, setArtifactPage] = useViewState(`run.artifactPage:${run.id}`, 0);
   const [now, setNow] = useState<number>(Date.now);
   useEffect(() => {
     if (run.endedAt !== null || run.startedAt === null) return;

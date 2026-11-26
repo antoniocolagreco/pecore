@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import type { DefinitionEntry } from "@pecore/schemas";
 import { call } from "../api/client";
@@ -17,16 +16,16 @@ import { definitionUrl, object, string } from "./NodeEditor";
 import { NodeCard, nodeKindLabels, recipeNodeKind, useDefaultNodeAgent } from "../components/NodeCard";
 import type { RecipeNodeKind } from "../components/NodeCard";
 import { templateTitle } from "../components/templateTitle";
+import { useViewState } from "../components/useViewState";
 import s from "./Templates.module.css";
 
-function TemplateList({ type, icons }: { type: DefinitionType; icons: ReadonlyMap<string, string> | undefined }) {
+function TemplateList({ type, icons, search }: { type: DefinitionType; icons: ReadonlyMap<string, string> | undefined; search?: { filter: string; setFilter(value: string): void } }) {
   const connected: boolean = useConnected();
   const defaultAgent = useDefaultNodeAgent();
-  const [filter, setFilter] = useState("");
   const dir: string = `templates/${type}s`;
   const templates = useData(() => call("listDefinitions", { query: { dir } }), [dir],
     (event) => event.type === "definition.changed" && event.path.startsWith(dir + "/"));
-  const query: string[] = filter.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const query: string[] = (search?.filter ?? "").toLowerCase().trim().split(/\s+/).filter(Boolean);
   const entries: DefinitionEntry[] = (templates.data ?? []).filter(({ path, value }) => {
     if (!path.endsWith(".json")) return false;
     if (type !== "node" || !query.length) return true;
@@ -42,8 +41,8 @@ function TemplateList({ type, icons }: { type: DefinitionType; icons: ReadonlyMa
       <p className={`${ui.muted} ${s.intro}`}>{type === "node"
         ? "Nodes define reusable operations, such as running an agent or a command, asking for a review, or fetching tickets."
         : "Recipes connect nodes and use their outcomes to decide what a job runs next."}</p>
-      {type === "node" && <SearchField className={s.search} ariaLabel="Search nodes" placeholder="Search by name, kind or tag"
-        value={filter} onValueChange={setFilter} />}
+      {search && <SearchField className={s.search} ariaLabel="Search nodes" placeholder="Search by name, kind or tag"
+        value={search.filter} onValueChange={search.setFilter} />}
       <ErrorText error={templates.error} />
       {templates.loading && !templates.data && <Spinner />}
       {!templates.loading && !templates.error && !entries.length &&
@@ -84,6 +83,7 @@ export function Templates() {
   const icons = useDefinitionIcons();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
+  const [filter, setFilter] = useViewState("templates.nodeFilter", "");
   const type: DefinitionType = params.get("tab") === "recipes" ? "recipe" : "node";
   return <Page title="Templates" actions={
     <Button variant="primary" icon={<PlusIcon />} disabled={!connected} onClick={() => void navigate(`/templates/${type}s/new`)}>
@@ -95,7 +95,7 @@ export function Templates() {
       <SidebarItem to="/templates?tab=recipes" active={type === "recipe"}>Recipes</SidebarItem>
     </SidebarSection>
     <Tabs value={type} onValueChange={(value) => setParams(value === "recipe" ? { tab: "recipes" } : {}, { replace: true })} tabs={[
-      { value: "node", label: "Node templates", content: <TemplateList type="node" icons={icons.data} /> },
+      { value: "node", label: "Node templates", content: <TemplateList type="node" icons={icons.data} search={{ filter, setFilter }} /> },
       { value: "recipe", label: "Recipe templates", content: <TemplateList type="recipe" icons={icons.data} /> },
     ]} />
   </Page>;

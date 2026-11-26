@@ -1,9 +1,10 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { DefinitionEntry, RecipeInput, RouteInput } from "@pecore/schemas";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Connection } from "@xyflow/react";
+import { ViewHistoryProvider } from "../components/ViewHistoryProvider";
 import { RecipeEditor } from "./RecipeEditor";
 import { recipeEnd, recipeStart } from "./recipeLayout";
 import type { RecipeLink } from "./recipeLayout";
@@ -49,8 +50,11 @@ it("keeps the job request out of Reads from and Requires", async () => {
     if (route === "saveDefinition") return { sha256: "recipe-v2" };
     throw new Error(`Unexpected route ${route}`);
   });
-  const router = createMemoryRouter([{ path: "/edit/recipe/*", element: <RecipeEditor /> }], { initialEntries: ["/edit/recipe/templates/recipes/request-review.json"] });
-  render(<RouterProvider router={router} />);
+  const router = createMemoryRouter([
+    { path: "/edit/recipe/*", element: <RecipeEditor /> },
+    { path: "/edit/node/*", element: <h1>Node opened</h1> },
+  ], { initialEntries: ["/edit/recipe/templates/recipes/request-review.json"] });
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Inspect review" }));
   await user.click(screen.getByRole("combobox", { name: "Requires" }));
@@ -59,6 +63,13 @@ it("keeps the job request out of Reads from and Requires", async () => {
   await user.click(screen.getByRole("combobox", { name: "Reads from" }));
   expect(screen.queryByRole("option", { name: "Start (job request)" })).toBeNull();
   expect(screen.queryByRole("checkbox", { name: "Optional" })).toBeNull();
+  await user.keyboard("{Escape}");
+  await user.type(screen.getByRole("searchbox", { name: "Filter nodes" }), "review");
+  await user.click(screen.getByRole("link", { name: "Edit definition" }));
+  await screen.findByRole("heading", { name: "Node opened" });
+  await act(() => router.navigate(-1));
+  expect(await screen.findByRole("link", { name: "Edit definition" })).toBeTruthy();
+  expect(screen.getByRole("searchbox", { name: "Filter nodes" })).toHaveProperty("value", "review");
 });
 
 it("shows the validation sentence and lets the user clear the base-change step", async () => {
@@ -79,7 +90,7 @@ it("shows the validation sentence and lets the user clear the base-change step",
     throw new Error(`Unexpected route ${route}`);
   });
   const router = createMemoryRouter([{ path: "/edit/recipe/*", element: <RecipeEditor /> }], { initialEntries: ["/edit/recipe/templates/recipes/route.json"] });
-  render(<RouterProvider router={router} />);
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   await screen.findByText(message);
   expect(screen.queryByText(/nodes\.pr\.reads/)).toBeNull();
   const user = userEvent.setup();
@@ -118,7 +129,7 @@ it("uses one outcome selection per connection and asks for a job result only for
     throw new Error(`Unexpected route ${route}`);
   });
   const router = createMemoryRouter([{ path: "/edit/recipe/*", element: <RecipeEditor /> }], { initialEntries: ["/edit/recipe/templates/recipes/review.json"] });
-  render(<RouterProvider router={router} />);
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Connect read to End" }));
   await user.click(screen.getByRole("combobox", { name: "Outcome" }));
@@ -165,7 +176,7 @@ it("inherits, overrides and resets the template's session and saves the assigned
     throw new Error(`Unexpected route ${route}`);
   });
   const router = createMemoryRouter([{ path: "/edit/recipe/*", element: <RecipeEditor /> }], { initialEntries: ["/edit/recipe/templates/recipes/review.json"] });
-  render(<RouterProvider router={router} />);
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Inspect review" }));
   const session: HTMLElement = await screen.findByRole("combobox", { name: "Agent session" });
@@ -207,7 +218,7 @@ it("keeps the outcome when reconnecting Start, steps and End, and saves deletion
     throw new Error(`Unexpected route ${route}`);
   });
   const router = createMemoryRouter([{ path: "/edit/recipe/*", element: <RecipeEditor /> }], { initialEntries: ["/edit/recipe/templates/recipes/review.json"] });
-  render(<RouterProvider router={router} />);
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   const user = userEvent.setup();
   await screen.findByText("Base-change step");
   await user.click(screen.getByRole("button", { name: "Reconnect failure to review" }));

@@ -4,6 +4,7 @@ import { Node } from "@pecore/schemas";
 import type { RouteInput } from "@pecore/schemas";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
+import { ViewHistoryProvider } from "../components/ViewHistoryProvider";
 import { NodeEditor } from "./NodeEditor";
 
 const api = vi.hoisted(() => ({ call: vi.fn() }));
@@ -20,7 +21,7 @@ it("offers only the four editable node kinds", async () => {
     throw new Error("Unexpected route " + route);
   });
   const router = createMemoryRouter([{ path: "/new", element: <NodeEditor newTemplate /> }], { initialEntries: ["/new"] });
-  render(<RouterProvider router={router} />);
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   const user = userEvent.setup();
   await user.click(await screen.findByRole("combobox", { name: "Kind" }));
   expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Agent", "Command", "Human", "Repository"]);
@@ -45,7 +46,7 @@ it("sets Tracker access and account on an Agent", async () => {
     throw new Error("Unexpected route " + route);
   });
   const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: ["/edit/node/" + path] });
-  render(<RouterProvider router={router} />);
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   const user = userEvent.setup();
   const permission: HTMLElement = await screen.findByRole("combobox", { name: "Tracker" });
   expect(permission.textContent).toContain("None");
@@ -81,7 +82,7 @@ it("shows the saved script before approving it for chat in protected mode", asyn
     throw new Error("Unexpected route " + route);
   });
   const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: ["/edit/node/" + path] });
-  render(<RouterProvider router={router} />);
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   const user = userEvent.setup();
   expect(await screen.findByText(/To approve/)).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Approve" }));
@@ -109,7 +110,7 @@ it("edits a Command without showing account or check controls", async () => {
     throw new Error(`Unexpected route ${route}`);
   });
   const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: [`/edit/node/${path}`] });
-  render(<RouterProvider router={router} />);
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   const user = userEvent.setup();
   const editable: HTMLElement = await screen.findByRole("checkbox", { name: "Can edit files" });
   expect(screen.queryByRole("checkbox", { name: "Use source control credentials" })).toBeNull();
@@ -144,7 +145,7 @@ it("creates a Repository node with a shell script and requires its account", asy
     { path: "/templates/nodes/new", element: <NodeEditor newTemplate /> },
     { path: "/edit/node/*", element: <span>Saved node</span> },
   ], { initialEntries: ["/templates/nodes/new"] });
-  render(<RouterProvider router={router} />);
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   const user = userEvent.setup();
   await user.type(await screen.findByRole("textbox", { name: "Name" }), "issue-tracker");
   await user.click(screen.getByRole("combobox", { name: "Kind" }));
@@ -184,7 +185,7 @@ it("edits the template's agent session and keeps the changesFiles field", async 
     throw new Error(`Unexpected route ${route}`);
   });
   const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: ["/edit/node/templates/nodes/builder.json"] });
-  render(<RouterProvider router={router} />);
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   const user = userEvent.setup();
   const session: HTMLElement = await screen.findByRole("combobox", { name: "Agent session" });
   expect(session.textContent).toContain("Job");

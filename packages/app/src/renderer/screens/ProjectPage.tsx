@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ReactNode } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { appName } from "@pecore/schemas";
 import type { DefinitionEntry, ForgeAccount, Project, ProjectView, TrackerProvider } from "@pecore/schemas";
 import { ProjectManagerSettings } from "./Agents";
@@ -10,6 +10,7 @@ import { useConnected } from "../api/live";
 import { DefinitionIcon, useDefinitionIcons } from "../components/DefinitionIcon";
 import { PageActions, PageActionsSlot } from "../components/PageActions";
 import { ErrorText, Page, ui } from "../components/ui";
+import { useViewState } from "../components/useViewState";
 import { Button, IconButton } from "../ds/button";
 import { RadioGroup } from "../ds/choice";
 import { Details, Table, Tabs } from "../ds/data";
@@ -29,13 +30,14 @@ const pageSize: number = 100;
 
 function Recipes({ id }: { id: string }) {
   const connected: boolean = useConnected();
+  const { search: recipesSearch } = useLocation();
   const icons = useDefinitionIcons();
   const dir: string = `projects/${id}/recipes`;
   const templatesDir: string = "templates/recipes";
   const entries = useData(() => call("listDefinitions", { query: { dir } }), [dir], (m) => m.type === "project.updated" && m.projectId === id);
   const available = useData(() => call("listDefinitions", { query: { dir: templatesDir } }), [], (m) => m.type === "definition.changed" && m.path.startsWith(templatesDir + "/"));
-  const [name, setName] = useState<string>("");
-  const [page, setPage] = useState<number>(0);
+  const [name, setName] = useViewState("project.recipes.template", "");
+  const [page, setPage] = useViewState("project.recipes.page", 0);
   const add = useAction(async () => {
     await call("instantiate", { body: { kind: "recipe", name, project: id } });
     setName("");
@@ -63,7 +65,7 @@ function Recipes({ id }: { id: string }) {
             const label = <><DefinitionIcon icons={icons.data} type="recipe" name={name} selected={string(object(value).icon)} size="sm" /> {name}</>;
             return <li key={path}>
               {connected
-                ? <Link className={s.file} to={`/edit/recipe/${path.split("/").map(encodeURIComponent).join("/")}?project=${encodeURIComponent(id)}`}>{label}</Link>
+                ? <Link className={s.file} to={`/edit/recipe/${path.split("/").map(encodeURIComponent).join("/")}?project=${encodeURIComponent(id)}`} state={{ recipesSearch }}>{label}</Link>
                 : <span className={s.file}>{label}</span>}
               {errors.length > 0 && <span className={ui.error}> · Definition errors</span>}
               {path.startsWith("templates/") && <Button disabled={!connected || remove.busy} onClick={() => void remove.run(name)}>Remove</Button>}
@@ -121,7 +123,7 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
     }
   }
   trackerAccounts.push({ value: "active-jira", label: "Active Jira CLI account", provider: "jira" });
-  const [draft, setDraft] = useState<{ values: SettingsForm; sha256: string } | null>(null);
+  const [draft, setDraft] = useViewState<{ values: SettingsForm; sha256: string } | null>("project.settings.draft", null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
   const repo: Project["repo"] = raw?.repo as Project["repo"] | undefined ?? null;
@@ -255,11 +257,12 @@ function VariableTypeSelect({ value, disabled, onChange }: { value: VariableValu
   }} />;
 }
 
-function VariableCell({ value, disabled, onChange }: { value: VariableValue; disabled: boolean; onChange(value: VariableValue): void }) {
-  if ("rows" in value) return <details className={s.nestedValues}>
+function VariableCell({ rowPath, value, disabled, onChange }: { rowPath: string; value: VariableValue; disabled: boolean; onChange(value: VariableValue): void }) {
+  const [open, setOpen] = useViewState(`project.variables.open:${rowPath}`, false);
+  if ("rows" in value) return <details className={s.nestedValues} open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
       <summary>{value.rows.length} {value.kind === "list" ? "items" : "keys"}</summary>
       <VariableTable label={value.kind === "list" ? "List items" : "Object keys"} keyLabel={value.kind === "object" ? "Key" : undefined}
-        rows={value.rows} disabled={disabled} onChange={(rows) => onChange({ ...value, rows })} />
+        parent={rowPath} rows={value.rows} disabled={disabled} onChange={(rows) => onChange({ ...value, rows })} />
       <Button size="sm" icon={<PlusIcon />} disabled={disabled} onClick={() => onChange({ ...value, rows: [...value.rows, newVariable()] })}>{value.kind === "list" ? "Add item" : "Add key"}</Button>
     </details>;
   if (value.kind === "null") return null;
@@ -270,15 +273,15 @@ function VariableCell({ value, disabled, onChange }: { value: VariableValue; dis
     : <TextField ariaLabel="Value" mono value={value.text} disabled={disabled} onValueChange={(text) => onChange({ ...value, text })} />;
 }
 
-function VariableTable({ label, keyLabel, rows, disabled, onChange }: {
-  label: string; keyLabel?: string; rows: VariableRow[]; disabled: boolean;
+function VariableTable({ label, keyLabel, rows, disabled, onChange, parent = "" }: {
+  label: string; keyLabel?: string; rows: VariableRow[]; disabled: boolean; parent?: string;
   onChange(rows: VariableRow[]): void;
 }) {
   const update = (id: string, changes: Partial<Pick<VariableRow, "name" | "value">>): void => onChange(rows.map((row) => row.id === id ? { ...row, ...changes } : row));
   return <div className={s.variableTable}><Table label={label} rows={rows} rowKey={(row) => row.id} columns={[
     ...(keyLabel ? [{ key: "name", header: keyLabel, width: "30%", cell: (row: VariableRow) => <TextField ariaLabel={keyLabel} autoFocus={!row.name} mono disabled={disabled} value={row.name} onValueChange={(name) => update(row.id, { name })} /> }] : []),
     { key: "type", header: "Type", width: "9.5rem", cell: (row) => <VariableTypeSelect value={row.value} disabled={disabled} onChange={(value) => update(row.id, { value })} /> },
-    { key: "value", header: "Value", cell: (row) => <VariableCell value={row.value} disabled={disabled} onChange={(value) => update(row.id, { value })} /> },
+    { key: "value", header: "Value", cell: (row) => <VariableCell rowPath={`${parent}/${row.id}`} value={row.value} disabled={disabled} onChange={(value) => update(row.id, { value })} /> },
     { key: "remove", header: "", width: "3rem", cell: (row) => <IconButton label={row.name ? `Remove ${row.name}` : "Remove row"} icon={<TrashIcon />}
       disabled={disabled} onClick={() => onChange(rows.filter(({ id }) => id !== row.id))} /> },
   ]} /></div>;
@@ -310,7 +313,7 @@ function parseVariable(value: VariableValue, name: string): unknown {
 function ProjectVariables({ id, onSaved }: { id: string; onSaved(): void }) {
   const connected: boolean = useConnected();
   const { path, file, raw } = useProjectDefinition(id);
-  const [draft, setDraft] = useState<{ rows: VariableRow[]; sha256: string } | null>(null);
+  const [draft, setDraft] = useViewState<{ rows: VariableRow[]; sha256: string } | null>("project.variables.draft", null);
   const [saved, setSaved] = useState(false);
   const current: VariableRow[] | null = raw && Object.entries(object(raw.variables))
     .map(([name, value], index) => ({ id: String(index), name, value: variableValue(value) }));
@@ -389,10 +392,7 @@ function ProjectDetails({ id }: { id: string }) {
   const navigate = useNavigate();
   const [query] = useSearchParams();
   const tab: string | null = query.get("tab");
-  const [activeTab, setActiveTab] = useState<string>(tab === "recipes" || tab === "variables" || tab === "knowledge" || tab === "project-manager" ? tab : "jobs");
-  useEffect(() => {
-    if (tab === "project-manager") setActiveTab(tab);
-  }, [tab]);
+  const [activeTab, setActiveTab] = useViewState("project.tab", tab === "recipes" || tab === "variables" || tab === "knowledge" || tab === "project-manager" ? tab : "jobs");
   const [deleting, setDeleting] = useState<boolean>(false);
   const [exporting, setExporting] = useState<boolean>(false);
   const [creatingJob, setCreatingJob] = useState<boolean>(false);

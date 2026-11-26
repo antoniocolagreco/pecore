@@ -7,6 +7,8 @@ import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { PageActions } from "../components/PageActions";
 import { ErrorText, ui } from "../components/ui";
+import { usePageScroll } from "../components/usePageScroll";
+import { useViewState } from "../components/useViewState";
 import { Button } from "../ds/button";
 import { List, ListItem } from "../ds/data";
 import { Alert, Card, Spinner } from "../ds/feedback";
@@ -63,13 +65,14 @@ function KnowledgeFile({ path, name, creating, names, busy, onCreated, onDirty, 
 }
 
 export function KnowledgeBase({ id }: { id: string }) {
+  const { page: list } = usePageScroll<HTMLElement>("project.knowledge.list");
   const connected: boolean = useConnected();
   const dir: string = `projects/${id}/knowledge`;
   const entries = useData(() => call("listDefinitions", { query: { dir } }), [dir],
     (m) => m.type === "definition.changed" && m.path.startsWith(dir + "/"));
   const files = (entries.data ?? []).filter(({ path }) => path.endsWith(".md")).map((entry) => ({ name: entry.path.slice(dir.length + 1), links: links(entry) }));
   const names: string[] = files.map(({ name }) => name);
-  const [selected, setSelected] = useState<Selection | null>(null);
+  const [selected, setSelected] = useViewState<Selection | null>("project.knowledge.selection", null);
   const [dirty, setDirty] = useState<boolean>(false);
   const [canSave, setCanSave] = useState<boolean>(false);
   const [dialog, setDialog] = useState<"new" | "rename" | "delete" | null>(null);
@@ -89,7 +92,7 @@ export function KnowledgeBase({ id }: { id: string }) {
     setDirty(false);
     setSelected(next);
   };
-  const created = useMemo(() => () => setSelected((current) => current && { ...current, creating: false }), []);
+  const created = useMemo(() => () => setSelected((current) => current && { ...current, creating: false }), [setSelected]);
   const rename = useAction(async () => {
     if (!selected) return;
     await call("renameKnowledge", { params: { id }, body: { from: selected.name, to: candidate } });
@@ -166,7 +169,7 @@ export function KnowledgeBase({ id }: { id: string }) {
       receiveFiles([...event.dataTransfer.files]);
     }}>
     {dropping && <div className={s.drop} aria-hidden="true">Drop Markdown files to add them to the knowledge</div>}
-    <Card className={s.list} padded={false}>
+    <Card ref={list} className={s.list} padded={false}>
       <PageActions>
         <Button disabled={!connected || busy} onClick={() => open("new")}>New file</Button>
         <Button disabled={!canUpload} onClick={() => input.current?.click()}>{upload.busy ? "Uploading…" : "Upload"}</Button>

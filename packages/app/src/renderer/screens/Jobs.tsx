@@ -7,6 +7,7 @@ import { useConnected } from "../api/live";
 import { isFinal, JobControls } from "../components/JobControls";
 import { jobState, needsYou, reasonLabel, StateLabel } from "../components/states";
 import { dateTime, duration, ErrorText, Page } from "../components/ui";
+import { useViewState } from "../components/useViewState";
 import { Button, IconButton } from "../ds/button";
 import { TextTable } from "../ds/data";
 import { Card, EmptyState } from "../ds/feedback";
@@ -101,10 +102,10 @@ function Row({ row, factory, project, collapsed, toggle, now }: { row: JobRow; f
   );
 }
 
-export function JobTable({ jobs, factory = false, project = true, loading, empty }: { jobs: JobView[]; factory?: boolean; project?: boolean; loading: boolean; empty?: string }) {
+export function JobTable({ jobs, factory = false, project = true, loading, empty, filterKey = "" }: { jobs: JobView[]; factory?: boolean; project?: boolean; loading: boolean; empty?: string; filterKey?: string }) {
   const connected: boolean = useConnected();
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set<string>());
-  const [page, setPage] = useState<number>(0);
+  const [collapsed, setCollapsed] = useViewState<ReadonlySet<string>>(`jobTable.collapsed:${filterKey}`, () => new Set<string>());
+  const [page, setPage] = useViewState(`jobTable.page:${filterKey}`, 0);
   const [now, setNow] = useState<number>(Date.now);
   useEffect(() => {
     if (factory) return;
@@ -148,8 +149,8 @@ export function Jobs() {
   const [query, setQuery] = useSearchParams();
   const label: string = query.get("label") ?? "";
   const project: string | null = query.get("project");
-  const [archived, setArchived] = useState<ArchiveFilter>("false");
-  const [search, setSearch] = useState<string>("");
+  const [archived, setArchived] = useViewState<ArchiveFilter>("jobs.archived", "false");
+  const [search, setSearch] = useViewState("jobs.search", "");
   const jobs = useJobs(archived, project);
   const projects = useData(() => call("listProjects"), [], (m) => m.type === "project.updated");
   const setFilter = (name: string, value: string | null): void => {
@@ -187,7 +188,7 @@ export function Jobs() {
         />
       </div>
       <ErrorText error={jobs.error} />
-      <JobTable key={JSON.stringify([project, label, archived, search])} jobs={visible} loading={jobs.loading && !jobs.data} />
+      <JobTable filterKey={JSON.stringify([project, label, archived, search])} jobs={visible} loading={jobs.loading && !jobs.data} />
     </Page>
   );
 }
