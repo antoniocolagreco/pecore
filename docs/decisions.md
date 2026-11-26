@@ -579,3 +579,9 @@
 - Decision: GitHub Copilot CLI's default colour is `#8957E5`, a purple outside the 24 agent colours. The user's saved colour still wins.
 - Why: the author's choice for the tool's colour.
 - Replaces: indigo `#6366F1`.
+
+## 2026-11-26: AI tool colours are fixed
+
+- Decision: every AI tool has one fixed colour, defined in the app. The Colour button, its picker and Reset are removed from AI tools, and the saved per-tool colours are dropped. The state badge is the last element of an account row, at the right edge.
+- Why: the colours are part of each tool's identity; letting the user change them added state with no use.
+- Replaces: the colour picker, Reset and the `harnessColors` setting from 2026-11-24 and 2026-11-26.

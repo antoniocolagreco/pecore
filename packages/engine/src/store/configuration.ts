@@ -57,7 +57,6 @@ export class Configuration {
   settings(): Settings {
     const row: SettingsRow | undefined = this.db.prepare<[], SettingsRow>("SELECT * FROM settings WHERE id = 1").get();
     if (!row) return Settings.parse({});
-    const colors: { harness: string; color: string }[] = this.db.prepare<[], { harness: string; color: string }>("SELECT harness, color FROM harness_colors ORDER BY harness").all();
     const ui: { name: string; value: string }[] = this.db.prepare<[], { name: string; value: string }>("SELECT name, value FROM ui_preferences ORDER BY name").all();
     return Settings.parse({
       user: { name: row.user_name },
@@ -67,7 +66,6 @@ export class Configuration {
       mergeCheckSec: row.merge_check_sec,
       projectsFolder: row.projects_folder,
       protectedMode: !!row.protected_mode,
-      harnessColors: Object.fromEntries(colors.map(({ harness, color }) => [harness, color])),
       ui: Object.fromEntries(ui.map(({ name, value }) => [name, JSON.parse(value)])),
     });
   }
@@ -120,13 +118,11 @@ export class Configuration {
   }
 
   private writeSettings(value: Settings): void {
-    this.db.exec("DELETE FROM settings; DELETE FROM harness_colors; DELETE FROM ui_preferences");
-    const { user, limits, servicesRuntime, minFreeDiskGb, mergeCheckSec, projectsFolder, protectedMode, harnessColors, ui } = value;
+    this.db.exec("DELETE FROM settings; DELETE FROM ui_preferences");
+    const { user, limits, servicesRuntime, minFreeDiskGb, mergeCheckSec, projectsFolder, protectedMode, ui } = value;
     this.db.prepare("INSERT INTO settings VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)").run(
       user.name, limits.jobs, limits.agents, servicesRuntime, minFreeDiskGb, mergeCheckSec, projectsFolder, Number(protectedMode),
     );
-    const color: Database.Statement<[string, string]> = this.db.prepare("INSERT INTO harness_colors (harness, color) VALUES (?, ?)");
-    for (const [harness, value] of Object.entries(harnessColors)) color.run(harness, value);
     const preference: Database.Statement<[string, string]> = this.db.prepare("INSERT INTO ui_preferences (name, value) VALUES (?, ?)");
     for (const [name, value] of Object.entries(ui)) if (value !== undefined) preference.run(name, JSON.stringify(value));
   }
