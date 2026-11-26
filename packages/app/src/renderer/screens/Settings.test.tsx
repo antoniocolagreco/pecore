@@ -28,16 +28,21 @@ vi.mock("../api/live", async () => {
   };
 });
 
-it("shows the active Jira CLI identity and refreshes it independently", async () => {
+it("shows the logged-in Jira account in Trackers and refreshes it with the group Check", async () => {
   const fallback = api.call.getMockImplementation()!;
   let site: string = "first.atlassian.net";
   api.call.mockImplementation(async (route: string) => route === "getActiveJira" ? {
     site, account: { id: "jira-login", kind: "service", service: "Jira", tool: "acli", user: "alice@example.test" },
   } : fallback(route));
   render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
+  const trackers: HTMLElement = (await screen.findByRole("heading", { name: "Trackers" })).closest("header")!;
   await screen.findByText("alice@example.test · first.atlassian.net");
+  expect(screen.queryByRole("heading", { name: "Atlassian" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Jira" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Linear" })).toBeNull();
+  expect(screen.queryByText(/Atlassian MCP server|Atlassian CLI/)).toBeNull();
   site = "second.atlassian.net";
-  await userEvent.setup().click(screen.getByRole("button", { name: "Check Jira login" }));
+  await userEvent.setup().click(within(trackers).getByRole("button", { name: "Check" }));
   await screen.findByText("alice@example.test · second.atlassian.net");
 });
 
@@ -79,9 +84,9 @@ it("restores the Settings filter and scroll without jumping to the original sect
 });
 
 it.each([
-  { id: "atlassian", name: "Atlassian" },
-  { id: "linear", name: "Linear" },
-])("adds the $name service account and starts browser sign-in", async ({ id, name }) => {
+  { id: "atlassian", name: "Jira", service: "Atlassian" },
+  { id: "linear", name: "Linear", service: "Linear" },
+])("adds a $name tracker from Add account and starts browser sign-in", async ({ id, name, service }) => {
   const fallback = api.call.getMockImplementation()!;
   let accounts: Accounts = { accounts: [] };
   let sha256: string = "accounts-v1";
@@ -97,12 +102,38 @@ it.each([
   });
   render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
   const user = userEvent.setup();
-  const add: HTMLButtonElement = await screen.findByRole("button", { name: `Add ${name} account` });
+  const trackers: HTMLElement = (await screen.findByRole("heading", { name: "Trackers" })).closest("header")!;
+  const add: HTMLButtonElement = within(trackers).getByRole("button", { name: "Add account" });
   await waitFor(() => expect(add.disabled).toBe(false));
   await user.click(add);
+  const dialog = within(await screen.findByRole("dialog", { name: "Add a tracker account" }));
+  if (name !== "Jira") {
+    dialog.getByRole("combobox", { name: "Tracker" }).focus();
+    await user.keyboard("{ArrowDown}");
+    await user.click(await screen.findByRole("option", { name }));
+  }
+  await user.click(dialog.getByRole("button", { name: "Add account" }));
   await waitFor(() => expect(api.call).toHaveBeenCalledWith("startAccountLogin", { params: { id } }));
-  expect(accounts.accounts).toEqual([{ id, kind: "service", service: name, tool: id, user: `${name} account` }]);
+  expect(accounts.accounts).toEqual([{ id, kind: "service", service, tool: id, user: `${service} account` }]);
   expect(screen.queryByLabelText("Login code")).toBeNull();
+});
+
+it("keeps the tracker dialog open when the account cannot be saved", async () => {
+  const fallback = api.call.getMockImplementation()!;
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "putAccounts") throw new Error("The account could not be saved.");
+    return fallback(route);
+  });
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
+  const user = userEvent.setup();
+  const trackers: HTMLElement = (await screen.findByRole("heading", { name: "Trackers" })).closest("header")!;
+  const add: HTMLButtonElement = within(trackers).getByRole("button", { name: "Add account" });
+  await waitFor(() => expect(add.disabled).toBe(false));
+  await user.click(add);
+  const dialog = within(await screen.findByRole("dialog", { name: "Add a tracker account" }));
+  await user.click(dialog.getByRole("button", { name: "Add account" }));
+  await screen.findByText("The account could not be saved.");
+  expect(screen.getByRole("dialog", { name: "Add a tracker account" })).toBeTruthy();
 });
 
 it("checks only the accounts in the selected panel and keeps Check out of account rows", async () => {
@@ -112,6 +143,7 @@ it("checks only the accounts in the selected panel and keeps Check out of accoun
     { id: "codex", kind: "model", provider: "openai", connector: "codex", login: "subscription" },
     { id: "github", kind: "forge", forge: "github", tool: "gh", host: "github.com", user: "ada", author: { name: "", email: "" } },
     { id: "gitlab", kind: "forge", forge: "gitlab", tool: "glab", host: "gitlab.com", user: "lin", author: { name: "", email: "" } },
+    { id: "atlassian", kind: "service", service: "Atlassian", tool: "atlassian", user: "Atlassian account" },
   ] });
   const logins: LoginView[] = [
     { id: "claude:local", account: "claude", osUser: "local", connector: "claude-code", defaultDir: true, state: "logged_in", email: null, plan: null, running: false },
@@ -135,7 +167,7 @@ it("checks only the accounts in the selected panel and keeps Check out of accoun
     expect(modelCheck.disabled).toBe(false);
     expect(forgeCheck.disabled).toBe(false);
   });
-  expect(screen.getAllByRole("button", { name: "Check" })).toHaveLength(2);
+  expect(screen.getAllByRole("button", { name: "Check" })).toHaveLength(3);
 
   api.call.mockClear();
   await user.click(modelCheck);
@@ -149,6 +181,15 @@ it("checks only the accounts in the selected panel and keeps Check out of accoun
   expect(api.call.mock.calls.filter(([route]) => route.startsWith("recheck"))).toEqual([
     ["recheckAccount", { params: { id: "github" } }],
     ["recheckAccount", { params: { id: "gitlab" } }],
+  ]);
+
+  const trackerHeader: HTMLElement = screen.getByRole("heading", { name: "Trackers" }).closest("header")!;
+  const trackerCheck: HTMLButtonElement = within(trackerHeader).getByRole("button", { name: "Check" });
+  await waitFor(() => expect(trackerCheck.disabled).toBe(false));
+  api.call.mockClear();
+  await user.click(trackerCheck);
+  expect(api.call.mock.calls.filter(([route]) => route.startsWith("recheck"))).toEqual([
+    ["recheckAccount", { params: { id: "atlassian" } }],
   ]);
 });
 
@@ -169,7 +210,8 @@ it("shows checking only in the pending provider rows and keeps other settings us
   expect(within(pendingRows[0]!).getByText("Claude Code")).toBeTruthy();
   expect(within(pendingRows[1]!).getByText("GitHub")).toBeTruthy();
   expect(within(pendingRows[1]!).getByText("AWS CodeCommit")).toBeTruthy();
-  expect(screen.getByRole<HTMLButtonElement>("button", { name: "Add account" }).disabled).toBe(false);
+  const forgeHeader: HTMLElement = screen.getByRole("heading", { name: "Git hosting" }).closest("header")!;
+  expect(within(forgeHeader).getByRole<HTMLButtonElement>("button", { name: "Add account" }).disabled).toBe(false);
   expect(screen.queryByText(/No AI tools yet/)).toBeNull();
 
   pending = ["claude-code", "codecommit"];
@@ -217,7 +259,8 @@ it.each([
 ])("only asks for the fields needed by $service", async ({ service, placeholder, server, aws, required }) => {
   const user: ReturnType<typeof userEvent.setup> = userEvent.setup();
   render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
-  const add: HTMLButtonElement = await screen.findByRole("button", { name: "Add account" });
+  const forgeHeader: HTMLElement = (await screen.findByRole("heading", { name: "Git hosting" })).closest("header")!;
+  const add: HTMLButtonElement = within(forgeHeader).getByRole("button", { name: "Add account" });
   await waitFor(() => expect(add.disabled).toBe(false));
   await user.click(add);
   const dialog = within(await screen.findByRole("dialog", { name: "Add a Git hosting account" }));
@@ -275,7 +318,8 @@ it.each([
   });
   const user: ReturnType<typeof userEvent.setup> = userEvent.setup();
   render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
-  const add: HTMLButtonElement = await screen.findByRole("button", { name: "Add account" });
+  const forgeHeader: HTMLElement = (await screen.findByRole("heading", { name: "Git hosting" })).closest("header")!;
+  const add: HTMLButtonElement = within(forgeHeader).getByRole("button", { name: "Add account" });
   await waitFor(() => expect(add.disabled).toBe(false));
   await user.click(add);
   const dialog = within(await screen.findByRole("dialog"));

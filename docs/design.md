@@ -145,6 +145,8 @@ Accounts shows each installed harness automatically. A row shows the identity wh
 
 Git hosting discovers GitHub, GitLab and CodeCommit accounts at startup. A manual GitHub or GitLab account starts the forge login and saves its username on success. The author name and email come from global Git settings and can be edited.
 
+Trackers shows one row per tracker account with its name, site or account and login state. A Jira login from the Atlassian CLI appears on its own. Adding an account asks which tracker and starts browser sign-in. The app chooses the CLI or the MCP bridge; the user never sees the choice.
+
 There is no Models section. The user picks provider, model and effort on the Agents page. Effort is locked until a model is chosen. It shows the chosen model's options, falls back to Default alone when none exist and resets to Default on model changes. The app loads model lists at startup and caches them. A refresh button beside Model reloads the choices. Selects and comboboxes use the same arrow and no clear button. Focus uses one ring. Loading choices shows a spinner without making the field look disabled.
 
 ### Appearance
