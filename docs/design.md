@@ -135,7 +135,7 @@ The app fits a 1024×720 window. The sidebar stays on the left, the page in the 
 
 Tables, lists and graphs use the full width. Standalone forms and reading pages have a centred maximum width. A form inside a full-width page keeps its maximum width and aligns left. The top bar has global search and pause or play. Project filtering belongs on the pages that support it. The sidebar has no engine status line. The disconnected banner tells the user when the engine is unavailable.
 
-Back and Forward restore how the user left each visit: filters, search, selected tab, expanded sections and scroll. Opening the same page again starts a separate visit.
+Back and Forward restore how the user left each visit: filters, search, selected tab, expanded sections and scroll. Both work from the keyboard and mouse side buttons. Opening the same page again starts a separate visit.
 
 ### Settings and accounts
 

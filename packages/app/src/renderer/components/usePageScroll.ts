@@ -1,22 +1,18 @@
-import { useContext, useLayoutEffect, useRef } from "react";
-import { UNSAFE_LocationContext, UNSAFE_NavigationContext } from "react-router";
+import { useLayoutEffect, useRef } from "react";
+import { useLocation } from "react-router";
+import { useViewHistory } from "./ViewHistoryProvider";
 
-type Position = { top: number; left: number };
-type History = { entries: Map<string, Position>; recent: Map<string, Position> };
-const histories = new WeakMap<object, History>();
 export const restorePageScroll = { restorePageScroll: true };
 
 export function usePageScroll<T extends HTMLElement = HTMLDivElement>(scope = "page", anchor?: string | null, anchorReady = true) {
   const page = useRef<T>(null);
   const content = useRef<HTMLDivElement>(null);
-  const location = useContext(UNSAFE_LocationContext)?.location;
-  const navigator = useContext(UNSAFE_NavigationContext)?.navigator;
+  const location = useLocation();
+  const history = useViewHistory().scroll;
 
   useLayoutEffect(() => {
     const viewport = page.current;
-    if (!viewport || !location || !navigator) return;
-    const history = histories.get(navigator) ?? { entries: new Map(), recent: new Map() };
-    histories.set(navigator, history);
+    if (!viewport) return;
     const { key, pathname, search, hash, state } = location;
     const entry = JSON.stringify([key, pathname, scope]);
     const path = JSON.stringify([pathname + search + hash, scope]);
@@ -79,7 +75,7 @@ export function usePageScroll<T extends HTMLElement = HTMLDivElement>(scope = "p
       viewport.removeEventListener("pointerdown", finish);
       viewport.removeEventListener("keydown", onKeyDown);
     };
-  }, [location, navigator, scope, anchor, anchorReady]);
+  }, [location, history, scope, anchor, anchorReady]);
 
   return { page, content };
 }

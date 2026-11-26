@@ -15,7 +15,16 @@ export function useHistoryShortcuts(): void {
       event.preventDefault();
       void navigate(back ? -1 : 1);
     };
+    const onMouseUp = (event: MouseEvent): void => {
+      if (event.defaultPrevented || (event.button !== 3 && event.button !== 4)) return;
+      event.preventDefault();
+      void navigate(event.button === 3 ? -1 : 1);
+    };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
   }, [navigate]);
 }

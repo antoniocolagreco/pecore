@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
+import { ViewHistoryProvider } from "../components/ViewHistoryProvider";
 import "../ds/tokens.css";
 import "../theme/global.css";
 import { ToastProvider, TooltipProvider } from "../ds/overlay";
@@ -13,7 +14,7 @@ createRoot(document.getElementById("root")!).render(
       <ToastProvider>
         <MemoryRouter>
           <div className={g.standalone}>
-            <Showcase />
+            <ViewHistoryProvider><Showcase /></ViewHistoryProvider>
           </div>
         </MemoryRouter>
       </ToastProvider>

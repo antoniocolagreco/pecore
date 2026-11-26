@@ -163,7 +163,7 @@ The prototype shows the Notifications list and detail pane and the node inspecto
 *   One list, without group titles. Order: Factory, Projects, Jobs, Notifications (IA2), Templates, Agents, Settings, Showcase.
 *   Under the list, the open page's own sub-navigation: Settings sections, Showcase sections.
 *   Back and Forward restore the filters, search text, selected tab, expanded sections and scroll position of that visit. A new visit starts with the page defaults. For example, returning from a node editor restores the Node templates search and position in the list.
-*   Use Alt+Left and Alt+Right, or Cmd+[ and Cmd+] on Mac. The existing Back links in editors also restore the list they return to.
+*   Use the mouse Back and Forward buttons, Alt+Left and Alt+Right, or Cmd+[ and Cmd+] on Mac. The existing Back links in editors also restore the list they return to.
 *   Note: a project's recipes, nodes and settings are reached through Projects; the node editor and the job view are detail pages, not menu items.
 *   Page width follows the content: pages with tables, lists or graphs (Factory, Jobs, Projects, Notifications, a project page, a job) use the full width; pages that are only a form or text to read (Settings, the wizards) are centred with a maximum width. Inside a full-width page, a form keeps its maximum width and stays aligned to the left with the tabs.
 

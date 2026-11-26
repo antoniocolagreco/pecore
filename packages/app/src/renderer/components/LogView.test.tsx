@@ -1,10 +1,12 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
 import { ApiError } from "@pecore/schemas";
 import type { LiveMessage, LogEvent } from "@pecore/schemas";
-import { createMemoryRouter, RouterProvider } from "react-router";
+import { createMemoryRouter, MemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LogView } from "./LogView";
+import { ViewHistoryProvider } from "./ViewHistoryProvider";
 
 const api = vi.hoisted(() => ({
   call: vi.fn(),
@@ -40,6 +42,10 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
+function LogRouter({ children }: { children: ReactNode }) {
+  return <ViewHistoryProvider><MemoryRouter>{children}</MemoryRouter></ViewHistoryProvider>;
+}
+
 describe("attempt log", () => {
   it("renders stored ACP events and displays the same attempt as raw JSON on request", async () => {
     const user: ReturnType<typeof userEvent.setup> = userEvent.setup();
@@ -52,7 +58,7 @@ describe("attempt log", () => {
     ];
     const line: { dir: string; line: string; at: number } = { dir: "err", line: "Harness diagnostic", at: 4 };
     api.call.mockResolvedValueOnce({ view: "events", events }).mockResolvedValue({ view: "raw", lines: [line] });
-    render(<LogView attemptId="attempt-a" running={false} />);
+    render(<LogView attemptId="attempt-a" running={false} />, { wrapper: LogRouter });
 
     expect(screen.getByText("Loading log…")).toBeTruthy();
     expect(await screen.findByText("Writing the spec")).toBeTruthy();
@@ -69,7 +75,7 @@ describe("attempt log", () => {
   it("subscribes to the open attempt, merges live events, and ignores other attempts", async () => {
     const saved: LogEvent = { type: "text", text: "Saved", at: 5 };
     api.call.mockResolvedValue({ view: "events", events: [{ type: "text", text: "Earlier", at: 4 }, saved] });
-    const mounted: ReturnType<typeof render> = render(<LogView attemptId="attempt-a" running />);
+    const mounted: ReturnType<typeof render> = render(<LogView attemptId="attempt-a" running />, { wrapper: LogRouter });
     expect(await screen.findByText("Saved")).toBeTruthy();
     expect(api.subscribe).toHaveBeenCalledWith("attempt-a");
 
@@ -90,7 +96,7 @@ describe("attempt log", () => {
     const user: ReturnType<typeof userEvent.setup> = userEvent.setup();
     const events: LogEvent[] = Array.from({ length: 151 }, (_, i) => ({ type: "text", text: `Event ${i}`, at: i }));
     api.call.mockResolvedValue({ view: "events", events });
-    render(<LogView attemptId="attempt-a" running={false} />);
+    render(<LogView attemptId="attempt-a" running={false} />, { wrapper: LogRouter });
     expect(await screen.findByText("Event 150")).toBeTruthy();
     expect(screen.queryByText("Event 0")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Show more (older)" }));
@@ -108,7 +114,7 @@ describe("attempt log", () => {
       { path: "/", element: <LogView attemptId="attempt-history" running={false} /> },
       { path: "/jobs", element: <h1>Jobs</h1> },
     ]);
-    render(<RouterProvider router={router} />);
+    render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Raw" }));
     await user.click(await screen.findByRole("button", { name: "Show more (older)" }));
@@ -126,7 +132,7 @@ describe("attempt log", () => {
   it("shows that an omitted log is unavailable in both views", async () => {
     const user: ReturnType<typeof userEvent.setup> = userEvent.setup();
     api.call.mockRejectedValue(new ApiError(410, "gone", "the attempt log is unavailable"));
-    render(<LogView attemptId="imported" running={false} />);
+    render(<LogView attemptId="imported" running={false} />, { wrapper: LogRouter });
     expect(await screen.findByText("Log unavailable")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Raw" }));
     expect(await screen.findByText("Log unavailable")).toBeTruthy();
@@ -135,7 +141,7 @@ describe("attempt log", () => {
   it("distinguishes an empty log from a failed request and disables controls offline", async () => {
     api.connected = false;
     api.call.mockResolvedValueOnce({ view: "events", events: [] }).mockRejectedValue(new Error("Engine disconnected"));
-    const mounted: ReturnType<typeof render> = render(<LogView attemptId="empty" running={false} />);
+    const mounted: ReturnType<typeof render> = render(<LogView attemptId="empty" running={false} />, { wrapper: LogRouter });
     expect(await screen.findByText("No log events.")).toBeTruthy();
     const raw: HTMLElement = screen.getByRole("button", { name: "Raw" });
     expect(raw.hasAttribute("disabled")).toBe(true);

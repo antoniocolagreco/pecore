@@ -3,6 +3,7 @@ import { useSyncExternalStore } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import { Page, ui } from "./ui";
+import { ViewHistoryProvider } from "./ViewHistoryProvider";
 
 afterEach(() => {
   cleanup();
@@ -35,7 +36,7 @@ it("waits for the old scroll position to become reachable after returning", asyn
     { path: "/", element: <List /> },
     { path: "/item", element: <Page title="Item">Item details</Page> },
   ]);
-  render(<RouterProvider router={router} />);
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   const viewport = () => screen.getByRole("heading", { name: "List" }).closest<HTMLElement>(`.${ui.page}`)!;
   viewport().scrollTop = 320;
   fireEvent.scroll(viewport());

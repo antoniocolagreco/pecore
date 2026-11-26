@@ -4,6 +4,7 @@ import type { DefinitionEntry } from "@pecore/schemas";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ui } from "../components/ui";
+import { ViewHistoryProvider } from "../components/ViewHistoryProvider";
 import { NodeEditor } from "./NodeEditor";
 import { Templates } from "./Templates";
 
@@ -36,7 +37,7 @@ it("restores the node filter and scroll after opening a node and going back", as
     { path: "/templates", element: <Templates /> },
     { path: "/edit/node/*", element: <NodeEditor /> },
   ], { initialEntries: ["/templates"] });
-  render(<RouterProvider router={router} />);
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
 
   await screen.findByRole("link", { name: /Alpha/ });
   await user.type(screen.getByRole("searchbox", { name: "Search nodes" }), "alpha");

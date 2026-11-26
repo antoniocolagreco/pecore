@@ -1,9 +1,10 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, createEvent, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { createMemoryRouter, RouterProvider } from "react-router";
+import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes } from "react-router";
 import { afterEach, expect, it } from "vitest";
 import { useHistoryShortcuts } from "../shell/useHistoryShortcuts";
 import { useViewState } from "./useViewState";
+import { ViewHistoryProvider } from "./ViewHistoryProvider";
 
 function View({ label }: { label: string }) {
   useHistoryShortcuts();
@@ -22,7 +23,7 @@ it("restores each history entry on Back and Forward", async () => {
     { path: "/", element: <View label="First" /> },
     { path: "/second", element: <View label="Second" /> },
   ]);
-  render(<RouterProvider router={router} />);
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
 
   await user.type(screen.getByRole("textbox", { name: "First" }), "alpha");
   await user.click(screen.getByRole("button", { name: "First count: 0" }));
@@ -45,7 +46,7 @@ it("restores each history entry on Back and Forward", async () => {
 it("keeps filters when the URL is replaced and separates visits to the same page", async () => {
   const user = userEvent.setup();
   const router = createMemoryRouter([{ path: "/", element: <View label="Search" /> }]);
-  render(<RouterProvider router={router} />);
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   const input = () => screen.getByRole("textbox", { name: "Search" });
   await user.type(input(), "first");
   await act(() => router.navigate("/?filter=open", { replace: true }));
@@ -60,4 +61,34 @@ it("keeps filters when the URL is replaced and separates visits to the same page
   expect(input()).toHaveProperty("value", "first");
   await act(() => { fireEvent.keyDown(window, { key: "BrowserForward" }); });
   expect(input()).toHaveProperty("value", "second");
+});
+
+it("restores state when the mouse side buttons move one entry at a time", async () => {
+  const user = userEvent.setup();
+  render(<MemoryRouter initialEntries={["/first", "/second", "/third"]}>
+    <Routes>
+      <Route path="/first" element={<View label="First" />} />
+      <Route path="/second" element={<View label="Second" />} />
+      <Route path="/third" element={<View label="Third" />} />
+    </Routes>
+  </MemoryRouter>, { wrapper: ViewHistoryProvider });
+  const third = screen.getByRole("textbox", { name: "Third" });
+  await user.type(third, "remember me");
+  expect(fireEvent.mouseUp(third, { button: 1 })).toBe(true);
+  const back = createEvent.mouseUp(third, { button: 3 });
+  fireEvent(third, back);
+  expect(back.defaultPrevented).toBe(true);
+  const second = await screen.findByRole("textbox", { name: "Second" });
+  expect(fireEvent.mouseUp(second, { button: 4 })).toBe(false);
+  expect(await screen.findByRole("textbox", { name: "Third" })).toHaveProperty("value", "remember me");
+});
+
+it("starts with fresh history when a new provider mounts", async () => {
+  const mount = () => render(<MemoryRouter><View label="Search" /></MemoryRouter>, { wrapper: ViewHistoryProvider });
+  const first = mount();
+  const input = () => screen.getByRole("textbox", { name: "Search" });
+  await userEvent.setup().type(input(), "first window");
+  first.unmount();
+  mount();
+  expect(input()).toHaveProperty("value", "");
 });

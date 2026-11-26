@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { createHashRouter, Navigate, RouterProvider } from "react-router";
 import { startLive } from "./api/live";
+import { ViewHistoryProvider } from "./components/ViewHistoryProvider";
 import { Showcase } from "./gallery/Showcase";
 import { Layout } from "./shell/Layout";
 import { ThemeLoader } from "./theme/ThemeLoader";
@@ -42,7 +43,7 @@ createRoot(document.getElementById("root")!).render(
     <TooltipProvider>
       <ToastProvider>
         <ThemeLoader />
-        <RouterProvider router={router} />
+        <ViewHistoryProvider><RouterProvider router={router} /></ViewHistoryProvider>
       </ToastProvider>
     </TooltipProvider>
   </StrictMode>,

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { Project } from "@pecore/schemas";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
+import { ViewHistoryProvider } from "../components/ViewHistoryProvider";
 import { ProjectPage } from "./ProjectPage";
 
 const api = vi.hoisted(() => ({ call: vi.fn() }));
@@ -25,7 +26,7 @@ it("restores the project's tab and expanded variable on Forward", async () => {
     { path: "/", element: <h1>Factory</h1> },
     { path: "/projects/:id", element: <ProjectPage /> },
   ]);
-  render(<RouterProvider router={router} />);
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   await act(() => router.navigate("/projects/garden"));
   const user = userEvent.setup();
   await user.click(await screen.findByRole("tab", { name: "Variables" }));

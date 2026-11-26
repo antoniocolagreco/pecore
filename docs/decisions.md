@@ -487,3 +487,9 @@
 - Decision: Keep filters, search text, tabs, expanded sections and scroll for each visit during the app session. A new visit starts with defaults. An editor's Back link restores its list.
 - Why: Opening a node, job or recipe should not make the user find their place again.
 - Replaces: Reopening a previous page with its defaults.
+
+## 2026-11-26: Use mouse buttons for Back and Forward
+
+- Decision: Mouse Back and Forward buttons use the same history as the keyboard.
+- Why: A mouse press should return to the same place as a keyboard shortcut.
+- Replaces: App shortcuts that only handled keyboard input.
