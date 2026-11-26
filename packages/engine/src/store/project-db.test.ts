@@ -731,9 +731,28 @@ describe("chats.db", () => {
     }
   });
 
+  it("drops the AI tool colours saved by an older database", async () => {
+    const file: string = join(await tempDir(), "chats.db");
+    const old: Database.Database = new Database(file);
+    old.exec(await readFile(new URL("./migrations/chats-010-configuration.sql", import.meta.url), "utf8"));
+    old.exec(`CREATE TABLE schema_version (version INTEGER PRIMARY KEY);
+      INSERT INTO schema_version VALUES (39);
+      INSERT INTO harness_colors (harness, color) VALUES ('codex', '#14B8A6');
+      INSERT INTO settings VALUES (1, NULL, NULL, 4, NULL, 10, 300, '~', 0, NULL, 131072, 262144, NULL, 131072, 262144);`);
+    old.close();
+    const db = new ChatsDb(file);
+    try {
+      expect(db.version()).toBe(40);
+      expect(db.db.prepare("SELECT count(*) FROM sqlite_schema WHERE name = 'harness_colors'").pluck().get()).toBe(0);
+      expect(new Configuration(db.db).settings()).not.toHaveProperty("harnessColors");
+    } finally {
+      db.close();
+    }
+  });
+
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.version()).toBe(39);
+    expect(db.version()).toBe(40);
     for (let i = 0; i < notificationsKept + 3; i++) db.addNotification({ kind: "job", title: `n${i}`, body: "" }, 1000 + i);
     const kept = db.notifications();
     expect(kept).toHaveLength(notificationsKept);
@@ -749,13 +768,13 @@ describe("chats.db", () => {
     for (const name of old.db.prepare<[], string>("SELECT name FROM sqlite_schema WHERE type = 'table' AND name LIKE 'catalog_%' ORDER BY rowid DESC").pluck().all()) {
       old.db.exec(`DROP TABLE "${name}"`);
     }
-    old.db.exec(`DROP TABLE agent_contexts; DROP TABLE settings; DROP TABLE ui_preferences; DROP TABLE harness_colors;
+    old.db.exec(`DROP TABLE agent_contexts; DROP TABLE settings; DROP TABLE ui_preferences;
       DROP TABLE agents; DROP TABLE tier_profiles;
       DROP TABLE profiles; DROP TABLE accounts; DROP TABLE auto_setup_profiles; DROP TABLE theme_tokens; DROP TABLE themes;
       UPDATE schema_version SET version = 5`);
     old.close();
     const db = new ChatsDb(file);
-    expect(db.version()).toBe(39);
+    expect(db.version()).toBe(40);
     expect(db.messages(assistantChat)).toEqual([]);
     db.close();
   });

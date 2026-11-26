@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { HexColor } from "./harnesses";
 
 export const compactionSizes: readonly number[] = [65_536, 131_072, 262_144, 524_288, 1_048_576];
 const defaultCompaction = { auto: 131_072, max: 262_144 };
@@ -30,7 +29,6 @@ export const Settings = z
     mergeCheckSec: z.number().int().positive().default(300),
     projectsFolder: z.string().min(1).default("~"),
     protectedMode: z.boolean().default(false),
-    harnessColors: z.record(z.string(), HexColor).default({}),
     ui: z.record(z.string(), z.unknown()).default({}),
   })
   .strict();

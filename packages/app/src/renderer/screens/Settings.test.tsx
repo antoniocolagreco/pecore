@@ -246,35 +246,32 @@ it("shows every supported AI tool without an account and logs in from its row", 
   await waitFor(() => expect(api.call).toHaveBeenCalledWith("recheckLogin", { params: { id: "pi:local" } }));
 });
 
-it("resets an AI tool colour to its default from the colour dialog", async () => {
+it("keeps AI tool colours fixed and puts the state badge last", async () => {
   const fallback = api.call.getMockImplementation()!;
-  const saved: SettingsSchema = SettingsSchema.parse({ harnessColors: { codex: "#14B8A6" } });
   api.call.mockImplementation(async (route: string) => {
-    if (route === "getSettings") return { value: saved, sha256: "settings-v1" };
+    if (route === "getSetup") return { modelAccountWorks: false, harnesses: [
+      { connector: "claude-code", installed: false, version: null, loggedIn: false },
+      { connector: "codex", installed: true, version: "0.1.0", loggedIn: false },
+      { connector: "opencode", installed: false, version: null, loggedIn: false },
+      { connector: "pi", installed: false, version: null, loggedIn: false },
+    ] };
     return fallback(route);
   });
   const user = userEvent.setup();
   render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
   await user.click(await screen.findByRole("button", { name: "Show unavailable" }));
   const codex: HTMLElement = (await screen.findByText("Codex")).closest("li")!;
-  await user.click(within(codex).getByRole("button", { name: "Colour" }));
-  const dialog = within(await screen.findByRole("dialog", { name: "Codex colour" }));
-  const reset: HTMLButtonElement = dialog.getByRole("button", { name: "Reset" });
-  expect(reset.disabled).toBe(false);
-  await user.click(reset);
-  await waitFor(() => expect(api.call).toHaveBeenCalledWith("putSettings", {
-    body: { value: expect.objectContaining({ harnessColors: {} }), baseSha256: "settings-v1" },
-  }), { timeout: 1500 });
-});
-
-it("disables Reset when the AI tool has no saved colour", async () => {
-  const user = userEvent.setup();
-  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
-  await user.click(await screen.findByRole("button", { name: "Show unavailable" }));
-  const codex: HTMLElement = (await screen.findByText("Codex")).closest("li")!;
-  await user.click(within(codex).getByRole("button", { name: "Colour" }));
-  const dialog = within(await screen.findByRole("dialog", { name: "Codex colour" }));
-  expect(dialog.getByRole<HTMLButtonElement>("button", { name: "Reset" }).disabled).toBe(true);
+  expect(within(codex).queryByRole("button", { name: "Colour" })).toBeNull();
+  expect((codex.querySelector("span[aria-hidden]") as HTMLElement).style.getPropertyValue("--harness")).toBe("#EEF1F2");
+  const badge: HTMLElement = within(codex).getByText("Logged out");
+  const actions: HTMLElement = within(codex).getByRole("button", { name: "Log in" }).parentElement!;
+  expect(actions.contains(badge)).toBe(true);
+  expect(actions.lastElementChild).toBe(badge);
+  expect(codex.firstElementChild!.lastElementChild).toBe(actions);
+  const grok: HTMLElement = (await screen.findByText("Grok")).closest("li")!;
+  expect(within(grok).queryByRole("button")).toBeNull();
+  const grokBadge: HTMLElement = within(grok).getByText("Coming soon");
+  expect(grokBadge.parentElement).toBe(grok.firstElementChild!.lastElementChild);
 });
 
 it.each([

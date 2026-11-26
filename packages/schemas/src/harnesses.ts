@@ -19,6 +19,6 @@ export function modelOnlyHarness(id: string): boolean {
   return id === "opencode" || id === "pi";
 }
 
-export function harnessColor(id: string, overrides: Readonly<Record<string, string>>): string {
-  return overrides[id] ?? harnesses.find((harness) => harness.id === id)?.color ?? "#64748B";
+export function harnessColor(id: string): string {
+  return harnesses.find((harness) => harness.id === id)?.color ?? "#64748B";
 }

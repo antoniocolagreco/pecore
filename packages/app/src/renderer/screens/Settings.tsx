@@ -17,7 +17,7 @@ import { PasswordField, TextField } from "../ds/field";
 import { CheckCircleIcon, AlertIcon, EyeIcon, EyeOffIcon, PlusIcon, RefreshIcon } from "../ds/icons";
 import { Dialog } from "../ds/overlay";
 import { Select } from "../ds/select";
-import { ColorPicker, NumberField, Segmented } from "../ds/values";
+import { NumberField, Segmented } from "../ds/values";
 import { SidebarItem, SidebarSection } from "../shell/sidebar";
 import { builtInThemes, themePrefs } from "../theme/themes";
 import type { ThemePrefs } from "../theme/themes";
@@ -97,29 +97,10 @@ function initials(name: string): string {
   return name.split(/[\s·-]+/).filter(Boolean).slice(0, 2).map((word) => word[0]!.toUpperCase()).join("");
 }
 
-type HarnessColors = { colors: Record<string, string>; onColor(harness: string, color: string): void; onReset(harness: string): void };
-
-function HarnessColorButton({ harness, colors, onColor, onReset }: HarnessColors & { harness: HarnessInfo }) {
-  const connected: boolean = useConnected();
-  const [open, setOpen] = useState(false);
-  const color: string = harnessColor(harness.id, colors);
-  return <>
-    <Button size="sm" icon={<span className={s.dot} style={{ "--harness": color } as CSSProperties} />} disabled={!connected} onClick={() => setOpen(true)}>Colour</Button>
-    <Dialog open={open} onOpenChange={setOpen} title={`${harness.name} colour`} description="Used on agent cards and wherever this AI tool is shown." width={304}
-      footer={<>
-        <Button disabled={!connected || colors[harness.id] === undefined} onClick={() => onReset(harness.id)}>Reset</Button>
-        <Button variant="primary" onClick={() => setOpen(false)}>Done</Button>
-      </>}>
-      <ColorPicker label="Colour" value={color} disabled={!connected} onValueChange={(next) => onColor(harness.id, next)} />
-    </Dialog>
-  </>;
-}
-
-function ComingSoonTools(props: HarnessColors) {
+function ComingSoonTools() {
   return <ul className={s.rows} aria-label="Coming soon">
     {harnesses.filter(({ supported }) => !supported).map((harness) => (
-      <AccountRow key={harness.id} name={harness.name} detail="Not supported yet." state="coming_soon" checking={false} color={harnessColor(harness.id, props.colors)} muted
-        actions={<HarnessColorButton harness={harness} {...props} />} />
+      <AccountRow key={harness.id} name={harness.name} detail="Not supported yet." state="coming_soon" checking={false} color={harnessColor(harness.id)} muted actions={null} />
     ))}
   </ul>;
 }
@@ -132,8 +113,7 @@ function AccountRow({ name, detail, state, checking, actions, color, muted, chil
         <span className={s.rowTitle}>{name}</span>
         {detail && <span className={s.rowDetail}>{detail}</span>}
       </div>
-      {stateBadge(state, checking)}
-      <div className={s.rowActions}>{actions}</div>
+      <div className={s.rowActions}>{actions}{stateBadge(state, checking)}</div>
     </div>
     {children && <div className={s.rowExtra}>{children}</div>}
   </li>;
@@ -146,9 +126,9 @@ function DiscoveringProviders({ providers }: { providers: { id: string; name: st
   </ul>;
 }
 
-function LoginControls({ title, actions, children, accounts, protectedOnly = false, kind = "model", harnessColors, hideMissing = false, pendingLogin, onLoginStarted, onEdit, extra, rowOverrides, refresh }: {
+function LoginControls({ title, actions, children, accounts, protectedOnly = false, kind = "model", hideMissing = false, pendingLogin, onLoginStarted, onEdit, extra, rowOverrides, refresh }: {
   title?: string; actions?: ReactNode; children?: ReactNode;
-  accounts: Account[]; protectedOnly?: boolean; kind?: "model" | "tool"; harnessColors?: HarnessColors; hideMissing?: boolean;
+  accounts: Account[]; protectedOnly?: boolean; kind?: "model" | "tool"; hideMissing?: boolean;
   pendingLogin?: string; onLoginStarted?(): void; onEdit?(account: ForgeAccount): void; extra?: ExtraAccountRow[];
   rowOverrides?: Record<string, RowOverride>; refresh?(): Promise<unknown> | void;
 }) {
@@ -261,12 +241,11 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
       {visible.map((account) => {
         if (account.kind === "model") {
           const name: string = harnessName(account, accounts);
-          const harness: HarnessInfo = harnesses.find(({ id }) => id === account.connector) ?? { id: account.connector, name, color: harnessColor(account.connector, {}), supported: true };
-          const color: string | undefined = harnessColors && harnessColor(harness.id, harnessColors.colors);
-          const colorButton: ReactNode = harnessColors && <HarnessColorButton harness={harness} {...harnessColors} />;
+          const harness: HarnessInfo = harnesses.find(({ id }) => id === account.connector) ?? { id: account.connector, name, color: harnessColor(account.connector), supported: true };
+          const color: string = harnessColor(harness.id);
           const items = modelLogins.filter((login) => login.account === account.id);
           if (!items.length && !logins.loading && hideMissing) return null;
-          if (!items.length) return <AccountRow key={account.id} name={name} color={color} detail={logins.loading ? "Loading…" : "No login found."} state="unknown" checking={logins.loading} actions={colorButton} />;
+          if (!items.length) return <AccountRow key={account.id} name={name} color={color} detail={logins.loading ? "Loading…" : "No login found."} state="unknown" checking={logins.loading} actions={null} />;
           return items.map((login) => {
             const current: Progress | undefined = progress[login.id];
             const running: boolean = loginRunning(login.id, login.running);
@@ -275,10 +254,9 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
               ? login.email + (login.plan ? " · " + login.plan : "")
               : state === "no_models" ? `Open ${name} and set up a model provider, then check again.`
               : state === "logged_out" && login.defaultDir ? `Log in with ${name} on this computer, then check again.` : protectedOnly ? "As pecore-agent" : "";
-            return <AccountRow key={login.id} name={name} color={color} detail={detail} state={state} checking={checking.has(login.id)} actions={<>
-              {!login.defaultDir && login.state !== "logged_in" && <Button size="sm" variant="primary" disabled={locked || running} onClick={() => void start.run(account, login.osUser, login.id)}>Log in</Button>}
-              {colorButton}
-            </>}>
+            return <AccountRow key={login.id} name={name} color={color} detail={detail} state={state} checking={checking.has(login.id)} actions={
+              !login.defaultDir && login.state !== "logged_in" && <Button size="sm" variant="primary" disabled={locked || running} onClick={() => void start.run(account, login.osUser, login.id)}>Log in</Button>
+            }>
               {(current || running) && <LoginOutput id={login.id} progress={current} running={running} />}
             </AccountRow>;
           });
@@ -314,11 +292,10 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
         const id: string | undefined = setupRuns[harness.id];
         const current: Progress | undefined = id ? progress[id] : undefined;
         const running: boolean = !!id && !current?.done;
-        return <AccountRow key={`harness:${harness.id}`} name={harness.name} color={harnessColors && harnessColor(harness.id, harnessColors.colors)}
-          detail={detail} state={label} checking={loading} actions={<>
-            {!loading && installed && !loggedIn && <Button size="sm" variant="primary" disabled={locked || running} onClick={() => void startSetup.run(harness.id as BuiltInHarnessId)}>Log in</Button>}
-            {harnessColors && <HarnessColorButton harness={harness} {...harnessColors} />}
-          </>}>
+        return <AccountRow key={`harness:${harness.id}`} name={harness.name} color={harnessColor(harness.id)}
+          detail={detail} state={label} checking={loading} actions={
+            !loading && installed && !loggedIn && <Button size="sm" variant="primary" disabled={locked || running} onClick={() => void startSetup.run(harness.id as BuiltInHarnessId)}>Log in</Button>
+          }>
           {id && <LoginOutput id={id} progress={current} running={running} />}
         </AccountRow>;
       })}
@@ -447,11 +424,6 @@ export function Settings() {
     && !accounts.current?.accounts.some((account) => account.kind === "model" && account.connector === id))
     .flatMap((id) => harnesses.filter((harness) => harness.id === id));
   const pendingForges = ForgeDiscovery.options.filter((id) => discovery.data?.includes(id)).map((id) => ({ id, name: forgeServices[id].label }));
-  const harnessColors: HarnessColors | undefined = value && {
-    colors: value.harnessColors,
-    onColor: (harness, color) => update({ ...value, harnessColors: { ...value.harnessColors, [harness]: color } }),
-    onReset: (harness) => update({ ...value, harnessColors: Object.fromEntries(Object.entries(value.harnessColors).filter(([id]) => id !== harness)) }),
-  };
 
   const go = (id: string): void => {
     setActive(id);
@@ -470,13 +442,13 @@ export function Settings() {
         <Section id="accounts" title="Accounts" description={`The AI tools and the code hosting accounts ${appName} works with.`} plain>
           <ErrorText error={accounts.error ?? accounts.loadError ?? discovery.error} />
           <div className={s.groups}>
-            <LoginControls title="AI tools" accounts={accounts.current?.accounts ?? []} harnessColors={harnessColors} hideMissing={!showUnavailable}
+            <LoginControls title="AI tools" accounts={accounts.current?.accounts ?? []} hideMissing={!showUnavailable}
               actions={<Button size="sm" icon={showUnavailable ? <EyeOffIcon /> : <EyeIcon />} aria-pressed={showUnavailable}
                 onClick={() => setShowUnavailable(!showUnavailable)}>{showUnavailable ? "Hide unavailable" : "Show unavailable"}</Button>}>
               {!showUnavailable && !accounts.current?.accounts.some(({ kind }) => kind === "model") && !pendingHarnesses.length && accounts.current && discovery.data &&
                 <p className={s.groupText}>No AI tools yet. The ones you log in to on this computer show up here on their own.</p>}
               {!showUnavailable && <DiscoveringProviders providers={pendingHarnesses} />}
-              {harnessColors && showUnavailable && <ComingSoonTools {...harnessColors} />}
+              {showUnavailable && <ComingSoonTools />}
             </LoginControls>
             <LoginControls title="Git hosting" accounts={accounts.current?.accounts.filter(({ kind }) => kind === "forge") ?? []} kind="tool" pendingLogin={pendingLogin}
               onLoginStarted={() => setPendingLogin(undefined)} onEdit={setForgeDialog}
