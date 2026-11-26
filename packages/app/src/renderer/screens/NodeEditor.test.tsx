@@ -43,10 +43,10 @@ it("offers only the four editable node kinds", async () => {
   render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   const user = userEvent.setup();
   await user.click(await screen.findByRole("combobox", { name: "Kind" }));
-  expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Agent", "Command", "Human", "Repository"]);
-  await user.click(screen.getByRole("option", { name: "Command" }));
+  await waitFor(() => expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Agent", "Command", "Human", "Repository"]));
+  await user.click(await screen.findByRole("option", { name: "Command" }));
   await user.click(await screen.findByRole("combobox", { name: "Output of success" }));
-  expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Nothing", "Spec", "Code review", "Code analysis", "Commit SHA", "Pull request", "Feedback", "Log"]);
+  await waitFor(() => expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Nothing", "Spec", "Code review", "Code analysis", "Commit SHA", "Pull request", "Feedback", "Log"]));
 });
 
 it("sets Tracker access and account on an Agent", async () => {
@@ -83,9 +83,6 @@ it("sets Tracker access and account on an Agent", async () => {
 });
 
 it("shows the saved script before approving it for chat in protected mode", async () => {
-  const rect: DOMRect = new DOMRect();
-  Object.defineProperty(Range.prototype, "getClientRects", { configurable: true, value: () => [rect] });
-  Object.defineProperty(Range.prototype, "getBoundingClientRect", { configurable: true, value: () => rect });
   const node: Node = Node.parse({
     kind: "repository", name: "publish", description: "Publish work", account: "project.account",
     script: "git status", outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }],
@@ -147,9 +144,6 @@ it("edits a Command without showing account or check controls", async () => {
 
 
 it("creates a Repository node with a shell script and requires its account", async () => {
-  const rect = new DOMRect();
-  Object.defineProperty(Range.prototype, "getClientRects", { configurable: true, value: () => [rect] });
-  Object.defineProperty(Range.prototype, "getBoundingClientRect", { configurable: true, value: () => rect });
   api.call.mockImplementation(async (route: string, input?: RouteInput<"validateDefinition"> | RouteInput<"saveDefinition">) => {
     if (route === "listDefinitions") return [];
     if (route === "validateDefinition") {
