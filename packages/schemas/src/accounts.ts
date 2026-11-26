@@ -50,6 +50,7 @@ export const ServiceAccount = z
     service: z.string().min(1),
     tool: z.string().min(1),
     user: z.string().min(1),
+    site: z.string().min(1).max(253).optional(),
   })
   .strict();
 

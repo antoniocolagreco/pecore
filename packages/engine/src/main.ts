@@ -16,7 +16,7 @@ import { HttpError } from "./api/server";
 import type { CompleteProjectImportBody, ExportProjectBody, ExportProjectResult, ImportProjectBody, ImportProjectPreview, ImportProjectResult } from "@pecore/schemas";
 import { AgentServices, protectedUser, spawnFor } from "./accounts/agents";
 import type { AgentPaths, LoginInfo } from "./accounts/agents";
-import { checkTrackerBridge, TrackerMcpAuthError } from "./accounts/atlassian";
+import { atlassianSite, checkTrackerBridge, TrackerMcpAuthError } from "./accounts/atlassian";
 import { LoginRunner } from "./accounts/login";
 import { discoverForgeAccounts, forgeLoginUser, newForgeAccounts } from "./accounts/forges";
 import { identityOk } from "./runners/forge-env";
@@ -481,7 +481,8 @@ export class Engine extends EventEmitter {
     if (a.kind === "service") {
       if ((a.tool !== "atlassian" && a.tool !== "linear") || this.loginRunner.isActive(`tool:${id}`)) return "unknown";
       try {
-        await checkTrackerBridge(id, a.tool);
+        if (a.tool === "atlassian") await this.saveServiceSite(id, await atlassianSite(id));
+        else await checkTrackerBridge(id, a.tool);
         await this.releaseAuth(id, null);
         return "logged_in";
       } catch (error) {
@@ -492,6 +493,20 @@ export class Engine extends EventEmitter {
     const states = [];
     for (const l of ((await this.agents?.logins()) ?? []).filter((x) => x.account === id)) states.push((await this.checkLoginInfo(l)).state);
     return states.includes("logged_out") ? "logged_out" : states.length > 0 && states.every((s) => s === "logged_in") ? "logged_in" : "unknown";
+  }
+
+  private async saveServiceSite(id: string, site: string | null): Promise<void> {
+    if (!site) return;
+    const account: Account | undefined = this.accounts.accounts.find((entry) => entry.id === id);
+    if (account?.kind !== "service" || account.site === site) return;
+    await this.withConfiguration(async () => {
+      const accounts: Accounts = this.configuration.accounts();
+      const current: Account | undefined = accounts.accounts.find((entry) => entry.id === id);
+      if (current?.kind !== "service" || current.site === site) return;
+      this.configuration.write({ accounts: { accounts: accounts.accounts.map((entry) => entry.id === id ? { ...current, site } : entry) } });
+      await this.reloadGlobal();
+      this.configurationChanged("accounts");
+    });
   }
 
   async startAccountLogin(id: string): Promise<string> {

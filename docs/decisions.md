@@ -507,3 +507,9 @@
 - Login: `pi auth login` requires a provider and an interactive terminal. The connector runs `pi auth login openrouter --no-browser` inside `script` on Linux and macOS, so the row and the setup banner can show the URL and send the code the command reads. A user already logged in to another pi provider only needs Check.
 - Errors: `pi-acp` maps a missing login to `-32000` "Authentication required", which is `auth`. It retries provider failures itself and reports only "Retrying (attempt n/m)…" or "Retry finished, resuming."; the connector classifies those messages as `rate_limit`, so the node waits instead of failing. pi-acp reports no token usage or cost, so attempts show no token counts; the selected model is still recorded from the session config option.
 - Replaces: pi in the list of harnesses planned after phase 6.
+
+## 2026-11-26: One Trackers group in Accounts
+
+- Decision: Settings > Accounts has one Trackers group with one row per tracker account, showing its name, site and login state. A Jira login from the Atlassian CLI appears on its own and shares the Jira row, so Jira shows once. The app stores the Jira site after login and check. Add account asks which tracker and starts browser sign-in. The app chooses the CLI or the MCP bridge; the user never sees the choice.
+- Why: Atlassian and Jira were separate panels for the same tracker, with different layouts and technical text.
+- Replaces: The Atlassian, Linear and Jira panels.

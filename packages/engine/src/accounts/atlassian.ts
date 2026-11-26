@@ -13,6 +13,20 @@ export type TrackerBridge = keyof typeof servers;
 const authRequired = /\b(?:unauthorized|unauthenticated|invalid[_ ](?:grant|token)|authentication required|sign.in required|login required|401)\b/i;
 const authorize = /please authorize this client|open(?:ing|ed) (?:the |a )?browser|waiting for (?:oauth|authorization)/i;
 const Result = z.object({ content: z.array(z.object({ type: z.string(), text: z.string().optional() })).default([]), structuredContent: z.unknown().optional(), isError: z.boolean().optional() });
+const Resources = z.object({
+  resources: z.array(z.object({
+    url: z.string().min(1),
+    products: z.array(z.object({ id: z.string() }).passthrough()).optional(),
+  }).passthrough()).default([]),
+}).passthrough();
+
+function siteHost(value: string): string | null {
+  try {
+    return new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `https://${value}`).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
 
 export class TrackerMcpAuthError extends ToolAuthError {
   constructor(account: string, server: TrackerBridge = "atlassian") {
@@ -83,6 +97,17 @@ async function withBridge<T>(account: string, server: TrackerBridge, options: Br
 class McpToolError extends Error {}
 export async function checkTrackerBridge(account: string, server: TrackerBridge, options: BridgeOptions = {}): Promise<void> {
   await trackerBridgeTool(account, server, server === "atlassian" ? "atlassianUserInfo" : "list_issues", server === "atlassian" ? {} : { limit: 1 }, options);
+}
+
+export async function atlassianSite(account: string): Promise<string | null> {
+  const parsed = Resources.safeParse(await trackerBridgeTool(account, "atlassian", "getAccessibleAtlassianResources", {}));
+  if (!parsed.success) return null;
+  for (const resource of parsed.data.resources) {
+    if (resource.products && !resource.products.some(({ id }) => id.toLowerCase() === "jira")) continue;
+    const host: string | null = siteHost(resource.url);
+    if (host) return host;
+  }
+  return null;
 }
 
 export async function trackerBridgeTool(account: string, server: TrackerBridge, name: string, args: Record<string, unknown>, options: BridgeOptions = {}): Promise<unknown> {
