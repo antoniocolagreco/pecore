@@ -493,3 +493,9 @@
 - Decision: Mouse Back and Forward buttons use the same history as the keyboard.
 - Why: A mouse press should return to the same place as a keyboard shortcut.
 - Replaces: App shortcuts that only handled keyboard input.
+
+## 2026-11-26: Write Knowledge accepts a file name in a project chat
+
+- Decision: In a project's chat, `write_knowledge` accepts the file name alone, for example `notes.md`, and saves it in that project's `knowledge/`. The full path `projects/<id>/knowledge/<name>.md` still works, and the Assistant uses it outside a project chat.
+- Why: The Project Manager lost its first attempt on a bare file name, retried, and told the user about the failure.
+- Replaces: The full path as the only accepted form.

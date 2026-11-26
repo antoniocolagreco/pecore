@@ -81,6 +81,13 @@ const assistantOnlyToolNames: Set<string> = new Set([
 const definitionToolNames: Set<string> = new Set(["write_knowledge"]);
 const readToolNames: Set<string> = new Set(["list_definitions", "read_definition", "validate"]);
 
+function withKnowledgePath(input: unknown, project: string | null): unknown {
+  if (!project || input === null || typeof input !== "object") return input;
+  const fields: Record<string, unknown> = input as Record<string, unknown>;
+  if (typeof fields.path !== "string" || fields.path.includes("/")) return input;
+  return { ...fields, path: `projects/${project}/knowledge/${fields.path}` };
+}
+
 function inProject(engine: Engine, project: string, name: string, input: unknown): void {
   const fields: Record<string, unknown> = input !== null && typeof input === "object" ? input as Record<string, unknown> : {};
   const readable = (path: unknown): boolean => typeof path !== "string" || path.startsWith(`projects/${project}/`) || path.startsWith("templates/");
@@ -339,7 +346,7 @@ export function chatTools(engine: Engine): {
       const value = await definitions.instantiate(input);
       return { value, target: { ...input, paths: value.created }, isError: value.errors.length > 0 };
     }),
-    write_knowledge: write("knowledge", "Validate and save a Markdown file in a project's knowledge directory, projects/<id>/knowledge/<name>.md. The directory is flat: no subfolders. Link another knowledge file by its name only, for example [naming](naming.md). A link to a missing file or with a path is refused; formatting findings come back as warnings to fix."),
+    write_knowledge: write("knowledge", "Validate and save a Markdown file in a project's knowledge directory. In a project's chat the file name is enough, for example notes.md; otherwise give projects/<id>/knowledge/<name>.md. The directory is flat: no subfolders. Link another knowledge file by its name only, for example [naming](naming.md). A link to a missing file or with a path is refused; formatting findings come back as warnings to fix."),
     validate: tool("Validate a proposed template or knowledge file without saving it.", definition, async ({ path, content }) => {
       definitionPath(path, "any");
       const value = await definitions.handlers.validateDefinition({ params: undefined, query: undefined, body: { path, content } });
@@ -374,6 +381,7 @@ export function chatTools(engine: Engine): {
           return textResult(output.value);
         }
         if (!allowed(access, name)) throw new Error(`unknown tool ${name}`);
+        if (name === "write_knowledge") input = withKnowledgePath(input, project);
         if ((access === "project" || access === "question") && project) inProject(engine, project, name, input);
         const fields = input !== null && typeof input === "object" ? input as Record<string, unknown> : {};
         if (access === "question" && name === "answer_question" && fields.itemId !== message.orderId) throw new Error("answer only the question in the current message");
