@@ -196,7 +196,7 @@ it("shows every supported AI tool without an account and logs in from its row", 
     if (route === "getSetup") return { modelAccountWorks: false, harnesses: [
       { connector: "claude-code", installed: false, version: null, loggedIn: false },
       { connector: "codex", installed: true, version: "0.1.0", loggedIn: false },
-      { connector: "opencode", installed: true, version: "1.0.0", loggedIn: false },
+      { connector: "opencode", installed: true, version: "1.0.0", loggedIn: true },
       { connector: "pi", installed: true, version: "1.5.2", loggedIn: false },
     ] };
     if (route === "getAccounts") return { value: accounts, sha256: "accounts-v1" };
@@ -215,8 +215,11 @@ it("shows every supported AI tool without an account and logs in from its row", 
   expect(within(claude).getByText("Not installed")).toBeTruthy();
   expect(within(claude).queryByRole("button", { name: "Log in" })).toBeNull();
   const codex: HTMLElement = screen.getByText("Codex").closest("li")!;
-  expect(within(codex).getByText("Not logged in")).toBeTruthy();
+  expect(within(codex).getByText("Logged out")).toBeTruthy();
   expect(within(codex).getByRole("button", { name: "Log in" })).toBeTruthy();
+  const opencode: HTMLElement = screen.getByText("OpenCode").closest("li")!;
+  expect(within(opencode).getByText("No models")).toBeTruthy();
+  expect(within(opencode).queryByText("Logged in")).toBeNull();
   const pi: HTMLElement = screen.getByText("pi").closest("li")!;
   expect(within(pi).getByText("No models")).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Hide unavailable" }));

@@ -516,6 +516,6 @@
 
 ## 2026-11-26: Show every supported AI tool in Accounts
 
-- Decision: In Settings > Accounts > AI tools, every supported harness has a row. Without an account, the row shows Not installed, Not logged in or No models and Log in when the harness is installed. Logging in from the row creates the account and re-runs auto-setup. Show unavailable reveals these rows, including the supported harnesses with no account, and Hide unavailable hides them again.
+- Decision: In Settings > Accounts > AI tools, every supported harness has a row. Without an account, the row shows Not installed, Logged out or No models, never Logged in, and Log in when the harness is installed. Logging in from the row creates the account and re-runs auto-setup. Show unavailable reveals these rows, including the supported harnesses with no account, and Hide unavailable hides them again.
 - Why: A harness with no account, such as pi with no model, was invisible and could not be logged in from the app.
 - Replaces: Listing only the harnesses that already have an account or are being discovered.

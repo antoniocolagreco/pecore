@@ -83,13 +83,13 @@ function LoginOutput({ id, progress, running }: { id: string; progress?: Progres
   </>;
 }
 
-const stateText: Record<string, string> = { logged_in: "Logged in", logged_out: "Logged out", not_logged_in: "Not logged in", not_installed: "Not installed", no_models: "No models", error: "Error", unknown: "Unknown", unchecked: "Checking…", coming_soon: "Coming soon" };
+const stateText: Record<string, string> = { logged_in: "Logged in", logged_out: "Logged out", not_installed: "Not installed", no_models: "No models", error: "Error", unknown: "Unknown", unchecked: "Checking…", coming_soon: "Coming soon" };
 
 function stateBadge(state: string, checking: boolean): ReactNode {
   if (checking || state === "unchecked") return <Badge>Checking…</Badge>;
   const text: string = stateText[state] ?? state;
   if (state === "logged_in") return <Badge tone="success" dot>{text}</Badge>;
-  if (state === "logged_out" || state === "not_logged_in" || state === "error" || state === "no_models") return <Badge tone="danger" dot>{text}</Badge>;
+  if (state === "logged_out" || state === "error" || state === "no_models") return <Badge tone="danger" dot>{text}</Badge>;
   return <Badge>{text}</Badge>;
 }
 
@@ -305,9 +305,8 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
         const loading: boolean = setup.loading || !setup.data;
         const installed: boolean = state?.installed ?? false;
         const loggedIn: boolean = state?.loggedIn ?? false;
-        const label: string = loading ? "unchecked" : !installed ? "not_installed" : loggedIn ? "logged_in" : modelOnlyHarness(harness.id) ? "no_models" : "not_logged_in";
+        const label: string = loading ? "unchecked" : !installed ? "not_installed" : modelOnlyHarness(harness.id) ? "no_models" : "logged_out";
         const detail: string = loading ? "Loading…" : !installed ? `Install ${harness.name}, then check again.`
-          : loggedIn ? "Login found, so the account is being set up."
           : modelOnlyHarness(harness.id) ? `Log in or set up a model provider in ${harness.name}, then check again.`
           : `Log in with ${harness.name}, then check again.`;
         const id: string | undefined = setupRuns[harness.id];
