@@ -50,7 +50,11 @@ export async function syncAdapters(home: string, opts: { source: string; appVers
   const dir = homePaths(home).adapters;
   const versionFile = join(dir, "version");
   const current = await readFile(versionFile, "utf8").catch(() => null);
-  if (current?.trim() === opts.appVersion && (!(await exists(join(opts.source, "chat-mcp.mjs"))) || (await exists(join(dir, "chat-mcp.mjs"))))) return false;
+  if (current?.trim() === opts.appVersion) {
+    const chatMcp: boolean = !(await exists(join(opts.source, "chat-mcp.mjs"))) || (await exists(join(dir, "chat-mcp.mjs")));
+    const adapters: boolean[] = await Promise.all(opts.pinned.map((entry) => exists(join(dir, entry))));
+    if (chatMcp && adapters.every(Boolean)) return false;
+  }
   await mkdir(dir, { recursive: true });
   await cp(`${opts.source}/`, dir, { recursive: true, force: true, preserveTimestamps: true, dereference: true });
   const keep = new Set(["version", "node", "chat-mcp.mjs", ...opts.pinned]);
