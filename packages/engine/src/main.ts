@@ -16,7 +16,7 @@ import { HttpError } from "./api/server";
 import type { CompleteProjectImportBody, ExportProjectBody, ExportProjectResult, ImportProjectBody, ImportProjectPreview, ImportProjectResult } from "@pecore/schemas";
 import { AgentServices, protectedUser, spawnFor } from "./accounts/agents";
 import type { AgentPaths, LoginInfo } from "./accounts/agents";
-import { atlassianSite, checkTrackerBridge, TrackerMcpAuthError } from "./accounts/atlassian";
+import { atlassianSite, checkTrackerBridge, setMcpHome, TrackerMcpAuthError } from "./accounts/atlassian";
 import { LoginRunner } from "./accounts/login";
 import { discoverForgeAccounts, forgeLoginUser, newForgeAccounts } from "./accounts/forges";
 import { identityOk } from "./runners/forge-env";
@@ -112,6 +112,7 @@ export class Engine extends EventEmitter {
 
   private async init(): Promise<void> {
     process.umask(0o077);
+    setMcpHome(this.opts.home);
     const p = homePaths(this.opts.home);
     await initHome(this.opts.home);
     this.releaseLock = await takeLock(p.lock);

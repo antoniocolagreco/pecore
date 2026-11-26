@@ -19,11 +19,12 @@ const toolLogin: Partial<Record<ForgeAccount["tool"], (host: string) => string[]
 
 export class LoginRunner {
   private readonly active = new Map<string, Proc>();
+  private readonly trackerLogins = new Map<string, () => Promise<void>>();
 
   constructor(private readonly progress: (p: LoginProgress) => void) {}
 
   isActive(loginId: string): boolean {
-    return this.active.has(loginId);
+    return this.active.has(loginId) || this.trackerLogins.has(loginId);
   }
 
   async harness(agents: AgentServices, l: LoginInfo, done: () => Promise<string>): Promise<void> {
@@ -56,24 +57,24 @@ export class LoginRunner {
   }
 
   async trackerBridge(loginId: string, account: string, server: TrackerBridge, done: () => Promise<void>): Promise<void> {
-    if (this.active.has(loginId)) return;
+    if (this.isActive(loginId)) return;
     const name: string = server === "atlassian" ? "Atlassian" : "Linear";
     await new Promise<void>((started, failed) => {
       void checkTrackerBridge(account, server, {
         interactive: true,
-        onStart: (proc) => {
-          this.active.set(loginId, proc);
+        onStart: (stop) => {
+          this.trackerLogins.set(loginId, stop);
           this.progress({ loginId, text: `Connecting to ${name}…`, url: null, done: false });
           started();
         },
         onAuthorize: (url) => this.progress({ loginId, text: `Complete ${name} sign-in in your browser.`, url, done: false }),
       }).then(async () => {
         await done();
-        this.active.delete(loginId);
+        this.trackerLogins.delete(loginId);
         this.progress({ loginId, text: `Connected to ${name}.`, url: null, done: true });
       }).catch((error: unknown) => {
         failed(error);
-        this.active.delete(loginId);
+        this.trackerLogins.delete(loginId);
         this.progress({ loginId, text: (error as Error).message, url: null, done: true });
       });
     });
@@ -87,6 +88,8 @@ export class LoginRunner {
 
   async stopAll(): Promise<void> {
     await Promise.all([...this.active.values()].map((p) => p.stop()));
+    await Promise.all([...this.trackerLogins.values()].map((stop) => stop()));
+    this.trackerLogins.clear();
   }
 
   private stream(loginId: string, proc: Proc, pattern: RegExp, done: (code: number | null) => Promise<string>): void {
