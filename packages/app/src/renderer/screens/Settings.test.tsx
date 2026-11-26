@@ -208,7 +208,7 @@ it("shows every supported AI tool without an account and logs in from its row", 
   const user = userEvent.setup();
   render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
   await screen.findByRole("heading", { name: "AI tools" });
-  expect(screen.queryByText("pi")).toBeNull();
+  expect(screen.queryByText("Pi")).toBeNull();
 
   await user.click(screen.getByRole("button", { name: "Show unavailable" }));
   const claude: HTMLElement = (await screen.findByText("Claude Code")).closest("li")!;
@@ -220,13 +220,13 @@ it("shows every supported AI tool without an account and logs in from its row", 
   const opencode: HTMLElement = screen.getByText("OpenCode").closest("li")!;
   expect(within(opencode).getByText("No models")).toBeTruthy();
   expect(within(opencode).queryByText("Logged in")).toBeNull();
-  const pi: HTMLElement = screen.getByText("pi").closest("li")!;
+  const pi: HTMLElement = screen.getByText("Pi").closest("li")!;
   expect(within(pi).getByText("No models")).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Hide unavailable" }));
-  expect(screen.queryByText("pi")).toBeNull();
+  expect(screen.queryByText("Pi")).toBeNull();
   await user.click(screen.getByRole("button", { name: "Show unavailable" }));
 
-  await user.click(within(screen.getByText("pi").closest("li")!).getByRole("button", { name: "Log in" }));
+  await user.click(within(screen.getByText("Pi").closest("li")!).getByRole("button", { name: "Log in" }));
   await waitFor(() => expect(api.call).toHaveBeenCalledWith("startSetupLogin", { params: { connector: "pi" } }));
 
   accounts = Accounts.parse({ accounts: [{ id: "pi", kind: "model", provider: "pi", connector: "pi", login: "subscription" }] });
@@ -244,6 +244,37 @@ it("shows every supported AI tool without an account and logs in from its row", 
   api.call.mockClear();
   await user.click(check);
   await waitFor(() => expect(api.call).toHaveBeenCalledWith("recheckLogin", { params: { id: "pi:local" } }));
+});
+
+it("resets an AI tool colour to its default from the colour dialog", async () => {
+  const fallback = api.call.getMockImplementation()!;
+  const saved: SettingsSchema = SettingsSchema.parse({ harnessColors: { codex: "#14B8A6" } });
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "getSettings") return { value: saved, sha256: "settings-v1" };
+    return fallback(route);
+  });
+  const user = userEvent.setup();
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
+  await user.click(await screen.findByRole("button", { name: "Show unavailable" }));
+  const codex: HTMLElement = (await screen.findByText("Codex")).closest("li")!;
+  await user.click(within(codex).getByRole("button", { name: "Colour" }));
+  const dialog = within(await screen.findByRole("dialog", { name: "Codex colour" }));
+  const reset: HTMLButtonElement = dialog.getByRole("button", { name: "Reset" });
+  expect(reset.disabled).toBe(false);
+  await user.click(reset);
+  await waitFor(() => expect(api.call).toHaveBeenCalledWith("putSettings", {
+    body: { value: expect.objectContaining({ harnessColors: {} }), baseSha256: "settings-v1" },
+  }), { timeout: 1500 });
+});
+
+it("disables Reset when the AI tool has no saved colour", async () => {
+  const user = userEvent.setup();
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
+  await user.click(await screen.findByRole("button", { name: "Show unavailable" }));
+  const codex: HTMLElement = (await screen.findByText("Codex")).closest("li")!;
+  await user.click(within(codex).getByRole("button", { name: "Colour" }));
+  const dialog = within(await screen.findByRole("dialog", { name: "Codex colour" }));
+  expect(dialog.getByRole<HTMLButtonElement>("button", { name: "Reset" }).disabled).toBe(true);
 });
 
 it.each([
@@ -267,7 +298,7 @@ it.each([
     return fallback(route);
   });
   render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
-  const pi: HTMLElement = (await screen.findByText("pi")).closest("li")!;
+  const pi: HTMLElement = (await screen.findByText("Pi")).closest("li")!;
   expect(within(pi).getByText("Checking…")).toBeTruthy();
   expect(within(pi).queryByText("No models")).toBeNull();
   act(() => release());

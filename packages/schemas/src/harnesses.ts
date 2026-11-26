@@ -6,13 +6,13 @@ export type HarnessInfo = { readonly id: string; readonly name: string; readonly
 
 export const harnesses: readonly HarnessInfo[] = [
   { id: "claude-code", name: "Claude Code", color: "#D97757", supported: true },
-  { id: "codex", name: "Codex", color: "#64748B", supported: true },
-  { id: "opencode", name: "OpenCode", color: "#BAE6FD", supported: true },
-  { id: "pi", name: "pi", color: "#C4B5FD", supported: true },
-  { id: "antigravity", name: "Antigravity CLI", color: "#16A34A", supported: false },
-  { id: "copilot", name: "GitHub Copilot CLI", color: "#6366F1", supported: false },
-  { id: "deepseek", name: "DeepSeek", color: "#1D4ED8", supported: false },
-  { id: "grok", name: "Grok", color: "#7E22CE", supported: false },
+  { id: "codex", name: "Codex", color: "#EEF1F2", supported: true },
+  { id: "opencode", name: "OpenCode", color: "#5D9BEA", supported: true },
+  { id: "pi", name: "Pi", color: "#F59E0B", supported: true },
+  { id: "antigravity", name: "Antigravity CLI", color: "#3DA955", supported: false },
+  { id: "copilot", name: "GitHub Copilot CLI", color: "#8957E5", supported: false },
+  { id: "deepseek", name: "DeepSeek", color: "#5785FA", supported: false },
+  { id: "grok", name: "Grok", color: "#0F1419", supported: false },
 ];
 
 export function modelOnlyHarness(id: string): boolean {

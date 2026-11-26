@@ -97,16 +97,19 @@ function initials(name: string): string {
   return name.split(/[\s·-]+/).filter(Boolean).slice(0, 2).map((word) => word[0]!.toUpperCase()).join("");
 }
 
-type HarnessColors = { colors: Record<string, string>; onColor(harness: string, color: string): void };
+type HarnessColors = { colors: Record<string, string>; onColor(harness: string, color: string): void; onReset(harness: string): void };
 
-function HarnessColorButton({ harness, colors, onColor }: HarnessColors & { harness: HarnessInfo }) {
+function HarnessColorButton({ harness, colors, onColor, onReset }: HarnessColors & { harness: HarnessInfo }) {
   const connected: boolean = useConnected();
   const [open, setOpen] = useState(false);
   const color: string = harnessColor(harness.id, colors);
   return <>
     <Button size="sm" icon={<span className={s.dot} style={{ "--harness": color } as CSSProperties} />} disabled={!connected} onClick={() => setOpen(true)}>Colour</Button>
     <Dialog open={open} onOpenChange={setOpen} title={`${harness.name} colour`} description="Used on agent cards and wherever this AI tool is shown." width={304}
-      footer={<Button variant="primary" onClick={() => setOpen(false)}>Done</Button>}>
+      footer={<>
+        <Button disabled={!connected || colors[harness.id] === undefined} onClick={() => onReset(harness.id)}>Reset</Button>
+        <Button variant="primary" onClick={() => setOpen(false)}>Done</Button>
+      </>}>
       <ColorPicker label="Colour" value={color} disabled={!connected} onValueChange={(next) => onColor(harness.id, next)} />
     </Dialog>
   </>;
@@ -447,6 +450,7 @@ export function Settings() {
   const harnessColors: HarnessColors | undefined = value && {
     colors: value.harnessColors,
     onColor: (harness, color) => update({ ...value, harnessColors: { ...value.harnessColors, [harness]: color } }),
+    onReset: (harness) => update({ ...value, harnessColors: Object.fromEntries(Object.entries(value.harnessColors).filter(([id]) => id !== harness)) }),
   };
 
   const go = (id: string): void => {

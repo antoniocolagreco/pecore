@@ -13,7 +13,7 @@ export const install: Record<BuiltInHarness, { name: string; url: string }> = {
   "claude-code": { name: "Claude Code", url: "https://code.claude.com/docs/en/setup" },
   codex: { name: "Codex", url: "https://developers.openai.com/codex/cli/" },
   opencode: { name: "OpenCode", url: "https://opencode.ai/docs/" },
-  pi: { name: "pi", url: "https://pi.dev" },
+  pi: { name: "Pi", url: "https://pi.dev" },
 };
 
 type Progress = { url: string | null; text: string; done: boolean };
@@ -46,7 +46,7 @@ export function SetupBanner() {
   return <aside aria-label="Harness setup">
     <Alert tone="accent" title="Connect an AI coding tool to start">
       <span className={ui.stack}>
-        <span>{appName} works through Claude Code, Codex, OpenCode or pi. Install one, or log in to one you already have; {appName} sets up the rest.</span>
+        <span>{appName} works through Claude Code, Codex, OpenCode or Pi. Install one, or log in to one you already have; {appName} sets up the rest.</span>
         <span className={ui.row}>
           {setup.data.harnesses.map(({ connector, installed }) => installed
             ? <Button key={connector} size="sm" variant="primary" disabled={!connected || running || start.busy} onClick={() => { send.clear(); void start.run(connector); }}>Log in to {install[connector].name}</Button>
