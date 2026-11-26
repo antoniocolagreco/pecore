@@ -284,7 +284,7 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
           actions={<>
             {(account.tool === "gh" || account.tool === "glab" || account.tool === "atlassian" || account.tool === "linear") && state !== "logged_in" &&
               <Button size="sm" variant="primary" disabled={locked || busy} onClick={() => void start.run(account)}>Log in</Button>}
-            {account.kind === "forge" && onEdit && <Button size="sm" disabled={locked || busy} onClick={() => onEdit(account)}>Edit</Button>}
+            {account.kind === "forge" && onEdit && <Button size="sm" variant="ghost" disabled={locked || busy} onClick={() => onEdit(account)}>Edit</Button>}
           </>}>
           {id && <LoginOutput id={id} progress={output} running={!output?.done && account.tool !== "atlassian" && account.tool !== "linear"} />}
         </AccountRow>;
