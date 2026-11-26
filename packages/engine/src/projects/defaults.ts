@@ -1,7 +1,6 @@
-import { readdir } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { Name } from "@pecore/schemas";
-import type { Project, Recipe } from "@pecore/schemas";
+import type { Recipe } from "@pecore/schemas";
 import { z } from "zod";
 import { readJson, zodErrors } from "../definitions/load";
 import type { DefinitionError } from "../definitions/load";
@@ -16,7 +15,6 @@ const forgeDefaults = z.strictObject({
 });
 
 export type ForgeDefaults = z.infer<typeof forgeDefaults>;
-export type ProjectDefaults = { forge: ForgeDefaults | null; rename: Record<string, string> };
 
 function definitionError(errors: DefinitionError[]): Error {
   return new Error(errors.map(({ file, path, message }) => `${file}${path ? ` at ${path}` : ""}: ${message}`).join("\n"));
@@ -32,39 +30,23 @@ export async function loadForgeDefaults(templatesDir: string, forge: string): Pr
   return result.data;
 }
 
-export async function projectDefaults(templatesDir: string, repo: Project["repo"], forgeName: string | null): Promise<ProjectDefaults> {
-  if (repo !== null && forgeName === null) throw new Error("A repository project needs a forge");
-  const forge = repo !== null && forgeName !== null ? await loadForgeDefaults(templatesDir, forgeName) : null;
-  const rename: Record<string, string> = {};
-  if (forge !== null) {
-    const files = (await readdir(join(templatesDir, "forges"))).filter((file) => file.endsWith(".json")).sort();
-    for (const file of files) {
-      const name = basename(file, ".json");
-      const defaults = name === forge.forge ? forge : await loadForgeDefaults(templatesDir, name);
-      for (const role of ["delivery", "comment", "createRepo"] as const) {
-        const from: string | null = defaults[role];
-        const to: string | null = forge[role];
-        if (from !== null && to !== null) rename[from] = to;
-      }
-    }
-  }
-  return { forge, rename };
-}
-
-export function recipeForForge(input: Recipe, rename: Readonly<Record<string, string>>): Recipe {
+export function recipeForBranchDelivery(input: Recipe): Recipe {
   const recipe: Recipe = structuredClone(input);
-  for (const step of Object.values(recipe.nodes)) step.use = rename[step.use] ?? step.use;
+  const deliveryIds: Set<string> = new Set(Object.keys(recipe.nodes).filter((id) => recipe.nodes[id]?.use === "open-pr"));
   for (const [id, step] of Object.entries(recipe.nodes)) {
     if (step.use !== "write-pr") continue;
     const edges = recipe.edges.filter(({ from }) => from === id);
     const delivery = edges[0]?.to;
-    if (!delivery || edges.length !== 1 || edges[0]?.on !== "success" || recipe.nodes[delivery]?.use !== "git-delivery") continue;
+    if (!delivery || !deliveryIds.has(delivery) || edges.length !== 1 || edges[0]?.on !== "success") continue;
+    if (recipe.ends?.some(({ from }) => from === id) || recipe.successOutcomes.some((outcome) => outcome.startsWith(id + ":")) || recipe.ci?.after === id) continue;
+    if (Object.entries(recipe.nodes).some(([consumer, node]) => node.requires.includes(id) || (consumer !== delivery && node.reads.includes(id)))) continue;
     recipe.edges = recipe.edges.filter(({ from }) => from !== id).map((edge) => edge.to === id ? { ...edge, to: delivery } : edge);
     if (recipe.start === id) recipe.start = delivery;
     if (recipe.onBaseChanged === id) recipe.onBaseChanged = delivery;
-    for (const consumer of Object.values(recipe.nodes)) consumer.reads = consumer.reads.filter((read) => read !== id && (consumer.use !== "post-delivery-to-ticket" || read !== delivery));
+    recipe.nodes[delivery]!.reads = recipe.nodes[delivery]!.reads.filter((read) => read !== id);
     delete recipe.nodes[id];
     if (recipe.layout) delete recipe.layout[id];
   }
+  for (const step of Object.values(recipe.nodes)) step.reads = step.reads.filter((read) => !deliveryIds.has(read));
   return recipe;
 }

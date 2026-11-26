@@ -100,7 +100,7 @@ function inProject(engine: Engine, project: string, name: string, input: unknown
 }
 
 export function chatTools(engine: Engine): {
-  list(access: ChatAccess, project?: string | null): { name: string; description: string; inputSchema: ToolInputSchema }[];
+  list(access: ChatAccess, project?: string | null): Promise<{ name: string; description: string; inputSchema: ToolInputSchema }[]>;
   call(name: string, input: unknown, message: ChatTurn): Promise<ToolResult>;
 } {
   const chats = engine.agentChats;
@@ -366,9 +366,9 @@ export function chatTools(engine: Engine): {
   };
   const allowed = (access: ChatAccess, name: string): boolean => Object.hasOwn(tools, name) && names[access](name);
   return {
-    list: (access, project) => [
+    list: async (access, project) => [
       ...Object.entries(tools).filter(([name]) => allowed(access, name)).map(([name, { description, inputSchema }]) => ({ name, description, inputSchema })),
-      ...(access === "project" && project ? listNodeTools(engine, project) : []),
+      ...(access === "project" && project ? await listNodeTools(engine, project) : []),
     ],
     async call(name, input, message) {
       const actionId: string = chats.startAction(message, name);

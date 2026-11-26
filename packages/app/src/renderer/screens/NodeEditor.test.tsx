@@ -14,6 +14,25 @@ vi.mock("../api/live", () => ({ useConnected: () => true, onLive: () => () => un
 
 afterEach(cleanup);
 
+it.each(["open-pr", "create-repo"])("shows %s without provider script or edit actions", async (name) => {
+  const node: Node = Node.parse({
+    name, kind: "repository", description: "Uses the configured provider", account: "project.account",
+    outcomes: ["success", "failure"], outcomeRules: [{ exitCode: 0, outcome: "success" }, { exitCode: "other", outcome: "failure" }],
+  });
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "getDefinition") return { content: JSON.stringify(node), sha256: "node-v1" };
+    if (route === "listDefinitions") return [];
+    if (route === "validateDefinition") return { errors: [], warnings: [] };
+    throw new Error("Unexpected route " + route);
+  });
+  const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: [`/edit/node/templates/nodes/${name}.json`] });
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
+  expect(await screen.findByText("Uses the Git hosting account selected in Project Settings.")).toBeTruthy();
+  expect(screen.queryByRole("group", { name: "Repository script" })).toBeNull();
+  expect(screen.queryByRole("combobox", { name: "Account" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+});
+
 it("offers only the four editable node kinds", async () => {
   api.call.mockImplementation(async (route: string) => {
     if (route === "listDefinitions") return [];

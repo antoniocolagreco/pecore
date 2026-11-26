@@ -5,7 +5,8 @@ import { Node, Recipe } from "@pecore/schemas";
 import type { Artifact } from "@pecore/schemas";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
-import { tempDir } from "../../test/tmp";
+import { shippedTemplates, tempDir } from "../../test/tmp";
+import { seedTemplates } from "../definitions/seed";
 import { definitionHash, jobDefinitions, snapshotDefinitions } from "../definitions/snapshot";
 import { nextStep } from "../graph/rules";
 import { humanItem } from "../runners/human";
@@ -49,6 +50,59 @@ const created = {
 };
 
 describe("pecore.db", () => {
+  it("migrates saved forge steps and project setup while preserving captured jobs", async () => {
+    const path: string = join(await tempDir(), "pecore.db");
+    const old: ProjectDb = new ProjectDb(path);
+    const templates: ChatsDb = new ChatsDb(":memory:");
+    const library: Catalog = new Catalog(templates.db);
+    await seedTemplates(library, shippedTemplates);
+    old.definition.write({
+      id: "demo", name: "Demo", repo: { url: "https://github.com/team/app.git", account: "forge" },
+      folder: null, createRepo: "github-create-repo", baseBranch: "main", services: null, pm: null, tracker: null,
+    });
+    const legacy = Recipe.parse({
+      name: "delivery", description: "Deliver a branch", start: "push", onBaseChanged: "push",
+      nodes: { push: { use: "git-push" }, deliver: { use: "git-delivery" } },
+      edges: [{ from: "push", on: "success", to: "deliver" }],
+      ends: [{ from: "deliver", on: "success", result: "succeeded" }],
+      layout: { push: { x: 0, y: 0 }, deliver: { x: 500, y: 0 } },
+    });
+    old.catalog.saveRecipe(legacy);
+    old.catalog.saveNode(Node.parse({
+      name: "git-delivery", kind: "repository", description: "Record delivery", script: "echo branch", account: "project.account",
+      outcomes: ["success"], outcomeRules: [{ exitCode: 0, outcome: "success" }],
+    }));
+    old.catalog.saveNode(Node.parse({
+      name: "open-pr", kind: "repository", description: "Custom remote action", script: "echo custom", account: "project.account",
+      outcomes: ["success"], outcomeRules: [{ exitCode: 0, outcome: "success" }],
+    }));
+    old.catalog.saveRecipe(Recipe.parse({
+      name: "custom", description: "Use a custom remote action", start: "apply",
+      nodes: { apply: { use: "open-pr" } }, ends: [{ from: "apply", on: "success", result: "succeeded" }],
+    }));
+    old.append([{ ...created, payload: { ...created.payload, recipe: legacy } }]);
+    old.db.exec("UPDATE schema_version SET version = 37");
+    old.close();
+    const project: ProjectDb = new ProjectDb(path, templates.db);
+    try {
+      expect(project.definition.read()?.createRepo).toBe("create-repo");
+      expect(project.catalog.recipe("delivery")).toMatchObject({
+        start: "push", onBaseChanged: "push", layout: legacy.layout, ends: legacy.ends,
+        nodes: { deliver: { use: "open-pr", reads: ["write-pr"] }, "write-pr": { use: "write-pr" } },
+        edges: [{ from: "push", on: "success", to: "write-pr" }, { from: "write-pr", on: "success", to: "deliver" }],
+      });
+      expect(project.catalog.node("git-delivery")).toBeNull();
+      expect(project.catalog.chatNode("open-pr")).toMatchObject({ approved: true });
+      expect(project.catalog.node("open-pr-custom")).toMatchObject({ script: "echo custom" });
+      expect(project.catalog.recipe("custom")?.nodes.apply?.use).toBe("open-pr-custom");
+      expect(project.catalog.content("write-pr.md")).toBe(library.content("write-pr.md"));
+      expect(project.events(job).find(({ type }) => type === "job.created")?.payload).toMatchObject({ recipe: legacy });
+    } finally {
+      project.close();
+      templates.close();
+    }
+  });
+
   it("removes obsolete history and skipped routes but keeps project records and usable recipes", async () => {
     const path: string = join(await tempDir(), "pecore.db");
     const old: ProjectDb = new ProjectDb(path);
@@ -120,7 +174,7 @@ describe("pecore.db", () => {
     old.close();
     const db: ProjectDb = new ProjectDb(path);
     try {
-      expect(db.version()).toBe(37);
+      expect(db.version()).toBe(39);
       expect(db.catalog.recipe(current.name)).toEqual(current);
       expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_recipes') WHERE name LIKE '%port%'").all()).toEqual([]);
       expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_recipe_edges') WHERE name LIKE '%port%'").all()).toEqual([]);
@@ -138,7 +192,7 @@ describe("pecore.db", () => {
   it("applies the migrations once, in WAL mode", async () => {
     const path = join(await tempDir(), "pecore.db");
     const db = new ProjectDb(path);
-    expect(db.version()).toBe(37);
+    expect(db.version()).toBe(39);
     expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_nodes') WHERE name IN ('tracker_provider', 'tracker_script', 'tracker_account')").all()).toEqual([]);
     expect(db.db.prepare("SELECT name FROM sqlite_master WHERE name = 'catalog_tracker_arguments'").get()).toBeUndefined();
     expect(() => db.db.exec("INSERT INTO catalog_nodes (name, description, kind, shipped) VALUES ('legacy', 'Old tracker', 'tracker', 0)")).toThrow(/CHECK constraint failed/);
@@ -146,7 +200,7 @@ describe("pecore.db", () => {
     expect(db.db.pragma("journal_mode", { simple: true })).toBe("wal");
     db.close();
     const again = new ProjectDb(path);
-    expect(again.version()).toBe(37);
+    expect(again.version()).toBe(39);
     const tables = again.db.prepare<[], string>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'catalog_%' ORDER BY name").pluck().all();
     expect(tables).toEqual([
       "artifacts", "attempt_logs", "attempts", "events", "human_queue", "jobs", "node_runs",
@@ -679,7 +733,7 @@ describe("chats.db", () => {
 
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.version()).toBe(38);
+    expect(db.version()).toBe(39);
     for (let i = 0; i < notificationsKept + 3; i++) db.addNotification({ kind: "job", title: `n${i}`, body: "" }, 1000 + i);
     const kept = db.notifications();
     expect(kept).toHaveLength(notificationsKept);
@@ -701,7 +755,7 @@ describe("chats.db", () => {
       UPDATE schema_version SET version = 5`);
     old.close();
     const db = new ChatsDb(file);
-    expect(db.version()).toBe(38);
+    expect(db.version()).toBe(39);
     expect(db.messages(assistantChat)).toEqual([]);
     db.close();
   });

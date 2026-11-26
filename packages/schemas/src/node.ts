@@ -138,6 +138,12 @@ export type HumanNode = z.infer<typeof HumanNode>;
 export const TrackerProvider = z.enum(["github", "gitlab", "jira", "linear"]);
 export type TrackerProvider = z.infer<typeof TrackerProvider>;
 
+export type ForgeOperation = "open-pr" | "create-repo";
+
+export function isForgeOperation(name: string): name is ForgeOperation {
+  return name === "open-pr" || name === "create-repo";
+}
+
 export const RepositoryNode = CommandNode.pick({
   inputs: true, optionalInputs: true, outcomeRules: true, outputRules: true,
 }).extend({
@@ -148,7 +154,7 @@ export const RepositoryNode = CommandNode.pick({
   changesFiles: z.literal(false).default(false),
   account: z.string({ error: "Choose a Git hosting account." }).trim().min(1, "Choose a Git hosting account."),
   readOnly: z.literal(true).optional(),
-  script: z.string().trim().min(1, "Enter a repository script."),
+  script: z.string().trim().default(""),
   probe: CommandOrScript.optional(),
   probeRules: JsonRule.optional(),
   mergedCheck: CommandOrScript.optional(),
@@ -191,6 +197,9 @@ function argvPlaceholders(argv: string[] | undefined, path: (string | number)[])
 
 function checkNode(node: z.infer<typeof NodeShape>): Issue[] {
   const issues: Issue[] = [];
+  if (node.kind === "repository" && !node.script && !isForgeOperation(node.name)) {
+    issues.push({ path: ["script"], message: "Enter a repository script." });
+  }
   for (const [i, o] of node.failOutcomes.entries()) {
     if (!node.outcomes.includes(o)) issues.push({ path: ["failOutcomes", i], message: `${o} is not in outcomes` });
   }

@@ -6,6 +6,7 @@ import { migrateOutcomes } from "./migrate-outcomes";
 import { migrateRecipeAnchors } from "./migrate-recipe-anchors";
 import { migrateAgentTrackers } from "./migrate-agent-tracker";
 import { migrateArtifactContracts } from "./migrate-artifact-contracts";
+import { migrateForgeOperations } from "./migrate-forge-operations";
 
 const migrationsDir = fileURLToPath(new URL("./migrations/", import.meta.url));
 
@@ -28,6 +29,7 @@ export function migrate(db: Database.Database, prefix: string, options?: { inher
       }
       else if (file === "shared-035-remove-tracker-nodes.sql") migrateAgentTrackers(db, sql, prefix === "");
       else if (file === "shared-036-artifact-contracts.sql") migrateArtifactContracts(db, sql, options?.inherited);
+      else if (file === "shared-039-forge-operations.sql") migrateForgeOperations(db, sql, prefix === "", options?.inherited);
       else db.exec(sql);
       db.prepare("DELETE FROM schema_version").run();
       db.prepare("INSERT INTO schema_version (version) VALUES (?)").run(version);

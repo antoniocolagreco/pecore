@@ -1,12 +1,13 @@
 import { monotonicFactory } from "ulid";
-import { templateTitle } from "@pecore/schemas";
-import type { Artifact, JobDefinitions, Recipe } from "@pecore/schemas";
+import { isForgeOperation, templateTitle } from "@pecore/schemas";
+import type { Artifact, JobDefinitions, Node, Recipe } from "@pecore/schemas";
 import { checkRecipe, hasCommitNode, recipeParameterIssues } from "../definitions/recipe-check";
-import { definitionHash, jobDefinitions, jobNodes, snapshotDefinitions } from "../definitions/snapshot";
+import { definitionHash, jobDefinitions, jobNodes, snapshotNode } from "../definitions/snapshot";
 import type { JobRow, ProjectContext } from "../graph/executor";
+import { recipeForBranchDelivery } from "../projects/defaults";
 import { ProjectLocationConflict, withProjectLocation } from "../projects/location";
+import { repositoryAccount, repositoryDefinition } from "../runners/repository";
 import { jobBranch } from "../workdir/repo";
-import { repositoryAccount } from "../runners/repository";
 import { fetchBase, jobCommit } from "./stacked";
 
 const ulid = monotonicFactory();
@@ -37,9 +38,7 @@ export function jobRecipeName(ctx: ProjectContext, requested: string | undefined
   throw new JobCreateError(names.length === 0 ? `project ${ctx.id} has no recipes; add one` : `project ${ctx.id} has ${names.length} recipes; choose one`);
 }
 
-export function recipeForJob(ctx: ProjectContext, recipeName: string): Recipe {
-  const template: Recipe | undefined = ctx.defs.recipes.get(recipeName);
-  if (!template) throw new JobCreateError(`recipe ${recipeName} not found in project ${ctx.id}`);
+function recipeForJob(ctx: ProjectContext, template: Recipe): Recipe {
   const vars: Record<string, unknown> = ctx.project.variables ?? {};
   const recipe: Recipe = {
     ...template,
@@ -48,15 +47,50 @@ export function recipeForJob(ctx: ProjectContext, recipeName: string): Recipe {
       const params: Record<string, unknown> = Object.fromEntries(Object.entries(step.params).map(([name, value]) => {
         const variable: string | undefined = typeof value === "string" ? /^\{project\.vars\.([a-zA-Z][\w-]*)\}$/.exec(value)?.[1] : undefined;
         if (!variable) return [name, value];
-        if (!Object.hasOwn(vars, variable)) throw new JobCreateError(`recipe ${recipeName}, step ${id}: project variable ${variable} is missing`);
+        if (!Object.hasOwn(vars, variable)) throw new JobCreateError(`recipe ${template.name}, step ${id}: project variable ${variable} is missing`);
         return [name, vars[variable]];
       }));
       return [id, { ...step, params }];
     })),
   };
-  const issues = [...checkRecipe(recipe, ctx.defs.nodes, ctx.project.repo !== null), ...recipeParameterIssues(recipe, ctx.defs.nodes)];
-  if (issues.length) throw new JobCreateError(`Check the ${templateTitle(recipeName)} recipe. ${issues.map(({ message }) => message).join(" ")}`);
   return recipe;
+}
+
+export async function prepareJob(ctx: ProjectContext, name: string): Promise<{ recipe: Recipe; definitions: JobDefinitions }> {
+  const template: Recipe | undefined = ctx.defs.recipes.get(name);
+  if (!template) throw new JobCreateError(`recipe ${name} not found in project ${ctx.id}`);
+  const { nodeDir, sidecars } = ctx.defs;
+  const recipeHash: string = definitionHash(template);
+  let recipe: Recipe = recipeForJob(ctx, template);
+  const nodes: Map<string, Node> = new Map(ctx.defs.nodes);
+  const entries: JobDefinitions["nodes"] = {};
+  const uses: Set<string> = new Set(Object.values(recipe.nodes).map(({ use }) => use));
+  for (const use of uses) {
+    const node: Node | undefined = nodes.get(use);
+    if (node?.kind !== "repository" || node.script || !isForgeOperation(use)) continue;
+    try {
+      const entry = await repositoryDefinition(ctx, node, repositoryAccount(ctx, node));
+      entries[use] = entry;
+      nodes.set(use, entry.definition);
+      if (use === "open-pr" && entry.definition.outputs.success === undefined) recipe = recipeForBranchDelivery(recipe);
+    } catch (error) {
+      fail(error);
+    }
+  }
+  const issues = [...checkRecipe(recipe, nodes, ctx.project.repo !== null), ...recipeParameterIssues(recipe, nodes)];
+  if (issues.length) throw new JobCreateError(`Check the ${templateTitle(name)} recipe. ${issues.map(({ message }) => message).join(" ")}`);
+  for (const use of new Set(Object.values(recipe.nodes).map(({ use }) => use))) {
+    if (Object.hasOwn(entries, use)) continue;
+    const node: Node = nodes.get(use)!;
+    try {
+      entries[use] = await (node.kind === "repository"
+        ? repositoryDefinition(ctx, node, repositoryAccount(ctx, node), sidecars)
+        : snapshotNode(node, nodeDir, sidecars));
+    } catch (error) {
+      fail(error);
+    }
+  }
+  return { recipe, definitions: { recipeHash, nodes: entries } };
 }
 
 export async function createJob(ctx: ProjectContext, req: CreateJob): Promise<string> {
@@ -68,23 +102,7 @@ export async function createJob(ctx: ProjectContext, req: CreateJob): Promise<st
 
 async function createJobInProject(ctx: ProjectContext, req: CreateJob): Promise<string> {
   if ((req.orderId === undefined) !== (req.orderKey === undefined)) throw new JobCreateError("orderId and orderKey must be set together");
-  const recipe: Recipe = recipeForJob(ctx, jobRecipeName(ctx, req.recipe));
-  const recipeHash: string = definitionHash(ctx.defs.recipes.get(recipe.name));
-  const definitions: JobDefinitions = await snapshotDefinitions(recipe, ctx.defs.nodes, ctx.defs.nodeDir, ctx.defs.sidecars).catch(fail);
-  definitions.recipeHash = recipeHash;
-  for (const entry of Object.values(definitions.nodes)) {
-    const node = entry.definition;
-    if (node.kind === "repository") {
-      try {
-        const account: string = repositoryAccount(ctx, node).id;
-        const definition = { ...node, account };
-        entry.definition = definition;
-        entry.hash = definitionHash({ definition, sidecars: entry.sidecars });
-      } catch (error) {
-        fail(error);
-      }
-    }
-  }
+  const { recipe, definitions } = await prepareJob(ctx, jobRecipeName(ctx, req.recipe));
   const knowledgeByRecipe = ctx.project.recipeKnowledge;
   if (knowledgeByRecipe && Object.hasOwn(knowledgeByRecipe, recipe.name)) definitions.knowledgeByStep = knowledgeByRecipe[recipe.name];
   const parent = req.parentJobId ? (ctx.db.db.prepare("SELECT * FROM jobs WHERE id = ?").get(req.parentJobId) as JobRow | undefined) : null;

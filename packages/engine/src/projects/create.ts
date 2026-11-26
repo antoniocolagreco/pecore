@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { Project } from "@pecore/schemas";
 import type { Accounts, ForgeAccount, ProjectInput } from "@pecore/schemas";
 import { protectedUser } from "../accounts/agents";
+import { legacyForgeOperations } from "../definitions/forge-operations";
 import { homePaths, projectPaths } from "../home/layout";
 import { checkHome } from "../osuser/home-check";
 import type { HomeFinding } from "../osuser/home-check";
@@ -127,6 +128,7 @@ export async function beginProject(home: string, input: ProjectInput, opts: Crea
   const parsed = Project.safeParse(input);
   if (!parsed.success) throw new ProjectCreateError(1, parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
   const project: Project = { ...parsed.data, recipes: parsed.data.recipes ?? [], folder: await checkFolder(parsed.data.folder, parsed.data) };
+  if (project.createRepo !== null && legacyForgeOperations.get(project.createRepo) === "create-repo") project.createRepo = "create-repo";
   const account = forgeAccountOf(project, opts.accounts);
   const dir = join(homePaths(home).projects, project.id);
   try {
@@ -140,7 +142,7 @@ export async function beginProject(home: string, input: ProjectInput, opts: Crea
   try {
     for (const d of [p.knowledge, p.work]) await mkdir(d, { recursive: true });
     const forge = account ? await loadForgeDefaults(opts.templates, account.forge) : null;
-    if (project.createRepo !== null && forge?.createRepo === null) {
+    if (project.createRepo !== null && !forge?.createRepo) {
       throw new ProjectCreateError(1, "This forge requires an existing repository.");
     }
     withProjectDb(p.db, (db) => db.db.transaction(() => {

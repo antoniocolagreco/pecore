@@ -56,7 +56,7 @@ export async function validateProjectCreation(engine: Engine, { name, repository
     if (repoHost(url) !== account.host) throw new Error(`Forge account ${accountId} requires a repository on ${account.host}.`);
     const defaults = await loadForgeDefaults(engine.opts.templates, account.forge);
     if (repository.mode === "new") {
-      if ((account.forge !== "github" && account.forge !== "gitlab") || !defaults.createRepo) {
+      if (!defaults.createRepo) {
         throw new Error("Creating a repository requires a GitHub or GitLab account.");
       }
       const { owner, name: repositoryName } = repoOwnerAndName(url);
@@ -65,7 +65,7 @@ export async function validateProjectCreation(engine: Engine, { name, repository
         throw new Error("The new repository URL must include its owner and repository name.");
       }
       if (!(await identityOk(account))) throw new Error(`Sign in again with forge account ${accountId} before creating the repository.`);
-      createRepo = defaults.createRepo;
+      createRepo = "create-repo";
     } else {
       const config: string[] = defaults.credentialHelper === null ? [] : credentialHelper(defaults.credentialHelper);
       try {

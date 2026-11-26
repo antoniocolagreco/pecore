@@ -1,7 +1,7 @@
 import { cloneElement, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { ReactElement, ReactNode, Ref } from "react";
 import { Link, useBlocker, useNavigate, useParams } from "react-router";
-import { AgentSession, ApiError, ArtifactType, HumanInterface, humanInterfaces, isNodeKindTag, Name, NodeOutputType } from "@pecore/schemas";
+import { AgentSession, ApiError, ArtifactType, HumanInterface, humanInterfaces, isForgeOperation, isNodeKindTag, Name, NodeOutputType } from "@pecore/schemas";
 import type { DefinitionFile, Node, RouteResult } from "@pecore/schemas";
 import { basicSetup, EditorView, minimalSetup } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
@@ -531,7 +531,8 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   const human: boolean = kind === "human";
   const agent: boolean = kind === "agent";
   const repository: boolean = kind === "repository";
-  const remote: boolean = repository;
+  const builtin: boolean = !creation && repository && isForgeOperation(string(draft?.name)) && !draft?.script;
+  const remote: boolean = repository && !builtin;
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [approvedHash, setApprovedHash] = useState<string>();
   const approval = file.chatApproval;
@@ -543,7 +544,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   });
   const tracker = object(draft?.tracker);
   const trackerAccess: string = string(tracker.access) || "none";
-  const accounts = useData(() => repository || (agent && trackerAccess !== "none") ? call("getAccounts") : Promise.resolve(null), [repository, agent, trackerAccess],
+  const accounts = useData(() => remote || (agent && trackerAccess !== "none") ? call("getAccounts") : Promise.resolve(null), [remote, agent, trackerAccess],
     (event) => event.type === "configuration.changed" && event.kind === "accounts");
   const jira = useData(() => agent && trackerAccess !== "none" ? call("getActiveJira") : Promise.resolve(null), [agent, trackerAccess]);
   const options: { value: string; label: string }[] = [{ value: "project.account", label: "Project account" }];
@@ -574,7 +575,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
     if (saveSidecar && !await sidecar.current?.commit()) return;
     if (saveDefinition) await file.commit();
   });
-  const editable: boolean = file.editable && !save.busy;
+  const editable: boolean = file.editable && !save.busy && !builtin;
   const canSave: boolean = editable && (saveDefinition || sidecarDirty) && (!saveDefinition || file.canCommit) &&
     (!needsContext || (sidecarStatus?.path === sidecarPath && sidecarStatus.ready)) && (!saveSidecar || sidecarStatus?.canCommit === true);
   const update = (key: string, value: unknown): void => file.update(JSON.stringify({
@@ -615,9 +616,9 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   );
   const title: string = templateTitle(string(draft?.name) || path.split("/").at(-1)?.replace(/\.json$/, "") || "");
   return <Page title={creation ? "New Node" : title || "Node editor"} actions={<>
-    {!creation && path.startsWith("templates/nodes/") && <DeleteTemplateButton path={path} sha256={file.sha256} title={title}
+    {!creation && !builtin && path.startsWith("templates/nodes/") && <DeleteTemplateButton path={path} sha256={file.sha256} title={title}
       disabled={!editable || file.dirty || sidecarDirty} />}
-    <Button variant="primary" loading={save.busy} disabled={!canSave} onClick={() => void save.run()}>Save</Button>
+    {!builtin && <Button variant="primary" loading={save.busy} disabled={!canSave} onClick={() => void save.run()}>Save</Button>}
   </>}>
     {(newTemplate || path.startsWith("templates/")) && <Link to="/templates" state={restorePageScroll}>Back to templates</Link>}
     {file.feedback}
@@ -717,6 +718,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
             {!draft.script && <>{commandField("Command", draft.command, (command) => update("command", command))}{fieldErrors("command")}</>}
             {!draft.command && textField("script", "Script name", "Enter the name of the saved .sh script. Choose either a command or a script.")}
           </>}
+          {builtin && <p className={ui.muted}>Uses the Git hosting account selected in Project Settings.</p>}
           {remote && <>
             {check("readOnly", "Reads only", "Run this node from chat without asking for confirmation. Protected mode still requires script approval.",
               draft.readOnly === true, (checked) => update("readOnly", checked ? true : undefined))}

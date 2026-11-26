@@ -23,6 +23,15 @@ type Tab = "graph" | "history" | "request";
 type HistoryEntry = { run: NodeRunView; attempt: AttemptView | null; index: number };
 const historyPageSize: number = 40;
 
+function deliveredBranch(runs: NodeRunView[], snapshot: ReturnType<typeof useRecipe>["data"]): boolean {
+  return runs.some(({ node, outcome }) => {
+    if (outcome !== "success") return false;
+    const use: string | undefined = snapshot?.recipe.nodes[node]?.use;
+    const definition = use ? snapshot?.definitions.get(use) : undefined;
+    return use === "git-delivery" || (use === "open-pr" && definition?.kind === "repository" && definition.outputs.success === undefined);
+  });
+}
+
 function reasonTarget(reason: WhyReason, detail: JobDetail): string | null {
   if (reason.queueItemId) return `/notifications/${encodeURIComponent(reason.queueItemId)}`;
   if (reason.account || reason.reason === "auth") {
@@ -54,7 +63,7 @@ function Result({ detail, definitions }: { detail: JobDetail; definitions: Retur
   const files = useData(async () => diff ? diffFiles((await readArtifact(diff)).content) : null, [diff && artifactKey(diff), diff?.sha256]);
   const delivered = useDelivery(artifacts);
   const last: NodeRunView | undefined = nodeRuns.at(-1);
-  const branchDelivered: boolean = nodeRuns.some(({ node, outcome }) => outcome === "success" && definitions?.recipe.nodes[node]?.use === "git-delivery");
+  const branchDelivered: boolean = deliveredBranch(nodeRuns, definitions);
   const outcome: string | null = job.failureReason ?? (job.state === "stopped" ? null : last?.outcome ?? last?.failureReason ?? null);
   const checks: NodeRunView[] = [...latestRuns(nodeRuns).values()].filter((run) => {
     const use: string | undefined = definitions?.recipe.nodes[run.node]?.use;
@@ -151,7 +160,7 @@ function Loaded({ detail, error, reasons, whyError, reload }: { detail: JobDetai
     (job.parentJobId === null && job.target !== job.baseBranch);
   const recipe = useRecipe(job);
   const delivery = useDelivery(artifacts);
-  const branchDelivered: boolean = nodeRuns.some(({ node, outcome }) => outcome === "success" && recipe.data?.recipe.nodes[node]?.use === "git-delivery");
+  const branchDelivered: boolean = deliveredBranch(nodeRuns, recipe.data);
   const canCheck: boolean = job.mergedAt === null && Boolean(delivery.data || branchDelivered);
   const merge = useAction(async (manual: boolean) => {
     setMergeStatus(null);

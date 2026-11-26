@@ -14,7 +14,7 @@ export function definitionHash(content: unknown): string {
   return createHash("sha256").update(json).digest("hex");
 }
 
-export async function snapshotNode(definition: Node, dir: string, contents?: Readonly<Record<string, string>>): Promise<JobDefinitions["nodes"][string]> {
+export async function snapshotNode<T extends Node>(definition: T, dir: string, contents?: Readonly<Record<string, string>>): Promise<JobDefinitions["nodes"][string] & { definition: T }> {
   const names: Set<string> = new Set(nodeSidecars(definition).map(([, name]) => name));
   const sidecars: Record<string, string> = Object.fromEntries(
     await Promise.all([...names].map(async (name) => {

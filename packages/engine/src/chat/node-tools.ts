@@ -1,4 +1,4 @@
-import { artifactTypes } from "@pecore/schemas";
+import { artifactTypes, isForgeOperation } from "@pecore/schemas";
 import { join } from "node:path";
 import { Ajv } from "ajv";
 import { ArtifactType, ChatForm } from "@pecore/schemas";
@@ -11,7 +11,7 @@ import { withProjectLocation } from "../projects/location";
 import { outcomeOutputs, runCommandNode } from "../runners/command";
 import type { CommandInput, CommandRun } from "../runners/command";
 import { paramsWithDefaults } from "../runners/placeholders";
-import { repositoryAccount, repositoryEnv } from "../runners/repository";
+import { repositoryAccount, repositoryDefinition, repositoryEnv } from "../runners/repository";
 import { bindTrackerSite, callTracker, trackerAccount, trackerTool } from "./tracker-tools";
 
 const Input = z.strictObject({
@@ -62,13 +62,24 @@ function catalogFor(engine: Engine, project: string) {
 
 export const nodeToolPrefix: string = "node_";
 
-export function listNodeTools(engine: Engine, project: string): { name: string; description: string; inputSchema: z.core.JSONSchema.BaseSchema }[] {
+type NodeTool = { name: string; description: string; inputSchema: z.core.JSONSchema.BaseSchema };
+
+export async function listNodeTools(engine: Engine, project: string): Promise<NodeTool[]> {
   const catalog = catalogFor(engine, project);
+  const { ctx } = engine.project(project);
   const protectedMode: boolean = engine.global().settings.protectedMode;
-  return catalog.names("nodes").flatMap((name) => {
+  const tools = await Promise.all(catalog.names("nodes").map(async (name): Promise<NodeTool[]> => {
     const entry = catalog.chatNode(name);
     if (!entry || (protectedMode && !entry.approved)) return [];
-    const { node } = entry;
+    let { node } = entry;
+    if (isForgeOperation(name) && !node.script) {
+      try {
+        const implementation = await repositoryDefinition(ctx, node, repositoryAccount(ctx, node));
+        node = implementation.definition;
+      } catch {
+        return [];
+      }
+    }
     const fields: ArtifactType[] = [...node.inputs, ...node.optionalInputs];
     const defaults: Record<string, unknown> = paramsWithDefaults(node.params, undefined);
     const required: string[] = [
@@ -91,7 +102,8 @@ export function listNodeTools(engine: Engine, project: string): { name: string; 
         },
       },
     }];
-  });
+  }));
+  return tools.flat();
 }
 
 async function prepare(engine: Engine, invocation: Invocation) {
@@ -101,7 +113,9 @@ async function prepare(engine: Engine, invocation: Invocation) {
   const entry = catalog.chatNode(invocation.name);
   if (!entry) throw new Error("This node is not available in the project.");
   if (engine.global().settings.protectedMode && !entry.approved) throw new Error("This node needs approval. Open the node in the app and review the saved action.");
-  const { node, checks, hash } = entry;
+  const { hash } = entry;
+  const forge = repositoryAccount(ctx, entry.node);
+  const { definition: node, sidecars: checks, hash: resolvedHash } = await repositoryDefinition(ctx, entry.node, forge, entry.checks);
   const params: Record<string, unknown> = paramsWithDefaults(node.params, input.params);
   if (!validateParams.validate(node.params, params)) throw new Error(validateParams.errorsText());
   const supplied = input.inputs ?? {};
@@ -118,12 +132,11 @@ async function prepare(engine: Engine, invocation: Invocation) {
     ticketId: null, project: { repoDir: join(ctx.dir, "repo.git"), repoUrl: ctx.project.repo?.url ?? null, baseBranch: ctx.project.baseBranch },
   };
   if (input.ticketId) context.ticketId = input.ticketId;
-  const forge = repositoryAccount(ctx, node);
   const options: Omit<CommandRun, "node" | "outputs"> = {
     params, inputs, context, sidecars: checks, nodeDir: ctx.defs.nodeDir, user: ctx.user, workdir: ctx.dir, redactCredentials: true,
   };
   return { node, forge, options, catalog, hash, direct: node.readOnly === true,
-    fingerprint: definitionHash({ hash, account: forge, params, inputs, context }) };
+    fingerprint: definitionHash({ hash, resolvedHash, account: forge, params, inputs, context }) };
 }
 
 async function runPrepared(engine: Engine, project: string, prepared: Awaited<ReturnType<typeof prepare>>): Promise<Output> {

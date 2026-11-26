@@ -208,7 +208,7 @@ describe("phase 1 gate: shipped templates", () => {
     });
     expect(checkRecipe(draft, library.nodes, true)).toContainEqual({
       path: "nodes.pr.reads",
-      message: "GitHub PR needs the pull_request from Write PR. A base change can restart at Git Rebase before Write PR has produced it. Route that branch through Write PR, or clear the base-change step in Recipe settings and remove the disconnected steps.",
+      message: "Open PR needs the pull_request from Write PR. A base change can restart at Git Rebase before Write PR has produced it. Route that branch through Write PR, or clear the base-change step in Recipe settings and remove the disconnected steps.",
     });
     const throughSpec: Recipe = Recipe.parse({
       ...draft, edges: draft.edges.map((edge) =>
@@ -228,7 +228,7 @@ describe("phase 1 gate: shipped templates", () => {
     });
     expect(checkRecipe(bypass, library.nodes, true)).toContainEqual({
       path: "nodes.pr.reads",
-      message: "GitHub PR needs the pull_request from Write PR. A path reaches GitHub PR without that output. Route it through an outcome of Write PR that produces the pull_request.",
+      message: "Open PR needs the pull_request from Write PR. A path reaches Open PR without that output. Route it through an outcome of Write PR that produces the pull_request.",
     });
   });
 
@@ -248,7 +248,7 @@ describe("phase 1 gate: shipped templates", () => {
     const graphEdges = recipe.edges.filter((edge) => edge.from !== "write-pr").map((edge) => edge.to === "write-pr" ? { ...edge, to: "pr" } : edge);
     if (graphNodes["write-pr"]) {
       delete graphNodes["write-pr"];
-      graphNodes.pr = { ...graphNodes.pr!, reads: ["spec"] };
+      graphNodes.pr = { ...graphNodes.pr!, use: "github-pr", reads: ["spec"] };
     }
     const graph = { ...recipe, nodes: {
       ...graphNodes, ...(name === "bugfix-to-pr" ? { comment: { ...recipe.nodes.comment, use: "github-issue-comment" } } : {}),

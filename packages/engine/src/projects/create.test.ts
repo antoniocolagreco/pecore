@@ -1,9 +1,10 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { Recipe } from "@pecore/schemas";
+import { Node, Recipe } from "@pecore/schemas";
 import { forgeHome, forgeProject, until } from "../../test/forge-project";
 import { Engine } from "../main";
+import { loadNodeFile } from "../definitions/load";
 import { createProjectWithRecipes } from "../../test/project";
 import { tempDir } from "../../test/tmp";
 import { gitApp, gitAppIn } from "../workdir/git-as";
@@ -24,7 +25,7 @@ describe("project creation with a remote (section Project creation, decision 13)
     expect((await gitApp(repo, ["config", "remote.origin.url"])).trim()).toBe("https://github.com/acme/shop.git");
     expect((await gitApp(repo, ["config", "core.sharedRepository"])).trim()).toBe("group");
     expect(await readCreation(p.ctx.dir)).toBeNull();
-    expect(engine.catalog.node("github-pr")).not.toBeNull();
+    expect(engine.catalog.node("open-pr")).not.toBeNull();
     expect(await exists(join(p.ctx.dir, "nodes"))).toBe(false);
     await engine.shutdown();
   });
@@ -32,7 +33,7 @@ describe("project creation with a remote (section Project creation, decision 13)
   it("a new remote is created by the createRepo node in the project-setup job, then set as origin", async () => {
     const { forge, home, templates } = await forgeHome();
     const engine = await Engine.start({ home, templates });
-    await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "github-create-repo" });
+    await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "create-repo" });
     const p = engine.project("fresh");
     expect(await readCreation(p.ctx.dir)).toMatchObject({ step: 3 });
     await until(async () => !(await readCreation(p.ctx.dir)));
@@ -47,7 +48,7 @@ describe("project creation with a remote (section Project creation, decision 13)
   it("a new remote gets the project's base branch, not main", async () => {
     const { forge, home, templates } = await forgeHome();
     const engine = await Engine.start({ home, templates });
-    await engine.createProject({ id: "dev", name: "Dev", repo: { url: "https://github.com/acme/dev.git", account: "gh-test" }, baseBranch: "develop", createRepo: "github-create-repo" });
+    await engine.createProject({ id: "dev", name: "Dev", repo: { url: "https://github.com/acme/dev.git", account: "gh-test" }, baseBranch: "develop", createRepo: "create-repo" });
     const p = engine.project("dev");
     await until(async () => !(await readCreation(p.ctx.dir)));
     expect(forge.remoteHead("acme/dev", "develop")).toBe(await branchHead(join(p.ctx.dir, "repo.git"), "develop"));
@@ -59,8 +60,10 @@ describe("project creation with a remote (section Project creation, decision 13)
     const { forge, home, templates } = await forgeHome();
     const engine = await Engine.start({ home, templates });
     try {
-      engine.catalog.saveContent("github-create-repo.sh", `${engine.catalog.content("github-create-repo.sh")}\nprintf 'custom setup\\n'\n`);
-      await engine.createProject({ id: "custom", name: "Custom", repo: { url: "https://github.com/acme/custom.git", account: "gh-test" }, createRepo: "github-create-repo" });
+      const { value } = await loadNodeFile(join(templates, "forges", "nodes", "github-create-repo.json"));
+      if (value?.kind !== "repository") throw new Error("Expected a repository node");
+      engine.catalog.saveNode(Node.parse({ ...value, name: "custom-setup", probe: undefined, script: value.script + "\nprintf 'custom setup\\n'\n" }));
+      await engine.createProject({ id: "custom", name: "Custom", repo: { url: "https://github.com/acme/custom.git", account: "gh-test" }, createRepo: "custom-setup" });
       const { ctx } = engine.project("custom");
       await until(async () => !(await readCreation(ctx.dir)));
       expect(ctx.db.db.prepare("SELECT id FROM human_queue WHERE kind = 'engine-node'").get()).toBeUndefined();
@@ -74,7 +77,7 @@ describe("project creation with a remote (section Project creation, decision 13)
     const { forge, home, templates } = await forgeHome();
     await forge.set({ offline: true });
     const engine = await Engine.start({ home, templates });
-    await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "github-create-repo" });
+    await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "create-repo" });
     const p = engine.project("fresh");
     await until(() => p.executor.job("project-setup").waiting_reason === "network");
     const dir = p.ctx.dir;
@@ -219,7 +222,7 @@ describe("project folder (decision 75)", () => {
     const folder = join(await tempDir(), "fresh");
     const head = await userRepo(folder);
     const engine = await Engine.start({ home, templates });
-    await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "github-create-repo", folder });
+    await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "create-repo", folder });
     const p = engine.project("fresh");
     await until(async () => !(await readCreation(p.ctx.dir)));
     expect(forge.remoteHead("acme/fresh", "main")).toBe(head);
@@ -232,7 +235,7 @@ describe("project folder (decision 75)", () => {
     const { forge, home, templates } = await forgeHome();
     const folder = join(await tempDir(), "fresh");
     const engine = await Engine.start({ home, templates });
-    await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "github-create-repo", folder });
+    await engine.createProject({ id: "fresh", name: "Fresh", repo: { url: "https://github.com/acme/fresh.git", account: "gh-test" }, createRepo: "create-repo", folder });
     const p = engine.project("fresh");
     expect(await exists(folder)).toBe(false);
     await until(async () => !(await readCreation(p.ctx.dir)));
