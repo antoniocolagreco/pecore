@@ -22,6 +22,16 @@ Use `<type>/<short-description>` with lowercase words separated by hyphens. Incl
 | `ci` | Update CI workflows | `ci/run-linux-checks` |
 | `chore` | Maintain dependencies or tooling | `chore/update-electron` |
 
+## Issues
+
+Write each issue in English with three sections:
+
+- **Problem**: what the user sees or cannot do, with a concrete example.
+- **Solution**: numbered points describing the expected behaviour, not the implementation.
+- **Done when**: checks anyone can verify, including tests and docs to update.
+
+Keep one fact per line and use short, common words. Leave out causes, code paths and proposed fixes unless the solution depends on them. Keep the issue as one clean text: to correct it, rewrite the body instead of adding a comment. Use the labels `bug`, `enhancement`, `ui`, `engine` and `idea` as they apply.
+
 ## Commits and pull requests
 
 Use `<type>(<scope>): <summary>` for commits. Use the types above. The scope is optional and names the area changed. Write the summary in English using the imperative, for example `fix(chat): keep confirmation cards visible` or `docs: document the repository workflow`.
