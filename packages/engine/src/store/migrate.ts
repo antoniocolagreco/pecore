@@ -28,9 +28,6 @@ export function migrate(db: Database.Database, prefix: string, options?: { inher
       }
       else if (file === "shared-035-remove-tracker-nodes.sql") migrateAgentTrackers(db, sql, prefix === "");
       else if (file === "shared-036-artifact-contracts.sql") migrateArtifactContracts(db, sql, options?.inherited);
-      else if (file === "chats-038-account-site.sql") {
-        if (!db.prepare("SELECT 1 FROM pragma_table_info('accounts') WHERE name = 'site'").get()) db.exec(sql);
-      }
       else db.exec(sql);
       db.prepare("DELETE FROM schema_version").run();
       db.prepare("INSERT INTO schema_version (version) VALUES (?)").run(version);

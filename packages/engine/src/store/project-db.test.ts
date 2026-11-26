@@ -161,6 +161,7 @@ describe("pecore.db", () => {
     const old: ChatsDb = new ChatsDb(path);
     const catalog: Catalog = new Catalog(old.db);
     await restoreTrackerColumns(old.db);
+    old.db.exec("ALTER TABLE accounts DROP COLUMN site");
     old.db.exec(`INSERT INTO catalog_nodes (name, description, kind, shipped, timeout_sec, changes_files, retry, tracker_provider, tracker_account, tracker_server, tracker_tool)
       VALUES ('jira-mcp-ticket-read', 'Read Jira', 'tracker', 1, 120, 0, 1, 'jira', 'atlassian', 'atlassian', 'getJiraIssue'),
       ('jira-mcp-ticket-search', 'Find Jira tickets', 'tracker', 0, 120, 0, 1, 'jira', 'atlassian', 'atlassian', 'searchJiraIssuesUsingJql');
