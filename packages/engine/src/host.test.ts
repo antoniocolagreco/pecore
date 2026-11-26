@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { cp, mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "@pecore/schemas";
 import type { EngineMessage, MainMessage } from "@pecore/schemas";
 import { shippedTemplates, tempDir } from "../test/tmp";
@@ -27,6 +27,20 @@ async function resources() {
   return dir;
 }
 
+beforeEach(async () => {
+  const home: string = await tempDir();
+  const bin: string = join(home, "bin");
+  await mkdir(bin);
+  await Promise.all(["gh", "glab", "aws", "docker", "podman", "getent"].map((name) =>
+    writeFile(join(bin, name), "#!/bin/sh\nexit 1\n", { mode: 0o700 })));
+  vi.stubEnv("HOME", home);
+  vi.stubEnv("PATH", `${bin}:${process.env.PATH ?? ""}`);
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("engine host over parentPort", () => {
   it("creates PECORE_HOME with mode 0700, sends ready with the API port and token, answers active?, and shuts down", async () => {
     const { port, sent, send } = fakePort();
@@ -39,7 +53,7 @@ describe("engine host over parentPort", () => {
     const call = apiClient({ port: started!.api.port, token: started!.api.token });
     expect(await call("getStatus")).toMatchObject({ version: "1.2.3" });
     send({ type: "active?" });
-    expect(sent.at(-1)).toEqual({ type: "active", jobs: 0 });
+    expect(sent.filter((m) => m.type === "active")).toEqual([{ type: "active", jobs: 0 }]);
     send({ type: "shutdown" });
     await until(() => sent.some((m) => m.type === "shutdown.done"));
     await expect(stat(join(home, "run", "api.json"))).rejects.toThrow();
