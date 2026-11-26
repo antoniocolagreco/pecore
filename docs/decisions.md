@@ -513,3 +513,9 @@
 - Decision: Settings > Accounts has one Trackers group with one row per tracker account, showing its name, site and login state. A Jira login from the Atlassian CLI appears on its own and shares the Jira row, so Jira shows once. The app stores the Jira site after login and check. Add account asks which tracker and starts browser sign-in. The app chooses the CLI or the MCP bridge; the user never sees the choice.
 - Why: Atlassian and Jira were separate panels for the same tracker, with different layouts and technical text.
 - Replaces: The Atlassian, Linear and Jira panels.
+
+## 2026-11-26: Show every supported AI tool in Accounts
+
+- Decision: In Settings > Accounts > AI tools, every supported harness has a row. Without an account, the row shows Not installed, Not logged in or No models and Log in when the harness is installed. Logging in from the row creates the account and re-runs auto-setup. Show unavailable reveals these rows, including the supported harnesses with no account, and Hide unavailable hides them again.
+- Why: A harness with no account, such as pi with no model, was invisible and could not be logged in from the app.
+- Replaces: Listing only the harnesses that already have an account or are being discovered.

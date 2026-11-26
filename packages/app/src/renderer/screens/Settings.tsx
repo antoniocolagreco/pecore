@@ -3,7 +3,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 import { appName, atlassianAccount, BuiltInHarness, codeCommitProfile, ForgeAccount, ForgeDiscovery, ForgeKind, forgeHost, forgeServices, harnessColor, harnesses, linearAccount, modelOnlyHarness, nextForgeAccountId, Settings as SettingsSchema } from "@pecore/schemas";
 import type { ServiceAccount } from "@pecore/schemas";
-import type { Account, HarnessInfo, LiveMessage, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
+import type { Account, BuiltInHarness as BuiltInHarnessId, HarnessInfo, LiveMessage, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useAutoSave, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
@@ -83,13 +83,13 @@ function LoginOutput({ id, progress, running }: { id: string; progress?: Progres
   </>;
 }
 
-const stateText: Record<string, string> = { logged_in: "Logged in", logged_out: "Logged out", no_models: "No models", error: "Error", unknown: "Unknown", unchecked: "Checking…", coming_soon: "Coming soon" };
+const stateText: Record<string, string> = { logged_in: "Logged in", logged_out: "Logged out", not_logged_in: "Not logged in", not_installed: "Not installed", no_models: "No models", error: "Error", unknown: "Unknown", unchecked: "Checking…", coming_soon: "Coming soon" };
 
 function stateBadge(state: string, checking: boolean): ReactNode {
   if (checking || state === "unchecked") return <Badge>Checking…</Badge>;
   const text: string = stateText[state] ?? state;
   if (state === "logged_in") return <Badge tone="success" dot>{text}</Badge>;
-  if (state === "logged_out" || state === "error" || state === "no_models") return <Badge tone="danger" dot>{text}</Badge>;
+  if (state === "logged_out" || state === "not_logged_in" || state === "error" || state === "no_models") return <Badge tone="danger" dot>{text}</Badge>;
   return <Badge>{text}</Badge>;
 }
 
@@ -152,7 +152,12 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
   const connected: boolean = useConnected();
   const logins = useData(() => kind === "model" ? call("listLogins") : Promise.resolve([]), [kind],
     (message) => kind === "model" && ((message.type === "login.progress" && message.done) || (message.type === "configuration.changed" && ["settings", "accounts"].includes(message.kind))));
+  const setup = useData(() => kind === "model" ? call("getSetup") : Promise.resolve(null), [kind],
+    (message) => kind === "model" && ((message.type === "login.progress" && message.done)
+      || (message.type === "configuration.changed" && message.kind === "accounts")
+      || message.type === "accounts.discovery_changed"));
   const [progress, setProgress] = useState<Record<string, Progress>>({});
+  const [setupRuns, setSetupRuns] = useState<Record<string, string>>({});
   const [toolRuns, setToolRuns] = useState<Record<string, string>>({});
   const [toolStates, setToolStates] = useState<Record<string, string>>({});
   const [checking, setChecking] = useState<Set<string>>(new Set());
@@ -191,6 +196,11 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
     }
     logins.reload();
   });
+  const startSetup = useAction(async (connector: BuiltInHarnessId) => {
+    const result = await call("startSetupLogin", { params: { connector } });
+    setSetupRuns((old) => ({ ...old, [connector]: result.loginId }));
+    setProgress((old) => old[result.loginId] ? old : { ...old, [result.loginId]: { lines: [], url: null, done: false } });
+  });
   useEffect(() => {
     if (!pendingLogin || !connected) return;
     const account: Account | undefined = accounts.find(({ id }) => id === pendingLogin);
@@ -213,6 +223,10 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
     }
   });
   const visible = accounts.filter((account) => kind === "model" ? account.kind === "model" : account.kind !== "model" && !protectedOnly);
+  const missingHarnesses: HarnessInfo[] = kind === "model" && !protectedOnly
+    ? harnesses.filter((harness) => harness.supported && !visible.some((account) => account.kind === "model" && account.connector === harness.id))
+    : [];
+  const shownMissing: HarnessInfo[] = hideMissing ? [] : missingHarnesses;
   const modelLogins = (logins.data ?? []).filter((login) => (login.osUser === "pecore-agent") === protectedOnly
     && visible.some((account) => account.kind === "model" && account.id === login.account));
   const loginRunning = (id: string, running: boolean = false): boolean => progress[id] ? !progress[id].done : running;
@@ -227,7 +241,7 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
       void recheck.run(id, isModel);
     }
   }, [connected, logins.data, visible.map(({ id }) => id).join(",")]);
-  const locked: boolean = !connected || start.busy;
+  const locked: boolean = !connected || start.busy || startSetup.busy;
   const targets: [id: string, isModel: boolean][] = kind === "model"
     ? modelLogins.filter((login) => !loginRunning(login.id, login.running)).map((login) => [login.id, true])
     : visible.filter(({ id }) => !loginRunning(toolRuns[id] ?? `tool:${id}`)).map(({ id }) => [id, false]);
@@ -238,9 +252,9 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
   const checkButton: ReactNode = <Button size="sm" icon={<RefreshIcon />} loading={checkPanel.busy}
     disabled={locked || checkPanel.busy || (!available.length && !refresh)} onClick={() => void checkPanel.run()}>Check</Button>;
   const rows: ReactNode = <>
-    <ErrorText error={start.error ?? recheck.error ?? logins.error} />
+    <ErrorText error={start.error ?? startSetup.error ?? recheck.error ?? logins.error ?? setup.error} />
     {protectedOnly && !visible.length && <p className={s.groupText}>No AI tools yet.</p>}
-    {!!(visible.length || extra?.length) && <ul className={s.rows}>
+    {!!(visible.length || extra?.length || shownMissing.length) && <ul className={s.rows}>
       {visible.map((account) => {
         if (account.kind === "model") {
           const name: string = harnessName(account, accounts);
@@ -284,6 +298,27 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
             {account.kind === "forge" && onEdit && <Button size="sm" disabled={locked || busy} onClick={() => onEdit(account)}>Edit</Button>}
           </>}>
           {id && <LoginOutput id={id} progress={output} running={!output?.done && account.tool !== "atlassian" && account.tool !== "linear"} />}
+        </AccountRow>;
+      })}
+      {shownMissing.map((harness) => {
+        const state = setup.data?.harnesses.find((item) => item.connector === harness.id);
+        const loading: boolean = setup.loading || !setup.data;
+        const installed: boolean = state?.installed ?? false;
+        const loggedIn: boolean = state?.loggedIn ?? false;
+        const label: string = loading ? "unchecked" : !installed ? "not_installed" : loggedIn ? "logged_in" : modelOnlyHarness(harness.id) ? "no_models" : "not_logged_in";
+        const detail: string = loading ? "Loading…" : !installed ? `Install ${harness.name}, then check again.`
+          : loggedIn ? "Login found, so the account is being set up."
+          : modelOnlyHarness(harness.id) ? `Log in or set up a model provider in ${harness.name}, then check again.`
+          : `Log in with ${harness.name}, then check again.`;
+        const id: string | undefined = setupRuns[harness.id];
+        const current: Progress | undefined = id ? progress[id] : undefined;
+        const running: boolean = !!id && !current?.done;
+        return <AccountRow key={`harness:${harness.id}`} name={harness.name} color={harnessColors && harnessColor(harness.id, harnessColors.colors)}
+          detail={detail} state={label} checking={loading} actions={<>
+            {!loading && installed && !loggedIn && <Button size="sm" variant="primary" disabled={locked || running} onClick={() => void startSetup.run(harness.id as BuiltInHarnessId)}>Log in</Button>}
+            {harnessColors && <HarnessColorButton harness={harness} {...harnessColors} />}
+          </>}>
+          {id && <LoginOutput id={id} progress={current} running={running} />}
         </AccountRow>;
       })}
       {extra?.map((row) => <AccountRow key={row.key} name={row.name} detail={row.detail} state={row.state} checking={row.checking ?? false} actions={row.actions}>
@@ -436,9 +471,9 @@ export function Settings() {
             <LoginControls title="AI tools" accounts={accounts.current?.accounts ?? []} harnessColors={harnessColors} hideMissing={!showUnavailable}
               actions={<Button size="sm" icon={showUnavailable ? <EyeOffIcon /> : <EyeIcon />} aria-pressed={showUnavailable}
                 onClick={() => setShowUnavailable(!showUnavailable)}>{showUnavailable ? "Hide unavailable" : "Show unavailable"}</Button>}>
-              {!accounts.current?.accounts.some(({ kind }) => kind === "model") && !pendingHarnesses.length && accounts.current && discovery.data &&
+              {!showUnavailable && !accounts.current?.accounts.some(({ kind }) => kind === "model") && !pendingHarnesses.length && accounts.current && discovery.data &&
                 <p className={s.groupText}>No AI tools yet. The ones you log in to on this computer show up here on their own.</p>}
-              <DiscoveringProviders providers={pendingHarnesses} />
+              {!showUnavailable && <DiscoveringProviders providers={pendingHarnesses} />}
               {harnessColors && showUnavailable && <ComingSoonTools {...harnessColors} />}
             </LoginControls>
             <LoginControls title="Git hosting" accounts={accounts.current?.accounts.filter(({ kind }) => kind === "forge") ?? []} kind="tool" pendingLogin={pendingLogin}

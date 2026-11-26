@@ -99,6 +99,12 @@ beforeEach(() => {
     if (route === "getSettings") return { value: SettingsSchema.parse({}), sha256: "settings-v1" };
     if (route === "getAccounts") return { value: Accounts.parse({}), sha256: "accounts-v1" };
     if (route === "getAccountDiscovery") return [];
+    if (route === "getSetup") return { modelAccountWorks: false, harnesses: [
+      { connector: "claude-code", installed: false, version: null, loggedIn: false },
+      { connector: "codex", installed: false, version: null, loggedIn: false },
+      { connector: "opencode", installed: false, version: null, loggedIn: false },
+      { connector: "pi", installed: false, version: null, loggedIn: false },
+    ] };
     if (route === "listLogins") return [];
     if (route === "getStatus") return { homeFindings: [], globalPause: false, notifications: 0, interrupted: 0, version: "test" };
     if (route === "putSettings") return { sha256: "settings-v2" };
@@ -180,6 +186,61 @@ it("keeps the tracker dialog open when the account cannot be saved", async () =>
   await user.click(dialog.getByRole("button", { name: "Add account" }));
   await screen.findByText("The account could not be saved.");
   expect(screen.getByRole("dialog", { name: "Add a tracker account" })).toBeTruthy();
+});
+
+it("shows every supported AI tool without an account and logs in from its row", async () => {
+  const fallback = api.call.getMockImplementation()!;
+  let accounts: Accounts = Accounts.parse({ accounts: [] });
+  let logins: LoginView[] = [];
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "getSetup") return { modelAccountWorks: false, harnesses: [
+      { connector: "claude-code", installed: false, version: null, loggedIn: false },
+      { connector: "codex", installed: true, version: "0.1.0", loggedIn: false },
+      { connector: "opencode", installed: true, version: "1.0.0", loggedIn: false },
+      { connector: "pi", installed: true, version: "1.5.2", loggedIn: false },
+    ] };
+    if (route === "getAccounts") return { value: accounts, sha256: "accounts-v1" };
+    if (route === "listLogins") return logins;
+    if (route === "startSetupLogin") return { loginId: "pi:local" };
+    if (route === "recheckLogin") return logins.find(({ id }) => id === "pi:local")!;
+    return fallback(route);
+  });
+  const user = userEvent.setup();
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
+  await screen.findByRole("heading", { name: "AI tools" });
+  expect(screen.queryByText("pi")).toBeNull();
+
+  await user.click(screen.getByRole("button", { name: "Show unavailable" }));
+  const claude: HTMLElement = (await screen.findByText("Claude Code")).closest("li")!;
+  expect(within(claude).getByText("Not installed")).toBeTruthy();
+  expect(within(claude).queryByRole("button", { name: "Log in" })).toBeNull();
+  const codex: HTMLElement = screen.getByText("Codex").closest("li")!;
+  expect(within(codex).getByText("Not logged in")).toBeTruthy();
+  expect(within(codex).getByRole("button", { name: "Log in" })).toBeTruthy();
+  const pi: HTMLElement = screen.getByText("pi").closest("li")!;
+  expect(within(pi).getByText("No models")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Hide unavailable" }));
+  expect(screen.queryByText("pi")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Show unavailable" }));
+
+  await user.click(within(screen.getByText("pi").closest("li")!).getByRole("button", { name: "Log in" }));
+  await waitFor(() => expect(api.call).toHaveBeenCalledWith("startSetupLogin", { params: { connector: "pi" } }));
+
+  accounts = Accounts.parse({ accounts: [{ id: "pi", kind: "model", provider: "pi", connector: "pi", login: "subscription" }] });
+  logins = [{ id: "pi:local", account: "pi", osUser: "local", connector: "pi", defaultDir: true, state: "logged_in", email: null, plan: null, running: false }];
+  act(() => {
+    for (const listener of [...api.listeners]) {
+      listener({ type: "login.progress", loginId: "pi:local", text: "Login ended", url: null, done: true });
+      listener({ type: "configuration.changed", kind: "accounts" });
+    }
+  });
+  await screen.findByText("Logged in");
+  const header: HTMLElement = screen.getByRole("heading", { name: "AI tools" }).closest("header")!;
+  const check: HTMLButtonElement = within(header).getByRole("button", { name: "Check" });
+  await waitFor(() => expect(check.disabled).toBe(false));
+  api.call.mockClear();
+  await user.click(check);
+  await waitFor(() => expect(api.call).toHaveBeenCalledWith("recheckLogin", { params: { id: "pi:local" } }));
 });
 
 it("checks only the accounts in the selected panel and keeps Check out of account rows", async () => {
