@@ -1052,6 +1052,8 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect(names).toEqual(expect.arrayContaining(["write_knowledge", "instantiate", "create_jobs", "comment_ticket", "answer_question", "read_definition", "list_definitions", "ask_user"]));
       for (const name of ["create_project", "update_project", "delete_project", "import_project", "export_project", "write_template", "delegate_to_pm", "list_agents", "get_agent", "agent_model_options", "create_agent", "update_agent", "write_agent_context", "delete_agent"]) expect(names).not.toContain(name);
       expect((await m.tool("write_knowledge", { path: "projects/demo/knowledge/notes.md", content: "# Notes\n" })).result!.isError).not.toBe(true);
+      expect((await m.tool("write_knowledge", { path: "bare-name.md", content: "# Bare\n" })).result!.isError).not.toBe(true);
+      expect((await m.tool("read_definition", { path: "projects/demo/knowledge/bare-name.md" })).result!.content![0]!.text).toContain("# Bare");
       const outside = await m.tool("write_knowledge", { path: "projects/other/knowledge/notes.md", content: "# Notes\n" });
       expect(outside.result!.isError).toBe(true);
       expect(outside.result!.content![0]!.text).toContain("acts only on its own project");
