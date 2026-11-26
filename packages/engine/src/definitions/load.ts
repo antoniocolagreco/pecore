@@ -1,4 +1,3 @@
-import { projectDefaults, recipeForForge } from "../projects/defaults";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { z } from "zod";
@@ -166,7 +165,7 @@ export async function loadTemplates(templatesDir: string, catalog?: Catalog): Pr
 
 export type LoadedProject = Definitions & { project: Project | null };
 
-export async function loadProject(projectDir: string, templatesDir?: string, stored?: Project | null, catalogs?: { global: Catalog; project: Catalog }, forge?: string): Promise<LoadedProject> {
+export async function loadProject(projectDir: string, templatesDir?: string, stored?: Project | null, catalogs?: { global: Catalog; project: Catalog }): Promise<LoadedProject> {
   const file = join(projectDir, "project.json");
   const p: Loaded<Project> = stored === undefined ? await parseFile(file, Project) :
     { value: stored, errors: stored === null ? [{ file, path: "", message: "project definition not found in pecore.db" }] : [] };
@@ -182,10 +181,8 @@ export async function loadProject(projectDir: string, templatesDir?: string, sto
     if (shared) {
       const available: Map<string, Recipe> = new Map(defs.recipes);
       defs.recipes.clear();
-      const defaults = forge && project.repo ? await projectDefaults(templatesDir!, project.repo, forge) : null;
       for (const name of project.recipes ?? []) {
-        const template: Recipe | undefined = available.get(name);
-        const recipe: Recipe | undefined = template && recipeForForge(template, defaults?.rename ?? {});
+        const recipe: Recipe | undefined = available.get(name);
         if (recipe) {
           defs.recipes.set(name, recipe);
           errors.push(...checkRecipe(recipe, defs.nodes, project.repo !== null).map((issue) => ({ file: join(templatesDir!, "recipes", `${name}.json`), ...issue })));

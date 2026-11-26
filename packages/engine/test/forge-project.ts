@@ -24,7 +24,7 @@ const deliver = {
   description: "Write, commit, push and open a pull request",
   start: "write",
   successOutcomes: ["pr:success"],
-  nodes: { write: { use: "write-spec" }, commit: { use: "git-commit" }, push: { use: "git-push" }, pr: { use: "github-pr", reads: ["write"] } },
+  nodes: { write: { use: "write-spec" }, commit: { use: "git-commit" }, push: { use: "git-push" }, pr: { use: "open-pr", reads: ["write"] } },
   edges: [
     { from: "write", on: "done", to: "commit" },
     { from: "commit", on: "success", to: "push" },

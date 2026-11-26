@@ -20,7 +20,7 @@ it("restarts a pending CI wait and runs a correction on the same pull request", 
       name: "with-ci", description: "Publish and wait for tests", start: "write",
       ci: { after: "pr", on: "success", checks: ["tests"], intervalSec: 1, timeoutSec: 30, maxCorrections: 1 },
       nodes: {
-        write: { use: "write-spec" }, fix: { use: "fix-tests", reads: ["pr"] }, commit: { use: "git-commit" }, push: { use: "git-push" }, pr: { use: "github-pr", reads: ["write"] },
+        write: { use: "write-spec" }, fix: { use: "fix-tests", reads: ["pr"] }, commit: { use: "git-commit" }, push: { use: "git-push" }, pr: { use: "open-pr", reads: ["write"] },
       },
       edges: [
         { from: "write", on: "done", to: "commit" }, { from: "commit", on: "success", to: "push" },

@@ -14,6 +14,7 @@ import { shippedTemplates, tempDir } from "../../test/tmp";
 import { handlers } from "../api/handlers";
 import { startApi } from "../api/server";
 import { Engine } from "../main";
+import { loadNodeFile } from "../definitions/load";
 import { readCreation } from "../projects/create";
 import { ProjectDb } from "../store/project-db";
 import { beginImport } from "./import";
@@ -375,8 +376,8 @@ describe("project import (share/, CUJ 7)", () => {
   it("a forge project asks for its accounts, checks the target, rewrites the ids and clones with the mapped account", async () => {
     const f = await forgeProject();
     const { ctx } = f.engine.project("shop");
-    const pr: Node = f.engine.catalog.node("github-pr")!;
-    f.engine.catalog.saveNode(Node.parse({ ...pr, name: "pr-explicit", account: forgeAccount.id, inputs: [], optionalInputs: [] }));
+    const { value: pr } = await loadNodeFile(join(f.templates, "forges", "nodes", "github-pr.json"));
+    f.engine.catalog.saveNode(Node.parse({ ...pr, name: "pr-explicit", account: forgeAccount.id, inputs: [], optionalInputs: [], probe: undefined }));
     f.engine.catalog.saveRecipe(Recipe.parse({
       name: "explicit", description: "PR with an explicit account", start: "commit", successOutcomes: ["finish:success"],
       nodes: { commit: { use: "git-commit" }, finish: { use: "pr-explicit" } },
@@ -402,7 +403,7 @@ describe("project import (share/, CUJ 7)", () => {
     expect(project.credentials?.[forgeAccount.id]).toBe("gh-mine");
     const installed = b.engine.project("shop").ctx.defs.nodes;
     expect(installed.get("pr-explicit")).toMatchObject({ account: forgeAccount.id });
-    expect(installed.get("github-pr")).toMatchObject({ account: "project.account" });
+    expect(installed.get("open-pr")).toMatchObject({ account: "project.account" });
     expect(items(b.engine, "shop", "import")).toEqual([]);
     expect(execFileSync("git", ["--git-dir", join(nd, "repo.git"), "config", "--get", "remote.origin.url"], { encoding: "utf8" }).trim()).toBe("https://github.com/acme/shop.git");
     expect(execFileSync("git", ["--git-dir", join(nd, "repo.git"), "rev-parse", "--verify", "main"], { encoding: "utf8" }).trim()).toMatch(/^[a-f\d]{40}$/);

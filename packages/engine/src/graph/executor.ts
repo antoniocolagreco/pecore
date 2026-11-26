@@ -8,7 +8,7 @@ import { spawnFor } from "../accounts/agents";
 import type { AgentServices } from "../accounts/agents";
 import { knowledgeClosure } from "../definitions/knowledge";
 import type { Definitions } from "../definitions/load";
-import { jobDefinitions, jobNodes, snapshotDefinitions } from "../definitions/snapshot";
+import { definitionHash, jobDefinitions, jobNodes } from "../definitions/snapshot";
 import { effectRecorder } from "../jobs/effects";
 import { checkGithubCi, githubHead } from "../jobs/github-ci";
 import type { JobAttachment } from "../jobs/create";
@@ -27,7 +27,7 @@ import { appUser, killJobProcesses, signalGroup, stopGroup } from "../runners/pr
 import { enoughDisk } from "../scheduler/disk";
 import type { Pools } from "../scheduler/pools";
 import type { NewEvent, ProjectDb } from "../store/project-db";
-import { repositoryAccount, repositoryEnv } from "../runners/repository";
+import { repositoryAccount, repositoryDefinition, repositoryEnv } from "../runners/repository";
 import { filesHash, deleteScratch, recordGit, restoreState, undoInterrupted } from "../workdir/files-hash";
 import type { GitRecord } from "../workdir/files-hash";
 import { gitAppResult, gitWork } from "../workdir/git-as";
@@ -453,7 +453,8 @@ export class JobExecutor {
     const baseBranch = this.ctx.project.baseBranch;
     const base = await branchHead(join(this.ctx.dir, "repo.git"), baseBranch);
     if (!base) throw new Error(`branch ${baseBranch} not found`);
-    const definitions: JobDefinitions = await snapshotDefinitions(recipe, new Map([[createRepo, { ...node, account: repositoryAccount(this.ctx, node).id }]]), this.ctx.defs.nodeDir, this.ctx.defs.sidecars);
+    const definition = await repositoryDefinition(this.ctx, node, repositoryAccount(this.ctx, node), this.ctx.defs.sidecars);
+    const definitions: JobDefinitions = { recipeHash: definitionHash(recipe), nodes: { [createRepo]: definition } };
     this.ctx.db.append([{ jobId: setupJobId, type: "job.created", payload: { title: "Create the remote repository", recipe, definitions, request: "Create the remote repository.", parentJobId: null, baseBranch, base, target: baseBranch, branch: jobBranch(setupJobId) } }]);
     this.ctx.changed(setupJobId);
     void this.tick(setupJobId);

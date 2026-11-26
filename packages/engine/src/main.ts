@@ -342,7 +342,7 @@ export class Engine extends EventEmitter {
     const p = this.projects.get(id);
     if (!p) return [];
     const project = p.ctx.db.definition.read();
-    const loaded = await loadProject(p.ctx.dir, p.ctx.templates, project, { global: this.catalog, project: p.ctx.db.catalog }, this.forgeKind(project?.repo?.account));
+    const loaded = await loadProject(p.ctx.dir, p.ctx.templates, project, { global: this.catalog, project: p.ctx.db.catalog });
     if (loaded.project) {
       p.ctx.project = loaded.project;
       p.ctx.defs = loaded;
@@ -587,10 +587,6 @@ export class Engine extends EventEmitter {
     this.live({ type: "configuration.changed", kind });
   }
 
-  private forgeKind(account: string | undefined): string | undefined {
-    return this.accounts.accounts.find((entry): entry is ForgeAccount => entry.kind === "forge" && entry.id === account)?.forge;
-  }
-
   private async openProject(id: string): Promise<void> {
     const dir = this.projectDir(id);
     const templates: string = this.opts.templates;
@@ -601,7 +597,7 @@ export class Engine extends EventEmitter {
     }
     const db: ProjectDb = new ProjectDb(path, this.catalog.db);
     const project = db.definition.read();
-    const loaded: Awaited<ReturnType<typeof loadProject>> = await loadProject(dir, templates, project, { global: this.catalog, project: db.catalog }, this.forgeKind(project?.repo?.account));
+    const loaded: Awaited<ReturnType<typeof loadProject>> = await loadProject(dir, templates, project, { global: this.catalog, project: db.catalog });
     if (!loaded.project) {
       db.close();
       this.projectErrors.set(id, loaded.errors);

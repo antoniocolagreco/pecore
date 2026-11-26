@@ -2,7 +2,7 @@ import { JobRequest } from "@pecore/schemas";
 import type { Recipe, StoredEvent } from "@pecore/schemas";
 import { hasCommitNode } from "../definitions/recipe-check";
 import type { ProjectContext } from "../graph/executor";
-import { createJob, JobCreateError, jobRecipeName, recipeForJob } from "./create";
+import { createJob, JobCreateError, jobRecipeName, prepareJob } from "./create";
 
 export type CreateJobsResult = { accepted: boolean; plan: JobRequest[]; jobIds: Record<string, string> };
 
@@ -14,9 +14,10 @@ function orderJobs(ctx: ProjectContext, orderId: string): Map<string, string> {
   return new Map(rows.map(({ id, order_key }) => [order_key, id]));
 }
 
-function validatePlan(ctx: ProjectContext, plan: JobRequest[]): PlannedOrder["plan"] {
+async function validatePlan(ctx: ProjectContext, plan: JobRequest[]): Promise<PlannedOrder["plan"]> {
   const recipes: Map<string, Recipe> = new Map();
-  return JobRequest.array().parse(plan).map((entry) => {
+  const validated: PlannedOrder["plan"] = [];
+  for (const entry of JobRequest.array().parse(plan)) {
     if (recipes.has(entry.key)) throw new JobCreateError(`duplicate order key ${entry.key}`);
     const parentKey: string | undefined = entry.dependsOn[0];
     if (parentKey !== undefined) {
@@ -25,9 +26,10 @@ function validatePlan(ctx: ProjectContext, plan: JobRequest[]): PlannedOrder["pl
       if (!hasCommitNode(parent, ctx.defs.nodes)) throw new JobCreateError(`the recipe for parent key ${parentKey} has no commit node`);
     }
     const recipe: string = jobRecipeName(ctx, entry.recipe);
-    recipes.set(entry.key, recipeForJob(ctx, recipe));
-    return { ...entry, recipe };
-  });
+    recipes.set(entry.key, (await prepareJob(ctx, recipe)).recipe);
+    validated.push({ ...entry, recipe });
+  }
+  return validated;
 }
 
 async function createMissing(ctx: ProjectContext, { orderId, plan }: PlannedOrder): Promise<void> {
@@ -83,7 +85,9 @@ export async function planOrder(ctx: ProjectContext, orderId: string, plan: JobR
     return { accepted: false, plan: stored.payload.plan, jobIds: Object.fromEntries(orderJobs(ctx, orderId)) };
   }
   if (events.some((event) => event.type === "order.dropped")) throw new JobCreateError(`order ${orderId} was dropped`);
-  const validated: PlannedOrder["plan"] = validatePlan(ctx, plan);
+  const validated: PlannedOrder["plan"] = await validatePlan(ctx, plan);
+  const latest: StoredEvent[] = ctx.db.orderEvents(orderId);
+  if (latest.some((event) => event.type === "order.planned" || event.type === "order.dropped")) return planOrder(ctx, orderId, plan);
   const payload: PlannedOrder = { orderId, plan: validated };
   ctx.db.append([{ jobId: null, type: "order.planned", payload }]);
   await finishPlan(ctx, payload);

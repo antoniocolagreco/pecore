@@ -10,6 +10,7 @@ import { Unpack } from "tar";
 import { appName, ImportProjectBody, projectIdCandidate } from "@pecore/schemas";
 import type { Accounts, ImportProjectPreview, ImportProjectResult, Project } from "@pecore/schemas";
 import { loadProject, nodeSidecars } from "../definitions/load";
+import { legacyForgeOperations, migrateForgeRecipe } from "../definitions/forge-operations";
 import { importCatalog, saveLegacyJobDefinitions } from "../definitions/catalog";
 import { outcomeRenames, renameNodeOutcomes, renameOutcomeMentions, renameRecipeOutcomes } from "../definitions/outcomes";
 import type { OutcomeLookup } from "../definitions/outcomes";
@@ -320,6 +321,8 @@ export async function beginImport(home: string, input: ImportProjectBody, option
     }
     await writeCreation(original, 3);
     checkId(dest, id, options.knownProject);
+    for (const name of legacyForgeOperations.keys()) loaded.nodes.delete(name);
+    for (const recipe of loaded.recipes.values()) migrateForgeRecipe(recipe);
     const differences: string[] = await importCatalog(options.catalog, loaded);
     for (const name of ["nodes", "recipes"]) await rm(join(original, name), { recursive: true, force: true });
     renameSync(original, dest);

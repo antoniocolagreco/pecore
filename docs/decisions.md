@@ -526,6 +526,12 @@
 - Why: The author will not support them, and the list should show only what is planned.
 - Replaces: The eight coming soon rows of 2026-11-24.
 
+## 2026-11-26: Use one delivery node and one repository creation node
+
+- Decision: Open PR and Create Repo select their internal implementation from the project's Git hosting account. GitHub and GitLab return the draft with a URL. Private Git and CodeCommit connect Push directly to Open PR and deliver the branch without an artifact. The migration updates saved recipes and project setup references. Existing job snapshots retain their scripts.
+- Why: the same recipe should work with all four providers.
+- Replaces: provider-specific delivery and repository creation nodes in recipes and Templates (issue #20).
+
 ## 2026-11-26: Codex defaults to light grey
 
 - Decision: Codex's default colour is `#EEF1F2`, a light grey outside the 24 agent colours, like Claude Code's terracotta. The user's saved colour still wins.

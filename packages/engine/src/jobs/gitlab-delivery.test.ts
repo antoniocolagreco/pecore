@@ -10,7 +10,7 @@ const exec = promisify(execFile);
 
 it("passes the draft title and body to GitLab and reuses the existing request", async () => {
   const dir: string = await tempDir();
-  const nodeDir: string = join(shippedTemplates, "nodes");
+  const nodeDir: string = join(shippedTemplates, "forges", "nodes");
   const { value: node } = await loadNodeFile(join(nodeDir, "gitlab-mr.json"));
   if (node?.kind !== "repository") throw new Error("Expected GitLab MR");
   const url: string = "https://gitlab.example.com/team/app/-/merge_requests/3";
