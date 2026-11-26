@@ -502,6 +502,6 @@
 
 ## 2026-11-26: One Trackers group in Accounts
 
-- Decision: Settings > Accounts has one Trackers group with one row per tracker account, showing its name, site or account and login state. A Jira login from the Atlassian CLI appears on its own. Add account asks which tracker and starts browser sign-in. The app chooses the CLI or the MCP bridge; the user never sees the choice.
+- Decision: Settings > Accounts has one Trackers group with one row per tracker account, showing its name, site and login state. A Jira login from the Atlassian CLI appears on its own and shares the Jira row, so Jira shows once. The app stores the Jira site after login and check. Add account asks which tracker and starts browser sign-in. The app chooses the CLI or the MCP bridge; the user never sees the choice.
 - Why: Atlassian and Jira were separate panels for the same tracker, with different layouts and technical text.
 - Replaces: The Atlassian, Linear and Jira panels.

@@ -46,6 +46,52 @@ it("shows the logged-in Jira account in Trackers and refreshes it with the group
   await screen.findByText("alice@example.test · second.atlassian.net");
 });
 
+it("shows one Jira row with its site when the CLI login and the Jira account match", async () => {
+  const fallback = api.call.getMockImplementation()!;
+  const accounts: Accounts = Accounts.parse({ accounts: [{
+    id: "atlassian", kind: "service", service: "Atlassian", tool: "atlassian", user: "Atlassian account", site: "first.atlassian.net",
+  }] });
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "getActiveJira") return {
+      site: "first.atlassian.net", account: { id: "jira-login", kind: "service", service: "Jira", tool: "acli", user: "alice@example.test" },
+    };
+    if (route === "getAccounts") return { value: accounts, sha256: "accounts-v1" };
+    if (route === "recheckAccount") return { state: "logged_in" };
+    return fallback(route);
+  });
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
+  const trackers = (await screen.findByRole("heading", { name: "Trackers" })).closest("section")!;
+  await screen.findByText("first.atlassian.net");
+  expect(within(trackers).getAllByText("Jira")).toHaveLength(1);
+  expect(within(trackers).queryByText("Atlassian account")).toBeNull();
+  expect(within(trackers).queryByText("alice@example.test · first.atlassian.net")).toBeNull();
+});
+
+it("finds a Jira CLI login with Trackers Check without reopening Settings", async () => {
+  const fallback = api.call.getMockImplementation()!;
+  let active: RouteResult<"getActiveJira"> = null;
+  api.call.mockImplementation(async (route: string) => route === "getActiveJira" ? active : fallback(route));
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
+  const trackers = (await screen.findByRole("heading", { name: "Trackers" })).closest("header")!;
+  const check: HTMLButtonElement = within(trackers).getByRole("button", { name: "Check" });
+  expect(check.disabled).toBe(false);
+  active = {
+    site: "first.atlassian.net", account: { id: "jira-login", kind: "service", service: "Jira", tool: "acli", user: "alice@example.test" },
+  };
+  await userEvent.setup().click(check);
+  await screen.findByText("alice@example.test · first.atlassian.net");
+});
+
+it("shows a Trackers check error when no Jira account is listed", async () => {
+  const fallback = api.call.getMockImplementation()!;
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "getActiveJira") throw new Error("Jira check failed.");
+    return fallback(route);
+  });
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
+  expect(await screen.findByText("Jira check failed.")).toBeTruthy();
+});
+
 beforeEach(() => {
   api.call.mockReset();
   api.call.mockImplementation(async (route: string) => {

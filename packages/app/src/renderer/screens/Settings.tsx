@@ -27,7 +27,8 @@ import s from "./Settings.module.css";
 type Snapshot<T> = { value: T; sha256: string };
 type LoginProgress = Extract<LiveMessage, { type: "login.progress" }>;
 type Progress = { lines: string[]; url: string | null; done: boolean };
-type ExtraAccountRow = { key: string; name: string; detail?: ReactNode; state: string; checking?: boolean; actions?: ReactNode; children?: ReactNode; check?(): Promise<unknown> | void };
+type ExtraAccountRow = { key: string; name: string; detail?: ReactNode; state: string; checking?: boolean; actions?: ReactNode; children?: ReactNode };
+type RowOverride = { detail?: ReactNode; state?: string };
 
 const sections: { id: string; title: string }[] = [
   { id: "you", title: "You" },
@@ -142,10 +143,11 @@ function DiscoveringProviders({ providers }: { providers: { id: string; name: st
   </ul>;
 }
 
-function LoginControls({ title, actions, children, accounts, protectedOnly = false, kind = "model", harnessColors, hideMissing = false, pendingLogin, onLoginStarted, onEdit, extra }: {
+function LoginControls({ title, actions, children, accounts, protectedOnly = false, kind = "model", harnessColors, hideMissing = false, pendingLogin, onLoginStarted, onEdit, extra, rowOverrides, refresh }: {
   title?: string; actions?: ReactNode; children?: ReactNode;
   accounts: Account[]; protectedOnly?: boolean; kind?: "model" | "tool"; harnessColors?: HarnessColors; hideMissing?: boolean;
   pendingLogin?: string; onLoginStarted?(): void; onEdit?(account: ForgeAccount): void; extra?: ExtraAccountRow[];
+  rowOverrides?: Record<string, RowOverride>; refresh?(): Promise<unknown> | void;
 }) {
   const connected: boolean = useConnected();
   const logins = useData(() => kind === "model" ? call("listLogins") : Promise.resolve([]), [kind],
@@ -230,12 +232,11 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
     ? modelLogins.filter((login) => !loginRunning(login.id, login.running)).map((login) => [login.id, true])
     : visible.filter(({ id }) => !loginRunning(toolRuns[id] ?? `tool:${id}`)).map(({ id }) => [id, false]);
   const available: [string, boolean][] = targets.filter(([id]) => !checking.has(id));
-  const extraChecks: ExtraAccountRow[] = (extra ?? []).filter((row) => row.check && !row.checking);
   const checkPanel = useAction(async () => {
-    await Promise.all([...available.map(([id, isModel]) => recheck.run(id, isModel)), ...extraChecks.map((row) => row.check!())]);
+    await Promise.all([...available.map(([id, isModel]) => recheck.run(id, isModel)), ...(refresh ? [refresh()] : [])]);
   });
   const checkButton: ReactNode = <Button size="sm" icon={<RefreshIcon />} loading={checkPanel.busy}
-    disabled={locked || checkPanel.busy || (!available.length && !extraChecks.length)} onClick={() => void checkPanel.run()}>Check</Button>;
+    disabled={locked || checkPanel.busy || (!available.length && !refresh)} onClick={() => void checkPanel.run()}>Check</Button>;
   const rows: ReactNode = <>
     <ErrorText error={start.error ?? recheck.error ?? logins.error} />
     {protectedOnly && !visible.length && <p className={s.groupText}>No AI tools yet.</p>}
@@ -269,12 +270,13 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
         const id: string | undefined = toolRuns[account.id];
         const output: Progress | undefined = id ? progress[id] : undefined;
         const busy: boolean = !!id && !output?.done;
-        const state: string = toolStates[account.id] ?? (autoChecked.current.has(account.id) && !checking.has(account.id) ? "unknown" : "unchecked");
+        const override: RowOverride | undefined = rowOverrides?.[account.id];
+        const state: string = override?.state ?? toolStates[account.id] ?? (autoChecked.current.has(account.id) && !checking.has(account.id) ? "unknown" : "unchecked");
         return <AccountRow key={account.id}
           name={account.kind === "forge" ? [forgeServices[account.forge].label, account.user].filter(Boolean).join(" · ") : account.tool === "atlassian" ? "Jira" : account.service}
-          detail={account.kind === "forge"
+          detail={override?.detail ?? (account.kind === "forge"
             ? account.forge === "codecommit" ? `${account.host} · ${codeCommitProfile(account)}` : account.host
-            : account.user}
+            : account.tool === "atlassian" ? account.site ?? "" : account.user)}
           state={state} checking={checking.has(account.id)}
           actions={<>
             {(account.tool === "gh" || account.tool === "glab" || account.tool === "atlassian" || account.tool === "linear") && state !== "logged_in" &&
@@ -379,7 +381,11 @@ export function Settings() {
   const [pendingLogin, setPendingLogin] = useState<string>();
   const [trackerLogin, setTrackerLogin] = useState<string>();
   const trackerAccounts: ServiceAccount[] = (accounts.current?.accounts ?? []).filter((account): account is ServiceAccount => account.kind === "service");
+  const jiraAccount: ServiceAccount | undefined = trackerAccounts.find(({ tool }) => tool === "atlassian");
   const trackerChoices: ServiceAccount[] = [atlassianAccount, linearAccount].filter((account) => !trackerAccounts.some(({ tool }) => tool === account.tool));
+  const trackerRows: Record<string, RowOverride> | undefined = jiraAccount && jira.data
+    ? { [jiraAccount.id]: { detail: jiraAccount.site ?? jira.data.site, state: "logged_in" } }
+    : undefined;
   const addTracker = useAction(async (account: ServiceAccount) => {
     if (!accounts.value) throw new Error("The accounts are still loading. Try again.");
     if (!await accounts.commit({ accounts: [...accounts.value.accounts, account] })) throw new Error(accounts.error ?? "The account could not be saved. Try again.");
@@ -443,13 +449,13 @@ export function Settings() {
               <DiscoveringProviders providers={pendingForges} />
             </LoginControls>
             <LoginControls title="Trackers" accounts={trackerAccounts} kind="tool" pendingLogin={trackerLogin}
-              onLoginStarted={() => setTrackerLogin(undefined)}
-              extra={jira.data ? [{
+              onLoginStarted={() => setTrackerLogin(undefined)} refresh={() => jira.reload()} rowOverrides={trackerRows}
+              extra={!jiraAccount && jira.data ? [{
                 key: "active-jira", name: "Jira", detail: `${jira.data.account.user} · ${jira.data.site}`, state: "logged_in",
-                children: jira.error ? <ErrorText error={jira.error} /> : undefined, check: () => jira.reload(),
               }] : []}
               actions={<Button size="sm" icon={<PlusIcon />} disabled={!connected || !accounts.value || accounts.saving || !trackerChoices.length}
                 onClick={() => setTrackerDialog(true)}>Add account</Button>}>
+              <ErrorText error={jira.error} />
               {!trackerAccounts.length && !jira.data && accounts.current && !jira.loading &&
                 <p className={s.groupText}>Add an account to search and read tickets in Jira or Linear.</p>}
             </LoginControls>

@@ -145,7 +145,7 @@ Accounts shows each installed harness automatically. A row shows the identity wh
 
 Git hosting discovers GitHub, GitLab and CodeCommit accounts at startup. A manual GitHub or GitLab account starts the forge login and saves its username on success. The author name and email come from global Git settings and can be edited.
 
-Trackers shows one row per tracker account with its name, site or account and login state. A Jira login from the Atlassian CLI appears on its own. Adding an account asks which tracker and starts browser sign-in. The app chooses the CLI or the MCP bridge; the user never sees the choice.
+Trackers shows one row per tracker account with its name, site and login state. A Jira login from the Atlassian CLI appears on its own and shares the Jira row. The Jira site is saved after login and check. Adding an account asks which tracker and starts browser sign-in. The app chooses the CLI or the MCP bridge; the user never sees the choice.
 
 There is no Models section. The user picks provider, model and effort on the Agents page. Effort is locked until a model is chosen. It shows the chosen model's options, falls back to Default alone when none exist and resets to Default on model changes. The app loads model lists at startup and caches them. A refresh button beside Model reloads the choices. Selects and comboboxes use the same arrow and no clear button. Focus uses one ring. Loading choices shows a spinner without making the field look disabled.
 
@@ -479,7 +479,7 @@ An upgrade removes job history in the old format. Catalog migration removes gene
 *   The `accounts` table has three kinds of account.
     *   `model`: provider, connector, login type (`subscription` or `api-key`, both configured inside the harness), the account's `email` (compared with the logged-in account, below), `maxParallel`.
     *   `forge`: forge type, host, tool (`gh`, `glab`, `aws`, `git`), the tool's account name (for example the `gh` login, the AWS profile), commit author.
-    *   `service`: external service (for example Atlassian), the tool or MCP server that holds its login, the account name.
+    *   `service`: external service (for example Atlassian), the tool or MCP server that holds its login, the account name, the site when the service has one.
 *   Private Git and AWS CodeCommit deliver to existing repositories by pushing a branch. They require an existing repository. Private Git uses the user's configured Git credentials. CodeCommit uses the stored AWS CLI profile and derives its Git host from the profile's region. Legacy CodeCommit rows still use the username field as their profile reference.
 *   There are no exceptions. A service is reached only through a tool that keeps its own login (for example Jira through `acli` or the Atlassian MCP server). A service with no such tool is not supported until one exists.
 *   A harness keeps its login in a config directory, chosen through the variable named in the connector file (for example `CLAUDE_CONFIG_DIR`, `CODEX_HOME`).
