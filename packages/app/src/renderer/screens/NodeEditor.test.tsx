@@ -43,10 +43,11 @@ it("offers only the four editable node kinds", async () => {
   render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   const user = userEvent.setup();
   await user.click(await screen.findByRole("combobox", { name: "Kind" }));
-  expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Agent", "Command", "Human", "Repository"]);
-  await user.click(screen.getByRole("option", { name: "Command" }));
+  // The Base UI popup mounts after the click, so wait for its options instead of reading them synchronously.
+  expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["Agent", "Command", "Human", "Repository"]);
+  await user.click(await screen.findByRole("option", { name: "Command" }));
   await user.click(await screen.findByRole("combobox", { name: "Output of success" }));
-  expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Nothing", "Spec", "Code review", "Code analysis", "Commit SHA", "Pull request", "Feedback", "Log"]);
+  expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["Nothing", "Spec", "Code review", "Code analysis", "Commit SHA", "Pull request", "Feedback", "Log"]);
 });
 
 it("sets Tracker access and account on an Agent", async () => {
