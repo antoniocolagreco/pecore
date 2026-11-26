@@ -62,6 +62,20 @@ describe("PECORE_HOME layout", () => {
     expect(await syncAdapters(home, { source, appVersion: "1.0.0", pinned: ["a@1"] })).toBe(false);
   });
 
+  it("copies a newly pinned adapter without an app version change", async () => {
+    const root = await tempDir();
+    const home = join(root, "home");
+    const source = join(root, "adapters");
+    await mkdir(join(source, "a@1"), { recursive: true });
+    await mkdir(join(source, "b@2"), { recursive: true });
+    await mkdir(join(source, "node", "bin"), { recursive: true });
+    await writeFile(join(source, "node", "bin", "node"), "", { mode: 0o755 });
+    expect(await syncAdapters(home, { source, appVersion: "1.0.0", pinned: ["a@1"] })).toBe(true);
+    expect(await syncAdapters(home, { source, appVersion: "1.0.0", pinned: ["a@1"] })).toBe(false);
+    expect(await syncAdapters(home, { source, appVersion: "1.0.0", pinned: ["a@1", "b@2"] })).toBe(true);
+    expect((await readdir(join(home, "adapters"))).sort()).toEqual(["a@1", "b@2", "node", "version"]);
+  });
+
   it("makes the copied adapters readable by every user even when the app's own copy is private, keeping executables executable", async () => {
     const root = await tempDir();
     const home = join(root, "home");
