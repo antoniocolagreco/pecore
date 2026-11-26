@@ -58,7 +58,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
 });
 `;
 
-const programs: Record<BuiltInHarness, string> = { "claude-code": "claude", codex: "codex", opencode: "opencode" };
+const programs: Record<BuiltInHarness, string> = { "claude-code": "claude", codex: "codex", opencode: "opencode", pi: "pi" };
 
 export async function fakeHarnesses(root: string): Promise<{ connectorsDir: string; set: (name: BuiltInHarness, value: FakeHarness | null) => Promise<void> }> {
   const bin = join(root, "bin");
@@ -81,6 +81,11 @@ export async function fakeHarnesses(root: string): Promise<{ connectorsDir: stri
     name: "opencode", title: "OpenCode", kind: "native",
     harness: { program: join(bin, "opencode"), versionArgs: ["--version"], versionRange: ">=2.3.0" },
     command: ["{harnessPath}", "acp"], reader: "opencode", ...login,
+  }));
+  await writeFile(join(connectorsDir, "pi.json"), JSON.stringify({
+    name: "pi", title: "pi", kind: "native",
+    harness: { program: join(bin, "pi"), versionArgs: ["--version"], versionRange: ">=0.81.0" },
+    command: ["{harnessPath}", "acp"], reader: "pi", ...login,
   }));
   const set = async (name: BuiltInHarness, value: FakeHarness | null): Promise<void> => {
     const file = join(bin, programs[name]);

@@ -1,0 +1,24 @@
+{
+  "name": "pi",
+  "title": "pi",
+  "kind": "adapter",
+  "harness": { "program": "pi", "versionArgs": ["--version"], "versionRange": ">=0.81.0" },
+  "command": ["{nodePath}", "{adapter:pi-acp}"],
+  "env": { "PI_ACP_PI_COMMAND": "{harnessPath}", "PECORE_PI_NODE": "{nodePath}", "PECORE_PI_ADAPTER": "{adapter:pi-acp}" },
+  "configDirEnv": "PI_CODING_AGENT_DIR",
+  "configDirFiles": [],
+  "sessionConfig": [["model", "{model}"], ["thought_level", "{effort}"]],
+  "reader": "pi",
+  "errors": [
+    { "pattern": "Retrying \\(attempt \\d+/\\d+", "in": "text", "kind": "rate_limit" },
+    { "pattern": "[Rr]ate [Ll]imit|[Tt]oo [Mm]any [Rr]equests|[Uu]sage [Ll]imit|[Qq]uota exceeded|[Ii]nsufficient credits", "in": "text", "kind": "quota" }
+  ],
+  "loginCommand": {
+    "linux": ["script", "-qefc", "exec \"$PECORE_PI_NODE\" \"$PECORE_PI_ADAPTER\" --terminal-login", "/dev/null"],
+    "darwin": ["script", "-q", "/dev/null", "{nodePath}", "{adapter:pi-acp}", "--terminal-login"]
+  },
+  "loginUrlPattern": "https://\\S+",
+  "loginReadsCode": true,
+  "identityCommand": null,
+  "identityField": null
+}

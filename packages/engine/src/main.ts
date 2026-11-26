@@ -7,7 +7,7 @@ import { join, relative } from "node:path";
 import { removeAs } from "./workdir/fs-as";
 import { definitionOperations } from "./api/routes/definitions";
 import { globalFileHandlers } from "./api/routes/settings";
-import { appName, assistantAgentId, BuiltInHarness, defaultAgentId, defaultJobLimit, ForgeDiscovery, freeProjectManager, projectManagerClash, projectManagers, withForgeHosts } from "@pecore/schemas";
+import { appName, assistantAgentId, BuiltInHarness, defaultAgentId, defaultJobLimit, ForgeDiscovery, freeProjectManager, modelOnlyHarness, projectManagerClash, projectManagers, withForgeHosts } from "@pecore/schemas";
 import { listOptions, satisfies } from "@pecore/agents";
 import type { LoginState } from "@pecore/agents";
 import type { Account, AccountOptions, Accounts, AgentDefinitions, ChatAgent, ForgeAccount, JobState, LiveMessage, LoginView, NodeAgent, NodeAgentCatalog, NotificationTarget, ProjectManagerAgent, Profiles, ProjectInput, ProjectManagerIdentity, Settings, SetupView, Tiers, WhyView } from "@pecore/schemas";
@@ -87,7 +87,7 @@ export class Engine extends EventEmitter {
   private wakeCiWatch: () => void = () => undefined;
   private globalFilesPending: Promise<unknown> = Promise.resolve();
   private shuttingDown: boolean = false;
-  private readonly openCodeReady = new Map<string, boolean>();
+  private readonly modelReady = new Map<string, boolean>();
   private readonly options = new Map<string, Promise<AccountOptions | null>>();
   private startupReads: Promise<void> = Promise.resolve();
   private runtimeDetection: Promise<void> = Promise.resolve();
@@ -322,7 +322,7 @@ export class Engine extends EventEmitter {
     const modelAccountWorks: boolean = logins.some((login) => {
       const harness: SetupView["harnesses"][number] | undefined = this.setupHarnesses.find((item) => item.connector === login.connector);
       if (!harness) return login.state === "logged_in";
-      if (harness.connector === "opencode") return harness.loggedIn;
+      if (modelOnlyHarness(harness.connector)) return harness.loggedIn;
       const range: string | undefined = this.agents?.connector(login.connector)?.harness.versionRange;
       return login.state === "logged_in" && harness.version !== null && range !== undefined && satisfies(harness.version, range);
     });
@@ -379,7 +379,7 @@ export class Engine extends EventEmitter {
       osUser: l.osUser,
       connector: l.connector,
       defaultDir: l.defaultDir,
-      state: s.state === "unknown" && this.openCodeReady.get(l.id) ? "logged_in" : s.state,
+      state: s.state === "unknown" && this.modelReady.get(l.id) ? "logged_in" : s.state,
       email: s.state === "logged_in" ? s.email : null,
       plan: s.state === "logged_in" ? (s.plan ?? null) : null,
       running: this.loginRunner.isActive(l.id),
@@ -402,20 +402,33 @@ export class Engine extends EventEmitter {
 
   private async checkLoginInfo(l: LoginInfo): Promise<LoginState> {
     const state = await this.agents!.check(l);
-    await this.checkOpenCode(l, state);
+    await this.checkModelLogin(l, state);
     if (state.state !== "logged_out") await this.releaseAuth(l.account, l.osUser);
     return state;
   }
 
-  private async checkOpenCode(l: LoginInfo, state: LoginState): Promise<void> {
-    if (state.state !== "unknown" || l.connector !== "opencode") return;
+  private async checkModelLogin(l: LoginInfo, state: LoginState): Promise<void> {
+    if (!modelOnlyHarness(l.connector)) {
+      this.modelReady.delete(l.id);
+      return;
+    }
+    if (state.state !== "unknown") {
+      this.modelReady.delete(l.id);
+      return;
+    }
     const connector = await this.agents!.resolve(l.connector);
-    this.openCodeReady.set(l.id, (await openCodeModels(connector, l).catch(() => null)) !== null);
+    if (l.connector === "opencode") {
+      this.modelReady.set(l.id, (await openCodeModels(connector, l).catch(() => null)) !== null);
+      return;
+    }
+    await this.agents!.ensureProbeDir(l);
+    const options = await listOptions({ connector, login: l, spawn: spawnFor(l.osUser), allowUnknownIdentity: true }).catch(() => null);
+    this.modelReady.set(l.id, options !== null && options.models.length > 0);
   }
 
   private async checkAllLogins(): Promise<void> {
     await this.agents!.checkAll();
-    for (const l of await this.agents!.logins()) await this.checkOpenCode(l, l.state.state === "unchecked" ? { state: "unknown" } : l.state);
+    for (const l of await this.agents!.logins()) await this.checkModelLogin(l, l.state.state === "unchecked" ? { state: "unknown" } : l.state);
   }
 
   async startLogin(account: string, osUser: string): Promise<string> {

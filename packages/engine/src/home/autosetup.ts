@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { harnessVersion, listOptions, satisfies } from "@pecore/agents";
 import type { ResolvedConnector, Spawn } from "@pecore/agents";
-import { Compaction, ModelAccount, TierName, agentKindColor, builtInAgentNames, defaultAgentColor, defaultAgentId } from "@pecore/schemas";
+import { Compaction, ModelAccount, TierName, agentKindColor, builtInAgentNames, defaultAgentColor, defaultAgentId, modelOnlyHarness } from "@pecore/schemas";
 import type { AgentDefinition, BuiltInHarness, NodeAgent, Profile, Profiles, SetupView, Tiers } from "@pecore/schemas";
 import { spawnFor } from "../accounts/agents";
 import type { AgentServices, LoginInfo } from "../accounts/agents";
@@ -100,7 +100,7 @@ async function profileOffer(options: Options, base: Options | null, probe: Effor
 
 export async function findHarness(agents: AgentServices, name: BuiltInHarness): Promise<Finding> {
   const harness: Harness = { connector: name, installed: false, version: null, loggedIn: false };
-  const finding: Finding = { harness, title: name, provider: name === "claude-code" ? "anthropic" : name === "codex" ? "openai" : "opencode", offer: null };
+  const finding: Finding = { harness, title: name, provider: name === "claude-code" ? "anthropic" : name === "codex" ? "openai" : name, offer: null };
   const connector: ResolvedConnector | null = await agents.resolve(name).catch(() => null);
   if (!connector) return finding;
   finding.title = connector.title;
@@ -122,11 +122,14 @@ export async function findHarness(agents: AgentServices, name: BuiltInHarness): 
     }
   } else {
     const state: LoginInfo["state"] | null = await agents.check(login).catch(() => null);
-    harness.loggedIn = state?.state === "logged_in";
-    if (harness.loggedIn) {
-      const options: Options | null = await listOptions({ connector, login, spawn, normalizeModelVariants: true }).catch(() => null);
-      if (options) finding.offer = await profileOffer(options, options, { connector, login, spawn });
-    }
+    const modelsOnly: boolean = modelOnlyHarness(name);
+    const options: Options | null = state?.state === "logged_in"
+      ? await listOptions({ connector, login, spawn, normalizeModelVariants: true }).catch(() => null)
+      : state?.state === "unknown" && modelsOnly
+        ? await listOptions({ connector, login, spawn, allowUnknownIdentity: true, normalizeModelVariants: true }).catch(() => null)
+        : null;
+    harness.loggedIn = state?.state === "logged_in" || (modelsOnly && options !== null);
+    if (options) finding.offer = await profileOffer(options, options, { connector, login, spawn });
   }
   return finding;
 }

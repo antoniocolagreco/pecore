@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { appName, atlassianAccount, BuiltInHarness, codeCommitProfile, ForgeAccount, ForgeDiscovery, ForgeKind, forgeHost, forgeServices, harnessColor, harnesses, linearAccount, nextForgeAccountId, Settings as SettingsSchema } from "@pecore/schemas";
+import { appName, atlassianAccount, BuiltInHarness, codeCommitProfile, ForgeAccount, ForgeDiscovery, ForgeKind, forgeHost, forgeServices, harnessColor, harnesses, linearAccount, modelOnlyHarness, nextForgeAccountId, Settings as SettingsSchema } from "@pecore/schemas";
 import type { ServiceAccount } from "@pecore/schemas";
 import type { Account, HarnessInfo, LiveMessage, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { call } from "../api/client";
@@ -254,7 +254,7 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
             const current: Progress | undefined = progress[login.id];
             const running: boolean = loginRunning(login.id, login.running);
             const checked: string = login.state === "unchecked" && autoChecked.current.has(login.id) && !checking.has(login.id) ? "unknown" : login.state;
-            const state: string = login.connector === "opencode" && checked === "unknown" ? "no_models" : checked;
+            const state: string = modelOnlyHarness(login.connector) && checked === "unknown" ? "no_models" : checked;
             const detail: string = login.email
               ? login.email + (login.plan ? " · " + login.plan : "")
               : state === "no_models" ? `Open ${name} and set up a model provider, then check again.`

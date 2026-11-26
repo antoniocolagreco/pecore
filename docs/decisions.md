@@ -500,6 +500,14 @@
 - Why: The Project Manager lost its first attempt on a bare file name, retried, and told the user about the failure.
 - Replaces: The full path as the only accepted form.
 
+## 2026-11-26: Support pi through the pi-acp adapter
+
+- Decision: pi is a built-in harness through the `pi-acp` adapter (0.0.35), which starts the user's installed `pi` in ACP mode. `packages/app/resources/connectors/pi.json` pins the adapter and sets `PI_ACP_PI_COMMAND`. Models and thinking levels come from the ACP session's `model` and `thought_level` config options, so pi uses the same model-only login check as OpenCode: it is logged in when its session lists at least one model.
+- Why: pi has no ACP mode of its own. `pi-acp` is an ACP adapter for pi, so the connector needs no engine change and the user's existing `pi` login and providers stay in place.
+- Login: the `pi-acp` adapter exposes `--terminal-login`, which starts pi's own interactive login, so the user chooses the provider; no provider is hardcoded. Because it needs a terminal, the connector runs the adapter with `--terminal-login` inside `script` on Linux and macOS. A user already logged in to a pi provider only needs Check.
+- Errors: `pi-acp` maps a missing login to `-32000` "Authentication required", which is `auth`. It retries provider failures itself and reports only "Retrying (attempt n/m)…" or "Retry finished, resuming."; the connector classifies those messages as `rate_limit`, so the node waits instead of failing. pi-acp reports no token usage or cost, so attempts show no token counts; the selected model is still recorded from the session config option.
+- Replaces: pi in the list of harnesses planned after phase 6.
+
 ## 2026-11-26: One Trackers group in Accounts
 
 - Decision: Settings > Accounts has one Trackers group with one row per tracker account, showing its name, site and login state. A Jira login from the Atlassian CLI appears on its own and shares the Jira row, so Jira shows once. The app stores the Jira site after login and check. Add account asks which tracker and starts browser sign-in. The app chooses the CLI or the MCP bridge; the user never sees the choice.
