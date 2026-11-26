@@ -373,13 +373,16 @@ export class Engine extends EventEmitter {
 
   private loginView(l: LoginInfo): LoginView {
     const s = l.state;
+    const modelOnlyUnknown: boolean = s.state === "unknown" && modelOnlyHarness(l.connector);
+    const ready: boolean | undefined = modelOnlyUnknown ? this.modelReady.get(l.id) : undefined;
+    const state: LoginView["state"] = !modelOnlyUnknown ? s.state : ready === undefined ? "unchecked" : ready ? "logged_in" : "unknown";
     return {
       id: l.id,
       account: l.account,
       osUser: l.osUser,
       connector: l.connector,
       defaultDir: l.defaultDir,
-      state: s.state === "unknown" && this.modelReady.get(l.id) ? "logged_in" : s.state,
+      state,
       email: s.state === "logged_in" ? s.email : null,
       plan: s.state === "logged_in" ? (s.plan ?? null) : null,
       running: this.loginRunner.isActive(l.id),

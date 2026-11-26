@@ -267,8 +267,7 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
           return items.map((login) => {
             const current: Progress | undefined = progress[login.id];
             const running: boolean = loginRunning(login.id, login.running);
-            const checked: string = login.state === "unchecked" && autoChecked.current.has(login.id) && !checking.has(login.id) ? "unknown" : login.state;
-            const state: string = modelOnlyHarness(login.connector) && checked === "unknown" ? "no_models" : checked;
+            const state: string = modelOnlyHarness(login.connector) && login.state === "unknown" ? "no_models" : login.state;
             const detail: string = login.email
               ? login.email + (login.plan ? " · " + login.plan : "")
               : state === "no_models" ? `Open ${name} and set up a model provider, then check again.`

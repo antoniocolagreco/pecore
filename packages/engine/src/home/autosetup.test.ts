@@ -11,6 +11,7 @@ import { shippedTemplates, tempDir } from "../../test/tmp";
 import { handlers } from "../api/handlers";
 import { startApi } from "../api/server";
 import { Engine } from "../main";
+import type { AgentServices } from "../accounts/agents";
 
 type Notice = { kind: string; title: string; body: string };
 
@@ -72,12 +73,13 @@ async function setup() {
   await writeFile(join(process.env.HOME, ".config", "opencode", "opencode.jsonc"), opencodeConfig);
   const harnesses = await fakeHarnesses(root);
   const notices: Notice[] = [];
-  const start = async (waitForDiscovery: boolean = true) => {
+  const start = async (waitForDiscovery: boolean = true, checkLogins: boolean = true) => {
     const engine = await Engine.start({
       home,
       templates: shippedTemplates,
       agents: { connectorsDir: harnesses.connectorsDir, adaptersDir: join(root, "adapters"), adapters: {} },
       notify: (n) => notices.push(n),
+      checkLogins,
     });
     if (waitForDiscovery) await engine.setupDone;
     const api = await startApi(engine, { handlers: handlers("0.0.0-test"), validateResponses: true });
@@ -334,6 +336,22 @@ describe("auto-setup", () => {
     await s.harnesses.set("opencode", { ...opencode, cliModels: undefined });
     expect(await app.call("recheckLogin", { params: { id: (await login())!.id } })).toMatchObject({ state: "unknown", email: null });
     await app.close();
+  });
+
+  it("reports a model-only login as unchecked until its models are read", async () => {
+    const s = await setup();
+    await s.harnesses.set("pi", pi);
+    await setTestConfiguration(s.home, "accounts", { accounts: [{ id: "pi", kind: "model", provider: "pi", connector: "pi", login: "subscription" }] });
+    const app = await s.start(false, false);
+    try {
+      const agents = (app.engine as unknown as { agents: AgentServices }).agents;
+      const login = (await agents.logins())[0]!;
+      await agents.check(login);
+      expect(await app.engine.loginViews()).toEqual([expect.objectContaining({ id: login.id, state: "unchecked" })]);
+      expect(await app.engine.recheckLogin(login.id)).toMatchObject({ state: "logged_in", email: null });
+    } finally {
+      await app.close();
+    }
   });
 
   it("shows pi as logged in when its ACP session lists models, and takes its models and efforts from the session", async () => {
