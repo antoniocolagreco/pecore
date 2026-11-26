@@ -53,14 +53,21 @@ describe("pi connector", () => {
     })).toEqual({ model: "fake/model" });
   });
 
-  it("runs the OpenRouter login in a pseudo-terminal, because pi requires one", () => {
+  it("runs pi's own interactive login through the adapter in a pseudo-terminal", () => {
     const file = fileURLToPath(new URL("../../app/resources/connectors/pi.json", import.meta.url));
     const { connector: shipped } = parseConnector(JSON.parse(readFileSync(file, "utf8")));
     const pins = JSON.parse(readFileSync(fileURLToPath(new URL("../adapters.json", import.meta.url)), "utf8")) as { adapters: Record<string, { version: string; entry: string }> };
-    const plan = prepareLogin({ connector: { ...resolved(shipped!), platform: "linux", adapters: pins.adapters, adaptersDir: "/tmp/adapters" }, login: probeLogin });
-    expect(plan.command.argv).toEqual(["script", "-qefc", 'exec "$PI_ACP_PI_COMMAND" auth login openrouter --no-browser', "/dev/null"]);
+    const adapter = `/tmp/adapters/pi-acp@${pins.adapters["pi-acp"]!.version}/node_modules/pi-acp/${pins.adapters["pi-acp"]!.entry}`;
+    const base = { ...resolved(shipped!), adapters: pins.adapters, adaptersDir: "/tmp/adapters" };
+    const plan = prepareLogin({ connector: { ...base, platform: "linux" }, login: probeLogin });
+    expect(plan.command.argv).toEqual(["script", "-qefc", 'exec "$PECORE_PI_NODE" "$PECORE_PI_ADAPTER" --terminal-login', "/dev/null"]);
+    expect(plan.command.env.PECORE_PI_NODE).toBe(process.execPath);
+    expect(plan.command.env.PECORE_PI_ADAPTER).toBe(adapter);
     expect(plan.command.env.PI_ACP_PI_COMMAND).toBe(process.execPath);
     expect(plan.readsCode).toBe(true);
+    expect(prepareLogin({ connector: { ...base, platform: "darwin" }, login: probeLogin }).command.argv).toEqual([
+      "script", "-q", "/dev/null", process.execPath, adapter, "--terminal-login",
+    ]);
   });
 
   it("classifies the adapter's auto retry as a rate limit wait", () => {
