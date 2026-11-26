@@ -296,7 +296,7 @@ Fields common to every node:
 | `kind` | `agent`, `command`, `human` or `repository` |
 | `params` | JSON Schema of the values a recipe can set |
 | `outcomes` | the results a node can produce. Use `success` and `failure` for ordinary results. Add a named result only for a distinct path. Decision outcomes may be literal answers such as `yes` and `no`. |
-| `outputs` | at most one artifact type (3.3) per outcome, for example `{ "success": "spec", "rejected": "text" }`; an outcome not listed produces nothing. The nodes that read this node (3.2) receive it |
+| `outputs` | at most one artifact type (3.3) per outcome, for example `{ "success": "spec", "rejected": "feedback" }`; an outcome not listed produces nothing. The nodes that read this node (3.2) receive it |
 | `failOutcomes` | the outcomes that mean failure (for example `failure`); with no edge, they end the job as `failed` (4.2) |
 | `changesFiles` | whether a command or agent may modify the workdir (see 4.4) |
 | `scratchPaths` | glob patterns of files the node may create and that are thrown away after it (for example `coverage/**`, `**/*.tmp`); default empty |
@@ -306,7 +306,7 @@ Fields common to every node:
 Fields by kind:
 
 *   **`command`**
-    *   `inputs` lists required artifact types and `optionalInputs` lists optional types. The recipe selects the source steps (3.2). Each script or command receives one JSON object on stdin. Keys are artifact types. Structured types are JSON values, `text` and `diff` are strings, and absent optional inputs are omitted. With no inputs, stdin carries `{}`. A delivery merge check receives the saved `reference` on stdin.
+    *   `inputs` lists required artifact types and `optionalInputs` lists optional types. The recipe selects the source steps (3.2). Each script or command receives one JSON object on stdin. Keys are artifact types. Structured types are JSON values. `feedback`, `log`, `diff` and `sha` are strings. Absent optional inputs are omitted. Inside a job, stdin includes a `job` object with `title` and `request`, even if no artifact inputs are selected. A PR or MR merge check receives the saved `pull_request` on stdin. A branch merge check uses the saved commit and target.
     *   `command`: an argument array, run without a shell; placeholders are substituted into single arguments.
     *   Command nodes run in the job's workdir as the project user. The app passes no Git hosting or tracker credentials.
     *   Every project-user command also gets `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME` and `GIT_COMMITTER_EMAIL` from the app user's global git config, or "PeCore <pecore@localhost>" when it has none, so commits work as `pecore-agent` too.
@@ -328,46 +328,14 @@ Fields by kind:
 *   **`human`**
     *   `interface`: the component the person uses to respond, from a list the app can extend:
         *   `decision` asks a question in Notifications and shows what the node reads.
-        *   `code-review` shows the job's current diff, with the `findings` it reads that refer to the same content (risky hunks first).
+        *   `code-review` shows the job's current diff, with the code analysis and code reviews that match the files hash (risky hunks first).
         *   `report-review` shows what the node reads.
     *   Both reviews have the outcomes `approved`, `changes_requested` and `rejected`. For a decision, the outcomes are the buttons the user sees.
-    *   `outputs`: only `text`. An outcome with `text` shows a Note field; the note becomes the output of that outcome (for example `{ "changes_requested": "text" }`).
+    *   `outputs`: `feedback` is a written note. Changes requested in Code review can produce one `code_review` with the general note and all inline comments.
 
-Placeholders in executable argument arrays and prompts use plain substitution. They include `{params.<name>}`, `{job.id}`, `{job.title}`, `{job.branch}`, `{job.base}` (the required base commit), `{job.oldBase}` (the previous base commit), `{job.target}` (the delivery branch, see 4.6), `{job.commit}` (the SHA of the latest `reference` with a `sha`), `{ticket.id}` (the ticket ID at its source, if present), `{workdir}`, `{project.repoDir}`, `{project.repo.url}`, `{project.repo.owner}` and `{project.repo.name}`.
+Placeholders in executable argument arrays and prompts use plain substitution. They include `{params.<name>}`, `{job.id}`, `{job.title}`, `{job.branch}`, `{job.base}` (the required base commit), `{job.oldBase}` (the previous base commit), `{job.target}` (the delivery branch, see 4.6), `{job.commit}` (the latest `sha`), `{ticket.id}` (the ticket ID at its source, if present), `{workdir}`, `{project.repoDir}`, `{project.repo.url}`, `{project.repo.owner}` and `{project.repo.name}`.
 
-Example instance of a delivery node. It runs after a `git-push` node, which pushes the job branch from `repo.git`:
-
-```json
-{
-  "name": "github-pr",
-  "description": "Open a pull request on GitHub for the pushed job branch, or move an existing one to the job's target branch",
-  "kind": "repository",
-  "account": "project.account",
-  "inputs": ["spec"],
-  "optionalInputs": ["document"],
-  "outcomes": ["success", "failure"],
-  "outputs": { "success": "reference" },
-  "failOutcomes": ["failure"],
-  "changesFiles": false,
-  "script": "gh pr create --repo \"$PECORE_PROJECT_REPO_OWNER/$PECORE_PROJECT_REPO_NAME\" --head \"$PECORE_JOB_BRANCH\"",
-  "outcomeRules": [{ "exitCode": 0, "outcome": "success" }, { "exitCode": "other", "outcome": "failure" }],
-  "outputRules": { "success": { "stdoutLastLine": "url" } },
-  "timeoutSec": 120
-}
-```
-
-The shipped `github-pr` template has a longer inline script:
-
-```sh
-repo="$PECORE_PROJECT_REPO_OWNER/$PECORE_PROJECT_REPO_NAME"
-url=$(gh pr list --repo "$repo" --head "$PECORE_JOB_BRANCH" --json url --jq '.[0].url // empty')
-if [ -n "$url" ]; then
-  gh pr edit "$url" --base "$PECORE_JOB_TARGET" >/dev/null && echo "$url"
-else
-  jq -e '.spec' | gh pr create --repo "$repo" --base "$PECORE_JOB_TARGET" --head "$PECORE_JOB_BRANCH" \
-    --title "$PECORE_JOB_TITLE" --body-file -
-fi
-```
+`github-pr` and `gitlab-mr` publish the title and body from `write-pr` and return the same `pull_request` with its URL. Their retry checks compare the remote title, body and target. Git and CodeCommit use the same recipe with Push connected directly to Git Delivery.
 
 #### 3.2 Recipe templates
 
@@ -379,9 +347,9 @@ A project export serializes its project definition, templates, and script and pr
 
 A decision asks the user to choose an outcome. A code review or report review shows artifacts and offers `approved`, `changes_requested` and `rejected`. Only a review approval satisfies a human prerequisite. An approval for changed worktree content becomes stale. Both wait for the user's response without a timeout.
 
-Data passes between nodes through `reads`. A step gets the latest artifact of each type from each source it selects. `@start` supplies the saved request document on every route, including after a base change. Agents still get the request automatically for recipes that omit `@start`. They also get attachment paths and the current diff. Each command input type comes from exactly one source. Required inputs must be available on every route to the step, including when the base changes. A connection to End stops its route. If an earlier node fails before Spec Writer runs, a later base change can restart at Git Rebase and reach GitHub PR without a spec.
+Data passes between nodes through `reads`. A step gets the latest artifact of each type from each selected source. Every node gets the job title and request as context. The PM sends one `JobRequest` per job with `key`, `title`, `request`, `dependsOn` and optional `recipe`, `ticketId`, `baseBranch` and `attachmentIds`. Agents also get attachment paths and the current diff. Each command input type comes from exactly one source. Required inputs must be available on every route to the step, including after a base change. A connection to End stops its route.
 
-A GitHub recipe can use `write-pr` to write a title and description and `github-pr` to publish them. With a `ci` configuration such as `{"after":"pr","on":"success","checks":["tests"],"intervalSec":30,"timeoutSec":1800,"maxCorrections":2}`, the scheduler waits for the listed checks on the recorded commit. Connect `ci_failed` to a correction step and use `ci_passed`, `ci_exhausted` and `ci_timeout` to route the other outcomes. The CI report of a failure is a `text` produced by the `ci.after` step, so the correction step reads that step. Persisted deadlines and correction counts survive restarts. If the PR head changes unexpectedly, the job waits for the user.
+A GitHub recipe can use `write-pr` to write a title and description and `github-pr` to publish them. With a `ci` configuration such as `{"after":"pr","on":"success","checks":["tests"],"intervalSec":30,"timeoutSec":1800,"maxCorrections":2}`, the scheduler waits for the listed checks on the recorded commit. Connect `ci_failed` to a correction step and use `ci_passed`, `ci_exhausted` and `ci_timeout` to route the other outcomes. The CI report of a failure is a `log` produced by the `ci.after` step, so the correction step reads that step. Persisted deadlines and correction counts survive restarts. If the PR head changes unexpectedly, the job waits for the user.
 
 ```json
 {
@@ -398,7 +366,7 @@ A GitHub recipe can use `write-pr` to write a title and description and `github-
     { "from": "pr", "on": "failure", "result": "failed" }
   ],
   "nodes": {
-    "spec":    { "use": "spec-writer", "reads": ["@start"] },
+    "spec":    { "use": "spec-writer" },
     "tests":   { "use": "tests-writer", "reads": ["spec", "tests-check", "code"] },
     "tests-check": { "use": "typecheck" },
     "code":    { "use": "builder", "reads": ["spec", "lint", "types", "test", "review", "human"] },
@@ -411,7 +379,8 @@ A GitHub recipe can use `write-pr` to write a title and description and `github-
     "commit":  { "use": "git-commit", "requires": ["lint", "types", "test", "human"] },
     "rebase":  { "use": "git-rebase" },
     "push":    { "use": "git-push" },
-    "pr":      { "use": "github-pr", "reads": ["spec"] }
+    "write-pr": { "use": "write-pr", "reads": ["spec", "lint", "types", "test"] },
+    "pr":      { "use": "github-pr", "reads": ["write-pr"] }
   },
   "edges": [
     { "from": "spec",    "on": "success",  "to": "tests" },
@@ -433,7 +402,8 @@ A GitHub recipe can use `write-pr` to write a title and description and `github-
     { "from": "human",   "on": "changes_requested",   "to": "code" },
     { "from": "commit",  "on": "success",      "to": "push" },
     { "from": "commit",  "on": "stale",     "to": "lint" },
-    { "from": "push",    "on": "success",    "to": "pr" },
+    { "from": "push",    "on": "success",    "to": "write-pr" },
+    { "from": "write-pr", "on": "success",   "to": "pr" },
     { "from": "rebase",  "on": "success",     "to": "lint" },
     { "from": "rebase",  "on": "rebase_conflict",  "to": "code" }
   ]
@@ -453,11 +423,10 @@ Recipe fields:
 | `nodes.<id>.use` | a node template name |
 | `nodes.<id>.params`, `nodes.<id>.agent` | step parameters and legacy agent settings. Engine-user commands take their arguments from the node template |
 | `nodes.<id>.agentId` | optional agent card ID for an agent step. With no assignment, the step uses Default Agent. Assistant is reserved for its chat |
-| `nodes.<id>.reads` | `@start` for the job request, or step IDs for their latest outputs |
-| `nodes.<id>.requires` | nodes whose latest outcome must be `success` or a review's `approved` on the current content state (4.4) |
-| `nodes.<id>.optional` | runs only if the `spec` names it (4.2) |
+| `nodes.<id>.reads` | Step IDs whose latest outputs this node receives |
+| `nodes.<id>.requires` | nodes whose latest outcome must be `success` or a review's `approved` on the current files hash (4.4) |
 | `nodes.<id>.agentSession` | optional Job, Node or New override for an agent step. When absent, the step uses its node template's setting |
-| `nodes.<id>.skipWhenUnchanged` | after a base change, if the rebase was clean and the job's own changes are identical to before (same `git patch-id` of the job's diff), the node ends at once with its previous outcome instead of running, and that outcome is bound to the new content state (4.4): an approval of the same patch carries over. Used to avoid repeating reviews and human approvals; checks never use it |
+| `nodes.<id>.skipWhenUnchanged` | after a base change, if the rebase was clean and the job's own changes are identical to before (same `git patch-id` of the job's diff), the node ends at once with its previous outcome instead of running, and that outcome is bound to the new files hash (4.4): an approval of the same patch carries over. Used to avoid repeating reviews and human approvals; checks never use it |
 | `edges` | `from`, `on` (outcome), `to`, optional `maxRounds` |
 
 The editor routes arrows from live card positions. An orthogonal A* search uses padded card boundaries and reserves each occupied track for the length of its segment. At 100% zoom it targets 27 px between parallel shafts away from their ends and a 34 px straight lead before the first bend. Tighter layouts can use shorter leads and at least 20 px between parallel shafts. Clearance near ends and around cards is at least 10 px. Crossings are allowed. A bend costs more than switching one end away from its facing side. Free ports prefer the center and shared sides use distinct ports. Labels reserve clearance from cards, other labels and every other arrow. The drag preview uses the latest pointer position once per frame and reuses paths that still clear the moving card. Tracks, ports and labels are computed in memory. The recipe migration drops old side fields from the catalog and job history.
@@ -466,32 +435,38 @@ Notes on the example:
 
 *   `git-rebase` stashes uncommitted changes including untracked files, runs `git rebase --onto {job.base} {job.oldBase}` and restores the changes. `--onto` moves only the job's own commits, so after a squash merge of the parent its original commits are not replayed. A conflict at any step gives the outcome `rebase_conflict`.
 *   After a rebase the job runs again through `commit`, `push` and `pr`. `git-commit` with nothing new to commit ends with `success` on the current commit. `git-push` pushes `{job.commit}` with `--force-with-lease`; its probe compares the remote branch head with `{job.commit}`, so a rebased commit is always pushed. `github-pr` finds the existing PR through its probe and does not open a second one (4.8).
-*   The spec lists the interfaces (function names and signatures). The tests node writes the tests and stubs of those interfaces that throw "not implemented". `tests-check` runs the type checker: it passes when tests and stubs are valid, while the tests still fail when run. Failures go back to the tests node. The builder fills the stubs and never edits tests, so it never receives failures in test files it may not change (concepts brief, finding M2).
-*   `spec: rejected` means the spec writer found the ticket unclear or not feasible; the job ends and the reason is the `text` output of `rejected`. `code: tests_disputed` means the builder reports a test as wrong; the job goes back to the tests node, which reads `code` and so receives the builder's `text` with the reason.
+*   Tests Writer writes tests named after the BDD scenarios and stubs for any new interfaces. TypeScript checks the tests and stubs. Builder fills the stubs and leaves the tests unchanged.
+*   `spec: rejected` means the spec writer found the ticket unclear or not feasible; the job ends and the reason is the `feedback` output of `rejected`. `code: tests_disputed` means the builder reports a test as wrong; the job goes back to the tests node, which reads `code` and so receives the builder's `feedback` with the reason.
 *   The connections to End give `human:rejected` the result `not_delivered` and `pr:failure` the result `failed`.
 
 #### 3.3 Artifacts
 
-Nodes pass data through `pecore.db`. The `artifacts` table stores content by job ID, run, name and type, with its SHA-256 hash and content state. Events refer to rows by those keys. Deleting a job deletes its artifact rows.
+Nodes pass data through `pecore.db`. The `artifacts` table stores content by job ID, run, name and type, with its SHA-256 hash and files hash. Events refer to rows by those keys. Deleting a job deletes its artifact rows.
 
 The engine reads those rows for later steps. Agents receive each input inline in the prompt with its label. Commands receive a JSON object on stdin. Human reviews and the artifact viewer load the same content through the engine API.
 
 Attempt logs use the separate `attempt_logs` table. The Assistant's `read_artifact` tool can return the end of an attempt log by node run (section 9).
 
-A type exists only for a distinct data structure, not for a different name. What the data means comes from the step that produced it. There are six types:
+Each artifact type has one purpose. The recipe connects a Command input only to a node that produces the required type.
 
 | Type | Structure | Examples in the default templates |
 |---|---|---|
-| `text` | plain text | the log of every command, the CI report, a rejection reason, a person's note |
-| `diff` | a patch | the job's changes, written by the engine after any node with `changesFiles: true` |
-| `document` | `title`, `body`, optional `source` and `id` | the job request from Start and the pull request description |
-| `spec` | `criteria[]`, `tests[]`, `interfaces[] {name, signature}`, `optionalNodes[]` | the spec writer's spec |
-| `findings` | optional `verdict`, `items[] {file, line?, hunk?, level, text}` | the reviewer's findings (`line`, level `blocker`, `major` or `minor`); the approver's risk (`hunk`, level `safe` or `risky`) |
-| `reference` | optional `sha`, `url`, `ref` | a commit (`sha`), a pushed branch (`ref`), a pull request or repository (`url`) |
+| `spec` | `feature`, `scenarios[]` with `name`, `given[]`, `when`, `then[]` and optional `examples[]` | Spec Writer |
+| `diff` | Git patch | Engine after a node that can edit files |
+| `code_review` | `body` and `comments[]` with `file`, a `line` or `hunk`, and `text` | Code Reviewer and Human Review |
+| `code_analysis` | `summary` and `hunks[]` with `file`, `hunk`, `level` (risky or safe), and `text` | Approver |
+| `sha` | Commit SHA | Git Commit |
+| `pull_request` | `title`, `body` and optional `url` | Write PR drafts it, GitHub PR and GitLab MR add the URL |
+| `feedback` | Text for whoever needs to revise work | Spec Writer rejection, disputed tests, conflict resolution |
+| `log` | Execution output | Commands and CI reports |
 
-Ticket attachments are stored as binary artifacts. Agents receive a workdir copy of each attachment with its path listed in the prompt.
+Job attachments are stored separately from node outputs. Agents receive a workdir copy of each attachment with its path listed in the prompt.
 
-The engine adds two outputs by itself: a `diff` after a node that changes files, and a `text` log after every command. The job's commit is the latest `reference` with a `sha`; its delivery is the latest `reference` with a `url` or `ref` from a node with a merge check.
+The engine uses the latest `sha` as the job commit. PR delivery uses the published `pull_request.url`. Branch delivery uses the job's branch.
+
+Tests Writer names at least one test after each BDD scenario. Builder implements the interfaces exercised by those tests. Code Reviewer checks that each scenario has a test and that the code meets the spec. Approver explains the behaviour of every hunk for the human reviewer.
+
+An upgrade removes job history in the old format. Catalog migration removes generated Skipped routes. A node follows its regular outcomes when reached. Custom scripts that read a retired input key need to use the new contract.
 
 #### 3.4 Accounts, profiles and tiers
 
@@ -501,7 +476,7 @@ The engine adds two outputs by itself: a `diff` after a node that changes files,
     *   `model`: provider, connector, login type (`subscription` or `api-key`, both configured inside the harness), the account's `email` (compared with the logged-in account, below), `maxParallel`.
     *   `forge`: forge type, host, tool (`gh`, `glab`, `aws`, `git`), the tool's account name (for example the `gh` login, the AWS profile), commit author.
     *   `service`: external service (for example Atlassian), the tool or MCP server that holds its login, the account name.
-*   Private Git and AWS CodeCommit deliver to existing repositories by pushing a branch. They support neither repository creation. Private Git uses the user's configured Git credentials. CodeCommit uses the stored AWS CLI profile and derives its Git host from the profile's region. Legacy CodeCommit rows still use the username field as their profile reference.
+*   Private Git and AWS CodeCommit deliver to existing repositories by pushing a branch. They require an existing repository. Private Git uses the user's configured Git credentials. CodeCommit uses the stored AWS CLI profile and derives its Git host from the profile's region. Legacy CodeCommit rows still use the username field as their profile reference.
 *   There are no exceptions. A service is reached only through a tool that keeps its own login (for example Jira through `acli` or the Atlassian MCP server). A service with no such tool is not supported until one exists.
 *   A harness keeps its login in a config directory, chosen through the variable named in the connector file (for example `CLAUDE_CONFIG_DIR`, `CODEX_HOME`).
     *   Normal mode: the first account of each harness uses the harness's own default directory (no variable set, so `~/.claude`, `~/.codex`): the login the user already has, with no login in <PE/CORE>. A second account of the same harness gets `PECORE_HOME/harness/<app user>/<account-id>/`, private to the app user, and needs one login there.
@@ -576,12 +551,11 @@ Pause waits for the running node run to finish, then holds. Play moves a paused 
 
 #### 4.2 Graph rules
 
-*   **Start**: the engine saves one `document` when it creates the job. Its title and body carry the complete request, and its optional ID links the original tracker ticket. Start runs nothing. The job runs `start` first, which is Spec Writer in every shipped recipe.
+*   **Start** runs nothing. The job runs `start` first, which is Spec Writer in every shipped recipe. Job creation stores the title, request and optional `ticketId`. The tracker ID is used for tracker actions.
 *   **One node at a time**: a job has one workdir and runs one node at a time (4.5).
 *   **Edges**: when a node run ends with an outcome, the edge `from` that node `on` that outcome starts its target. The validator rejects two edges with the same `from` and `on`.
 *   **End**: a step outcome either continues along an edge or reaches End with the result recorded in `ends`. The empty recipe goes directly from Start to End and succeeds. An unrouted outcome in an explicit recipe is a validation error. A previously saved recipe without `ends` retains its terminal rules based on `failOutcomes`, `successOutcomes` and `not_delivered`.
 *   **Rounds**. An edge with `maxRounds: n` can send the job to its target up to `n` times. When the edge reaches that limit, the job enters `waiting` with reason `round_limit`. The user can allow one more round or end the job as `failed`.
-*   **Optional nodes**: a recipe node with `optional: true` runs only if the `spec` artifact names it; otherwise it ends at once with the built-in outcome `skipped`, which the recipe must route.
 *   **Base change**: a job's base and target change only through a request, recorded as `job.base_change_requested`, in exactly three cases: its parent job's branch gets a new commit (from a node of the parent job); its parent's delivery is detected as merged (4.6); the user, the Assistant or the Project Manager asks to realign it to a branch. A job inherits its base branch from the project when it is created (or from the branch chosen at creation), and its base never moves while it works. A request is applied at once when the job is `queued`, `succeeded`, `not_delivered`, `stopped` or `failed`; otherwise it waits and is applied when the job reaches one of those states. Requests that wait are merged into one, the latest. A realign asked by the user is refused while the job is `running`, `waiting` or `paused`. Applying a request records `job.base_changed`; a job that has started then re-enters `running` at `onBaseChanged` (its worktree recreated if needed), where the rebase node moves its commits and the delivery node moves its PR or MR. If the recipe has no `onBaseChanged`, the job only shows that its base moved. Commits pushed to a branch by hand on the forge, or new commits on `baseBranch`, are not detected; the user realigns by hand.
 
 #### 4.3 Node run states
@@ -592,8 +566,7 @@ pending ──▶ waiting(reason) ──▶ running ──▶ completed(outcome)
                   └────────────────┤        quota or rate limit: the attempt ends,
                                    │        the node run waits for a new attempt
                                    ├──▶ failed(reason)     process error after retries
-                                   ├──▶ interrupted        stop, app quit
-                                   └──▶ skipped            optional node not chosen
+                                   └──▶ interrupted        stop, app quit
 ```
 
 Node run waiting reasons: `concurrency`, `quota`, `rate_limit`, `human`, `services`, `round_limit`, `network` (a probe or forge command could not reach the forge), `auth` (a harness or tool login expired or does not match the account; the user is notified and the run continues after a new login), `disk` (free disk below the threshold, Risks & Limits). A `queued` job stores its own waiting reason on the job: `parent_job`, `parent_failed` (4.6), `concurrency`, `disk` (before its workdir is created), or `network` and `auth` (the fetch of its base branch at start failed; retried with the backoff of 4.7). An `auth` wait also records the account id, the OS user of the login (3.4), and whether the login belongs to a harness or to a forge or service tool. Failure reasons: `HARNESS_ERROR`, `TIMEOUT`, `INVALID_OUTPUT`, `READ_ONLY_VIOLATION`, `PROCESS_KILLED`, `COMMAND_NOT_FOUND`.
@@ -602,22 +575,22 @@ Approver, Tests Writer and Write PR have one recipe outcome, `success`, because 
 
 A job waiting for a human, a quota or a login releases its pool units (4.7) and takes them again before its next node run, so waiting jobs never block running ones.
 
-#### 4.4 Content state and evidence
+#### 4.4 Files hash and evidence
 
-*   After every node run with `changesFiles: true`, the engine computes the workdir's **content state**: the git tree hash of all tracked and untracked files, built with a temporary index so the worktree's index is never touched. Files ignored by git and the `.pecore/` folder are not part of it.
-*   Every node run records the content state before and after it. Every check result is bound to the content state it saw; a check whose before and after states differ binds to neither and does not count as `success`. A human review is bound the same way to the content state of the diff it showed, and its `approved` counts as `success` for `requires`.
-*   The engine also recomputes the content state right before it evaluates `requires` and right before a commit node, because another job of the same project runs as the same OS user and could have changed the workdir in between.
-*   `requires` on a recipe node is checked against the current content state. If one of the listed nodes has not succeeded or been approved on that exact state, the node does not run and produces the built-in outcome `stale`, which the recipe can route (for example back to the checks).
-*   A commit node must produce a commit whose tree equals the content state checked by `requires`; otherwise it fails with `READ_ONLY_VIOLATION`. The commit node's `reference` records the SHA, and delivery pushes that exact SHA (`{job.commit}`), never whatever the branch ref points to.
-*   Files ignored by Git (`node_modules/`, build caches, `.env`) are outside the content state. Job checks run in the workdir and can pass because of ignored files. Repository CI checks the commit independently of those local files.
-*   After every node run, the engine deletes new files that match the node's `scratchPaths`, before computing the content state.
-*   A node with `changesFiles: false` must leave the content state unchanged. If it changed, the engine restores the previous state and fails the run with `READ_ONLY_VIOLATION`. Test output such as coverage reports therefore needs to be in `.gitignore` or in `scratchPaths`.
-*   Before each node run the engine records the branch SHA, HEAD and `refs/stash`. When a node run is interrupted, the engine aborts any git operation in progress, resets the branch, HEAD and `refs/stash` to the recorded values, then restores the content state from before the run. A new attempt starts clean.
+*   After every node run with `changesFiles: true`, the engine computes the workdir's **files hash**: the git tree hash of all tracked and untracked files, built with a temporary index so the worktree's index is never touched. Files ignored by git and the `.pecore/` folder are not part of it.
+*   Every node run records the files hash before and after it. Every check result is bound to the files hash it saw; a check whose before and after states differ binds to neither and does not count as `success`. A human review is bound the same way to the files hash of the diff it showed, and its `approved` counts as `success` for `requires`.
+*   The engine also recomputes the files hash right before it evaluates `requires` and right before a commit node, because another job of the same project runs as the same OS user and could have changed the workdir in between.
+*   `requires` on a recipe node is checked against the current files hash. If one of the listed nodes has not succeeded or been approved on that exact state, the node does not run and produces the built-in outcome `stale`, which the recipe can route (for example back to the checks).
+*   A commit node must produce a commit whose tree equals the files hash checked by `requires`; otherwise it fails with `READ_ONLY_VIOLATION`. The commit node records the `sha`, and delivery pushes that exact SHA (`{job.commit}`), never whatever the branch ref points to.
+*   Files ignored by Git (`node_modules/`, build caches, `.env`) are outside the files hash. Job checks run in the workdir and can pass because of ignored files. Repository CI checks the commit independently of those local files.
+*   After every node run, the engine deletes new files that match the node's `scratchPaths`, before computing the files hash.
+*   A node with `changesFiles: false` must leave the files hash unchanged. If it changed, the engine restores the previous state and fails the run with `READ_ONLY_VIOLATION`. Test output such as coverage reports therefore needs to be in `.gitignore` or in `scratchPaths`.
+*   Before each node run the engine records the branch SHA, HEAD and `refs/stash`. When a node run is interrupted, the engine aborts any git operation in progress, resets the branch, HEAD and `refs/stash` to the recorded values, then restores the files hash from before the run. A new attempt starts clean.
 
 #### 4.5 Workdirs and branches
 
 *   At job start the engine creates branch `factory/<job-id>` from the job's base commit (the head of its base branch, by default the project's `baseBranch`, or the parent job's last commit for stacked jobs) and a worktree under `work/<job-id>/`. The worktree is owned by the project user.
-*   `repo.git` is shared with the project user through a group (`core.sharedRepository=group`), because commits made in a worktree write objects into it. Every git command that runs with a work tree under `work/` runs as the project user, reads included: computing and restoring the content state, creating and removing worktrees, rebase, commit. The app user never runs git with a work tree under `work/` and never uses `safe.directory` for it (section 8).
+*   `repo.git` is shared with the project user through a group (`core.sharedRepository=group`), because commits made in a worktree write objects into it. Every git command that runs with a work tree under `work/` runs as the project user, reads included: computing and restoring the files hash, creating and removing worktrees, rebase, commit. The app user never runs git with a work tree under `work/` and never uses `safe.directory` for it (section 8).
 *   One job has exactly one workdir and runs one node at a time. Work that should run in parallel is split into separate jobs (sibling or stacked, 4.6). Several workdirs per job is a possible later evolution, not part of this design.
 *   Node-run ids: `<job-id>/<node>#<round>`.
 *   When a job ends `succeeded` or `not_delivered`, the engine removes its worktree. If the job later re-enters `running` (base change, 4.2), the engine first recreates its worktree from `factory/<job-id>`. When a job fails or is stopped, its worktree stays, so the user can see what the agents left; it is removed when the job is archived or deleted. Branches stay until the job is deleted.
@@ -743,7 +716,7 @@ The engine decides in this order:
 6.  `end_turn` with a missing or invalid output: the validation errors are sent as a new message in the same session, at most twice, each answer decided again from step 1; then `INVALID_OUTPUT`.
 7.  `max_tokens`, `max_turn_requests`, `refusal`, a connector that exits without answering, or any other error: `checkLogin`; `logged_out` gives `auth`, anything else `HARNESS_ERROR`.
 
-`quota` and `rate_limit` make the node run wait (4.7) and `auth` makes it wait for a new login (3.4). These waits preserve the node's retry budget. `HARNESS_ERROR` and `TIMEOUT` use that budget. `INVALID_OUTPUT` ends the run after two correction prompts. A retry starts from the content state before the node run (4.4) and applies the session rules below.
+`quota` and `rate_limit` make the node run wait (4.7) and `auth` makes it wait for a new login (3.4). These waits preserve the node's retry budget. `HARNESS_ERROR` and `TIMEOUT` use that budget. `INVALID_OUTPUT` ends the run after two correction prompts. A retry starts from the files hash before the node run (4.4) and applies the session rules below.
 
 Each built-in connector ships with recorded ACP traffic of these cases, used by its tests. A quota or rate limit error that cannot be provoked on purpose is recorded the first time it happens; until then a synthetic fixture (a recorded session with `status` changed to `rejected`, file name ending in `.synthetic.jsonl`) tests the reader, and an unrecorded error message reaches step 7.
 
@@ -771,7 +744,7 @@ Each built-in connector ships with recorded ACP traffic of these cases, used by 
 
 #### 5.8 Prompt and output
 
-*   The engine sends the prompt as the text of `session/prompt` and records it in the attempt log. The prompt includes the request from Start, current diff, read artifacts and knowledge documents under their own headings. It lists worktree paths for the selected original files, including images. Spec Writer uses these inputs without fetching the ticket or web pages again. The prompt includes the JSON Schema built from the node's `outcomes` and `outputs`.
+*   The engine sends the prompt as the text of `session/prompt` and records it in the attempt log. The prompt includes the job request, current diff, read artifacts and knowledge documents under their own headings. It lists worktree paths for the selected original files, including images. Spec Writer uses these inputs without fetching the ticket or web pages again. The prompt includes the JSON Schema built from the node's `outcomes` and `outputs`.
 *   The agent ends its turn with a final message containing only its result or question. The engine reads the last ACP message, accepts a plain JSON object or one JSON code fence, and validates it with Zod. Missing or invalid JSON follows the correction flow in 5.4. Each correction includes the expected shape again.
 
 #### 5.9 Logins
@@ -787,7 +760,7 @@ The Assistant manages what is global: the templates and the projects themselves.
 Recipes can perform the external actions they define. In Project Manager chat, a Repository or Tracker action that makes a change needs confirmation even when the user asked for it.
 
 *   **Assistant:** the user's chat outside projects, including the Jobs list. It reads every project and writes only what is global: templates and projects. Project creation, settings changes, import and deletion use confirmation cards. A flagged export requires the user's decision. It treats untrusted content as data. A direct chat order authorises the requested action. It cannot do a project's work: for that it calls `delegate_to_pm`, which queues a complete, self-contained order, with any images of the current message copied, in that project's Project Manager chat. The Assistant never reads that chat and never says the work is done. When the delegated turn ends (completed, failed or interrupted) the engine posts the Project Manager's final reply, or the failure, in the Assistant chat as a message from "Project Manager · <project>". That message starts no Assistant turn. The Assistant's next turn receives the reports it has not seen yet (`reported_until` in `chats.db`).
-*   **Project Manager:** plans jobs, manages project knowledge and answers agent questions. It reads tickets through Tracker tools and public HTTP or HTTPS text pages through `read_web_page`, which returns up to 200 KB as untrusted data and reports truncation. It chooses a recipe, combines the relevant ticket, page and chat details into one self-contained request per ticket, and chooses original files from the current order by ID. `create_jobs` saves the full request in `ticketText` and the original tracker ID or link in `ticketId` when there is one. The Project Manager's chat and calls are scoped to one project.
+*   **Project Manager:** plans jobs, manages project knowledge and answers agent questions. It reads tickets through Tracker tools and public HTTP or HTTPS text pages through `read_web_page`, which returns up to 200 KB as untrusted data and reports truncation. It chooses a recipe, combines the relevant ticket, page and chat details into one self-contained request per ticket, and chooses original files from the current order by ID. `create_jobs` saves the full request in `request` and the original tracker ID or link in `ticketId` when there is one. The Project Manager's chat and calls are scoped to one project.
 *   Agents contains the built-in Assistant and Default Agent cards. Startup recreates missing cards before checking harnesses. Assistant starts white. Default Agent uses the Agent badge colour. Both names are fixed. Each project's PM tab selects a card and edits the PM's identity and optional additional Markdown context. The selected card supplies the account, model, effort, compaction thresholds and shared Markdown context. The choice is saved in the local database. A deleted card is replaced by Default Agent for every PM that used it. An agent step uses the card assigned in the recipe or Default Agent. If its assigned card is unavailable, the job stops and names the card.
 *   Agents lists reusable configurations with a unique name, provider, model, effort, compaction thresholds and optional Markdown context. These configurations are intended for recipe nodes. Assignment is a separate change.
 *   Agent questions: when a job's agent asks a question (an `agent-question` item), the engine also queues it in the project's Project Manager chat, starting with "Answer this agent question", with the question as untrusted data. The Project Manager answers with `answer_question` only if the project's knowledge, recipes, ticket or job already decide it; otherwise it says in one line that the user must decide, and the item stays in Notifications. During that turn its tools are `list_recipes`, `list_definitions`, `read_definition`, `read_ticket`, `job_status`, `read_artifact` and `answer_question`, for that item only. Without a Project Manager profile the question goes only to Notifications.
@@ -849,7 +822,7 @@ Recipes can perform the external actions they define. In Project Manager chat, a
 
 ### 9. Observability
 
-*   `pecore.db` holds `jobs`, `node_runs` (state, waiting reason, content states), `attempts` (profile, harness version, model, tokens and cost), `human_queue` (decisions by `kind`) and `artifacts` (content and metadata). External effects are recorded as events (`effect.requested`, `effect.completed`, `effect.failed`).
+*   `pecore.db` holds `jobs`, `node_runs` (state, waiting reason, files hashes), `attempts` (profile, harness version, model, tokens and cost), `human_queue` (decisions by `kind`) and `artifacts` (content and metadata). External effects are recorded as events (`effect.requested`, `effect.completed`, `effect.failed`).
 *   `attempt_logs` holds one row per ACP message, stderr line or command output, keyed by attempt and sequence. Direction, timestamp and payload have their own columns. The raw view displays messages in sequence order. Deleting a job deletes its attempts and their logs. Deleting a project removes its database.
 *   The GUI shows the job graph with each node's state, round, waiting reason, duration, tokens and cost. One click opens the node's attempts, artifacts and raw log. `pecore job why <id>` prints the same blocking reasons.
 *   Notifications cover job completion, jobs that need attention, expired logins, failed parents, auto-setup changes and exposed login files. The engine stores these in the notification log, including Project Manager reports. Assistant replies use the unread marker and a native notification only. Native notifications are sent only while the window is unfocused. The operating system handles do-not-disturb.
@@ -908,7 +881,7 @@ Each entry: option, status (Rejected or Deferred, with the decision if any), rea
 
 *   **JSONC files.** Rejected (D14). Files are written by the GUI and by AI as well as by hand; a program rewriting JSONC loses or misplaces comments, and JSON Schema tooling expects plain JSON. Explanations go in `description` fields. Lost: free-form comments.
 *   **Built-in support for languages and forges (a closed list of check types, a `Forge` interface).** Rejected (D3, D13). Every operation is a node written as data: checks, commit, rebase, push, PR or MR, repo creation. A new language or forge needs new nodes, created by hand or with AI, not engine code.
-*   **Workdirs and branches as nodes.** Rejected (D15). Content states (4.4), crash recovery and permissions (section 8) assume the engine controls the workdir's whole life; a recipe that skipped or reordered these steps would break them.
+*   **Workdirs and branches as nodes.** Rejected (D15). Files hashes (4.4), crash recovery and permissions (section 8) assume the engine controls the workdir's whole life; a recipe that skipped or reordered these steps would break them.
 *   **Commit and rebase done by the engine.** Rejected (D16, D17). Commit is a node, so a recipe can put a human review before it. Rebase is a node, because conflicts need an agent.
 
 ### Existing tools
@@ -927,7 +900,7 @@ Each entry: option, status (Rejected or Deferred, with the decision if any), rea
 | Normal mode: agents run as the app user | security | a prompt-injected agent can read the user's files and forge logins, as when the user runs a harness by hand | author decision: normal mode is the default, for zero setup; the GUI shows the mode and offers protected mode in one step | 8 |
 | Protected mode: all protected harness logins share `pecore-agent` | security | a prompt-injected agent can read the protected logins of every account | accepted: the app user's files and logins stay out of reach; per-account OS users would multiply logins (D9) | 8 |
 | An agent edits the compose file to mount the app user's home or run a privileged container | security | forge login theft, root on rootful Docker | compose file read from the base commit, forbidden keys rejected | 4.9 |
-| One job's agent changes another job's workdir or refs in the same project | integrity | unchecked content delivered | content state recomputed before `requires` and commit; push of the exact checked SHA | 4.4 |
+| One job's agent changes another job's workdir or refs in the same project | integrity | unchecked content delivered | files hash recomputed before `requires` and commit; push of the exact checked SHA | 4.4 |
 | Checks pass on modified ignored files | integrity | a check result that does not hold for the commit | Repository CI runs checks on the commit | 4.4 |
 | An adapter or harness changes its `_meta` fields or error messages | failure mode | quota errors become failures | adapter versions pinned with the app; harness version range checked at start; recorded ACP traffic tests per connector; a reader treats missing fields as absent; an unknown error ends as `HARNESS_ERROR` after a login check (5.4), so the job fails visibly instead of waiting on a wrong reason | 5 |
 | The claude.ai account's MCP connectors (mail, calendar, drive) join an agent's session | security | a prompt-injected agent acts on the user's mail or files with the user's account, outside the project user's reach | `ENABLE_CLAUDEAI_MCP_SERVERS=false` in the Claude Code connector (5.6), checked in phase 0 | 5, 8 |
@@ -994,7 +967,7 @@ Events (`src/events.ts`). Each row of `events` has `id` (ULID), `job_id`, `type`
 
 | Event | Payload | Views changed |
 |---|---|---|
-| `job.created` | recipe, ticket artifact, parent, base branch, base commit, target | `jobs` insert |
+| `job.created` | recipe, title, request, optional ticket ID, parent, base branch, base commit, target | `jobs` insert |
 | `job.state_changed` | state, reason | `jobs.state`, `jobs.waiting_reason` |
 | `job.base_change_requested` | cause, base commit (null: the head of the target when applied), target | none; the latest request after the last `job.base_changed` is pending |
 | `job.base_changed` | cause (`parent_commit`, `parent_merged`, `realign`), new base commit, old base commit, new target | `jobs.base`, `jobs.old_base`, `jobs.target` |
@@ -1003,7 +976,7 @@ Events (`src/events.ts`). Each row of `events` has `id` (ULID), `job_id`, `type`
 | `node_run.created` | node, round, the index of the edge that started it (null for `start` and `onBaseChanged`) | `node_runs` insert |
 | `node_run.state_changed` | state, waiting reason, reset time, queue item id for human review or round limits, account id, OS user and login type for authentication | `node_runs` |
 | `node_run.git_recorded` | branch SHA, HEAD, `refs/stash` | `node_runs.git_before` |
-| `node_run.completed` | outcome, content state after, artifacts | `node_runs` |
+| `node_run.completed` | outcome, files hash after, artifacts | `node_runs` |
 | `node_run.failed` | failure reason | `node_runs` |
 | `attempt.started` | profile, connector, harness and connector versions, OS user, agent card ID and context mode | `attempts` insert |
 | `attempt.session_started` | ACP session id, `resumed` | `attempts.session_id`, `attempts.resumed` |
@@ -1017,7 +990,7 @@ Tables (`src/store/migrations/`):
 | Table | Columns |
 |---|---|
 | `jobs` | `id` pk, `title`, `recipe` (resolved recipe at job creation), `state`, `waiting_reason`, `failure_reason`, `parent_job_id`, `base_branch`, `base`, `old_base`, `target`, `branch`, `archived`, `merged_at`, `created_at`, `updated_at`; index on `state`, `parent_job_id` |
-| `node_runs` | `id` pk (`<job>/<node>#<round>`), `job_id`, `node`, `round`, `via_edge`, `state`, `outcome`, `waiting_reason`, `reset_at`, `queue_item_id`, `auth_account`, `auth_os_user`, `auth_kind`, `failure_reason`, `content_before`, `content_after`, `git_before` (JSON), `pgid`, `os_user`, `started_at`, `ended_at`; index on `job_id` |
+| `node_runs` | `id` pk (`<job>/<node>#<round>`), `job_id`, `node`, `round`, `via_edge`, `state`, `outcome`, `waiting_reason`, `reset_at`, `queue_item_id`, `auth_account`, `auth_os_user`, `auth_kind`, `failure_reason`, `files_hash_before`, `files_hash_after`, `git_before` (JSON), `pgid`, `os_user`, `started_at`, `ended_at`; index on `job_id` |
 | `attempts` | `id` pk (ULID), `node_run_id`, `profile`, `connector`, `harness_version`, `connector_version`, `model`, `account`, `os_user`, `agent_id`, `agent_session`, `session_id`, `resumed`, `tokens_in`, `tokens_out`, `cache_read`, `cache_write`, `cost`, `end_reason`, `log_omitted`, `started_at`, `ended_at` |
 | `attempt_logs` | `attempt_id` and `sequence` form the primary key. `direction`, `at` and `payload` describe the message |
 | `human_queue` | `id` pk, `job_id` (nullable), `kind` (`human-node`, `agent-question`, `engine-node`, `source-node`, `connector`, `recipe-change`, `import`, `ticket`, `services`, `round-limit`, `outbound`), `subject` (JSON: a snapshot of everything the user must see to decide, for example the full node definition and script, never re-read from disk at decision time), `subject_hash` (sha256 of `subject`), `state` (`open`, `resolved`, `cancelled`), `choices` (JSON), `choice`, `note`, `created_at`, `resolved_at` |
@@ -1136,7 +1109,7 @@ When no harness is ready, both cards still appear and the GUI shows the connecti
 
 ### Job creation
 
-`src/jobs/create.ts` is used by `POST /jobs`, `create_jobs` from the Assistant and Project Manager. A job without a recipe gets the project's only recipe; with no recipes or more than one, creation fails and asks to add or choose one. It validates the recipe, writes the `ticket` artifact, fetches the base branch (for a `repo: null` project only from its `folder`, if any; without one the base branch lives only in `repo.git`), and sets base commit, target and branch. A job with an unfinished parent is created `queued` with reason `parent_job`; otherwise it waits for the scheduler and the disk check. When the job starts, the engine fetches its target branch again (unless the target is a `factory/` branch of a parent) and creates the worktree from the fetched head, recorded as `job.base_changed` with cause `fetched`; if that fetch fails, the job stays `queued` with reason `network` or `auth` and never starts on an old base.
+`src/jobs/create.ts` is used by `POST /jobs`, `create_jobs` from the Assistant and Project Manager. A job without a recipe gets the project's only recipe; with no recipes or more than one, creation fails and asks to add or choose one. It validates the recipe, stores the request and optional tracker ID, fetches the base branch (for a `repo: null` project only from its `folder`, if any; without one the base branch lives only in `repo.git`), and sets base commit, target and branch. A job with an unfinished parent is created `queued` with reason `parent_job`; otherwise it waits for the scheduler and the disk check. When the job starts, the engine fetches its target branch again (unless the target is a `factory/` branch of a parent) and creates the worktree from the fetched head, recorded as `job.base_changed` with cause `fetched`; if that fetch fails, the job stays `queued` with reason `network` or `auth` and never starts on an old base.
 
 ### Tests
 
@@ -1149,7 +1122,7 @@ V8 measures statements, branches, functions and lines under `packages/*/src` wit
 | `graph/rules.test.ts` | property tests of 4.2 | CI |
 | `workdir/fs-as.test.ts` | symlinks at every engine file path | CI (Linux, with a test user) |
 | `workdir/git-as.test.ts` | hooks, `core.fsmonitor`, `core.sshCommand` and a forged `commondir` do not run as the app user | CI (Linux, test user) |
-| `workdir/content-state.test.ts` | `READ_ONLY_VIOLATION` restore; `requires` gives `stale`; interrupted rebase is undone | CI |
+| `workdir/files-hash.test.ts` | `READ_ONLY_VIOLATION` restore; `requires` gives `stale`; interrupted rebase is undone | CI |
 | `definitions/engine-node.test.ts` | Repository nodes run with the current scripts without approval | CI |
 | `agents: src/connectors.test.ts` | for each built-in connector, the incoming messages of each fixture go through the reader and the classifier, and the result must equal `<case>.expected.json`: auth, quota and rate limit errors (synthetic until recorded, 5.4), usage, account (G7) | CI |
 | `agents: src/session.test.ts` | ACP session with the fake agent: options applied in order and checked, a mismatching `currentValue`, permission answered, resume and fallback to a new session, a request past 30 seconds, connector exit without answer | CI |
@@ -1188,14 +1161,14 @@ Every file exports a Zod schema and the TypeScript type inferred from it. The en
 | File | What and why |
 |---|---|
 | `src/node.ts` | node schema of 3.1: common fields, fields by kind, `failOutcomes`, internal repeat and merge checks, `scratchPaths`, placeholder syntax check |
-| `src/recipe.ts` | recipe schema of 3.2: `start`, `onBaseChanged`, `successOutcomes`, nodes, edges, `requires`, `optional`, `skipWhenUnchanged`, `maxRounds` |
+| `src/recipe.ts` | recipe schema of 3.2: `start`, `onBaseChanged`, `successOutcomes`, nodes, edges, `requires`, `skipWhenUnchanged`, `maxRounds` |
 | `src/project.ts` | `project.json` of 3.5 |
 | `src/accounts.ts` | account schema with the kinds `model`, `forge`, `service` |
 | `src/profiles.ts` | profile schema |
 | `src/tiers.ts` | tier schema with four fixed tier names |
 | `src/settings.ts` | global job and agent limits, services runtime, minimum free disk (10 GB), merge check interval (300 seconds), `projectsFolder` (user home), the user's name, protected mode (off by default) and appearance |
 | `src/connector.ts` | connector file (Connector file above) |
-| `src/artifacts.ts` | the six artifact types of 3.3, the structure of each, and the description agents read |
+| `src/artifacts.ts` | the eight artifact contracts of 3.3, the structure of each, and the description agents read |
 | `src/events.ts` | the events of Data model |
 | `src/api.ts` | request and response bodies of the API table and the WebSocket union |
 | `src/errors.ts` | waiting reasons and failure reasons of 4.3 |
@@ -1366,11 +1339,11 @@ Stored in the repository under `packages/app/resources/` and bundled with the ap
 
 | File | What and why |
 |---|---|
-| `templates/nodes/spec-writer.json` + `.md` | writes `spec` with criteria and interfaces |
+| `templates/nodes/spec-writer.json` + `.md` | writes the feature and BDD scenarios |
 | `templates/nodes/tests-writer.json` + `.md` | writes tests and stubs that throw "not implemented" |
 | `templates/nodes/builder.json` + `.md` | fills the stubs; never edits tests |
-| `templates/nodes/code-reviewer.json` + `.md` | writes `findings` |
-| `templates/nodes/approver.json` + `.md` | writes `findings` with one item per hunk, level `safe` or `risky` |
+| `templates/nodes/code-reviewer.json` + `.md` | writes `code_review` |
+| `templates/nodes/approver.json` + `.md` | writes `code_analysis` with one item per hunk, level `safe` or `risky` |
 | `templates/nodes/human-review.json` | outcomes `approved`, `changes_requested`, `rejected` |
 | `templates/nodes/git-commit.json` | commit; `success` also when there is nothing to commit |
 | `templates/nodes/git-rebase.json` + `.sh` | `git stash push --include-untracked`, `git rebase --onto {job.base} {job.oldBase}`, `git stash pop` |
@@ -1396,7 +1369,7 @@ Stored in the repository under `packages/app/resources/` and bundled with the ap
 | `docs/ui-design.md` (exists) | UI inventory and layout |
 | `docs/orginal_design.md` | original design for historical reference |
 | `docs/nodes.md` | how to write a node: fields and placeholders |
-| `docs/recipes.md` | how to write a recipe: edges, rounds, optional nodes, `onBaseChanged` |
+| `docs/recipes.md` | how to write a recipe: edges, rounds, `onBaseChanged` |
 | `docs/connectors.md` | how to add a bundled connector file for a harness with an ACP mode or adapter, and how to record its fixtures |
 
 ### Build order
@@ -1409,7 +1382,7 @@ Phases 1-6 target Linux first. The macOS parts (`osuser/` with `dscl` and `sysad
 |---|---|---|
 | 0. Spikes | none (results go into connector files, fixtures and Open Questions) | done: ACP sessions with Claude Code (two turns, permission, missing login), one Codex tool call, opencode's missing login ([ACP spike](spikes/acp.md)); macOS Keychain behaviour; the "Claude Code through sudo" check of Tests, with its fixtures ([sudo spike](spikes/sudo.md)) |
 | 1. Definitions and storage | `schemas`; engine `home/` (except `prerequisites.ts`), `definitions/`, `store/`; root files; the templates that use no forge or agent | done: every template present validates (each later phase adds its templates, and its gate re-runs the validation); migrations apply; `PECORE_HOME` initialises. `git-rebase` moves to phase 4 with its entry gate (rebase checkpoints), `markdown-folder` with the source templates |
-| 2. Engine core | `graph/`, `scheduler/`, `runners/process.ts`, `placeholders.ts`, `command.ts`, `probe.ts`, `human.ts`, `workdir/`, `jobs/create.ts`, `controls.ts`, `delete.ts`, `effects.ts`, `main.ts` (without API), `observability/logs.ts`, `projects/create.ts` for `repo: null` only; test fake forge | done: `rules.test`, `content-state.test`, `fs-as.test`, `git-as.test` pass; command-only recipes run end to end on a local-only project, with the app user as project user (`test/e2e/local-commands.test.ts`). Job controls and delete live in `graph/executor.ts`; the fake forge moves to phase 4, its first user |
+| 2. Engine core | `graph/`, `scheduler/`, `runners/process.ts`, `placeholders.ts`, `command.ts`, `probe.ts`, `human.ts`, `workdir/`, `jobs/create.ts`, `controls.ts`, `delete.ts`, `effects.ts`, `main.ts` (without API), `observability/logs.ts`, `projects/create.ts` for `repo: null` only; test fake forge | done: `rules.test`, `files-hash.test`, `fs-as.test`, `git-as.test` pass; command-only recipes run end to end on a local-only project, with the app user as project user (`test/e2e/local-commands.test.ts`). Job controls and delete live in `graph/executor.ts`; the fake forge moves to phase 4, its first user |
 | 3. Agents | `packages/agents` with the Claude Code connector only, `adapters.json`, `build-adapters.mjs`; engine `accounts/` (harness logins only), `runners/agent.ts`, `scheduler/tiers.ts`, `cooldown.ts`, the `checkLogin` step of `main.ts`; test fake agent | done: `connectors.test`, `session.test` and `agent.test` pass; a `local-only` job on a `repo: null` project runs end to end to its commit with Claude Code as the only provider, with the app user as project user, in normal mode, with the user's existing Claude Code login (`test/e2e/claude-local.test.ts` with `PECORE_REAL=1`: 4 minutes with Sonnet, 2026-11-18) |
 | 4. Isolation and delivery | `osuser/`, the rest of `projects/`, `home/prerequisites.ts`, `services/`, `runners/forge-env.ts`, `jobs/stacked.ts`, `merge-watch.ts`, delivery and source templates | done: `crash.test`, `stacked.test`, `engine-node.test` pass with the fake forge; `e2e/forges` passes against real GitHub and GitLab sandbox repositories with `gh` and `glab` (`test/e2e/forges.test.ts` with `PECORE_E2E_GITHUB_REPO`/`_USER` and `PECORE_E2E_GITLAB_REPO`/`_USER`: repo creation on an empty repository, one PR or MR per job, one push and one request after a kill during push, 2026-11-19) |
 | 5. API, GUI, CLI | `api/`, `observability/why.ts`, `packages/app`, `packages/cli` (requires approved `ui-design.md`) | done: `why.test` passes; every action of G16 works from the GUI, chat and AI assistance excepted (phase 6): verified by the GUI tests until 2026-11-22, when they were removed (decision in `decisions.md`); harness logins for the user and for the protected user, and protected mode on and off, verified by hand on Linux (2026-11-19) |
@@ -1437,12 +1410,12 @@ Each line closes one entry gate of phase 4 and overrides the earlier text it con
 7.  **Technical approvals.** The engine saves and runs definitions without an approval store (section 8).
 8.  **Forge choices as data.** `templates/forges/<forge>.json` names, per forge, the clone credential helper, the delivery, comment, repo creation node templates. `projects/defaults.ts` reads it; the engine has no `if github`. A forge may have no credential helper, repo creation (`null`): `git`, a private Git server, uses the user's own Git credentials, delivers the pushed branch (`git-delivery`), skips the ticket comment (`git-no-comment`), and needs an existing repository.
 9.  **Slots while waiting.** A node run holds pool units only while its process runs. Waits for `network`, `auth`, `quota`, `rate_limit` and `human` hold none.
-10. **Stacked jobs.** A child's target while the parent is not merged is the parent's branch; after the merge, the parent's own target. A queued child gets its base when the parent ends `succeeded`: the parent's job commit (3.3). Merge detection runs, while the app runs, for every job that has a delivery (3.3) not yet merged, whatever the state of the job and of its children, using the URL in that `reference`; the API also runs it on demand for one job.
+10. **Stacked jobs.** A child's target while the parent is not merged is the parent's branch; after the merge, the parent's own target. A queued child gets its base when the parent ends `succeeded`: the parent's job commit (3.3). Merge detection runs, while the app runs, for every job that has a delivery (3.3) not yet merged, whatever the state of the job and of its children, using the `pull_request` URL or the branch’s saved commit; the API also runs it on demand for one job.
 11. **Bugfix proof.** `bugfix-to-pr` runs `tests-fail-check` after the tests node: a `vitest` variant whose outcome is `success` when the tests fail as expected and `failure` when they pass unexpectedly. The failure path goes back to the tests node.
 12. **Prerequisites by feature.** First run checks git, and on Linux sudo and setfacl only when protected mode is turned on. `gh`, `glab` and `aws` are checked when an account uses them, Compose when a project has `services` or a services runtime is set.
 13. **Project creation across a restart.** The `project_creation` table records the last finished step. At start, an unfinished creation is shown in Notifications with Retry (continue from the next step) and Cancel (undo the finished steps). The `createRepo` node run waits like any node run (`network`, `auth`).
 14. **Group before relogin.** The admin prompt that turns protected mode on also runs the group and ACL steps for every existing project as root. A project created later, while the app user's session does not have the group yet (`id -Gn`), gets its group step through an admin prompt too; the GUI suggests logging out and in to avoid it.
-15. **Base changes only on a job that does not work.** A base change is a request (4.2): applied at once on a `queued`, `succeeded`, `not_delivered`, `stopped` or `failed` job, otherwise applied when the job reaches one of those states. The user cannot realign a `running`, `waiting` or `paused` job. A job therefore re-enters at `onBaseChanged` only after its `start` node has completed, and the recipe validator counts the ticket and the outputs of `start` as available at `onBaseChanged`.
+15. **Base changes only on a job that does not work.** A base change is a request (4.2): applied at once on a `queued`, `succeeded`, `not_delivered`, `stopped` or `failed` job, otherwise applied when the job reaches one of those states. The user cannot realign a `running`, `waiting` or `paused` job. A job therefore re-enters at `onBaseChanged` only after its `start` node has completed, and the recipe validator counts the outputs of `start` as available at `onBaseChanged`.
 16. **Detached processes on job stop.** Every process the engine starts for a job, agent or command, gets `PECORE_JOB_ID=<job id>` in its environment, and its children inherit it. After stopping the group, the engine kills, as the project user, every process of that user whose environment holds that exact variable (`/proc/<pid>/environ` on Linux; macOS in the macOS pass). The user's own shells and editors in the workdir lack it and survive; a process that removes the variable on purpose escapes. The `kill -KILL -1` sweep stays only for app start and quit in protected mode.
 
 #### Phase 5 decisions

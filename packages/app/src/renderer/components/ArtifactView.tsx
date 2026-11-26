@@ -1,4 +1,4 @@
-import { DocumentArtifact, FindingsArtifact, ReferenceArtifact, SpecArtifact } from "@pecore/schemas";
+import { CodeAnalysisArtifact, CodeReviewArtifact, PullRequestArtifact, SpecArtifact } from "@pecore/schemas";
 import type { Artifact } from "@pecore/schemas";
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -65,88 +65,69 @@ function ArtifactList<T>({ items, render }: { items: T[]; render(item: T): React
   );
 }
 
-function place(item: FindingsArtifact["items"][number]): string {
-  if (item.line !== undefined && item.line !== null) return `${item.file}:${item.line}`;
-  if (item.hunk !== undefined) return `${item.file} · Hunk ${item.hunk + 1}`;
-  return item.file;
-}
-
-export function Findings({ findings }: { findings: FindingsArtifact }) {
-  return (
-    <div>
-      {findings.verdict && <strong>{findings.verdict}</strong>}
-      <ArtifactList items={findings.items} render={(item) => (
-        <><code>{place(item)}</code> · {item.level}<Markdown>{item.text}</Markdown></>
-      )} />
-    </div>
-  );
-}
-
-export function Reference({ content }: { content: string }) {
+export function PullRequestLink({ url }: { url: string }) {
   const connected: boolean = useConnected();
-  const parsed = ReferenceArtifact.safeParse(json(content));
-  if (!parsed.success) return <Plain content={content} />;
-  const { url, ref, sha } = parsed.data;
-  if (!connected || !url?.startsWith("https://") || !URL.canParse(url)) return <span>{url ?? ref ?? sha}</span>;
-  return <a href={url} target="_blank" rel="noreferrer">{url}</a>;
+  return connected && url.startsWith("https://") ? <a href={url} target="_blank" rel="noreferrer">{url}</a> : <span>{url}</span>;
 }
 
 export function useDelivery(artifacts: Artifact[]) {
-  const references: Artifact[] = artifacts.filter((artifact) => artifact.type === "reference");
+  const requests: Artifact[] = artifacts.filter((artifact) => artifact.type === "pull_request");
   return useData(async () => {
-    for (const artifact of references.toReversed()) {
-      const content: string = (await readArtifact(artifact)).content;
-      const reference = ReferenceArtifact.safeParse(json(content));
-      if (reference.success && (reference.data.url !== undefined || reference.data.ref !== undefined)) return content;
+    for (const artifact of requests.toReversed()) {
+      const request = PullRequestArtifact.safeParse(json((await readArtifact(artifact)).content));
+      if (request.success && request.data.url) return request.data.url;
     }
     return null;
-  }, [references.map((artifact) => artifact.sha256).join()]);
+  }, [requests.map((artifact) => artifact.sha256).join()]);
 }
 
-export function latestFindings(artifacts: Artifact[], contentState: string | null): Artifact | undefined {
-  return artifacts.findLast((artifact) => artifact.type === "findings" && contentState !== null && artifact.contentState === contentState);
+export function latestAnalysis(artifacts: Artifact[], filesHash: string | null): Artifact | undefined {
+  return artifacts.findLast((artifact) => artifact.type === "code_analysis" && filesHash !== null && artifact.filesHash === filesHash);
 }
 
-function ArtifactContent({ artifact, content, findings }: { artifact: Artifact; content: string; findings: FindingsArtifact | undefined }) {
+type ReviewLine = { file: string; line: number };
+function ArtifactContent({ artifact, content, analysis, onComment }: { artifact: Artifact; content: string; analysis: CodeAnalysisArtifact | undefined; onComment?: ((line: ReviewLine) => void) | undefined }) {
   switch (artifact.type) {
     case "diff":
-      return <DiffView content={content} risk={findings} />;
+      return <DiffView content={content} risk={analysis} onComment={onComment} />;
     case "spec": {
       const spec = SpecArtifact.safeParse(json(content));
-      if (!spec.success) return <Markdown>{content}</Markdown>;
-      return (
-        <>
-          <h3>Acceptance criteria</h3>
-          <ArtifactList items={spec.data.criteria} render={(text) => <Markdown>{text}</Markdown>} />
-          <h3>Tests</h3>
-          <ArtifactList items={spec.data.tests} render={(text) => <Markdown>{text}</Markdown>} />
-          {!!spec.data.interfaces.length && <><h3>Interfaces</h3><ArtifactList items={spec.data.interfaces} render={(item) => <>{item.name} · <code>{item.signature}</code></>} /></>}
-          {!!spec.data.optionalNodes.length && <p>Optional nodes · {spec.data.optionalNodes.join(", ")}</p>}
-        </>
-      );
+      if (!spec.success) return <Plain content={content} />;
+      return <><h3>{spec.data.feature}</h3><ArtifactList items={spec.data.scenarios} render={({ name, given, when, then, examples }) => <>
+        <strong>{name}</strong>
+        <p>Given {given.join(" · ")}</p><p>When {when}</p><p>Then {then.join(" · ")}</p>
+        {examples && <ArtifactList items={examples} render={(example) => <>{Object.entries(example).map(([key, value]) => `${key} = ${value}`).join(" · ")}</>} />}
+      </>} /></>;
     }
-    case "findings": {
-      const findings = FindingsArtifact.safeParse(json(content));
-      return findings.success ? <Findings findings={findings.data} /> : <Markdown>{content}</Markdown>;
+    case "code_review": {
+      const review = CodeReviewArtifact.safeParse(json(content));
+      return review.success ? <>
+        <Markdown>{review.data.body}</Markdown>
+        <ArtifactList items={review.data.comments} render={({ file, line, hunk, text }) => (
+          <><code>{line === undefined ? `${file} · Hunk ${(hunk ?? 0) + 1}` : `${file}:${line}`}</code><Markdown>{text}</Markdown></>
+        )} />
+      </> : <Plain content={content} />;
     }
-    case "reference":
-      return <Reference content={content} />;
-    case "document": {
-      const document = DocumentArtifact.safeParse(json(content));
-      if (!document.success) return <Plain content={content} />;
-      const reference: string = [document.data.source, document.data.id].filter((item): item is string => typeof item === "string" && item.length > 0).join(" · ");
-      return <>
-        <h3>{document.data.title}</h3>
-        {reference && <p className={ui.muted}>{reference}</p>}
-        <Plain content={document.data.body} />
-      </>;
+    case "code_analysis": {
+      const result = CodeAnalysisArtifact.safeParse(json(content));
+      return result.success ? <>
+        <Markdown>{result.data.summary}</Markdown>
+        <ArtifactList items={result.data.hunks} render={({ file, hunk, level, text }) => (
+          <><code>{file} · Hunk {hunk + 1}</code> · {level}<Markdown>{text}</Markdown></>
+        )} />
+      </> : <Plain content={content} />;
+    }
+    case "pull_request": {
+      const request = PullRequestArtifact.safeParse(json(content));
+      return request.success ? <><h3>{request.data.title}</h3><Markdown>{request.data.body}</Markdown>
+        {request.data.url && <PullRequestLink url={request.data.url} />}</> : <Plain content={content} />;
     }
     default:
       return <Plain content={content} />;
   }
 }
 
-export function ArtifactView({ artifact, findings }: { artifact: Artifact; findings?: Artifact | undefined }) {
+export function ArtifactView({ artifact, analysis, onComment }: { artifact: Artifact; analysis?: Artifact | undefined; onComment?: ((line: ReviewLine) => void) | undefined }) {
   const key: string = artifactKey(artifact);
   const file = useData(async () => {
     const r = await readArtifact(artifact);
@@ -154,18 +135,18 @@ export function ArtifactView({ artifact, findings }: { artifact: Artifact; findi
     const digest: Uint8Array = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
     return { ...r, sha256: [...digest].map((b) => b.toString(16).padStart(2, "0")).join("") };
   }, [key, artifact.sha256]);
-  const findingsFile = useData(async () => {
-    if (artifact.type !== "diff" || !findings) return undefined;
-    const result = await readArtifact(findings);
-    return FindingsArtifact.parse(json(result.content));
-  }, [artifact.type, findings && artifactKey(findings), findings?.sha256]);
+  const analysisFile = useData(async () => {
+    if (artifact.type !== "diff" || !analysis) return undefined;
+    const result = await readArtifact(analysis);
+    return CodeAnalysisArtifact.parse(json(result.content));
+  }, [artifact.type, analysis && artifactKey(analysis), analysis?.sha256]);
   const changed = file.data && file.data.sha256 !== artifact.sha256;
   return (
     <div className={s.artifact}>
-      <ErrorText error={file.error ?? findingsFile.error} />
+      <ErrorText error={file.error ?? analysisFile.error} />
       {changed ? <Alert tone="warning">This artifact differs from the version recorded for this item.</Alert> : null}
       {file.data && artifactKey(file.data.artifact) === key
-        ? <ArtifactContent key={artifact.sha256} artifact={artifact} content={file.data.content} findings={findingsFile.data} />
+        ? <ArtifactContent key={artifact.sha256} artifact={artifact} content={file.data.content} analysis={analysisFile.data} onComment={onComment} />
         : file.loading && <EmptyState title="Loading artifact…" />}
     </div>
   );

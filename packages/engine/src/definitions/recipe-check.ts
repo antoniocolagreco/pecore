@@ -41,14 +41,13 @@ export function nodeOutcomes(recipe: Recipe, id: string, node: Node): string[] {
   const r = recipe.nodes[id];
   const out = [...node.outcomes];
   if (r && r.requires.length > 0) out.push("stale");
-  if (r?.optional) out.push("skipped");
   if (recipe.ci?.after === id) out.push("ci_passed", "ci_failed", "ci_exhausted", "ci_timeout");
   return out;
 }
 
 export function producedOn(recipe: Recipe, id: string, node: Node, outcome: string): ArtifactType[] {
-  if (outcome === "stale" || outcome === "skipped") return [];
-  if (recipe.ci?.after === id && outcome.startsWith("ci_")) return [...new Set([...producedOn(recipe, id, node, recipe.ci.on), "text" as const])];
+  if (outcome === "stale") return [];
+  if (recipe.ci?.after === id && outcome.startsWith("ci_")) return [...new Set([...producedOn(recipe, id, node, recipe.ci.on), "log" as const])];
   const declared: ArtifactType | undefined = node.outputs[outcome];
   return [...new Set([...(declared ? [declared] : []), ...automaticOutputs(node)])];
 }
@@ -64,15 +63,13 @@ export function availableOutputs(recipe: Recipe, byId: Map<string, Node>, includ
     const node = byId.get(id);
     return node ? producedTypes(recipe, id, node).map((type) => pair(id, type)) : [];
   }));
-  const request: string = pair(recipeStart, "document");
-  all.add(request);
   const incoming = new Map<string, { from: string; on: string }[]>(ids.map((id) => [id, []]));
   for (const e of recipe.edges) incoming.get(e.to)?.push({ from: e.from, on: e.on });
   const startNode = recipe.start !== undefined ? byId.get(recipe.start) : undefined;
   const entry = new Map<string, Set<string>>();
-  if (recipe.start !== undefined) entry.set(recipe.start, new Set([request]));
+  if (recipe.start !== undefined) entry.set(recipe.start, new Set());
   if (includeBaseChange && recipe.onBaseChanged !== undefined && recipe.onBaseChanged !== recipe.start) {
-    entry.set(recipe.onBaseChanged, new Set([request, ...(startNode && recipe.start !== undefined ? producedTypes(recipe, recipe.start, startNode).map((type) => pair(recipe.start!, type)) : [])]));
+    entry.set(recipe.onBaseChanged, new Set([...(startNode && recipe.start !== undefined ? producedTypes(recipe, recipe.start, startNode).map((type) => pair(recipe.start!, type)) : [])]));
   }
   const avail = new Map<string, Set<string>>(ids.map((id) => [id, entry.has(id) && incoming.get(id)!.length === 0 ? new Set(entry.get(id)) : new Set(all)]));
   let changed = true;
@@ -113,7 +110,6 @@ function readIssues(recipe: Recipe, resolved: Map<string, Node>, live: Set<strin
     if (!("inputs" in node)) continue;
     for (const type of [...node.inputs, ...node.optionalInputs]) {
       const providers: string[] = reads.filter((read) => {
-        if (read === recipeStart) return type === "document";
         const source: Node | undefined = resolved.get(read);
         return source !== undefined && producedTypes(recipe, read, source).includes(type);
       });
@@ -183,7 +179,7 @@ export function checkRecipe(recipe: Recipe, nodes: Map<string, Node>, remote: bo
   const endKeys = new Set((recipe.ends ?? []).map((e) => `${e.from}:${e.on}`));
   if (recipe.ci) {
     const producer: Node | undefined = resolved.get(recipe.ci.after);
-    if (!remote || producer?.kind !== "repository" || producer.outputs[recipe.ci.on] !== "reference") {
+    if (!remote || producer?.kind !== "repository" || producer.outputs[recipe.ci.on] !== "pull_request") {
       issues.push({ path: "ci", message: "Choose a Repository delivery step and an outcome that returns a pull request or merge request for CI to check." });
     }
     if (edgeKeys.has(`${recipe.ci.after}:${recipe.ci.on}`) || endKeys.has(`${recipe.ci.after}:${recipe.ci.on}`)) {
@@ -203,11 +199,6 @@ export function checkRecipe(recipe: Recipe, nodes: Map<string, Node>, remote: bo
       issues.push({ path: `successOutcomes.${i}`, message: "Choose CI Passed to end a job successfully after CI." });
     }
     if (node.failOutcomes.includes(outcome)) issues.push({ path: `successOutcomes.${i}`, message: `${stepTitle(recipe, id)} reports ${outcomeTitle(outcome)} as a failure. Choose another outcome to end the job successfully.` });
-  }
-  for (const [id, r] of Object.entries(recipe.nodes)) {
-    if (r.optional && !edgeKeys.has(`${id}:skipped`) && !endKeys.has(`${id}:skipped`)) {
-      issues.push({ path: `nodes.${id}.optional`, message: `Connect the Skipped outcome of ${stepTitle(recipe, id)} to another step or End.` });
-    }
   }
   const live = reachable(recipe);
   for (const id of Object.keys(recipe.nodes)) if (!live.has(id)) issues.push({ path: `nodes.${id}`, message: `Connect ${stepTitle(recipe, id)} to the flow from Start or the base-change step.` });
@@ -244,6 +235,6 @@ export function checkRecipe(recipe: Recipe, nodes: Map<string, Node>, remote: bo
 export function hasCommitNode(recipe: Recipe, nodes: Map<string, Node>): boolean {
   return Object.values(recipe.nodes).some((r) => {
     const n = nodes.get(r.use);
-    return n !== undefined && Object.values(n.outputs).includes("reference");
+    return n !== undefined && Object.values(n.outputs).includes("sha");
   });
 }

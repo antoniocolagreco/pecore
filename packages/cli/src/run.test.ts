@@ -28,7 +28,7 @@ describe("pecore CLI over the local API", () => {
   it("lists projects and jobs, explains why a job waits, stops it, and validates files", async () => {
     const { home, call, close } = await apiProject(0);
     const env = { PECORE_HOME: home };
-    const { id } = await call("createJob", { body: { project: "demo", title: "Add hello", ticket: { text: "x" } } });
+    const { id } = await call("createJob", { body: { project: "demo", title: "Add hello", request: "x" } });
     await until(async () => (await call("getJob", { params: { id } })).job.state === "waiting");
 
     const p = capture();
@@ -74,14 +74,14 @@ describe("pecore CLI over the local API", () => {
     expect(await run(["project", "export", "demo", "--out", out], e.io, env)).toBe(0);
     expect(e.out).toEqual([out]);
 
-    const { id } = await call("createJob", { body: { project: "demo", title: "Add hello", ticket: { text: "x" } } });
+    const { id } = await call("createJob", { body: { project: "demo", title: "Add hello", request: "x" } });
     await until(async () => (await call("getJob", { params: { id } })).job.state === "waiting");
     const busy = capture();
     expect(await run(["project", "export", "demo", "--out", `${out}.h`, "--history"], busy.io, env)).toBe(1);
     expect(busy.err[0]).toBe("conflict: 1 job is active: stop or archive them first");
     await call("stopJob", { params: { id } });
 
-    engine.project("demo").ctx.db.saveArtifact(id, "leak", "out.txt", "text", `ghp_${"x".repeat(36)}\n`, null);
+    engine.project("demo").ctx.db.saveArtifact(id, "leak", "out.txt", "log", `ghp_${"x".repeat(36)}\n`, null);
     const f = capture();
     expect(await run(["project", "export", "demo", "--out", `${out}.h`, "--history"], f.io, env)).toBe(1);
     expect(f.err[0]).toMatch(new RegExp(`^FILE\\s+LINE\\s+RULE\\s+FINGERPRINT\\n${id}/leak/out.txt\\s+1\\s+github-pat\\s+`));

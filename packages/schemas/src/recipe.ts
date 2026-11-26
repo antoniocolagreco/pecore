@@ -19,9 +19,8 @@ const RecipeStep = z
       })
       .strict()
       .optional(),
-    reads: z.array(z.union([NodeId, z.literal(recipeStart)])).default([]),
+    reads: z.array(NodeId).default([]),
     requires: z.array(NodeId).default([]),
-    optional: z.boolean().default(false),
     agentId: Name.refine((id) => id !== assistantAgentId, "Choose an agent other than Assistant").optional(),
     agentSession: AgentSession.optional(),
     skipWhenUnchanged: z.boolean().default(false),
@@ -123,7 +122,7 @@ const RecipeDefinition = z
     }
     for (const [id, n] of Object.entries(r.nodes)) {
       for (const [i, req] of n.requires.entries()) if (!ids.has(req)) issue(["nodes", id, "requires", i], `${title(id)} requires ${title(req)}, which is missing. Choose an existing step in Requires.`);
-      for (const [i, read] of n.reads.entries()) if (read !== recipeStart && !ids.has(read)) issue(["nodes", id, "reads", i], `${title(id)} reads from ${title(read)}, which is missing. Choose an existing step in Reads from.`);
+      for (const [i, read] of n.reads.entries()) if (!ids.has(read)) issue(["nodes", id, "reads", i], `${title(id)} reads from ${title(read)}, which is missing. Choose an existing step in Reads from.`);
       if (new Set(n.reads).size !== n.reads.length) issue(["nodes", id, "reads"], `${title(id)} reads the same step twice. Select it once in Reads from.`);
       for (const [i, p] of (n.agent?.providerNot ?? []).entries()) if (!ids.has(p)) issue(["nodes", id, "agent", "providerNot", i], `The provider restriction on ${title(id)} refers to ${title(p)}, which is missing. Choose an existing Agent step.`);
       if (n.agent && n.agent.tier !== undefined && n.agent.profiles !== undefined) issue(["nodes", id, "agent"], `Choose a tier or specific profiles for ${title(id)}.`);

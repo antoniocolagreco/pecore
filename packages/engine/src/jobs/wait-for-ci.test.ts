@@ -10,7 +10,7 @@ const exec = promisify(execFile);
 const nodeDir: string = join(shippedTemplates, "nodes");
 const commit: string = "a".repeat(40);
 
-async function runCi(forge: "github" | "gitlab", cli: string) {
+async function runCi(forge: "github" | "gitlab", cli: string, includeUrl: boolean = true) {
   const dir: string = await tempDir();
   const url: string = forge === "github" ? "https://github.com/team/app/pull/3" : "https://gitlab.com/team/app/-/merge_requests/3";
   const env: NodeJS.ProcessEnv = {
@@ -32,7 +32,7 @@ async function runCi(forge: "github" | "gitlab", cli: string) {
   const { value: node } = await loadNodeFile(join(nodeDir, "wait-for-ci.json"));
   if (node?.kind !== "repository") throw new Error("Wait for CI must be a Repository node");
   const child = exec("/bin/sh", ["-c", node.script, node.name], { cwd: dir, env, timeout: 5_000 });
-  child.child.stdin!.end(JSON.stringify({ reference: { url } }));
+  child.child.stdin!.end(JSON.stringify({ pull_request: { title: "CI fixture", body: "", ...(includeUrl ? { url } : {}) } }));
   const result = await child.then(
     ({ stdout }) => ({ code: 0, log: stdout }),
     (error: { code: unknown; stderr: string }) => ({ code: error.code, log: error.stderr }),
@@ -41,6 +41,11 @@ async function runCi(forge: "github" | "gitlab", cli: string) {
 }
 
 describe("Wait for CI", () => {
+  it("explains when the pull request has no URL", async () => {
+    const result = await runCi("github", "exit 99", false);
+    expect(result).toEqual({ code: 1, log: "CI needs a pull or merge request URL\n", elapsed: 0 });
+  });
+
   it("loads as a Repository node with two recipe outcomes", async () => {
     const loaded = await loadNodeFile(join(nodeDir, "wait-for-ci.json"));
     expect(loaded.errors).toEqual([]);

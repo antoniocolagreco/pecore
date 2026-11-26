@@ -29,7 +29,7 @@ export function placeholderEnv(values: PlaceholderValues): Record<string, string
 }
 
 export type PlaceholderContext = {
-  job?: { id: string; title: string; branch: string; base: string; oldBase: string; target: string; commit: string | null };
+  job?: { id: string; title: string; request: string; branch: string; base: string; oldBase: string; target: string; commit: string | null };
   ticketId: string | null;
   workdir: string;
   project: { repoDir: string; repoUrl: string | null; baseBranch: string };
@@ -50,7 +50,7 @@ export function placeholderValues(c: PlaceholderContext): PlaceholderValues {
     "project.baseBranch": c.project.baseBranch,
   };
   if (c.job) {
-    for (const [key, value] of Object.entries(c.job)) if (value !== null) v[`job.${key}`] = value;
+    for (const [key, value] of Object.entries(c.job)) if (key !== "request" && value !== null) v[`job.${key}`] = value;
   }
   if (c.ticketId !== null) v["ticket.id"] = c.ticketId;
   if (c.project.repoUrl !== null) {

@@ -62,7 +62,7 @@ describe.skipIf(!real)("phase 6 gate: Codex and opencode connectors with the use
       const engine = await Engine.start({ home, templates, agents: { connectorsDir, adaptersDir: join(agentsRoot, "out", "adapters"), adapters: adapters.adapters }, checkLogins: false });
       await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["one-agent"]);
       const p = engine.project("demo");
-      const id = await engine.createJob("demo", { title: "Write done", ticket: { text: "write done.txt" } });
+      const id = await engine.createJob("demo", { title: "Write done", request: "write done.txt" });
       for (;;) {
         await new Promise((r) => setTimeout(r, 2000));
         const j = p.executor.job(id);
@@ -73,8 +73,8 @@ describe.skipIf(!real)("phase 6 gate: Codex and opencode connectors with the use
       console.log(account, j.state, j.failure_reason, j.waiting_reason, JSON.stringify(attempt));
       expect(j.state).toBe("succeeded");
       expect(attempt.tokens_out).toBeGreaterThan(0);
-      const run = p.ctx.db.db.prepare("SELECT content_before, content_after FROM node_runs WHERE job_id = ?").get(id) as { content_before: string; content_after: string };
-      expect(run.content_after).not.toBe(run.content_before);
+      const run = p.ctx.db.db.prepare("SELECT files_hash_before, files_hash_after FROM node_runs WHERE job_id = ?").get(id) as { files_hash_before: string; files_hash_after: string };
+      expect(run.files_hash_after).not.toBe(run.files_hash_before);
       await engine.shutdown();
     }, 900_000);
   }
@@ -92,7 +92,7 @@ describe.skipIf(!real)("phase 6 gate: Codex and opencode connectors with the use
       const p = engine.project("demo");
       const id = await engine.createJob("demo", {
         title: "Add a sum function",
-        ticket: { text: "Create src/math.ts exporting `sum(a: number, b: number): number` that returns a + b. Add Vitest tests for it. The repository is empty: set up a minimal TypeScript project." },
+        request: "Create src/math.ts exporting `sum(a: number, b: number): number` that returns a + b. Add Vitest tests for it. The repository is empty: set up a minimal TypeScript project.",
       });
       for (;;) {
         await new Promise((r) => setTimeout(r, 2000));

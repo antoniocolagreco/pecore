@@ -8,11 +8,11 @@ import { shippedTemplates, tempDir } from "./tmp";
 
 const writeSpec = {
   name: "write-spec",
-  description: "writes hello.txt and a spec",
+  description: "writes hello.txt and drafts a pull request",
   kind: "command",
-  command: ["/bin/sh", "-c", 'echo hello > hello.txt && mkdir -p .pecore && printf \'{"criteria":["Add hello"],"tests":[],"interfaces":[]}\' > .pecore/spec.json'],
+  command: ["/bin/sh", "-c", 'echo hello > hello.txt && mkdir -p .pecore && printf \'{"title":"Add hello","body":"Add hello.txt"}\' > .pecore/spec.json'],
   outcomes: ["done"],
-  outputs: { done: "spec" },
+  outputs: { done: "pull_request" },
   changesFiles: true,
   outcomeRules: [{ exitCode: 0, outcome: "done" }],
   outputRules: { done: { file: ".pecore/spec.json" } },

@@ -7,7 +7,7 @@
   "prompt": "code-reviewer.md",
   "agent": { "tier": "strong" },
   "outcomes": ["approved", "changes_requested"],
-  "outputs": { "approved": "findings", "changes_requested": "findings" },
+  "outputs": { "approved": "code_review", "changes_requested": "code_review" },
   "changesFiles": false,
   "timeoutSec": 1800
 }

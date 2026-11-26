@@ -11,7 +11,7 @@ export type JobWaitingReason = z.infer<typeof JobWaitingReason>;
 export const PauseReason = z.enum(["user", "quit"]);
 export type PauseReason = z.infer<typeof PauseReason>;
 
-export const NodeRunState = z.enum(["pending", "waiting", "running", "completed", "failed", "interrupted", "skipped"]);
+export const NodeRunState = z.enum(["pending", "waiting", "running", "completed", "failed", "interrupted"]);
 export type NodeRunState = z.infer<typeof NodeRunState>;
 
 export const WaitingReason = z.enum([

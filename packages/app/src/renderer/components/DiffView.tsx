@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import type { FindingsArtifact } from "@pecore/schemas";
+import type { CodeAnalysisArtifact } from "@pecore/schemas";
 import { ui } from "./ui";
 import { Button } from "../ds/button";
 import { ChevronDownIcon } from "../ds/icons";
 import s from "./DiffView.module.css";
 
+type ReviewLine = (line: number) => void;
 type Hunk = { header: string; lines: string[]; oldStart: number; newStart: number };
 type PatchFile = { name: string; header: string[]; hunks: Hunk[] };
 type Row = { kind: "ctx" | "del" | "add" | "meta"; old: number | null; new: number | null; text: string; mark: [number, number] | null };
@@ -103,7 +104,7 @@ function Code({ row }: { row: Row }) {
   );
 }
 
-function HunkTable({ hunk, risk }: { hunk: Hunk; risk: string | undefined }) {
+function HunkTable({ hunk, risk, onComment }: { hunk: Hunk; risk: string | undefined; onComment: ReviewLine | undefined }) {
   const lines = useMemo(() => rows(hunk), [hunk]);
   return (
     <table className={s.table}>
@@ -127,7 +128,9 @@ function HunkTable({ hunk, risk }: { hunk: Hunk; risk: string | undefined }) {
             <td className={s.num}>{r.new ?? ""}</td>
             <td className={s.sign}>{r.kind === "del" ? "-" : r.kind === "add" ? "+" : ""}</td>
             <td className={s.code}>
-              <Code row={r} />
+              {onComment && (r.new ?? r.old) !== null
+                ? <button type="button" className={s.comment} aria-label={`Comment on line ${r.new ?? r.old}`} onClick={() => onComment((r.new ?? r.old)!)}><Code row={r} /></button>
+                : <Code row={r} />}
             </td>
           </tr>
         ))}
@@ -136,7 +139,7 @@ function HunkTable({ hunk, risk }: { hunk: Hunk; risk: string | undefined }) {
   );
 }
 
-function FileBlock({ file, hunks }: { file: PatchFile; hunks: { hunk: Hunk; risk: string | undefined }[] }) {
+function FileBlock({ file, hunks, onComment }: { file: PatchFile; hunks: { hunk: Hunk; risk: string | undefined }[]; onComment: ReviewLine | undefined }) {
   const [open, setOpen] = useState(true);
   const adds = file.hunks.reduce((n, h) => n + h.lines.filter((l) => l.startsWith("+")).length, 0);
   const dels = file.hunks.reduce((n, h) => n + h.lines.filter((l) => l.startsWith("-")).length, 0);
@@ -150,15 +153,15 @@ function FileBlock({ file, hunks }: { file: PatchFile; hunks: { hunk: Hunk; risk
         <span className={s.dels}>−{dels}</span>
         {hunks.some((h) => h.risk !== undefined) ? <span className={s.risk}>Risky</span> : null}
       </button>
-      {open ? binary ? <pre className={s.meta}>{file.header.slice(1).join("\n") || "No text changes"}</pre> : hunks.map((h, i) => <HunkTable key={i} hunk={h.hunk} risk={h.risk} />) : null}
+      {open ? binary ? <pre className={s.meta}>{file.header.slice(1).join("\n") || "No text changes"}</pre> : hunks.map((h, i) => <HunkTable key={i} hunk={h.hunk} risk={h.risk} onComment={onComment} />) : null}
     </section>
   );
 }
 
-export function DiffView({ content, risk }: { content: string; risk?: FindingsArtifact | undefined }) {
+export function DiffView({ content, risk, onComment }: { content: string; risk?: CodeAnalysisArtifact | undefined; onComment?: ((line: { file: string; line: number }) => void) | undefined }) {
   const [limit, setLimit] = useState(30);
   const files = useMemo(() => parsePatch(content), [content]);
-  const risky = new Map((risk?.items ?? []).filter((h) => h.level === "risky" && h.hunk !== undefined).map((h) => [`${h.file}\0${h.hunk}`, h.text]));
+  const risky = new Map((risk?.hunks ?? []).filter((h) => h.level === "risky").map((h) => [`${h.file}\0${h.hunk}`, h.text]));
   const blocks = files
     .map((file) => {
       const hunks = file.hunks.map((hunk, i) => ({ hunk, risk: risky.get(`${file.name}\0${i}`) }));
@@ -172,7 +175,7 @@ export function DiffView({ content, risk }: { content: string; risk?: FindingsAr
         {files.length} file{files.length === 1 ? "" : "s"} changed{risky.size ? ` · ${risky.size} risky hunk${risky.size === 1 ? "" : "s"} shown first` : ""}
       </div>
       {blocks.slice(0, limit).map((b, i) => (
-        <FileBlock key={`${b.file.name}:${i}`} file={b.file} hunks={b.hunks} />
+        <FileBlock key={`${b.file.name}:${i}`} file={b.file} hunks={b.hunks} onComment={onComment && ((line) => onComment({ file: b.file.name, line }))} />
       ))}
       {blocks.length > limit ? <Button onClick={() => setLimit(limit + 30)}>Show {Math.min(30, blocks.length - limit)} more files</Button> : null}
     </div>

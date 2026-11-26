@@ -74,8 +74,6 @@ export function nodeRunState(run: Pick<NodeRunView, "state" | "outcome" | "waiti
       return { label: "Failed", tone: "failed", icon: "✕", detail: reasonLabel(run.failureReason), pulse: false };
     case "interrupted":
       return { label: "Interrupted", tone: "inactive", icon: "■", detail: null, pulse: false };
-    case "skipped":
-      return { label: "Skipped", tone: "inactive", icon: "↷", detail: null, pulse: false };
     case "completed":
       return { label: run.outcome ?? "done", tone: outcomeTone(run.outcome ?? ""), icon: "◆", detail: null, pulse: false };
   }

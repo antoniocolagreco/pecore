@@ -5,7 +5,7 @@
   "kind": "command",
   "script": "git-commit.sh",
   "outcomes": ["success", "failure"],
-  "outputs": { "success": "reference" },
+  "outputs": { "success": "sha" },
   "failOutcomes": ["failure"],
   "changesFiles": false,
   "outcomeRules": [

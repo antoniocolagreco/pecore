@@ -32,7 +32,7 @@ vi.mock("./RecipeGraph", () => ({
 
 afterEach(cleanup);
 
-it("adds Start's job request to Reads from without adding it to Requires", async () => {
+it("keeps the job request out of Reads from and Requires", async () => {
   const template: DefinitionEntry = {
     path: "templates/nodes/review.json", sha256: "node-v1", errors: [], value: { name: "review", kind: "human", outcomes: ["approved"] },
   };
@@ -57,13 +57,8 @@ it("adds Start's job request to Reads from without adding it to Requires", async
   expect(screen.queryByRole("option", { name: "Start (job request)" })).toBeNull();
   await user.keyboard("{Escape}");
   await user.click(screen.getByRole("combobox", { name: "Reads from" }));
-  await user.click(await screen.findByRole("option", { name: "Start (job request)" }));
-  await user.keyboard("{Escape}");
-  const save: HTMLButtonElement = screen.getByRole("button", { name: "Save" });
-  await waitFor(() => expect(save.disabled).toBe(false));
-  await user.click(save);
-  const request: RouteInput<"saveDefinition"> = api.call.mock.calls.findLast(([route]) => route === "saveDefinition")?.[1];
-  expect(JSON.parse(request.body.content).nodes.review.reads).toEqual(["@start"]);
+  expect(screen.queryByRole("option", { name: "Start (job request)" })).toBeNull();
+  expect(screen.queryByRole("checkbox", { name: "Optional" })).toBeNull();
 });
 
 it("shows the validation sentence and lets the user clear the base-change step", async () => {

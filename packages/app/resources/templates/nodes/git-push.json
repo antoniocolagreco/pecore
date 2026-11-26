@@ -5,7 +5,6 @@
   "kind": "repository",
   "account": "project.account",
   "outcomes": ["success", "failure"],
-  "outputs": { "success": "reference" },
   "failOutcomes": ["failure"],
   "changesFiles": false,
   "script": "set -e\nhead=$(printf '%s\\n' \"$PECORE_PROBE_STDOUT\" | sed -n 's/.*\"head\":[[:space:]]*\"\\([0-9a-f]*\\)\".*/x\\1/p')\ncase \"$head\" in\n  x*) head=\"${head#x}\" ;;\n  *) exit 1 ;;\nesac\nif [ -n \"${PECORE_CI_EXPECTED_HEAD:-}\" ] && [ \"$head\" != \"$PECORE_CI_EXPECTED_HEAD\" ]; then\n  printf 'Remote head changed from %s to %s\\n' \"$PECORE_CI_EXPECTED_HEAD\" \"$head\" >&2\n  exit 1\nfi\n\nset --\nif [ -n \"${GH_TOKEN:-}${GH_ENTERPRISE_TOKEN:-}\" ]; then\n  set -- -c credential.helper= -c 'credential.helper=!gh auth git-credential'\nelif [ -n \"${GITLAB_TOKEN:-}\" ]; then\n  set -- -c credential.helper= -c 'credential.helper=!glab auth git-credential'\nelif [ -n \"${AWS_PROFILE:-}\" ]; then\n  set -- -c credential.helper= -c 'credential.helper=!aws codecommit credential-helper $@'\nfi\n\ngit --git-dir=\"$PECORE_PROJECT_REPODIR\" -c core.hooksPath=/dev/null \"$@\" \\\n  push --force-with-lease=\"refs/heads/$PECORE_JOB_BRANCH:$head\" origin \\\n  \"$PECORE_JOB_COMMIT:refs/heads/$PECORE_JOB_BRANCH\"\nprintf '{\"state\":\"same\",\"head\":\"%s\"}\\n' \"$PECORE_JOB_COMMIT\"",
@@ -15,6 +14,5 @@
     { "exitCode": 0, "outcome": "success" },
     { "exitCode": "other", "outcome": "failure" }
   ],
-  "outputRules": { "success": { "stdoutLastLine": "ref" } },
   "timeoutSec": 120
 }

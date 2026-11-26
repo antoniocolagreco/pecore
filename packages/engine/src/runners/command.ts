@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { artifactTypes } from "@pecore/schemas";
 import type { ArtifactType, CommandNode, FailureReason, OutcomeRule, OutputRule, RepositoryNode } from "@pecore/schemas";
 import { FsAsError, readFileAs } from "../workdir/fs-as";
 import { gitIdentityEnv } from "../workdir/git-as";
@@ -67,9 +68,12 @@ function lastLine(stdout: string): string {
   return stdout.trimEnd().split("\n").pop() ?? "";
 }
 
-async function readOutput(rule: OutputRule, stdout: string, read: (rel: string) => Promise<string>): Promise<string> {
-  if ("stdoutLastLine" in rule) return JSON.stringify({ [rule.stdoutLastLine]: lastLine(stdout) });
-  if ("stdoutJson" in rule) return JSON.stringify(readJsonField(stdout, rule.stdoutJson) ?? null);
+async function readOutput(type: string, rule: OutputRule, stdout: string, read: (rel: string) => Promise<string>): Promise<string> {
+  if ("stdoutLastLine" in rule) return type in artifactTypes && artifactTypes[type as ArtifactType].plain ? lastLine(stdout) : JSON.stringify({ [rule.stdoutLastLine]: lastLine(stdout) });
+  if ("stdoutJson" in rule) {
+    const value: unknown = readJsonField(stdout, rule.stdoutJson);
+    return type in artifactTypes && artifactTypes[type as ArtifactType].plain && typeof value === "string" ? value : JSON.stringify(value ?? null);
+  }
   return read(rule.file);
 }
 
@@ -82,12 +86,12 @@ async function argvOf(spec: string[] | { script: string } | undefined, inline: s
   return ["/bin/sh", "-c", body, label];
 }
 
-function commandInput(inputs: CommandInput[]): string {
+function commandInput(inputs: CommandInput[], job: CommandRun["context"]["job"]): string {
   const values: Record<string, unknown> = Object.fromEntries(inputs.map(({ type, content }) => {
-    const value: unknown = type === "text" || type === "diff" ? content : JSON.parse(content);
+    const value: unknown = artifactTypes[type].plain ? content : JSON.parse(content);
     return [type, value];
   }));
-  return JSON.stringify(values);
+  return JSON.stringify(job ? { ...values, job: { title: job.title, request: job.request } } : values);
 }
 
 export function commandHash(argv: string[]): string {
@@ -100,7 +104,7 @@ export async function runMergedCheck(c: Pick<CommandRun, "node" | "nodeDir" | "s
     const values = placeholderValues({ ...c.context, params: c.params, workdir: cwd });
     const env = { ...(await baseEnv(appUser)), ...placeholderEnv(values), ...c.extraEnv };
     const argv = await argvOf(c.node.mergedCheck, undefined, c, `${c.node.name}-merged`, values);
-    return (await runProbe({ argv, user: appUser, cwd, env, input: commandInput(c.inputs), timeoutMs: c.node.timeoutSec * 1000 }, c.node.mergedCheckRules)).result;
+    return (await runProbe({ argv, user: appUser, cwd, env, input: commandInput(c.inputs, c.context.job), timeoutMs: c.node.timeoutSec * 1000 }, c.node.mergedCheckRules)).result;
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
@@ -116,7 +120,7 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
       cwd = await mkdtemp(join(tmpdir(), "pecore-remote-"));
       temp.push(cwd);
     }
-    const input: string = commandInput(c.inputs);
+    const input: string = commandInput(c.inputs, c.context.job);
     const values = placeholderValues({ ...c.context, params: c.params, workdir: cwd });
     const env = { ...(await baseEnv(user)), ...(await gitIdentityEnv()), ...placeholderEnv(values), ...c.extraEnv };
     const secrets: string[] = c.redactCredentials
@@ -140,7 +144,7 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
         const outputs = [];
         for (const [type, rule] of c.outputs(outcome)) {
           if ("file" in rule) continue;
-          outputs.push({ type, content: redact(await readOutput(rule, p.stdout, async () => "")) });
+          outputs.push({ type, content: redact(await readOutput(type, rule, p.stdout, async () => "")) });
         }
         return { kind: "completed", outcome, outputs, log, fromProbe: true };
       }
@@ -168,7 +172,7 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
     const outputs = [];
     for (const [type, rule] of c.outputs(outcome)) {
       try {
-        outputs.push({ type, content: redact(await readOutput(rule, r.stdout, (rel) => (remote ? readFile(join(cwd, rel), "utf8") : readFileAs(c.user, cwd, rel)))) });
+        outputs.push({ type, content: redact(await readOutput(type, rule, r.stdout, (rel) => (remote ? readFile(join(cwd, rel), "utf8") : readFileAs(c.user, cwd, rel)))) });
       } catch (e) {
         if (e instanceof FsAsError) return { kind: "failed", reason: "HARNESS_ERROR", log: log + `output ${type}: ${e.message}\n` };
         throw e;

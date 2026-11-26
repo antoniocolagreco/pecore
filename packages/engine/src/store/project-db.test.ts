@@ -15,6 +15,15 @@ import { Configuration } from "./configuration";
 import { ProjectDb } from "./project-db";
 
 const job = "01JOB";
+function restoreArtifactColumns(db: Database.Database): void {
+  db.exec(`ALTER TABLE catalog_recipe_steps ADD COLUMN optional INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE jobs DROP COLUMN request;
+    ALTER TABLE jobs DROP COLUMN ticket_id;
+    ALTER TABLE artifacts RENAME COLUMN files_hash TO content_state;
+    ALTER TABLE node_runs RENAME COLUMN files_hash_before TO content_before;
+    ALTER TABLE node_runs RENAME COLUMN files_hash_after TO content_after`);
+}
+
 function restoreLegacyAnchors(db: Database.Database): void {
   db.exec(`ALTER TABLE catalog_recipes ADD COLUMN has_start_ports INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE catalog_recipes ADD COLUMN start_source_port TEXT;
@@ -36,10 +45,47 @@ async function restoreTrackerColumns(db: Database.Database): Promise<void> {
 const created = {
   jobId: job,
   type: "job.created" as const,
-  payload: { title: "Fix login", recipe: { name: "empty" }, ticket: null, parentJobId: null, baseBranch: "main", base: "a".repeat(40), target: "main", branch: `factory/${job}` },
+  payload: { title: "Fix login", recipe: { name: "empty" }, request: "", parentJobId: null, baseBranch: "main", base: "a".repeat(40), target: "main", branch: `factory/${job}` },
 };
 
 describe("pecore.db", () => {
+  it("removes obsolete history and skipped routes but keeps project records and usable recipes", async () => {
+    const path: string = join(await tempDir(), "pecore.db");
+    const old: ProjectDb = new ProjectDb(path);
+    old.definition.write({ id: "demo", name: "Demo", repo: null, folder: null, createRepo: null, baseBranch: "main", services: null, pm: null, tracker: null });
+    old.catalog.saveRecipe(Recipe.parse({
+      name: "reviewed", description: "Review", start: "review",
+      nodes: { review: { use: "human-review" } },
+      ends: [{ from: "review", on: "approved", result: "succeeded" }, { from: "review", on: "skipped", result: "succeeded" }],
+    }));
+    old.append([created]);
+    old.saveArtifact(job, "ticket", "ticket.json", "attachment", Buffer.from("old request"), null);
+    restoreArtifactColumns(old.db);
+    old.db.exec(`
+      UPDATE schema_version SET version = 35;
+      UPDATE catalog_recipe_steps SET optional = 1;
+      INSERT INTO catalog_step_lists VALUES ('reviewed', 'review', 'reads', 0, '@start');
+      UPDATE artifacts SET type = 'document';
+      UPDATE events SET payload = json_set(json_remove(payload, '$.request'), '$.ticket', null);
+    `);
+    old.close();
+    const reopened: ProjectDb = new ProjectDb(path);
+    try {
+      expect(reopened.definition.read()?.id).toBe("demo");
+      expect(reopened.catalog.recipe("reviewed")).toMatchObject({
+        nodes: { review: { use: "human-review", reads: [] } },
+        ends: [{ from: "review", on: "approved", result: "succeeded" }],
+      });
+      expect(reopened.catalog.recipe("reviewed")?.nodes.review).not.toHaveProperty("optional");
+      expect(reopened.events()).toEqual([]);
+      expect(reopened.db.prepare("SELECT * FROM jobs").all()).toEqual([]);
+      expect(reopened.db.prepare("SELECT * FROM artifacts").all()).toEqual([]);
+      expect(reopened.db.prepare("SELECT name FROM pragma_table_info('artifacts') WHERE name = 'files_hash'").pluck().get()).toBe("files_hash");
+    } finally {
+      reopened.close();
+    }
+  });
+
   it("drops only graph anchors from catalog recipes, job recipes and their saved events", async () => {
     const path: string = join(await tempDir(), "pecore.db");
     const old: ProjectDb = new ProjectDb(path);
@@ -67,13 +113,14 @@ describe("pecore.db", () => {
     old.db.prepare("UPDATE jobs SET recipe = ? WHERE id = ?").run(recipe, job);
     old.db.prepare("UPDATE events SET payload = json_set(payload, '$.recipe', json(?)) WHERE type = 'job.created'").run(recipe);
     restoreLegacyAnchors(old.db);
+    restoreArtifactColumns(old.db);
     old.db.exec(`UPDATE catalog_recipes SET has_start_ports = 1, start_source_port = 'bottom', start_target_port = 'top';
       UPDATE catalog_recipe_edges SET source_port = 'left', target_port = 'right';
       UPDATE schema_version SET version = 32;`);
     old.close();
     const db: ProjectDb = new ProjectDb(path);
     try {
-      expect(db.version()).toBe(35);
+      expect(db.version()).toBe(37);
       expect(db.catalog.recipe(current.name)).toEqual(current);
       expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_recipes') WHERE name LIKE '%port%'").all()).toEqual([]);
       expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_recipe_edges') WHERE name LIKE '%port%'").all()).toEqual([]);
@@ -91,7 +138,7 @@ describe("pecore.db", () => {
   it("applies the migrations once, in WAL mode", async () => {
     const path = join(await tempDir(), "pecore.db");
     const db = new ProjectDb(path);
-    expect(db.version()).toBe(35);
+    expect(db.version()).toBe(37);
     expect(db.db.prepare("SELECT name FROM pragma_table_info('catalog_nodes') WHERE name IN ('tracker_provider', 'tracker_script', 'tracker_account')").all()).toEqual([]);
     expect(db.db.prepare("SELECT name FROM sqlite_master WHERE name = 'catalog_tracker_arguments'").get()).toBeUndefined();
     expect(() => db.db.exec("INSERT INTO catalog_nodes (name, description, kind, shipped) VALUES ('legacy', 'Old tracker', 'tracker', 0)")).toThrow(/CHECK constraint failed/);
@@ -99,7 +146,7 @@ describe("pecore.db", () => {
     expect(db.db.pragma("journal_mode", { simple: true })).toBe("wal");
     db.close();
     const again = new ProjectDb(path);
-    expect(again.version()).toBe(35);
+    expect(again.version()).toBe(37);
     const tables = again.db.prepare<[], string>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'catalog_%' ORDER BY name").pluck().all();
     expect(tables).toEqual([
       "artifacts", "attempt_logs", "attempts", "events", "human_queue", "jobs", "node_runs",
@@ -125,6 +172,7 @@ describe("pecore.db", () => {
       ends: [{ from: "search", on: "success", result: "succeeded" }],
     }));
     restoreLegacyAnchors(old.db);
+    old.db.exec("ALTER TABLE catalog_recipe_steps ADD COLUMN optional INTEGER NOT NULL DEFAULT 0");
     old.db.prepare("UPDATE schema_version SET version = 31").run();
     old.close();
     const db: ChatsDb = new ChatsDb(path);
@@ -151,11 +199,11 @@ describe("pecore.db", () => {
       name: "github-ticket-read", description: "Read a ticket", kind: "tracker", provider: "github", account: "project.account",
       script: "echo ticket", readOnly: true, outcomes: ["success", "failure"], failOutcomes: ["failure"],
       outcomeRules: [{ exitCode: 0, outcome: "success" }, { exitCode: "other", outcome: "failure" }],
-      outputs: { success: "document" }, outputRules: { success: { stdoutJson: "" } },
+      outputs: { success: "code_review" }, outputRules: { success: { stdoutJson: "" } },
     };
     const next: Node = Node.parse({
       name: "consume", description: "Consume the ticket", kind: "command", command: ["cat"], changesFiles: false, timeoutSec: 30,
-      inputs: ["document"], outcomes: ["success"], outcomeRules: [{ exitCode: 0, outcome: "success" }],
+      inputs: ["code_review"], outcomes: ["success"], outcomeRules: [{ exitCode: 0, outcome: "success" }],
     });
     const recipe: Recipe = Recipe.parse({
       name: "use-ticket", description: "Read then consume a ticket", start: "read",
@@ -168,7 +216,7 @@ describe("pecore.db", () => {
       VALUES ('github-ticket-read', 'Read a ticket', 'tracker', 1, 120, 0, 1, 'github', 'project.account', 'echo ticket', 1);
       INSERT INTO catalog_node_lists VALUES ('github-ticket-read', 'outcomes', 0, 'success'), ('github-ticket-read', 'outcomes', 1, 'failure'),
         ('github-ticket-read', 'failOutcomes', 0, 'failure');
-      INSERT INTO catalog_node_outputs VALUES ('github-ticket-read', 'success', 'document');`);
+      INSERT INTO catalog_node_outputs VALUES ('github-ticket-read', 'success', 'code_review');`);
     old.catalog.saveNode(next);
     old.catalog.saveRecipe(recipe);
     const [first, last] = old.append([
@@ -185,6 +233,7 @@ describe("pecore.db", () => {
     const save = old.db.prepare("UPDATE events SET payload = ? WHERE id = ?");
     save.run(JSON.stringify({ ...first!.payload, definitions }), first!.id);
     save.run(JSON.stringify({ ...definitions, nodes: { ...definitions.nodes, [customDefinition.name]: customSnapshot } }), last!.id);
+    restoreArtifactColumns(old.db);
     old.db.exec("UPDATE schema_version SET version = 34");
     old.close();
     const db: ProjectDb = new ProjectDb(path);
@@ -192,11 +241,11 @@ describe("pecore.db", () => {
       expect(db.catalog.recipe(recipe.name)).toEqual(recipe);
       expect(db.catalog.node(read.name)).toMatchObject({
         kind: "agent", tracker: { account: "project.account", access: "read" },
-        outputs: { success: "document" }, outcomes: ["success", "failure"],
+        outputs: { success: "code_review" }, outcomes: ["success", "failure"],
       });
       expect(db.catalog.content("github-ticket-read-tracker-agent.md")).toContain("Read the specified ticket");
       const history = db.events(job).find((event) => event.type === "job.created");
-      expect(history?.payload.definitions?.nodes[read.name]?.definition).toMatchObject({ kind: "agent", outputs: { success: "document" } });
+      expect(history?.payload.definitions?.nodes[read.name]?.definition).toMatchObject({ kind: "agent", outputs: { success: "code_review" } });
       const snapshot = jobDefinitions(db, job)!;
       const changed = snapshot.nodes[read.name]!;
       expect(changed.definition).toEqual(db.catalog.node(read.name));
@@ -216,13 +265,13 @@ describe("pecore.db", () => {
     await restoreTrackerColumns(old.db);
     const check: Node = Node.parse({
       name: "check", description: "Run a check", kind: "command", outcomes: ["passed", "failed"],
-      failOutcomes: ["failed"], outputs: { passed: "text" }, outputRules: { passed: { stdoutLastLine: "report" } },
+      failOutcomes: ["failed"], outputs: { passed: "log" }, outputRules: { passed: { stdoutLastLine: "report" } },
       outcomeRules: [{ exitCode: 0, outcome: "passed" }, { exitCode: "other", outcome: "failed" }],
       command: ["true"], changesFiles: false, timeoutSec: 5,
     });
     const review: Node = Node.parse({
       name: "review", description: "Review", kind: "human", interface: "code-review",
-      outcomes: ["approve", "changes", "reject"], outputs: { changes: "text" },
+      outcomes: ["approve", "changes", "reject"], outputs: { changes: "code_review" },
     });
     if (review.kind !== "human") throw new Error("Expected a Human node");
     const legacy: Recipe = Recipe.parse({
@@ -250,22 +299,23 @@ describe("pecore.db", () => {
         harnessVersion: null, connectorVersion: null, account: null, osUser: "user" } },
       { jobId: job, type: "attempt.ended", payload: { attemptId: "attempt", endReason: "passed", model: null, account: null,
         tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, cost: null } },
-      { jobId: job, type: "node_run.completed", payload: { nodeRunId: checkRun, outcome: "passed", contentBefore: "tree", contentAfter: "tree", artifacts: [] } },
+      { jobId: job, type: "node_run.completed", payload: { nodeRunId: checkRun, outcome: "passed", filesHashBefore: "tree", filesHashAfter: "tree", artifacts: [] } },
       { jobId: job, type: "node_run.created", payload: { nodeRunId: reviewRun, node: "review", round: 0, viaEdge: 0 } },
       { jobId: job, type: "queue.added", payload: { ...item, itemId: "review-item" } },
       { jobId: job, type: "job.state_changed", payload: { state: "waiting", reason: "human" } },
       { ...created, jobId: finishedJob, payload: { ...created.payload, recipe: legacy, definitions } },
       { jobId: finishedJob, type: "node_run.created", payload: { nodeRunId: finishedRun, node: "check", round: 0, viaEdge: null } },
-      { jobId: finishedJob, type: "node_run.completed", payload: { nodeRunId: finishedRun, outcome: "failed", contentBefore: null, contentAfter: null, artifacts: [] } },
+      { jobId: finishedJob, type: "node_run.completed", payload: { nodeRunId: finishedRun, outcome: "failed", filesHashBefore: null, filesHashAfter: null, artifacts: [] } },
       { jobId: finishedJob, type: "job.state_changed", payload: { state: "failed", reason: "check:failed" } },
     ]);
+    restoreArtifactColumns(old.db);
     old.close();
 
     const db: ProjectDb = new ProjectDb(path);
     try {
       const saved = db.catalog.node("check");
       expect(saved).toMatchObject({
-        outcomes: ["success", "failure"], failOutcomes: ["failure"], outputs: { success: "text" },
+        outcomes: ["success", "failure"], failOutcomes: ["failure"], outputs: { success: "log" },
         outcomeRules: [{ exitCode: 0, outcome: "success" }, { exitCode: "other", outcome: "failure" }],
         outputRules: { success: { stdoutLastLine: "report" } },
       });
@@ -491,14 +541,14 @@ describe("pecore.db", () => {
     const db: ProjectDb = new ProjectDb(path);
     db.append([created]);
     const content: string = "a change\n";
-    const ref: Artifact = db.saveArtifact(job, "lint-0", "output", "text", content, "tree");
+    const ref: Artifact = db.saveArtifact(job, "lint-0", "output", "log", content, "tree");
     const patch: Artifact = db.saveArtifact(job, "lint-0", "output", "diff", "+change\n", "tree");
     db.close();
 
     const reopened: ProjectDb = new ProjectDb(path);
     try {
-      expect(ref).toEqual({ jobId: job, run: "lint-0", name: "output", type: "text", sha256: createHash("sha256").update(content).digest("hex"), contentState: "tree" });
-      expect(reopened.db.prepare("SELECT sha256, content_state FROM artifacts WHERE type = 'text'").get()).toEqual({ sha256: ref.sha256, content_state: "tree" });
+      expect(ref).toEqual({ jobId: job, run: "lint-0", name: "output", type: "log", sha256: createHash("sha256").update(content).digest("hex"), filesHash: "tree" });
+      expect(reopened.db.prepare("SELECT sha256, files_hash FROM artifacts WHERE type = 'log'").get()).toEqual({ sha256: ref.sha256, files_hash: "tree" });
       expect(reopened.requireArtifact(ref)).toEqual(Buffer.from(content));
       expect(reopened.requireArtifact(ref, 2)).toEqual(Buffer.from("a "));
       expect(reopened.requireArtifact(patch)).toEqual(Buffer.from("+change\n"));
@@ -518,7 +568,7 @@ describe("pecore.db", () => {
       ],
       3000,
     );
-    db.append([{ jobId: job, type: "node_run.completed", payload: { nodeRunId: `${job}/lint#0`, outcome: "passed", contentBefore: "t1", contentAfter: "t1", artifacts: [] } }], 4000);
+    db.append([{ jobId: job, type: "node_run.completed", payload: { nodeRunId: `${job}/lint#0`, outcome: "passed", filesHashBefore: "t1", filesHashAfter: "t1", artifacts: [] } }], 4000);
     db.append([{ jobId: job, type: "job.state_changed", payload: { state: "failed", reason: "lint:failed" } }], 5000);
     expect(db.db.prepare("SELECT state, failure_reason, waiting_reason, created_at, updated_at FROM jobs").get()).toEqual({
       state: "failed",
@@ -628,7 +678,7 @@ describe("chats.db", () => {
 
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.version()).toBe(35);
+    expect(db.version()).toBe(36);
     for (let i = 0; i < notificationsKept + 3; i++) db.addNotification({ kind: "job", title: `n${i}`, body: "" }, 1000 + i);
     const kept = db.notifications();
     expect(kept).toHaveLength(notificationsKept);
@@ -650,7 +700,7 @@ describe("chats.db", () => {
       UPDATE schema_version SET version = 5`);
     old.close();
     const db = new ChatsDb(file);
-    expect(db.version()).toBe(35);
+    expect(db.version()).toBe(36);
     expect(db.messages(assistantChat)).toEqual([]);
     db.close();
   });

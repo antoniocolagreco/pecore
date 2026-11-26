@@ -99,7 +99,7 @@ describe("project creation with a remote (section Project creation, decision 13)
     const p = engine.project("plain");
     expect(p.ctx.defs.recipes.size).toBe(0);
     expect(p.ctx.project).not.toHaveProperty("defaultRecipe");
-    await expect(engine.createJob("plain", { title: "Add a file", ticket: { text: "add a file" } })).rejects.toThrow("project plain has no recipes; add one");
+    await expect(engine.createJob("plain", { title: "Add a file", request: "add a file" })).rejects.toThrow("project plain has no recipes; add one");
     await engine.shutdown();
   });
 
@@ -107,11 +107,11 @@ describe("project creation with a remote (section Project creation, decision 13)
     const { home, templates } = await forgeHome();
     const engine = await Engine.start({ home, templates });
     await createProjectWithRecipes(engine, { id: "one", name: "One", repo: null }, ["feature-to-local-commit"]);
-    const id = await engine.createJob("one", { title: "Nothing", ticket: { text: "nothing" } });
+    const id = await engine.createJob("one", { title: "Nothing", request: "nothing" });
     expect(JSON.parse(engine.project("one").executor.job(id).recipe)).toMatchObject({ name: "feature-to-local-commit" });
     engine.catalog.saveRecipe(Recipe.parse({ name: "nothing", description: "No nodes" }));
     await createProjectWithRecipes(engine, { id: "two", name: "Two", repo: null }, ["feature-to-local-commit", "nothing"]);
-    await expect(engine.createJob("two", { title: "Nothing", ticket: { text: "nothing" } })).rejects.toThrow("project two has 2 recipes; choose one");
+    await expect(engine.createJob("two", { title: "Nothing", request: "nothing" })).rejects.toThrow("project two has 2 recipes; choose one");
     await engine.shutdown();
   });
 });

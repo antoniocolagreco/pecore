@@ -4,8 +4,8 @@ import { createJob } from "./create";
 import { planOrder, resumeOrders } from "./plan";
 
 const plan = [
-  { key: "api", title: "API", ticketText: "add the endpoint", dependsOn: [] },
-  { key: "ui", title: "UI", ticketText: "add the screen", dependsOn: ["api"] },
+  { key: "api", title: "API", request: "add the endpoint", dependsOn: [] },
+  { key: "ui", title: "UI", request: "add the screen", dependsOn: ["api"] },
 ];
 
 describe("orders (Phase 6 decision 1)", () => {
@@ -16,7 +16,7 @@ describe("orders (Phase 6 decision 1)", () => {
     expect(first.accepted).toBe(true);
     const ui = ctx.db.db.prepare("SELECT parent_job_id, order_id, order_key FROM jobs WHERE id = ?").get(first.jobIds.ui);
     expect(ui).toEqual({ parent_job_id: first.jobIds.api, order_id: "order-1", order_key: "ui" });
-    const again = await planOrder(ctx, "order-1", [{ key: "other", title: "Other", ticketText: "x", dependsOn: [] }]);
+    const again = await planOrder(ctx, "order-1", [{ key: "other", title: "Other", request: "x", dependsOn: [] }]);
     expect(again).toEqual({ accepted: false, plan: first.plan, jobIds: first.jobIds });
     expect(ctx.db.db.prepare("SELECT count(*) AS n FROM jobs WHERE order_id = 'order-1'").get()).toEqual({ n: 2 });
     await close();
@@ -25,8 +25,8 @@ describe("orders (Phase 6 decision 1)", () => {
   it("refuses more than one dependency and a dependency on a later key", async () => {
     const { engine, close } = await apiProject();
     const { ctx } = engine.project("demo");
-    await expect(planOrder(ctx, "o", [{ key: "a", title: "A", ticketText: "x", dependsOn: ["b"] }, { key: "b", title: "B", ticketText: "x", dependsOn: [] }])).rejects.toThrow(/earlier key/);
-    await expect(planOrder(ctx, "o", [{ key: "a", title: "A", ticketText: "x", dependsOn: ["b", "c"] }])).rejects.toThrow();
+    await expect(planOrder(ctx, "o", [{ key: "a", title: "A", request: "x", dependsOn: ["b"] }, { key: "b", title: "B", request: "x", dependsOn: [] }])).rejects.toThrow(/earlier key/);
+    await expect(planOrder(ctx, "o", [{ key: "a", title: "A", request: "x", dependsOn: ["b", "c"] }])).rejects.toThrow();
     expect(ctx.db.db.prepare("SELECT count(*) AS n FROM jobs").get()).toEqual({ n: 0 });
     await close();
   });
@@ -36,8 +36,8 @@ describe("orders (Phase 6 decision 1)", () => {
     const { ctx } = engine.project("demo");
     const orderId: string = "chat-order";
     ctx.db.append([{ jobId: null, type: "order.planned", payload: { orderId, plan: plan.map((p) => ({ ...p, recipe: "reviewed" })) } }]);
-    const api = await createJob(ctx, { title: "API", ticket: { text: "add the endpoint" }, recipe: "reviewed", orderId, orderKey: "api" });
-    await expect(createJob(ctx, { title: "API", ticket: { text: "again" }, recipe: "reviewed", orderId, orderKey: "api" })).rejects.toThrow();
+    const api = await createJob(ctx, { title: "API", request: "add the endpoint", recipe: "reviewed", orderId, orderKey: "api" });
+    await expect(createJob(ctx, { title: "API", request: "again", recipe: "reviewed", orderId, orderKey: "api" })).rejects.toThrow();
     await resumeOrders(ctx);
     const jobs = ctx.db.db.prepare("SELECT id, parent_job_id, order_key FROM jobs WHERE order_id = ? ORDER BY order_key").all(orderId);
     expect(jobs).toEqual([

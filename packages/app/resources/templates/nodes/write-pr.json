@@ -1,12 +1,12 @@
 {
   "name": "write-pr",
-  "description": "Write a pull request title and description from the ticket, diff, and verification results.",
+  "description": "Write a pull request title and description from the job request, diff, and verification results.",
   "tags": ["github", "source control"],
   "kind": "agent",
   "prompt": "write-pr.md",
   "agent": { "tier": "standard" },
   "outcomes": ["success"],
-  "outputs": { "success": "document" },
+  "outputs": { "success": "pull_request" },
   "changesFiles": false,
   "timeoutSec": 300
 }

@@ -2,11 +2,29 @@ import { describe, expect, it } from "vitest";
 import { Accounts } from "@pecore/schemas";
 import { apiProject } from "../../test/api-project";
 import { shippedTemplates } from "../../test/tmp";
-import { loadForgeDefaults, projectDefaults } from "./defaults";
+import { loadTemplates } from "../definitions/load";
+import { checkRecipe } from "../definitions/recipe-check";
+import { loadForgeDefaults, projectDefaults, recipeForForge } from "./defaults";
 
 const repo = { url: "https://gitlab.example.com/acme/shop.git", account: "work-gitlab" };
 
 describe("project defaults (decision 8)", () => {
+  it.each(["github", "gitlab", "git", "codecommit"])("selects the delivery route for %s without changing shared recipes", async (forge) => {
+    const templates = await loadTemplates(shippedTemplates);
+    const defaults = await projectDefaults(shippedTemplates, repo, forge);
+    const branch: boolean = forge === "git" || forge === "codecommit";
+    for (const name of ["feature-to-pr", "bugfix-to-pr"]) {
+      const original = templates.recipes.get(name)!;
+      const recipe = recipeForForge(original, defaults.rename);
+      expect(recipe.nodes.pr?.use).toBe(defaults.forge?.delivery);
+      expect(recipe.edges).toContainEqual(expect.objectContaining({ from: "push", on: "success", to: branch ? "pr" : "write-pr" }));
+      expect(Boolean(recipe.nodes["write-pr"])).toBe(!branch);
+      expect(recipe.nodes.pr?.reads).toEqual(branch ? [] : ["write-pr"]);
+      expect(checkRecipe(recipe, templates.nodes, true)).toEqual([]);
+      expect(original.nodes["write-pr"]).toBeDefined();
+    }
+  });
+
   it("a local project has no forge and no renames", async () => {
     const d = await projectDefaults(shippedTemplates, null, null);
     expect(d.forge).toBeNull();

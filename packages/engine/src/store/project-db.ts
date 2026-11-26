@@ -41,13 +41,13 @@ export class ProjectDb {
     return (this.db.prepare("SELECT version FROM schema_version").get() as { version: number }).version;
   }
 
-  saveArtifact(jobId: string, run: string, name: string, type: Artifact["type"], content: string | Buffer, contentState: string | null): Artifact {
+  saveArtifact(jobId: string, run: string, name: string, type: Artifact["type"], content: string | Buffer, filesHash: string | null): Artifact {
     const bytes: Buffer = Buffer.isBuffer(content) ? content : Buffer.from(content);
     const sha256: string = createHash("sha256").update(bytes).digest("hex");
-    this.db.prepare(`INSERT INTO artifacts (job_id, run, name, type, sha256, content_state, content) VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT (job_id, run, name, type) DO UPDATE SET sha256 = excluded.sha256, content_state = excluded.content_state, content = excluded.content`)
-      .run(jobId, run, name, type, sha256, contentState, bytes);
-    return { jobId, run, name, type, sha256, contentState };
+    this.db.prepare(`INSERT INTO artifacts (job_id, run, name, type, sha256, files_hash, content) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (job_id, run, name, type) DO UPDATE SET sha256 = excluded.sha256, files_hash = excluded.files_hash, content = excluded.content`)
+      .run(jobId, run, name, type, sha256, filesHash, bytes);
+    return { jobId, run, name, type, sha256, filesHash };
   }
 
   artifactContent({ jobId, run, name, type }: Artifact, limit: number | null = null): Buffer | undefined {
@@ -100,9 +100,9 @@ export class ProjectDb {
       case "job.created": {
         const p = e.payload;
         run(
-          `INSERT INTO jobs (id, title, recipe, state, parent_job_id, base_branch, base, old_base, target, branch, created_at, updated_at, order_id, order_key)
-           VALUES (@id, @title, @recipe, 'queued', @parent, @baseBranch, @base, @base, @target, @branch, @at, @at, @orderId, @orderKey)`,
-          { id: e.jobId, title: p.title, recipe: JSON.stringify(p.recipe), parent: p.parentJobId, baseBranch: p.baseBranch, base: p.base, target: p.target, branch: p.branch, at, orderId: p.orderId ?? null, orderKey: p.orderKey ?? null },
+          `INSERT INTO jobs (id, title, request, ticket_id, recipe, state, parent_job_id, base_branch, base, old_base, target, branch, created_at, updated_at, order_id, order_key)
+           VALUES (@id, @title, @request, @ticketId, @recipe, 'queued', @parent, @baseBranch, @base, @base, @target, @branch, @at, @at, @orderId, @orderKey)`,
+          { id: e.jobId, title: p.title, request: p.request, ticketId: p.ticketId ?? null, recipe: JSON.stringify(p.recipe), parent: p.parentJobId, baseBranch: p.baseBranch, base: p.base, target: p.target, branch: p.branch, at, orderId: p.orderId ?? null, orderKey: p.orderKey ?? null },
         );
         return;
       }
@@ -145,7 +145,7 @@ export class ProjectDb {
              auth_account = @authAccount, auth_os_user = @authUser, auth_kind = @authKind,
              pgid = CASE WHEN @state = 'running' THEN coalesce(@pgid, pgid) ELSE NULL END, os_user = coalesce(@osUser, os_user),
              started_at = CASE WHEN @state = 'running' AND started_at IS NULL THEN @at ELSE started_at END,
-             ended_at = CASE WHEN @state IN ('interrupted', 'skipped') THEN @at ELSE ended_at END
+             ended_at = CASE WHEN @state = 'interrupted' THEN @at ELSE ended_at END
            WHERE id = @id`,
           {
             id: p.nodeRunId,
@@ -171,8 +171,8 @@ export class ProjectDb {
         return;
       case "node_run.completed":
         run(
-          "UPDATE node_runs SET state = 'completed', outcome = @outcome, content_before = @before, content_after = @after, waiting_reason = NULL, ended_at = @at WHERE id = @id",
-          { id: e.payload.nodeRunId, outcome: e.payload.outcome, before: e.payload.contentBefore, after: e.payload.contentAfter, at },
+          "UPDATE node_runs SET state = 'completed', outcome = @outcome, files_hash_before = @before, files_hash_after = @after, waiting_reason = NULL, ended_at = @at WHERE id = @id",
+          { id: e.payload.nodeRunId, outcome: e.payload.outcome, before: e.payload.filesHashBefore, after: e.payload.filesHashAfter, at },
         );
         return;
       case "node_run.failed":

@@ -42,7 +42,7 @@ async function setup() {
     params: {},
     user: u,
     workdir: wd,
-    context: { job: { id: "J1", title: "Fix it", branch: "factory/J1", base, oldBase: base, target: "main", commit: null }, ticketId: null, project: { repoDir: join(project, "repo.git"), repoUrl: null, baseBranch: "main" } },
+    context: { job: { id: "J1", title: "Fix it", request: "Verify the job", branch: "factory/J1", base, oldBase: base, target: "main", commit: null }, ticketId: null, project: { repoDir: join(project, "repo.git"), repoUrl: null, baseBranch: "main" } },
     inputs: [],
     ...extra,
   });
@@ -99,7 +99,7 @@ describe("placeholders", () => {
   });
 
   it("substitutes into single arguments and refuses missing values", () => {
-    const v = placeholderValues({ job: { id: "J", title: "t; rm -rf /", branch: "b", base: "1", oldBase: "0", target: "main", commit: null }, ticketId: null, workdir: "/w", project: { repoDir: "/r", repoUrl: null, baseBranch: "develop" }, params: { suite: "unit" } });
+    const v = placeholderValues({ job: { id: "J", title: "t; rm -rf /", request: "Verify the job", branch: "b", base: "1", oldBase: "0", target: "main", commit: null }, ticketId: null, workdir: "/w", project: { repoDir: "/r", repoUrl: null, baseBranch: "develop" }, params: { suite: "unit" } });
     expect(substituteArgv(["echo", "{job.title}", "--suite={params.suite}"], v)).toEqual(["echo", "t; rm -rf /", "--suite=unit"]);
     expect(() => substituteArgv(["{job.commit}"], v)).toThrow("no value for placeholder {job.commit}");
   });
@@ -139,26 +139,26 @@ describe("command nodes", () => {
     await writeFile(join(nodeDir, "s.sh"), 'set -e; test -z "${PECORE_INPUTS_SPEC_PATH:-}"; printf "%s" "$PECORE_JOB_TITLE" > title.txt; cat');
     const n: CommandNode = node({
       script: "s.sh",
-      inputs: ["spec", "text", "diff"], optionalInputs: ["reference"], outputs: { passed: "text" }, outputRules: { passed: { file: "title.txt" } },
+      inputs: ["spec", "log", "diff"], optionalInputs: ["pull_request"], outputs: { passed: "log" }, outputRules: { passed: { file: "title.txt" } },
     });
     const input: CommandRun["inputs"] = [
-      { type: "spec", content: '{"criteria":[],"tests":[],"interfaces":[]}' },
-      { type: "text", content: 'first\n"second"\n' },
+      { type: "spec", content: '{"feature":"Test","scenarios":[{"name":"Example","given":["Input"],"when":"Run","then":["Output"]}]}' },
+      { type: "log", content: 'first\n"second"\n' },
       { type: "diff", content: "+change\n" },
     ];
     const run: CommandRun = ctx(n, { inputs: input, remote: true });
     run.node = { ...n, probe: ["/bin/sh", "-c", `jq -e 'has("spec")' >/dev/null`] };
     const r = await runCommandNode(run);
-    expect(r).toMatchObject({ kind: "completed", outcome: "passed", outputs: [{ type: "text", content: "Fix it" }] });
-    expect(r.log).toContain(JSON.stringify({ spec: { criteria: [], tests: [], interfaces: [] }, text: 'first\n"second"\n', diff: "+change\n" }));
+    expect(r).toMatchObject({ kind: "completed", outcome: "passed", outputs: [{ type: "log", content: "Fix it" }] });
+    expect(r.log).toContain(JSON.stringify({ spec: { feature: "Test", scenarios: [{ name: "Example", given: ["Input"], when: "Run", then: ["Output"] }] }, log: 'first\n"second"\n', diff: "+change\n", job: { title: "Fix it", request: "Verify the job" } }));
     await expect(stat(join(wd, ".pecore", "inputs"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("reads only the output of the outcome it reached", async () => {
     const { nodeDir, ctx } = await setup();
     await writeFile(join(nodeDir, "s.sh"), 'echo "https://x/pr/1"; exit "$PECORE_PARAMS_CODE"');
-    const n = node({ script: "s.sh", outputs: { passed: "reference" }, outputRules: { passed: { stdoutLastLine: "url" } } });
-    expect(await runCommandNode(ctx(n, { params: { code: "0" } }))).toMatchObject({ outcome: "passed", outputs: [{ type: "reference", content: '{"url":"https://x/pr/1"}' }] });
+    const n = node({ script: "s.sh", outputs: { passed: "pull_request" }, outputRules: { passed: { stdoutLastLine: "url" } } });
+    expect(await runCommandNode(ctx(n, { params: { code: "0" } }))).toMatchObject({ outcome: "passed", outputs: [{ type: "pull_request", content: '{"url":"https://x/pr/1"}' }] });
     expect(await runCommandNode(ctx(n, { params: { code: "1" } }))).toMatchObject({ outcome: "failed", outputs: [] });
   });
 
@@ -172,9 +172,9 @@ describe("command nodes", () => {
     const { project, ctx } = await setup();
     const marker = join(project, "ran");
     const n = (probe: string[]): CommandRun["node"] & Pick<CommandNode, "outputs" | "outputRules"> => ({
-      ...node({ command: ["touch", marker], outputs: { passed: "reference" }, outputRules: { passed: { stdoutLastLine: "url" } } }), probe,
+      ...node({ command: ["touch", marker], outputs: { passed: "pull_request" }, outputRules: { passed: { stdoutLastLine: "url" } } }), probe,
     });
-    expect(await runCommandNode(ctx(n(["echo", "https://x/pr/1"])))).toMatchObject({ kind: "completed", outcome: "passed", fromProbe: true, outputs: [{ type: "reference", content: '{"url":"https://x/pr/1"}' }] });
+    expect(await runCommandNode(ctx(n(["echo", "https://x/pr/1"])))).toMatchObject({ kind: "completed", outcome: "passed", fromProbe: true, outputs: [{ type: "pull_request", content: '{"url":"https://x/pr/1"}' }] });
     expect(await runCommandNode(ctx(n(["false"])))).toMatchObject({ kind: "waiting", reason: "network" });
     await expect(readFile(marker)).rejects.toThrow();
     expect(await runCommandNode(ctx(n(["true"])))).toMatchObject({ kind: "completed", fromProbe: false });

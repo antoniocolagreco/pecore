@@ -52,11 +52,11 @@ const cases: ForgeCase[] = [
 
 const writeFileNode = {
   name: "write-job-file",
-  description: "writes a file named after the job and a spec",
+  description: "writes a file named after the job and drafts a pull request",
   kind: "command",
-  command: ["/bin/sh", "-c", 'echo "$PECORE_JOB_ID" > "e2e-$PECORE_JOB_ID.txt" && mkdir -p .pecore && printf \'{"criteria":["PeCore e2e"],"tests":[],"interfaces":[]}\' > .pecore/spec.json'],
+  command: ["/bin/sh", "-c", 'echo "$PECORE_JOB_ID" > "e2e-$PECORE_JOB_ID.txt" && mkdir -p .pecore && printf \'{"title":"PeCore e2e","body":"Delivery fixture"}\' > .pecore/spec.json'],
   outcomes: ["done"],
-  outputs: { done: "spec" },
+  outputs: { done: "pull_request" },
   changesFiles: true,
   outcomeRules: [{ exitCode: 0, outcome: "done" }],
   outputRules: { done: { file: ".pecore/spec.json" } },
@@ -118,13 +118,13 @@ for (const c of cases) {
       await until(async () => !(await readCreation(p.ctx.dir)), 180_000);
       expect(remoteHead("main")).not.toBeNull();
 
-      const first = await engine.createJob("e2e", { title: "PeCore e2e: one request", ticket: { text: "x" } });
+      const first = await engine.createJob("e2e", { title: "PeCore e2e: one request", request: "x" });
       await until(() => ended(p.executor.job(first).state), 300_000);
       expect(p.executor.job(first)).toMatchObject({ state: "succeeded" });
       expect(c.requests(repo, `factory/${first}`)).toMatchObject([{ target: "main" }]);
 
       await writeFile(flag, "");
-      const second = await engine.createJob("e2e", { title: "PeCore e2e: kill during push", ticket: { text: "x" } });
+      const second = await engine.createJob("e2e", { title: "PeCore e2e: kill during push", request: "x" });
       await until(() => p.ctx.db.events(second).some((e) => e.type === "effect.requested" && e.payload.node === "push"), 300_000);
       await new Promise((r) => setTimeout(r, 5000));
       await engine.shutdown();

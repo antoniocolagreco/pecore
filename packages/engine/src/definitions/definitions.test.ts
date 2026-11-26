@@ -29,7 +29,7 @@ const writer = Node.parse({
   prompt: "spec-writer.md",
   agent: { tier: "strong" },
   outcomes: ["accepted", "rejected"],
-  outputs: { accepted: "spec", rejected: "text" },
+  outputs: { accepted: "spec", rejected: "feedback" },
   changesFiles: false,
   timeoutSec: 600,
 });
@@ -49,8 +49,8 @@ const nodes = new Map<string, Node>([
   ["spec-writer", writer],
   ["builder", builder],
   ["lint", check("lint", ["passed", "failed"])],
-  ["git-commit", check("git-commit", ["done", "failed"], { outputs: { done: "reference" }, outputRules: { done: { stdoutLastLine: "sha" } } })],
-  ["publish", check("publish", ["done"], { inputs: ["spec"], optionalInputs: ["text"] })],
+  ["git-commit", check("git-commit", ["done", "failed"], { outputs: { done: "sha" }, outputRules: { done: { stdoutLastLine: "sha" } } })],
+  ["publish", check("publish", ["done"], { inputs: ["spec"], optionalInputs: ["feedback", "log"] })],
 ]);
 
 const recipe = (r: object) => Recipe.parse({ name: "r", description: "r", ...r });
@@ -131,7 +131,8 @@ describe("recipe check", () => {
   });
 
   it("rejects two read nodes that produce the same input of a command", () => {
-    expect(checkRecipe(publishing({ reads: ["spec", "lint"] }, onlyAccepted), nodes, true)).toContainEqual({ path: "nodes.publish.reads", message: "Spec Writer and Lint produce the same input for Publish (text). Select one source in Reads from." });
+    const candidates: Map<string, Node> = new Map([...nodes, ["lint", check("lint", ["passed", "failed"], { outputs: { passed: "feedback" }, outputRules: { passed: { file: "feedback.txt" } } })]]);
+    expect(checkRecipe(publishing({ reads: ["spec", "lint"] }, onlyAccepted), candidates, true)).toContainEqual({ path: "nodes.publish.reads", message: "Spec Writer and Lint produce the same input for Publish (feedback). Select one source in Reads from." });
   });
 
   it("rejects reading a node that produces nothing", () => {
@@ -145,9 +146,8 @@ describe("recipe check", () => {
     expect(checkRecipe(r, nodes, true)).toContainEqual({ path: "successOutcomes.0", message: "Git Commit reports Failed as a failure. Choose another outcome to end the job successfully." });
   });
 
-  it("requires an edge on skipped for optional nodes", () => {
-    const r = recipe({ ...local, nodes: { ...local.nodes, lint: { use: "lint", optional: true } } });
-    expect(checkRecipe(r, nodes, true)).toContainEqual({ path: "nodes.lint.optional", message: "Connect the Skipped outcome of Lint to another step or End." });
+  it("rejects optional steps in new recipes", () => {
+    expect(() => recipe({ ...local, nodes: { ...local.nodes, lint: { use: "lint", optional: true } } })).toThrow(/optional/);
   });
 
   it("rejects params overrides on Repository nodes", () => {
@@ -175,45 +175,44 @@ describe("phase 1 gate: shipped templates", () => {
     expect(lib.recipes.has("feature-to-pr")).toBe(true);
     for (const recipe of lib.recipes.values()) {
       expect(recipe.start).toBe("spec");
-      expect(recipe.nodes.spec).toMatchObject({ use: "spec-writer", reads: ["@start"] });
+      expect(recipe.nodes.spec).toMatchObject({ use: "spec-writer", reads: [] });
     }
   });
 
-  it("provides Start's document both on entry and after a base change", () => {
-    const reader: Node = check("reader", ["success"], { inputs: ["document"] });
-    const secondary: Node = check("another-document", ["success"], { outputs: { success: "document" }, outputRules: { success: { stdoutJson: "" } } });
-    const nodes: Map<string, Node> = new Map([[reader.name, reader], [secondary.name, secondary]]);
+  it("rejects a connection between incompatible artifact types", () => {
+    const reader: Node = check("reader", ["success"], { inputs: ["pull_request"] });
+    const writer: Node = check("writer", ["success"], { outputs: { success: "sha" }, outputRules: { success: { stdoutLastLine: "sha" } } });
     const recipe: Recipe = Recipe.parse({
-      name: "request", description: "Read the request", start: "read", onBaseChanged: "reenter",
-      nodes: { read: { use: "reader", reads: ["@start"] }, other: { use: secondary.name }, reenter: { use: "reader", reads: ["@start"] } },
-      edges: [{ from: "read", to: "other", on: "success" }, { from: "other", to: "reenter", on: "success" }],
-      ends: [{ from: "reenter", on: "success", result: "succeeded" }],
+      name: "request", description: "Read a pull request", start: "write",
+      nodes: { write: { use: "writer" }, read: { use: "reader", reads: ["write"] } },
+      edges: [{ from: "write", to: "read", on: "success" }],
+      ends: [{ from: "read", on: "success", result: "succeeded" }],
     });
-    expect(checkRecipe(recipe, nodes, false)).toEqual([]);
-    recipe.nodes.reenter!.reads.push("other");
-    expect(checkRecipe(recipe, nodes, false)).toContainEqual({ path: "nodes.reenter.reads", message: "Start and Another Document produce the same input for Reader (document). Select one source in Reads from." });
+    expect(checkRecipe(recipe, new Map([[reader.name, reader], [writer.name, writer]]), true)).toContainEqual({
+      path: "nodes.read.reads", message: "Reader needs a pull_request input. Select a step that produces it in Reads from.",
+    });
   });
 
-  it("identifies the base-change route that bypasses the spec after adding Read Ticket", async () => {
+  it("identifies a base-change route that reaches GitHub PR without Write PR", async () => {
     const library = await loadTemplates(shippedTemplates);
     library.nodes.set("read-ticket", Node.parse({
       name: "read-ticket", kind: "agent", description: "Read a ticket", prompt: "read-ticket.md", agent: { tier: "standard" },
       tracker: { access: "read", account: "project.account" }, timeoutSec: 120, changesFiles: false,
-      outcomes: ["success", "failure"], failOutcomes: ["failure"], outputs: { success: "document" },
+      outcomes: ["success", "failure"], failOutcomes: ["failure"], outputs: { success: "feedback" },
     }));
     const bugfix: Recipe = library.recipes.get("bugfix-to-pr")!;
     const draft: Recipe = Recipe.parse({
       ...bugfix, start: "ticket", nodes: { ...bugfix.nodes, ticket: { use: "read-ticket" } },
-      edges: [...bugfix.edges, { from: "ticket", on: "success", to: "spec" }],
+      edges: [...bugfix.edges.map((edge) => edge.from === "rebase" && edge.on === "success" ? { ...edge, to: "pr" } : edge), { from: "ticket", on: "success", to: "spec" }],
       ends: [...bugfix.ends!, { from: "ticket", on: "failure", result: "failed" }],
     });
     expect(checkRecipe(draft, library.nodes, true)).toContainEqual({
       path: "nodes.pr.reads",
-      message: "GitHub PR needs the spec from Spec Writer. A base change can restart at Git Rebase before Spec Writer has produced it. Route that branch through Spec Writer, or clear the base-change step in Recipe settings and remove the disconnected steps.",
+      message: "GitHub PR needs the pull_request from Write PR. A base change can restart at Git Rebase before Write PR has produced it. Route that branch through Write PR, or clear the base-change step in Recipe settings and remove the disconnected steps.",
     });
     const throughSpec: Recipe = Recipe.parse({
       ...draft, edges: draft.edges.map((edge) =>
-        (edge.from === "rebase" || edge.from === "resolve-conflicts") && edge.on === "success" ? { ...edge, to: "spec" } : edge),
+        (edge.from === "rebase" || edge.from === "resolve-conflicts") && (edge.on === "success" || edge.to === "pr") ? { ...edge, to: "spec" } : edge),
     });
     expect(checkRecipe(throughSpec, library.nodes, true)).toEqual([]);
     const fromStart: Recipe = Recipe.parse({
@@ -224,12 +223,12 @@ describe("phase 1 gate: shipped templates", () => {
     });
     expect(checkRecipe(fromStart, library.nodes, true)).toEqual([]);
     const bypass: Recipe = Recipe.parse({
-      ...fromStart, edges: [...fromStart.edges, { from: "ticket", on: "failure", to: "lint" }],
+      ...fromStart, edges: [...fromStart.edges, { from: "ticket", on: "failure", to: "pr" }],
       ends: fromStart.ends!.filter(({ from }) => from !== "ticket"),
     });
     expect(checkRecipe(bypass, library.nodes, true)).toContainEqual({
       path: "nodes.pr.reads",
-      message: "GitHub PR needs the spec from Spec Writer. A path reaches GitHub PR without that output. Route it through an outcome of Spec Writer that produces the spec.",
+      message: "GitHub PR needs the pull_request from Write PR. A path reaches GitHub PR without that output. Route it through an outcome of Write PR that produces the pull_request.",
     });
   });
 
@@ -244,11 +243,16 @@ describe("phase 1 gate: shipped templates", () => {
       const index: number = nodes.get(recipe.nodes[from]!.use)!.outcomes.indexOf(on);
       return { from, on: index >= 0 ? index : on, ...edge };
     };
-    const spec = { ...recipe.nodes.spec };
-    if (spec.reads?.length === 1 && spec.reads[0] === "@start") delete spec.reads;
+    const spec = { ...recipe.nodes.spec! };
+    const graphNodes: Recipe["nodes"] = { ...recipe.nodes, spec };
+    const graphEdges = recipe.edges.filter((edge) => edge.from !== "write-pr").map((edge) => edge.to === "write-pr" ? { ...edge, to: "pr" } : edge);
+    if (graphNodes["write-pr"]) {
+      delete graphNodes["write-pr"];
+      graphNodes.pr = { ...graphNodes.pr!, reads: ["spec"] };
+    }
     const graph = { ...recipe, nodes: {
-      ...recipe.nodes, spec, ...(name === "bugfix-to-pr" ? { comment: { ...recipe.nodes.comment, use: "github-issue-comment" } } : {}),
-    }, edges: recipe.edges.map(route), ends: recipe.ends!.map(route) };
+      ...graphNodes, ...(name === "bugfix-to-pr" ? { comment: { ...recipe.nodes.comment, use: "github-issue-comment" } } : {}),
+    }, edges: graphEdges.map(route), ends: recipe.ends!.map(route) };
     expect(createHash("sha256").update(JSON.stringify(graph)).digest("hex")).toBe(before);
   });
 

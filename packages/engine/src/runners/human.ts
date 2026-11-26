@@ -6,9 +6,11 @@ export type HumanSubject = {
   node: string;
   description: string;
   interface: HumanInterface;
-  contentState: string | null;
+  filesHash: string | null;
   show: Artifact[];
   notes: string[];
+  inlineReview?: true;
+  job?: { title: string; request: string };
 };
 
 export function subjectHash(subject: unknown): string {
@@ -18,23 +20,25 @@ export function subjectHash(subject: unknown): string {
 export function humanArtifacts(node: HumanNode, diff: Artifact | undefined, read: Artifact[]): Artifact[] {
   if (node.interface !== "code-review") return read.filter(({ type }) => type !== "diff");
   if (!diff) return [];
-  return [diff, ...read.filter(({ type, contentState }) => type === "findings" && contentState !== null && contentState === diff.contentState)];
+  return [diff, ...read.filter(({ type, filesHash }) => (type === "code_analysis" || type === "code_review") && filesHash !== null && filesHash === diff.filesHash)];
 }
 
-export function humanItem(nodeRunId: string, recipeNodeId: string, node: HumanNode, show: Artifact[], contentState: string | null, question?: unknown) {
+export function humanItem(nodeRunId: string, recipeNodeId: string, node: HumanNode, show: Artifact[], filesHash: string | null, question?: unknown, job?: HumanSubject["job"]) {
   const subject: HumanSubject = {
     nodeRunId,
     node: recipeNodeId,
     description: node.interface === "decision" && typeof question === "string" && question.trim() ? question.trim() : node.description,
     interface: node.interface,
-    contentState,
+    filesHash,
     show,
-    notes: node.outcomes.filter((outcome) => node.outputs[outcome] === "text"),
+    job,
+    ...(node.interface === "code-review" && (node.outputs.changes_requested ?? node.outputs.changes) === "code_review" ? { inlineReview: true as const } : {}),
+    notes: node.outcomes.filter((outcome) => ["feedback", "code_review"].includes(node.outputs[outcome] ?? "")),
   };
   return { kind: "human-node" as const, subject, subjectHash: subjectHash(subject), choices: [...node.outcomes] };
 }
 
 export function humanResult(node: HumanNode, choice: string, note: string | null): { outcome: string; userNote: string | null } {
   if (!node.outcomes.includes(choice)) throw new Error(`${choice} is not an outcome of ${node.name}`);
-  return { outcome: choice, userNote: node.outputs[choice] === "text" && note ? note : null };
+  return { outcome: choice, userNote: node.outputs[choice] === "feedback" && note ? note : null };
 }

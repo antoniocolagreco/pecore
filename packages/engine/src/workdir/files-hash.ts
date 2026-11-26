@@ -8,7 +8,7 @@ async function tempIndex(user: string, workdir: string, name: string): Promise<R
   return { GIT_INDEX_FILE: path };
 }
 
-export async function contentState(user: string, workdir: string): Promise<string> {
+export async function filesHash(user: string, workdir: string): Promise<string> {
   const env = await tempIndex(user, workdir, "state");
   await gitWork(user, workdir, ["read-tree", "--empty"], { env });
   await gitWork(user, workdir, ["add", "-A", "--", "."], { env });
@@ -52,7 +52,7 @@ export async function recordGit(user: string, workdir: string, jobId: string): P
   };
 }
 
-export async function undoInterrupted(user: string, workdir: string, jobId: string, rec: GitRecord, contentBefore: string): Promise<void> {
+export async function undoInterrupted(user: string, workdir: string, jobId: string, rec: GitRecord, filesHashBefore: string): Promise<void> {
   for (const op of [["rebase", "--abort"], ["merge", "--abort"], ["cherry-pick", "--abort"], ["revert", "--abort"], ["am", "--abort"]]) {
     await gitWorkResult(user, workdir, op);
   }
@@ -60,5 +60,5 @@ export async function undoInterrupted(user: string, workdir: string, jobId: stri
   if (rec.branch) await gitWork(user, workdir, ["update-ref", branch, rec.branch]);
   await gitWork(user, workdir, ["symbolic-ref", "HEAD", branch]);
   if (rec.head && rec.head !== rec.branch) await gitWork(user, workdir, ["update-ref", "--no-deref", "HEAD", rec.head]);
-  await restoreState(user, workdir, contentBefore);
+  await restoreState(user, workdir, filesHashBefore);
 }

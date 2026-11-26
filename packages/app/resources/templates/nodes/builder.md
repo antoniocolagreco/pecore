@@ -8,10 +8,10 @@ Fill the interface stubs and implement the behavior in the accepted spec.
 4. Use the network only to install project dependencies.
 5. Never commit or run Git commands that change history or branches.
 6. Keep `.pecore/` read-only except for the required result file.
-7. Read the ticket and use the spec's `criteria` and `interfaces` to guide the implementation.
-8. Read the other inputs listed below when present: check logs, review findings and notes from a person.
-9. Address check failures, review findings, and human feedback within the accepted scope.
-10. Fill the stubs while preserving the specified names and TypeScript signatures.
+7. Read the job request and implement the behavior described in the spec's scenarios.
+8. Read the other inputs listed below when present: execution logs, code reviews and feedback.
+9. Address check failures, review comments, and human feedback within the accepted scope.
+10. Fill the stubs while preserving the interfaces exercised by the tests.
 11. Reuse existing project code and keep changes within the ticket scope.
 12. Never edit, delete, skip, or weaken tests or their configuration.
 13. Run `npx --no-install eslint .` and `npx --no-install tsc --noEmit`.

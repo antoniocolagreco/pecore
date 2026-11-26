@@ -362,7 +362,7 @@ function NewJobDialog({ id, onClose }: { id: string; onClose(): void }) {
   const recipe: string | null = chosen ?? (names.length === 1 ? names[0]! : null);
   const valid: boolean = !!title.trim() && !!text.trim() && recipe !== null;
   const create = useAction(async () => {
-    await call("createJob", { body: { project: id, recipe: recipe!, title: title.trim(), ticket: { text: text.trim() }, parentJobId: null } });
+    await call("createJob", { body: { project: id, recipe: recipe!, title: title.trim(), request: text.trim(), parentJobId: null } });
     onClose();
   });
   const disabled: boolean = !connected || create.busy;

@@ -24,6 +24,9 @@ it("offers only the four editable node kinds", async () => {
   const user = userEvent.setup();
   await user.click(await screen.findByRole("combobox", { name: "Kind" }));
   expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Agent", "Command", "Human", "Repository"]);
+  await user.click(screen.getByRole("option", { name: "Command" }));
+  await user.click(await screen.findByRole("combobox", { name: "Output of success" }));
+  expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Nothing", "Spec", "Code review", "Code analysis", "Commit SHA", "Pull request", "Feedback", "Log"]);
 });
 
 it("sets Tracker access and account on an Agent", async () => {

@@ -122,7 +122,7 @@ async function setup(recipe: string) {
 describe("phase 2 gate: command-only recipe on a local-only project, app user as project user", () => {
   it("runs write, check, human review and commit to the end", async () => {
     const { engine, project } = await setup("cmd-only");
-    const id = await engine.createJob("demo", { title: "Add hello", ticket: { text: "Please add hello.txt" } });
+    const id = await engine.createJob("demo", { title: "Add hello", request: "Please add hello.txt" });
     await until(() => project.executor.job(id).state === "waiting");
     expect(project.executor.job(id).waiting_reason).toBe("human");
     const item = project.ctx.db.db.prepare("SELECT id, subject_hash FROM human_queue WHERE state = 'open'").get() as { id: string; subject_hash: string };
@@ -140,13 +140,13 @@ describe("phase 2 gate: command-only recipe on a local-only project, app user as
       { node: "commit", state: "completed", outcome: "success" },
     ]);
     const types = project.executor.artifacts(id).map((a) => a.type);
-    expect(types).toEqual(expect.arrayContaining(["document", "diff", "text", "reference"]));
+    expect(types).toEqual(expect.arrayContaining(["diff", "log", "sha"]));
     await engine.shutdown();
   });
 
   it("restores the workdir and fails the job when a read-only node changes files", async () => {
     const { engine, project } = await setup("sneaky");
-    const id = await engine.createJob("demo", { title: "Sneaky", ticket: { text: "x" } });
+    const id = await engine.createJob("demo", { title: "Sneaky", request: "x" });
     await until(() => project.executor.job(id).state === "failed");
     expect(project.executor.job(id).failure_reason).toBe("READ_ONLY_VIOLATION");
     const wd = join(project.ctx.dir, "work", id);
@@ -157,7 +157,7 @@ describe("phase 2 gate: command-only recipe on a local-only project, app user as
 
   it("stops a running job and its process group", async () => {
     const { engine, project } = await setup("slow");
-    const id = await engine.createJob("demo", { title: "Slow", ticket: { text: "x" } });
+    const id = await engine.createJob("demo", { title: "Slow", request: "x" });
     await until(() => (project.ctx.db.db.prepare("SELECT pgid FROM node_runs WHERE pgid IS NOT NULL").get() as { pgid: number } | undefined)?.pgid);
     await project.executor.stop(id);
     expect(project.executor.job(id).state).toBe("stopped");
@@ -167,7 +167,7 @@ describe("phase 2 gate: command-only recipe on a local-only project, app user as
 
   it("pauses running jobs with reason quit after a restart, and play continues them", async () => {
     const { home, lib, engine, project } = await setup("slow");
-    const id = await engine.createJob("demo", { title: "Slow", ticket: { text: "x" } });
+    const id = await engine.createJob("demo", { title: "Slow", request: "x" });
     await until(() => (project.ctx.db.db.prepare("SELECT pgid FROM node_runs WHERE pgid IS NOT NULL").get() as { pgid: number } | undefined)?.pgid);
     await engine.shutdown();
     const again = await Engine.start({ home, templates: lib });
@@ -197,7 +197,7 @@ describe("project folder (decision 75)", () => {
     await gitAppIn(folder, ["add", "mine.txt"]);
     await gitAppIn(folder, ["commit", "-q", "-m", "Mine"]);
     const mine = (await gitAppIn(folder, ["rev-parse", "HEAD"])).trim();
-    const id = await engine.createJob("demo", { title: "Add hello", ticket: { text: "add hello" } });
+    const id = await engine.createJob("demo", { title: "Add hello", request: "add hello" });
     expect(project.executor.job(id).base).toBe(mine);
     await until(() => project.executor.job(id).state === "succeeded");
     expect((await gitAppIn(folder, ["show", `factory/${id}:hello.txt`])).trim()).toBe("hello");
@@ -208,7 +208,7 @@ describe("project folder (decision 75)", () => {
   it("a job still runs when the folder is gone, and a notification says its branch was not copied", async () => {
     const { engine, folder, project } = await withFolder();
     await rm(folder, { recursive: true, force: true });
-    const id = await engine.createJob("demo", { title: "Add hello", ticket: { text: "add hello" } });
+    const id = await engine.createJob("demo", { title: "Add hello", request: "add hello" });
     await until(() => project.executor.job(id).state === "succeeded");
     expect((await gitApp(join(project.ctx.dir, "repo.git"), ["show", `factory/${id}:hello.txt`])).trim()).toBe("hello");
     expect(engine.notifications()).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "folder", title: "Add hello", body: expect.stringContaining(`factory/${id} was not copied to ${folder}`) })]));

@@ -1,10 +1,10 @@
-import { OrderPlan } from "@pecore/schemas";
+import { JobRequest } from "@pecore/schemas";
 import type { Recipe, StoredEvent } from "@pecore/schemas";
 import { hasCommitNode } from "../definitions/recipe-check";
 import type { ProjectContext } from "../graph/executor";
 import { createJob, JobCreateError, jobRecipeName, recipeForJob } from "./create";
 
-export type OrderPlanResult = { accepted: boolean; plan: OrderPlan; jobIds: Record<string, string> };
+export type CreateJobsResult = { accepted: boolean; plan: JobRequest[]; jobIds: Record<string, string> };
 
 type PlannedOrder = Extract<StoredEvent, { type: "order.planned" }>["payload"];
 const creating: WeakMap<ProjectContext, Map<string, Promise<void>>> = new WeakMap();
@@ -14,9 +14,9 @@ function orderJobs(ctx: ProjectContext, orderId: string): Map<string, string> {
   return new Map(rows.map(({ id, order_key }) => [order_key, id]));
 }
 
-function validatePlan(ctx: ProjectContext, plan: OrderPlan): PlannedOrder["plan"] {
+function validatePlan(ctx: ProjectContext, plan: JobRequest[]): PlannedOrder["plan"] {
   const recipes: Map<string, Recipe> = new Map();
-  return OrderPlan.parse(plan).map((entry) => {
+  return JobRequest.array().parse(plan).map((entry) => {
     if (recipes.has(entry.key)) throw new JobCreateError(`duplicate order key ${entry.key}`);
     const parentKey: string | undefined = entry.dependsOn[0];
     if (parentKey !== undefined) {
@@ -42,7 +42,8 @@ async function createMissing(ctx: ProjectContext, { orderId, plan }: PlannedOrde
       if (attachmentIds.length && !ctx.orderAttachments) throw new JobCreateError("order attachments are unavailable");
       const id: string = await createJob(ctx, {
         title: entry.title,
-        ticket: { text: entry.ticketText, id: entry.ticketId },
+        request: entry.request,
+        ticketId: entry.ticketId,
         recipe: entry.recipe,
         baseBranch: entry.baseBranch,
         parentJobId,
@@ -70,7 +71,7 @@ function finishPlan(ctx: ProjectContext, planned: PlannedOrder): Promise<void> {
   return completion;
 }
 
-export async function planOrder(ctx: ProjectContext, orderId: string, plan: OrderPlan): Promise<OrderPlanResult> {
+export async function planOrder(ctx: ProjectContext, orderId: string, plan: JobRequest[]): Promise<CreateJobsResult> {
   const events: StoredEvent[] = ctx.db.orderEvents(orderId);
   const stored = events.find((event) => event.type === "order.planned");
   if (stored) {

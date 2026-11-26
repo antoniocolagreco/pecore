@@ -7,7 +7,7 @@ describe("auth versus network on forge nodes (decision 4)", () => {
     const { forge, engine } = await forgeProject();
     const p = engine.project("shop");
     await forge.set({ offline: true });
-    const id = await engine.createJob("shop", { title: "Add hello", ticket: { text: "x", id: "7" } });
+    const id = await engine.createJob("shop", { title: "Add hello", request: "x", ticketId: "7" });
     await until(() => p.executor.job(id).waiting_reason === "network");
     const run = p.ctx.db.db.prepare("SELECT node, waiting_reason FROM node_runs WHERE job_id = ? AND state = 'waiting'").get(id);
     expect(run).toEqual({ node: "pr", waiting_reason: "network" });
@@ -19,7 +19,7 @@ describe("auth versus network on forge nodes (decision 4)", () => {
   it("an expired login waits for auth with kind tool, before the command runs", async () => {
     const { forge, engine } = await forgeProject();
     const p = engine.project("shop");
-    const id = await engine.createJob("shop", { title: "Add hello", ticket: { text: "x", id: "7" } });
+    const id = await engine.createJob("shop", { title: "Add hello", request: "x", ticketId: "7" });
     await until(() => p.executor.job(id).state !== "queued");
     await forge.set({ tokenValid: false });
     await until(() => p.executor.job(id).waiting_reason === "auth");
@@ -36,7 +36,7 @@ describe("auth versus network on forge nodes (decision 4)", () => {
     const p = project.engine.project("shop");
     const settings = p.ctx.settings;
     p.ctx.settings = { ...settings, minFreeDiskGb: 1e12 };
-    const id = await project.engine.createJob("shop", { title: "Add hello", ticket: { text: "x", id: "7" } });
+    const id = await project.engine.createJob("shop", { title: "Add hello", request: "x", ticketId: "7" });
     await until(() => p.executor.job(id).waiting_reason === "disk");
     const release = async () => {
       p.ctx.settings = settings;

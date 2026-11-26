@@ -1,8 +1,9 @@
+import { Dialog } from "../ds/overlay";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { Artifact, HumanInterface, humanInterfaces } from "@pecore/schemas";
-import type { QueueItemView } from "@pecore/schemas";
+import type { CodeReviewArtifact, QueueItemView } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
@@ -43,9 +44,9 @@ function Snapshot({ value }: { value: unknown }) {
 }
 
 const artifactLabel: Record<Artifact["type"], string> = {
-  text: "Text", diff: "Changes", document: "Document", spec: "Spec", findings: "Findings", reference: "Reference", attachment: "Attachment",
+  feedback: "Feedback", log: "Log", diff: "Changes", spec: "Spec", code_review: "Code review", code_analysis: "Code analysis", sha: "Commit SHA", pull_request: "Pull request", attachment: "Attachment",
 };
-const reportOrder: Artifact["type"][] = ["document", "spec", "findings", "text", "reference"];
+const reportOrder: Artifact["type"][] = ["spec", "code_analysis", "code_review", "feedback", "log", "pull_request", "sha"];
 
 function Shown({ artifacts }: { artifacts: Artifact[] }) {
   const sorted: Artifact[] = [...artifacts].sort((a, b) => (reportOrder.indexOf(a.type) + 99) % 99 - (reportOrder.indexOf(b.type) + 99) % 99);
@@ -56,14 +57,16 @@ function Shown({ artifacts }: { artifacts: Artifact[] }) {
   );
 }
 
-function CodeReview({ artifacts }: { artifacts: Artifact[] }) {
+type ReviewLine = { file: string; line: number };
+
+function CodeReview({ artifacts, onComment }: { artifacts: Artifact[]; onComment?: ((line: ReviewLine) => void) | undefined }) {
   const diff: Artifact | undefined = artifacts.find((a) => a.type === "diff");
   if (!diff) return <EmptyState title="No code changes to review." />;
-  const findings: Artifact[] = artifacts.filter((a) => a.type === "findings");
+  const reports: Artifact[] = artifacts.filter((a) => a.type === "code_analysis" || a.type === "code_review");
   return (
     <div className={ui.stack}>
-      <div><strong>Changes</strong><ArtifactView artifact={diff} findings={findings[0]} /></div>
-      {findings.length > 0 && <Shown artifacts={findings} />}
+      <div><strong>Changes</strong><ArtifactView artifact={diff} analysis={reports.find(({ type }) => type === "code_analysis")} onComment={onComment} /></div>
+      {reports.length > 0 && <Shown artifacts={reports} />}
     </div>
   );
 }
@@ -76,7 +79,7 @@ function Decision({ artifacts }: { artifacts: Artifact[] }) {
   return artifacts.length ? <Shown artifacts={artifacts} /> : null;
 }
 
-const humanViews: Record<HumanInterface, (props: { artifacts: Artifact[] }) => ReactNode> = {
+const humanViews: Record<HumanInterface, (props: { artifacts: Artifact[]; onComment?: ((line: ReviewLine) => void) | undefined }) => ReactNode> = {
   "code-review": CodeReview,
   "report-review": ReportReview,
   decision: Decision,
@@ -86,7 +89,7 @@ function humanInterface(subject: Record<string, unknown>): HumanInterface | unde
   return HumanInterface.safeParse(subject.interface).data;
 }
 
-function Subject({ item, connected }: { item: QueueItemView; connected: boolean }) {
+function Subject({ item, connected, onComment }: { item: QueueItemView; connected: boolean; onComment: ((line: ReviewLine) => void) | undefined }) {
   const subject: Record<string, unknown> = record(item.subject);
   switch (item.kind) {
     case "human-node": {
@@ -97,9 +100,10 @@ function Subject({ item, connected }: { item: QueueItemView; connected: boolean 
         <>
           {typeof subject.node === "string" && <div>Node: {subject.node}</div>}
           {typeof subject.description === "string" && <div>{subject.description}</div>}
-          {iface !== "decision" && typeof subject.contentState === "string" && <div>Content state: <code>{subject.contentState}</code></div>}
+          {iface !== "decision" && typeof subject.filesHash === "string" && <div>Files hash: <code>{subject.filesHash}</code></div>}
           {connected && item.jobId ? <Link to={`/jobs/${item.jobId}`}>Open the job</Link> : null}
-          {View && artifacts.success ? <View artifacts={artifacts.data} /> : <Snapshot value={item.subject} />}
+          {typeof record(subject.job).request === "string" && <section><strong>{String(record(subject.job).title)}</strong><p>{String(record(subject.job).request)}</p></section>}
+          {View && artifacts.success ? <View artifacts={artifacts.data} onComment={onComment} /> : <Snapshot value={item.subject} />}
         </>
       );
     }
@@ -135,17 +139,23 @@ function ItemDetail({ item, replacement, reload, onDone }: {
   onDone?(): void;
 }) {
   const connected: boolean = useConnected();
+  const [line, setLine] = useState<ReviewLine | null>(null);
+  const [comments, setComments] = useState<CodeReviewArtifact["comments"]>([]);
+  const [inline, setInline] = useState<string>("");
   const [note, setNote] = useState<string>("");
   const [submitted, setSubmitted] = useState<string | null>(null);
   const subject: Record<string, unknown> = record(item.subject);
   const notes: string[] = item.kind === "human-node" && Array.isArray(subject.notes) ? subject.notes.filter((outcome): outcome is string => typeof outcome === "string") : [];
   const acceptsNote: boolean = notes.length > 0;
   const iface: HumanInterface | undefined = item.kind === "human-node" ? humanInterface(subject) : undefined;
+  const inlineReview: boolean = iface === "code-review" && subject.inlineReview === true;
   const answer = useAction(async (choice: string) => {
     try {
       await call("answerQueue", {
         params: { id: item.id },
-        body: { choice, note: acceptsNote && note ? note : null, hash: item.subjectHash },
+        body: { choice, note: notes.includes(choice) && note ? note : null, hash: item.subjectHash,
+          ...(inlineReview && choice === "changes_requested" ? { input: { body: note, comments } } : {}),
+        },
       });
       setSubmitted(choice);
       onDone?.();
@@ -166,10 +176,24 @@ function ItemDetail({ item, replacement, reload, onDone }: {
         </Alert>
       )}
       <h2 className={s.kind}>{iface ? humanInterfaces[iface].label : queueKindLabel[item.kind]}</h2>
-      <Subject item={item} connected={connected} />
+      <Subject item={item} connected={connected} onComment={inlineReview && !locked && connected && !answer.busy ? setLine : undefined} />
       <div className={s.hash}>SHA-256 <code>{item.subjectHash}</code></div>
       {!locked && (
         <div className={s.answer}>
+          {line && <Dialog open onOpenChange={(open) => {
+            if (!open) { setInline(""); setLine(null); }
+          }} title={`Comment on ${line.file}:${line.line}`} footer={<>
+            <Button onClick={() => { setInline(""); setLine(null); }}>Cancel</Button>
+            <Button variant="primary" disabled={!inline.trim()} onClick={() => {
+              setComments([...comments, { ...line, text: inline.trim() }]);
+              setInline("");
+              setLine(null);
+            }}>Add comment</Button>
+          </>}>
+            <TextArea label="Comment" value={inline} onValueChange={setInline} autoFocus />
+          </Dialog>}
+          {comments.map(({ file, line, text }, index) => <div className={ui.row} key={index}><code>{file}:{line}</code><span>{text}</span>
+            <Button disabled={answer.busy} onClick={() => setComments(comments.filter((_, i) => i !== index))}>Remove</Button></div>)}
           {acceptsNote && <TextArea label="Note" description={`Sent with ${notes.join(", ")}`} value={note} onValueChange={setNote} disabled={!connected || answer.busy} placeholder="Optional: what should change, or why" />}
           <div className={ui.row}>
             {item.choices.map((choice) => (

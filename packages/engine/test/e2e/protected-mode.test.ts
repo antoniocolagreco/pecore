@@ -85,7 +85,7 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
       expect((await as(protectedUser, "id -un")).out).toBe(protectedUser);
 
       const project = engine.project("demo");
-      const job: string = await engine.createJob("demo", { title: "Who runs jobs", ticket: { text: "write who.txt" } });
+      const job: string = await engine.createJob("demo", { title: "Who runs jobs", request: "write who.txt" });
       await until(() => project.executor.job(job).state === "succeeded");
       expect((await gitApp(join(project.ctx.dir, "repo.git"), ["show", `factory/${job}:who.txt`])).trim()).toBe(protectedUser);
 
@@ -132,7 +132,7 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
       const repo: string = join(project.ctx.dir, "repo.git");
       expect((await execFileP("find", [repo, join(project.ctx.dir, "work"), "!", "-user", appUser])).stdout).toBe("");
       await gitApp(repo, ["update-ref", "-d", `refs/heads/factory/${job}`]);
-      const after: string = await engine.createJob("demo", { title: "Who runs jobs now", ticket: { text: "write who.txt" } });
+      const after: string = await engine.createJob("demo", { title: "Who runs jobs now", request: "write who.txt" });
       await until(() => project.executor.job(after).state === "succeeded");
       expect((await gitApp(repo, ["show", `factory/${after}:who.txt`])).trim()).toBe(appUser);
     } finally {

@@ -106,7 +106,7 @@ async function run(recipe: string) {
   const engine = await Engine.start({ home: join(root, "home"), templates });
   await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, [recipe]);
   const project = engine.project("demo");
-  const id = await engine.createJob("demo", { title: "Add add", ticket: { text: "add two numbers" } });
+  const id = await engine.createJob("demo", { title: "Add add", request: "add two numbers" });
   await until(() => ["succeeded", "failed"].includes(project.executor.job(id).state), 600_000);
   const runs = project.ctx.db.db.prepare("SELECT node, outcome FROM node_runs WHERE job_id = ? ORDER BY rowid").all(id);
   return { engine, project, id, runs };

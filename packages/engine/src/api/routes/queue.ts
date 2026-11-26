@@ -1,3 +1,4 @@
+import { CodeReviewArtifact } from "@pecore/schemas";
 import type { QueueItemView } from "@pecore/schemas";
 import type { Engine } from "../../main";
 import { HttpError } from "../server";
@@ -49,7 +50,9 @@ export function queueHandlers(engine: Engine) {
       if (item.state !== "open" || item.subject_hash !== body.hash) throw new HttpError("conflict", "the item changed, was resolved or was cancelled since it was shown");
       if (!(JSON.parse(item.choices) as string[]).includes(body.choice)) throw new HttpError("bad_request", `${body.choice} is not a choice of this item`);
       if (item.kind === "agent-question" && !body.note?.trim()) throw new HttpError("bad_request", "an answer is required");
-      await executor.answer(params.id, body.choice, body.note, body.hash);
+      const review = CodeReviewArtifact.safeParse(body.input);
+      if (body.input !== undefined && item.kind === "human-node" && !review.success) throw new HttpError("bad_request", "Check the inline review comments.");
+      await executor.answer(params.id, body.choice, body.note, body.hash, review.data);
       return { ok: true };
     },
   } satisfies Partial<Handlers>;

@@ -1,7 +1,7 @@
 import { readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { Name } from "@pecore/schemas";
-import type { Project } from "@pecore/schemas";
+import type { Project, Recipe } from "@pecore/schemas";
 import { z } from "zod";
 import { readJson, zodErrors } from "../definitions/load";
 import type { DefinitionError } from "../definitions/load";
@@ -49,4 +49,22 @@ export async function projectDefaults(templatesDir: string, repo: Project["repo"
     }
   }
   return { forge, rename };
+}
+
+export function recipeForForge(input: Recipe, rename: Readonly<Record<string, string>>): Recipe {
+  const recipe: Recipe = structuredClone(input);
+  for (const step of Object.values(recipe.nodes)) step.use = rename[step.use] ?? step.use;
+  for (const [id, step] of Object.entries(recipe.nodes)) {
+    if (step.use !== "write-pr") continue;
+    const edges = recipe.edges.filter(({ from }) => from === id);
+    const delivery = edges[0]?.to;
+    if (!delivery || edges.length !== 1 || edges[0]?.on !== "success" || recipe.nodes[delivery]?.use !== "git-delivery") continue;
+    recipe.edges = recipe.edges.filter(({ from }) => from !== id).map((edge) => edge.to === id ? { ...edge, to: delivery } : edge);
+    if (recipe.start === id) recipe.start = delivery;
+    if (recipe.onBaseChanged === id) recipe.onBaseChanged = delivery;
+    for (const consumer of Object.values(recipe.nodes)) consumer.reads = consumer.reads.filter((read) => read !== id && (consumer.use !== "post-delivery-to-ticket" || read !== delivery));
+    delete recipe.nodes[id];
+    if (recipe.layout) delete recipe.layout[id];
+  }
+  return recipe;
 }

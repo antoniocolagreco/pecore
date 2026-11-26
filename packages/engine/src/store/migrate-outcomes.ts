@@ -12,6 +12,15 @@ type RunRow = { id: string; job_id: string; node: string; outcome: string | null
 type QueueRow = { id: string; subject: string; choices: string; choice: string | null };
 type EventRow = { id: string; job_id: string | null; type: string; payload: string };
 
+function compatibleApproval(catalog: Catalog, name: string, approved: boolean = true) {
+  try {
+    const current = catalog.chatNode(name);
+    return current && (!approved || current.approved) ? current : null;
+  } catch {
+    return null;
+  }
+}
+
 function catalogRenames(db: Database.Database): Map<string, Renames> {
   const stored = db.prepare<[], { name: string; human_interface: string | null; outcomes: string }>(`
     SELECT n.name, n.human_interface, json_group_array(l.value ORDER BY l.position) AS outcomes
@@ -54,7 +63,7 @@ function migrateCatalogRecipes(db: Database.Database, lookup: OutcomeLookup): vo
   const saveCi = db.prepare("UPDATE catalog_recipes SET ci_on = ? WHERE name = ?");
   const saveSuccess = db.prepare("UPDATE catalog_recipe_lists SET value = ? WHERE recipe = ? AND field = 'successOutcomes' AND position = ?");
   for (const name of catalog.names("recipes")) {
-    const recipe: Recipe = catalog.recipe(name)!;
+    const recipe: Recipe = catalog.recipe(name, true)!;
     const atStep: OutcomeLookup = recipeStepOutcomes(recipe, lookup);
     for (const { position, source, outcome } of selectEdges.all(name)) {
       const renamed: string = atStep(source, outcome);
@@ -177,7 +186,7 @@ export function migrateOutcomes(db: Database.Database, sql: string, project: boo
   const updatePrompt = db.prepare("UPDATE catalog_node_content SET body = ? WHERE name = ?");
   for (const [name, renames] of byNode) {
     if (!renames.size) continue;
-    if ((approval.get(name) as { chat_approved_hash: string | null } | undefined)?.chat_approved_hash && catalog.chatNode(name)?.approved) approved.push(name);
+    if ((approval.get(name) as { chat_approved_hash: string | null } | undefined)?.chat_approved_hash && compatibleApproval(catalog, name)) approved.push(name);
     const key: string | null | undefined = prompt.get(name);
     const body: string | null = key ? catalog.content(key) : null;
     if (body !== null) updatePrompt.run(renameOutcomeMentions(body, renames), key);
@@ -192,7 +201,7 @@ export function migrateOutcomes(db: Database.Database, sql: string, project: boo
   }
   db.exec(sql);
   for (const name of approved) {
-    const current = catalog.chatNode(name);
+    const current = compatibleApproval(catalog, name, false);
     if (current) catalog.approveChatNode(name, current.hash);
   }
 }

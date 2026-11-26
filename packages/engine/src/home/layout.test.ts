@@ -25,7 +25,7 @@ describe("PECORE_HOME layout", () => {
       await seedTemplates(catalog, shippedTemplates);
       expect(catalog.node("git-commit")).toMatchObject({ kind: "command", script: "git-commit.sh" });
       expect(catalog.content("git-commit.sh")).toContain("git commit");
-      expect(catalog.recipe("feature-to-pr")).toMatchObject({ name: "feature-to-pr", start: "spec", nodes: { spec: { reads: ["@start"] } } });
+      expect(catalog.recipe("feature-to-pr")).toMatchObject({ name: "feature-to-pr", start: "spec", nodes: { spec: { reads: [] } } });
       const node: Node = Node.parse({ name: "builder", kind: "human", interface: "decision", description: "Mine", outcomes: ["accept"] });
       catalog.saveNode(node);
       catalog.saveContent("custom.md", "My context");

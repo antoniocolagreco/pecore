@@ -122,6 +122,7 @@ export function jobHandlers(engine: Engine) {
       const db = ctx.db.db;
       return {
         job: jobView(ctx.id, row as JobDbRow),
+        request: row.request,
         nodeRuns: (db.prepare("SELECT * FROM node_runs WHERE job_id = ? ORDER BY rowid").all(row.id) as NodeRunDbRow[]).map(nodeRunView),
         attempts: (db.prepare("SELECT a.* FROM attempts a JOIN node_runs n ON a.node_run_id = n.id WHERE n.job_id = ? ORDER BY a.started_at").all(row.id) as AttemptDbRow[]).map(attemptView),
         artifacts: executor.artifacts(row.id),
@@ -144,7 +145,8 @@ export function jobHandlers(engine: Engine) {
       try {
         const id = await engine.createJob(body.project, {
           title: body.title,
-          ticket: body.ticket,
+          request: body.request,
+          ticketId: body.ticketId,
           parentJobId: body.parentJobId,
           ...(body.recipe !== undefined ? { recipe: body.recipe } : {}),
           ...(body.baseBranch !== undefined ? { baseBranch: body.baseBranch } : {}),

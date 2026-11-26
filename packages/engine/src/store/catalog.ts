@@ -41,7 +41,6 @@ type RecipeRow = {
 type StepRow = {
   step: string;
   node: string;
-  optional: number;
   agent_id: string | null;
   agent_session: string | null;
   skip_when_unchanged: number;
@@ -232,7 +231,7 @@ export class Catalog {
     }
   }
 
-  recipe(name: string): Recipe | null {
+  recipe(name: string, omitStartRead: boolean = false): Recipe | null {
     const row: RecipeRow | undefined = this.db.prepare<[string], RecipeRow>("SELECT * FROM catalog_recipes WHERE name = ?").get(name);
     if (!row) return null;
     const list = (field: string): string[] => this.strings("SELECT value FROM catalog_recipe_lists WHERE recipe = ? AND field = ? ORDER BY position", name, field);
@@ -247,22 +246,22 @@ export class Catalog {
       ...(row.ci_after === null ? {} : {
         ci: { after: row.ci_after, on: row.ci_on, intervalSec: row.ci_interval_sec, timeoutSec: row.ci_timeout_sec, maxCorrections: row.ci_max_corrections, checks: list("ciChecks") },
       }),
-      nodes: this.recipeSteps(name),
+      nodes: this.recipeSteps(name, omitStartRead),
       edges: edges.filter(({ result }) => result === null).map((edge) => ({ ...connection(edge), to: edge.target, maxRounds: edge.max_rounds ?? undefined })),
       ...(row.has_ends ? { ends: edges.filter(({ result }) => result !== null).map((edge) => ({ ...connection(edge), result: edge.result })) } : {}),
     });
   }
 
-  private recipeSteps(name: string): Record<string, unknown> {
+  private recipeSteps(name: string, omitStartRead: boolean): Record<string, unknown> {
     const steps: StepRow[] = this.db.prepare<[string], StepRow>("SELECT * FROM catalog_recipe_steps WHERE recipe = ? ORDER BY position").all(name);
     return Object.fromEntries(steps.map((step) => {
       const list = (field: string): string[] =>
         this.strings("SELECT value FROM catalog_step_lists WHERE recipe = ? AND step = ? AND field = ? ORDER BY position", name, step.step, field);
       const profiles: string[] = step.has_agent ? list("profiles") : [];
       return [step.step, {
-        use: step.node, optional: !!step.optional, skipWhenUnchanged: !!step.skip_when_unchanged,
+        use: step.node, skipWhenUnchanged: !!step.skip_when_unchanged,
         agentId: step.agent_id ?? undefined, agentSession: step.agent_session ?? undefined,
-        requires: list("requires"), reads: list("reads"),
+        requires: list("requires"), reads: omitStartRead ? list("reads").filter((read) => read !== "@start") : list("reads"),
         ...(step.has_params ? { params: this.params("SELECT name, value FROM catalog_step_params WHERE recipe = ? AND step = ? ORDER BY name", name, step.step) } : {}),
         ...(step.has_agent ? { agent: {
           tier: step.tier ?? undefined, ...(profiles.length ? { profiles } : {}),
@@ -303,10 +302,10 @@ export class Catalog {
 
   private saveRecipeSteps(recipe: Recipe): void {
     const insert: Database.Statement = this.db.prepare(`INSERT INTO catalog_recipe_steps
-      (recipe, step, position, node, optional, agent_id, agent_session, skip_when_unchanged, has_params, has_agent, tier, has_provider_not)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      (recipe, step, position, node, agent_id, agent_session, skip_when_unchanged, has_params, has_agent, tier, has_provider_not)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     for (const [i, [id, step]] of Object.entries(recipe.nodes).entries()) {
-      insert.run(recipe.name, id, i, step.use, Number(step.optional), step.agentId ?? null, step.agentSession ?? null, Number(step.skipWhenUnchanged),
+      insert.run(recipe.name, id, i, step.use, step.agentId ?? null, step.agentSession ?? null, Number(step.skipWhenUnchanged),
         Number(step.params !== undefined), Number(step.agent !== undefined), step.agent?.tier ?? null, Number(step.agent?.providerNot !== undefined));
       this.writeParams("INSERT INTO catalog_step_params (recipe, step, name, value) VALUES (?, ?, ?, ?)", [recipe.name, id], step.params ?? {});
       this.writeLists("INSERT INTO catalog_step_lists (recipe, step, field, position, value) VALUES (?, ?, ?, ?, ?)", [recipe.name, id], {

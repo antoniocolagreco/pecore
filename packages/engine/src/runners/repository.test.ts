@@ -38,13 +38,13 @@ it("requires a Repository account and passes its credentials only to the Reposit
       edges: [{ from: "publish", on: "done", to: "check" }], successOutcomes: ["check:passed"],
     });
     ctx.defs.recipes.set(recipe.name, recipe);
-    await expect(createJob(ctx, { title: "Publish", ticket: { text: "Publish this" }, recipe: recipe.name }))
+    await expect(createJob(ctx, { title: "Publish", request: "Publish this", recipe: recipe.name }))
       .rejects.toThrow(/choose a Git hosting account/i);
     expect(executor.jobs()).toEqual([]);
 
     ctx.forgeAccount = (id) => id === forgeAccount.id ? forgeAccount : undefined;
     await engine.pauseAll();
-    const id: string = await engine.createJob("demo", { title: "Publish", ticket: { text: "Publish this" }, recipe: recipe.name });
+    const id: string = await engine.createJob("demo", { title: "Publish", request: "Publish this", recipe: recipe.name });
     expect(jobDefinitions(ctx.db, id)?.nodes.publish?.definition).toHaveProperty("account", forgeAccount.id);
     ctx.forgeAccount = () => undefined;
     await engine.playAll();

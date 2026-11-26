@@ -1,11 +1,11 @@
-import { ApiError, FindingsArtifact } from "@pecore/schemas";
+import { ApiError } from "@pecore/schemas";
 import type { Artifact, AttemptView, JobDetail, JobView as Job, NodeRunView, WhyReason } from "@pecore/schemas";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
-import { artifactKey, ArtifactView, diffFiles, Findings, latestFindings, readArtifact, Reference, useDelivery } from "../components/ArtifactView";
+import { artifactKey, ArtifactView, diffFiles, latestAnalysis, readArtifact, PullRequestLink, useDelivery } from "../components/ArtifactView";
 import { isFinal, JobControls } from "../components/JobControls";
 import { JobGraph, latestRuns, useRecipe } from "../components/JobGraph";
 import { NodeRunDetail } from "../components/NodeRunDetail";
@@ -18,7 +18,7 @@ import { Alert, Badge, Card, EmptyState, Spinner } from "../ds/feedback";
 import { ArrowRightIcon, FolderIcon } from "../ds/icons";
 import s from "./JobView.module.css";
 
-type Tab = "graph" | "history" | "ticket";
+type Tab = "graph" | "history" | "request";
 type HistoryEntry = { run: NodeRunView; attempt: AttemptView | null; index: number };
 const historyPageSize: number = 40;
 
@@ -48,12 +48,12 @@ function Result({ detail, definitions }: { detail: JobDetail; definitions: Retur
   const [fileLimit, setFileLimit] = useState<number>(40);
   const { job, artifacts, nodeRuns } = detail;
   const diff: Artifact | undefined = artifacts.findLast((artifact) => artifact.type === "diff");
-  const risk: Artifact | undefined = latestFindings(artifacts, diff?.contentState ?? null);
-  const findings: Artifact | undefined = artifacts.findLast((artifact) => artifact.type === "findings");
+  const risk: Artifact | undefined = latestAnalysis(artifacts, diff?.filesHash ?? null);
+  const review: Artifact | undefined = artifacts.findLast((artifact) => artifact.type === "code_review");
   const files = useData(async () => diff ? diffFiles((await readArtifact(diff)).content) : null, [diff && artifactKey(diff), diff?.sha256]);
-  const report = useData(async () => findings ? FindingsArtifact.parse(JSON.parse((await readArtifact(findings)).content)) : null, [findings && artifactKey(findings), findings?.sha256]);
   const delivered = useDelivery(artifacts);
   const last: NodeRunView | undefined = nodeRuns.at(-1);
+  const branchDelivered: boolean = nodeRuns.some(({ node, outcome }) => outcome === "success" && definitions?.recipe.nodes[node]?.use === "git-delivery");
   const outcome: string | null = job.failureReason ?? (job.state === "stopped" ? null : last?.outcome ?? last?.failureReason ?? null);
   const checks: NodeRunView[] = [...latestRuns(nodeRuns).values()].filter((run) => {
     const use: string | undefined = definitions?.recipe.nodes[run.node]?.use;
@@ -77,14 +77,14 @@ function Result({ detail, definitions }: { detail: JobDetail; definitions: Retur
               </>
             )}
             <Button disabled={!connected} onClick={() => setPatchOpen(!patchOpen)} aria-expanded={patchOpen}>Diff</Button>
-            {patchOpen && <ArtifactView artifact={diff} findings={risk} />}
+            {patchOpen && <ArtifactView artifact={diff} analysis={risk} />}
           </section>
         )}
         {!!checks.length && (
           <section><h3>Checks</h3><ul>{checks.map((run) => <li key={run.node}>{run.node} · {run.outcome ?? run.failureReason ?? run.state}</li>)}</ul></section>
         )}
-        {findings && <section><h3>Latest findings</h3><ErrorText error={report.error} />{report.data && <Findings findings={report.data} />}</section>}
-        {delivered.data && <section><h3>Delivery</h3><Reference content={delivered.data} /></section>}
+        {review && <section><h3>Latest code review</h3><ArtifactView artifact={review} /></section>}
+        {(delivered.data || branchDelivered) && <section><h3>Delivery</h3>{delivered.data ? <PullRequestLink url={delivered.data} /> : <code>{job.branch}</code>}</section>}
         <ErrorText error={delivered.error} />
       </section>
     </Card>
@@ -149,9 +149,9 @@ function Loaded({ detail, error, reasons, whyError, reload }: { detail: JobDetai
   const baseChanged: boolean = (firstBase.current !== null && job.base !== null && job.base !== firstBase.current) || job.target !== firstTarget.current ||
     (job.parentJobId === null && job.target !== job.baseBranch);
   const recipe = useRecipe(job);
-  const ticket: Artifact | undefined = artifacts.find((artifact) => artifact.type === "document");
   const delivery = useDelivery(artifacts);
-  const canCheck: boolean = job.mergedAt === null && Boolean(delivery.data);
+  const branchDelivered: boolean = nodeRuns.some(({ node, outcome }) => outcome === "success" && recipe.data?.recipe.nodes[node]?.use === "git-delivery");
+  const canCheck: boolean = job.mergedAt === null && Boolean(delivery.data || branchDelivered);
   const merge = useAction(async (manual: boolean) => {
     setMergeStatus(null);
     const result = await call("checkMerge", { params: { id: job.id } });
@@ -207,7 +207,7 @@ function Loaded({ detail, error, reasons, whyError, reload }: { detail: JobDetai
             tabs={[
               { value: "graph", label: "Graph", content: graph },
               { value: "history", label: "History", content: <History detail={detail} selected={selection} onSelect={setSelection} /> },
-              ...(ticket ? [{ value: "ticket", label: "Ticket", content: <ArtifactView artifact={ticket} /> }] : []),
+              { value: "request", label: "Request", content: <div className={ui.stack}><p>{detail.request}</p>{artifacts.filter(({ type }) => type === "attachment").map((artifact) => <div key={artifactKey(artifact)}>{artifact.name}</div>)}</div> },
             ]}
           />
         </Card>

@@ -6,7 +6,7 @@
   "prompt": "builder.md",
   "agent": { "tier": "strong" },
   "outcomes": ["success", "tests_disputed"],
-  "outputs": { "tests_disputed": "text" },
+  "outputs": { "tests_disputed": "feedback" },
   "changesFiles": true,
   "timeoutSec": 3600
 }

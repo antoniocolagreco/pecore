@@ -30,7 +30,7 @@ describe.skipIf(!real)("phase 3 gate: local-only job with Claude Code, normal mo
     const p = engine.project("demo");
     const id = await engine.createJob("demo", {
       title: "Add a sum function",
-      ticket: { text: "Create src/math.ts exporting `sum(a: number, b: number): number` that returns a + b. Add Vitest tests for it. The repository is empty: set up a minimal TypeScript project." },
+      request: "Create src/math.ts exporting `sum(a: number, b: number): number` that returns a + b. Add Vitest tests for it. The repository is empty: set up a minimal TypeScript project.",
     });
     for (;;) {
       await new Promise((r) => setTimeout(r, 2000));

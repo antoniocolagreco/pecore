@@ -14,7 +14,7 @@ import { homePaths } from "../../home/layout";
 import { NotFoundError } from "../../main";
 import type { Engine } from "../../main";
 import { forgeAccountOf, ProjectCreateError } from "../../projects/create";
-import { loadForgeDefaults, projectDefaults } from "../../projects/defaults";
+import { loadForgeDefaults, projectDefaults, recipeForForge } from "../../projects/defaults";
 import { absoluteProjectFolder, changeProjectLocation, ProjectLocationConflict, sameRepository } from "../../projects/location";
 import type { Catalog } from "../../store/catalog";
 import { HttpError } from "../server";
@@ -492,7 +492,10 @@ export function definitionOperations(engine: Engine) {
       if (kind === "node") return { created: [], kept: [], errors: [{ file: `templates/nodes/${name}.json`, path: "", message: "Add the node to a recipe in Templates." }] };
       if (project.recipes.includes(name)) return { created: [], kept: [path], errors: [] };
       const templates = await loadTemplates(home.templates, engine.catalog);
-      const recipe: Recipe | undefined = templates.recipes.get(name);
+      const template: Recipe | undefined = templates.recipes.get(name);
+      const account = project.repo && forgeAccountOf(project, engine.global().accounts);
+      const defaults = account ? await projectDefaults(engine.opts.templates, project.repo, account.forge) : null;
+      const recipe: Recipe | undefined = template && recipeForForge(template, defaults?.rename ?? {});
       const errors: DefinitionError[] = recipe
         ? checkRecipe(recipe, templates.nodes, project.repo !== null).map((issue) => ({ file: path, ...issue }))
         : [{ file: path, path: "name", message: `recipe template ${name} not found` }];
@@ -515,12 +518,12 @@ export function definitionOperations(engine: Engine) {
         throw e;
       }
     }
-    const recipe: Recipe | null = kind === "recipe" ? engine.catalog.recipe(name) : null;
+    const template: Recipe | null = kind === "recipe" ? engine.catalog.recipe(name) : null;
+    const recipe: Recipe | null = template && recipeForForge(template, rename);
     const errors: DefinitionError[] = [];
     if (kind === "recipe" && !recipe) {
       return { created: [], kept: [], errors: [{ file: `templates/recipes/${name}.json`, path: "", message: `recipe template ${name} not found` }] };
     }
-    if (recipe) for (const step of Object.values(recipe.nodes)) step.use = Object.hasOwn(rename, step.use) ? rename[step.use]! : step.use;
     const created: string[] = [];
     const kept: string[] = [];
     const nodes: Map<string, Node> = new Map();

@@ -5,7 +5,6 @@
   "kind": "repository",
   "account": "project.account",
   "outcomes": ["success", "failure"],
-  "outputs": { "success": "reference" },
   "failOutcomes": ["failure"],
   "changesFiles": false,
   "script": "set -e\nrepo=\"$PECORE_PROJECT_REPO_OWNER/$PECORE_PROJECT_REPO_NAME\"\nif ! project=$(glab repo view \"$PECORE_PROJECT_REPO_URL\" --output json 2>&1); then\n  case \"$project\" in\n    *': 404 '*|*'404 Project Not Found'*) glab repo create \"$repo\" --private --skipGitInit >/dev/null ;;\n    *) printf '%s\\n' \"$project\" >&2; exit 1 ;;\n  esac\n  project=$(glab repo view \"$PECORE_PROJECT_REPO_URL\" --output json)\nfi\nurl=$(printf '%s\\n' \"$project\" | jq -er '.web_url | strings | select(length > 0)')\ngit --git-dir=\"$PECORE_PROJECT_REPODIR\" -c core.hooksPath=/dev/null \\\n  -c credential.helper= -c 'credential.helper=!glab auth git-credential' \\\n  push \"$PECORE_PROJECT_REPO_URL\" \"refs/heads/$PECORE_PROJECT_BASEBRANCH\"\nprintf '%s\\n' \"$url\"",
@@ -14,6 +13,5 @@
     { "exitCode": 0, "outcome": "success" },
     { "exitCode": "other", "outcome": "failure" }
   ],
-  "outputRules": { "success": { "stdoutLastLine": "url" } },
   "timeoutSec": 120
 }

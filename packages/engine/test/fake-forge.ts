@@ -3,7 +3,7 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tempDir } from "./tmp";
 
-export type Pr = { number: number; url: string; repo: string; head: string; base: string; title: string; state: "OPEN" | "MERGED" };
+export type Pr = { number: number; url: string; repo: string; head: string; base: string; title: string; body: string; state: "OPEN" | "MERGED" };
 export type ForgeState = {
   offline: boolean;
   tokenValid: boolean;
@@ -19,6 +19,7 @@ const gh = String.raw`#!/usr/bin/env node
 const fs = require("node:fs");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
+const readBody = () => fs.readFileSync(0, "utf8");
 const dir = path.join(__dirname, "..");
 const file = path.join(dir, "state.json");
 const read = () => JSON.parse(fs.readFileSync(file, "utf8"));
@@ -49,12 +50,12 @@ if (s.offline) fail("error connecting to api.github.com");
 const repo = flag("--repo") ?? flag("-R");
 if (cmd === "pr list") {
   const pr = s.prs.find((p) => p.repo === repo && p.head === flag("--head") && (flag("--base") === undefined || p.base === flag("--base")) && p.state === "OPEN");
-  done(pr ? pr.url : undefined);
+  done(flag("--jq") ? pr?.url : JSON.stringify(pr ? [pr] : []));
 }
 if (cmd === "pr create") {
   const n = s.prs.length + 1;
   const url = "https://github.com/" + repo + "/pull/" + n;
-  s.prs.push({ number: n, url, repo, head: flag("--head"), base: flag("--base"), title: flag("--title"), state: "OPEN" });
+  s.prs.push({ number: n, url, repo, head: flag("--head"), base: flag("--base"), title: flag("--title"), body: readBody(), state: "OPEN" });
   write(s);
   done(url);
 }
@@ -62,6 +63,8 @@ if (cmd === "pr edit") {
   const pr = s.prs.find((p) => p.url === positional[0]);
   if (!pr) fail("no pull request " + positional[0]);
   pr.base = flag("--base");
+  if (flag("--title")) pr.title = flag("--title");
+  if (flag("--body-file")) pr.body = readBody();
   write(s);
   done();
 }

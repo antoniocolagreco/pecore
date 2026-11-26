@@ -9,9 +9,9 @@ const githubPr = {
   kind: "repository",
   account: "project.account",
   inputs: ["spec"],
-  optionalInputs: ["document"],
+  optionalInputs: ["pull_request"],
   outcomes: ["opened", "failed"],
-  outputs: { opened: "reference" },
+  outputs: { opened: "sha" },
   failOutcomes: ["failed"],
   changesFiles: false,
   script: 'gh pr create --head "$PECORE_JOB_BRANCH"',
@@ -31,12 +31,12 @@ const builder = {
   prompt: "builder.md",
   agent: { tier: "strong" },
   outcomes: ["done", "tests_disputed"],
-  outputs: { tests_disputed: "text" },
+  outputs: { tests_disputed: "feedback" },
   changesFiles: true,
   timeoutSec: 3600,
 };
 
-const review = { name: "review", description: "Review the job", kind: "human", interface: "code-review", outcomes: ["approve", "changes", "reject"], outputs: { changes: "text" } };
+const review = { name: "review", description: "Review the job", kind: "human", interface: "code-review", outcomes: ["approve", "changes", "reject"], outputs: { changes: "feedback" } };
 
 const issues = (value: unknown) => {
   const r = Node.safeParse(value);
@@ -81,10 +81,10 @@ describe("node schema", () => {
   });
 
   it("gives each outcome at most one output, of a known type, on a known outcome", () => {
-    expect(issues({ ...builder, outputs: { done: "text", tests_disputed: "findings" } })).toEqual([]);
-    expect(issues({ ...builder, outputs: { merged: "text" } })).toContain("outputs.merged: merged is not in outcomes");
+    expect(issues({ ...builder, outputs: { done: "feedback", tests_disputed: "code_review" } })).toEqual([]);
+    expect(issues({ ...builder, outputs: { merged: "feedback" } })).toContain("outputs.merged: merged is not in outcomes");
     expect(issues({ ...builder, outputs: { done: "risk" } }).length).toBeGreaterThan(0);
-    expect(issues({ ...builder, outputs: { done: ["text", "spec"] } }).length).toBeGreaterThan(0);
+    expect(issues({ ...builder, outputs: { done: ["feedback", "spec"] } }).length).toBeGreaterThan(0);
   });
 
   it("declares inputs only on commands", () => {
@@ -138,7 +138,7 @@ describe("node schema", () => {
 
   it("lists the outputs the engine adds", () => {
     expect(automaticOutputs(Node.parse(builder))).toEqual(["diff"]);
-    expect(automaticOutputs(Node.parse(githubPr))).toEqual(["text"]);
+    expect(automaticOutputs(Node.parse(githubPr))).toEqual([]);
     expect(automaticOutputs(Node.parse(review))).toEqual([]);
   });
 });
@@ -182,12 +182,12 @@ describe("human node", () => {
 
   it("gives review interfaces result names and reads legacy reviews", () => {
     expect(issues(review)).toEqual([]);
-    expect(issues({ ...review, interface: "report-review", outcomes: ["approved", "changes_requested", "rejected"], outputs: { changes_requested: "text" } })).toEqual([]);
+    expect(issues({ ...review, interface: "report-review", outcomes: ["approved", "changes_requested", "rejected"], outputs: { changes_requested: "feedback" } })).toEqual([]);
     expect(issues({ ...review, outcomes: ["approve", "reject"], outputs: {} })).toEqual(["outcomes: Code review needs approved, changes_requested, rejected"]);
   });
 
-  it("lets a person write only text", () => {
-    expect(issues({ ...review, outputs: { changes: "findings" } })).toEqual(["outputs.changes: a person can only write text"]);
+  it("lets a person write feedback or a code review", () => {
+    expect(issues({ ...review, outputs: { changes: "code_analysis" } })).toEqual(["outputs.changes: Choose feedback or a code review for human input."]);
   });
 
   it("rejects the old mode, view and answer fields", () => {

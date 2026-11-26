@@ -7,7 +7,7 @@
   "prompt": "approver.md",
   "agent": { "tier": "standard" },
   "outcomes": ["success"],
-  "outputs": { "success": "findings" },
+  "outputs": { "success": "code_analysis" },
   "changesFiles": false,
   "timeoutSec": 1200
 }

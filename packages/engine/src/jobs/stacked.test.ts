@@ -25,14 +25,14 @@ const nodes = (marker: string): Record<string, object> => ({
     description: "pretends to open a pull request",
     kind: "repository",
     account: "git-fixture",
-    script: 'echo "https://forge.example.com/pr/$PECORE_JOB_ID"',
+    script: `jq -nc --arg url "https://forge.example.com/pr/$PECORE_JOB_ID" '{title:"Work",body:"",url:$url}'`,
     probe: ["/bin/sh", "-c", "exit 0"],
     mergedCheck: ["/bin/sh", "-c", `test -f ${marker} && echo MERGED || true`],
     outcomes: ["opened"],
-    outputs: { opened: "reference" },
+    outputs: { opened: "pull_request" },
     changesFiles: false,
     outcomeRules: [{ exitCode: 0, outcome: "opened" }],
-    outputRules: { opened: { stdoutLastLine: "url" } },
+    outputRules: { opened: { stdoutJson: "" } },
     timeoutSec: 30,
   },
 });
@@ -115,10 +115,29 @@ async function setup() {
 }
 
 describe("stacked jobs (4.6, decision 10)", () => {
+  it("records all inline comments and the general note in one code review", async () => {
+    const { engine, p, job, openItem } = await setup();
+    try {
+      const id: string = await engine.createJob("demo", { title: "Review", request: "Add Review.txt", recipe: "reviewed" });
+      const item = await until(() => openItem(id));
+      const review = { body: "Revise the file", comments: [
+        { file: "Review.txt", line: 1, text: "Use the requested name." },
+        { file: "main.txt", line: 3, text: "Keep this behaviour." },
+      ] };
+      await p.executor.answer(item.id, "changes_requested", review.body, item.subject_hash, review);
+      await until(() => job(id).state === "not_delivered");
+      const artifacts = p.executor.artifacts(id).filter(({ type }) => type === "code_review");
+      expect(artifacts).toHaveLength(1);
+      expect(JSON.parse(p.ctx.db.requireArtifact(artifacts[0]!).toString("utf8"))).toEqual(review);
+    } finally {
+      await engine.shutdown();
+    }
+  });
+
   it("a child waits for its parent, then starts from the parent's commit and targets the parent's branch", async () => {
     const { engine, p, job, files, sha, openItem } = await setup();
-    const parent = await engine.createJob("demo", { title: "parent", ticket: { text: "x" }, recipe: "reviewed" });
-    const child = await engine.createJob("demo", { title: "child", ticket: { text: "y" }, recipe: "plain", parentJobId: parent });
+    const parent = await engine.createJob("demo", { title: "parent", request: "x", recipe: "reviewed" });
+    const child = await engine.createJob("demo", { title: "child", request: "y", recipe: "plain", parentJobId: parent });
     expect(job(child)).toMatchObject({ state: "queued", waiting_reason: "parent_job", parent_job_id: parent, target: `factory/${parent}` });
     await until(() => openItem(parent));
     expect(job(child).state).toBe("queued");
@@ -132,8 +151,8 @@ describe("stacked jobs (4.6, decision 10)", () => {
 
   it("a child of a stopped parent shows parent_failed, and a parent with live children cannot be deleted", async () => {
     const { engine, p, job, openItem } = await setup();
-    const parent = await engine.createJob("demo", { title: "parent", ticket: { text: "x" }, recipe: "reviewed" });
-    const child = await engine.createJob("demo", { title: "child", ticket: { text: "y" }, recipe: "plain", parentJobId: parent });
+    const parent = await engine.createJob("demo", { title: "parent", request: "x", recipe: "reviewed" });
+    const child = await engine.createJob("demo", { title: "child", request: "y", recipe: "plain", parentJobId: parent });
     await until(() => openItem(parent));
     await p.executor.stop(parent);
     expect(job(child)).toMatchObject({ state: "queued", waiting_reason: "parent_failed" });
@@ -145,8 +164,8 @@ describe("stacked jobs (4.6, decision 10)", () => {
 
   it("refuses a parent whose recipe has no commit node", async () => {
     const { engine } = await setup();
-    const parent = await engine.createJob("demo", { title: "parent", ticket: { text: "x" }, recipe: "no-commit" });
-    await expect(engine.createJob("demo", { title: "child", ticket: { text: "y" }, recipe: "plain", parentJobId: parent })).rejects.toThrow("no commit node");
+    const parent = await engine.createJob("demo", { title: "parent", request: "x", recipe: "no-commit" });
+    await expect(engine.createJob("demo", { title: "child", request: "y", recipe: "plain", parentJobId: parent })).rejects.toThrow("no commit node");
     await engine.shutdown();
   });
 
@@ -161,8 +180,8 @@ describe("stacked jobs (4.6, decision 10)", () => {
 
   it("a new parent commit waits while the child works, then rebases the child when it ends (decision 15)", async () => {
     const { engine, p, repo, job, files, sha, openItem } = await setup();
-    const parent = await engine.createJob("demo", { title: "parent", ticket: { text: "x" }, recipe: "plain" });
-    const child = await engine.createJob("demo", { title: "child", ticket: { text: "y" }, recipe: "reviewed", parentJobId: parent });
+    const parent = await engine.createJob("demo", { title: "parent", request: "x", recipe: "plain" });
+    const child = await engine.createJob("demo", { title: "child", request: "y", recipe: "reviewed", parentJobId: parent });
     const review = await until(() => openItem(child));
     const first = await sha(parent);
     await moveMain(repo);
@@ -180,7 +199,7 @@ describe("stacked jobs (4.6, decision 10)", () => {
 
   it("the user can realign only a job that is not working; a stopped job re-enters at onBaseChanged", async () => {
     const { engine, p, repo, job, files, openItem } = await setup();
-    const id = await engine.createJob("demo", { title: "solo", ticket: { text: "x" }, recipe: "reviewed" });
+    const id = await engine.createJob("demo", { title: "solo", request: "x", recipe: "reviewed" });
     await until(() => openItem(id));
     await moveMain(repo);
     await expect(p.executor.requestBaseChange(id, "realign", "main")).rejects.toThrow("only when it is stopped or finished");
@@ -194,9 +213,9 @@ describe("stacked jobs (4.6, decision 10)", () => {
 
   it("merge detection moves the children to the parent's target with base at its head (decision 10)", async () => {
     const { marker, engine, p, repo, job, openItem } = await setup();
-    const parent = await engine.createJob("demo", { title: "parent", ticket: { text: "x" }, recipe: "delivered" });
+    const parent = await engine.createJob("demo", { title: "parent", request: "x", recipe: "delivered" });
     await until(() => job(parent).state === "succeeded");
-    const child = await engine.createJob("demo", { title: "child", ticket: { text: "y" }, recipe: "reviewed", parentJobId: parent });
+    const child = await engine.createJob("demo", { title: "child", request: "y", recipe: "reviewed", parentJobId: parent });
     await until(() => openItem(child));
     expect(await p.executor.checkMerge(parent)).toBe(false);
     expect(job(parent).merged_at).toBeNull();

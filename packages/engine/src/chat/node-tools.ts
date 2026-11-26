@@ -1,3 +1,4 @@
+import { artifactTypes } from "@pecore/schemas";
 import { join } from "node:path";
 import { Ajv } from "ajv";
 import { ArtifactType, ChatForm } from "@pecore/schemas";
@@ -85,7 +86,7 @@ export function listNodeTools(engine: Engine, project: string): { name: string; 
           params: { ...node.params, type: "object" },
           ...(fields.length ? { inputs: {
             type: "object", additionalProperties: false, required: node.inputs,
-            properties: Object.fromEntries(fields.map((type) => [type, { type: type === "text" || type === "diff" ? "string" : "object" }])),
+            properties: Object.fromEntries(fields.map((type) => [type, { type: artifactTypes[type].plain ? "string" : "object" }])),
           } } : {}),
         },
       },
@@ -109,8 +110,8 @@ async function prepare(engine: Engine, invocation: Invocation) {
   for (const [key, value] of Object.entries(supplied)) {
     const type: ArtifactType = ArtifactType.parse(key);
     if (![...node.inputs, ...node.optionalInputs].includes(type)) throw new Error("This node does not accept the " + type + " input.");
-    const content: string = typeof value === "string" && (type === "text" || type === "diff") ? value : JSON.stringify(value);
-    if ((type === "text" || type === "diff") && typeof value !== "string" || outputProblem(type, content)) throw new Error("Invalid " + type + " input.");
+    const content: string = typeof value === "string" && (artifactTypes[type].plain) ? value : JSON.stringify(value);
+    if ((artifactTypes[type].plain) && typeof value !== "string" || outputProblem(type, content)) throw new Error("Invalid " + type + " input.");
     inputs.push({ type, content });
   }
   const context: CommandRun["context"] = input.jobId ? executor.placeholderContext(executor.job(input.jobId)) : {
@@ -140,7 +141,7 @@ async function runPrepared(engine: Engine, project: string, prepared: Awaited<Re
   if (result.kind !== "completed" || node.failOutcomes.includes(result.outcome)) throw new Error(node.name + " did not complete. Check the inputs and account.");
   return result.outputs.map(({ type, content }) => {
     if (outputProblem(type, content)) throw new Error(node.name + " returned invalid output.");
-    return { type, content: type === "text" || type === "diff" ? content : JSON.parse(content) as unknown };
+    return { type, content: artifactTypes[type].plain ? content : JSON.parse(content) as unknown };
   });
 }
 

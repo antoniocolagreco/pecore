@@ -175,8 +175,8 @@ let engineHome: string = "";
 const tokenFileOf = (chatId: string) => join(engineHome, "chats", chatId, "mcp-token");
 const intakeChat = (t: { engine: Engine }) => t.engine.agentChats.chats().find(({ project }) => project === "demo")!.id;
 const plan = [
-  { key: "api", title: "API", ticketText: "add the endpoint", recipe: "reviewed", dependsOn: [] },
-  { key: "ui", title: "UI", ticketText: "add the screen", recipe: "reviewed", dependsOn: ["api"] },
+  { key: "api", title: "API", request: "add the endpoint", recipe: "reviewed", dependsOn: [] },
+  { key: "ui", title: "UI", request: "add the screen", recipe: "reviewed", dependsOn: ["api"] },
 ];
 
 afterEach(() => {
@@ -208,7 +208,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       }));
       ctx.db.definition.write({ ...ctx.project, recipes: ["tracker-access"] });
       expect(await t.engine.reloadProject("demo")).toEqual([]);
-      const job: string = await t.engine.createJob("demo", { title: "Check access", ticket: { text: "Check access" }, recipe: "tracker-access" });
+      const job: string = await t.engine.createJob("demo", { title: "Check access", request: "Check access", recipe: "tracker-access" });
       const dump: string = join(t.root, "job-session.json");
       await until(() => existsSync(dump));
       const session: { params: { mcpServers: { args: string[]; env: unknown[] }[] } } = JSON.parse(await readFile(dump, "utf8"));
@@ -563,9 +563,9 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       await rm(archive);
       const db = t.engine.project("demo").ctx.db;
       const leakJob: string = "leak-job";
-      db.append([{ jobId: leakJob, type: "job.created", payload: { title: "Leak fixture", recipe: { name: "empty" }, ticket: null, parentJobId: null, baseBranch: "main", base: null, target: "main", branch: "factory/leak-job" } },
+      db.append([{ jobId: leakJob, type: "job.created", payload: { title: "Leak fixture", recipe: { name: "empty" }, request: "", parentJobId: null, baseBranch: "main", base: null, target: "main", branch: "factory/leak-job" } },
         { jobId: leakJob, type: "job.state_changed", payload: { state: "stopped", reason: null } }]);
-      db.saveArtifact(leakJob, "leak", "out.txt", "text", `token ${"ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"}\n`, null);
+      db.saveArtifact(leakJob, "leak", "out.txt", "log", `token ${"ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"}\n`, null);
       expect(JSON.parse((await m.tool("export_project", { project: "demo", history: true })).result?.content?.[0]?.text ?? "")).toEqual({ state: "awaiting_confirmation", totalFindings: 1 });
       const card = await last();
       expect(card.target).toMatchObject({ state: "awaiting_confirmation", project: "demo", history: true, findings: [{ file: "leak-job/leak/out.txt", line: 1, rule: "github-pat" }] });
@@ -924,7 +924,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       ...replyWith("Read the log."),
     ]]);
     const { ctx } = t.engine.project("demo");
-    const bigJob = await t.engine.createJob("demo", { title: "Big", recipe: "big", ticket: { text: "x" } });
+    const bigJob = await t.engine.createJob("demo", { title: "Big", recipe: "big", request: "x" });
     await until(() => ctx.db.db.prepare("SELECT state FROM jobs WHERE id = ? AND state = 'succeeded'").get(bigJob));
     const bigRun = (ctx.db.db.prepare("SELECT id FROM node_runs WHERE job_id = ?").get(bigJob) as { id: string }).id;
 
@@ -1067,7 +1067,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect(JSON.parse(read.result!.content![0]!.text)).toMatchObject({ untrusted: true, ticket: { title: "Login broken" } });
       expect((await m.tool("comment_ticket", { project: "demo", ticketId: "https://github.com/example/demo/issues/7", text: "Which browser?" })).result!.content?.[0]?.text).toBe('{"state":"awaiting_answer"}');
       expect((await m.tool("create_jobs", { project: "demo", plan })).result!.isError).not.toBe(true);
-      await m.tool("create_jobs", { project: "demo", plan: [{ key: "other", title: "Other", ticketText: "x", recipe: "reviewed", dependsOn: [] }] });
+      await m.tool("create_jobs", { project: "demo", plan: [{ key: "other", title: "Other", request: "x", recipe: "reviewed", dependsOn: [] }] });
       expect(ctx.db.db.prepare("SELECT order_key FROM jobs WHERE order_id = ? ORDER BY order_key").all(sent.id)).toEqual([{ order_key: "api" }, { order_key: "ui" }]);
       const changed = JSON.stringify({ ...reviewed, description: "changed by the Project Manager" }, null, 2) + "\n";
       expect((await m.tool("write_instance", { path: "projects/demo/recipes/reviewed.json", content: changed })).result?.isError).toBe(true);
@@ -1135,7 +1135,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       const inspect: Node = Node.parse({
         kind: "repository", name: "inspect-ticket", description: "Inspect a ticket", account: forge.id,
         readOnly: true, script, outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }],
-        outputs: { done: "document" }, outputRules: { done: { stdoutJson: "" } },
+        outputs: { done: "pull_request" }, outputRules: { done: { stdoutJson: "" } },
       });
       await t.call("saveDefinition", { params: { path }, body: { content: JSON.stringify(inspect), baseSha256: null } });
       expect(await actions()).toEqual([]);
@@ -1147,17 +1147,17 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
         expect(await names()).toEqual(expect.arrayContaining(["node_inspect-ticket", "node_git-push", "search_tickets"]));
         const read = await m.tool("node_inspect-ticket", {});
         expect(read.result!.isError).toBeUndefined();
-        expect(JSON.parse(read.result!.content![0]!.text)).toEqual([{ type: "document", content: { title: "Ticket", body: "[redacted]" } }]);
+        expect(JSON.parse(read.result!.content![0]!.text)).toEqual([{ type: "pull_request", content: { title: "Ticket", body: "[redacted]" } }]);
         expect((await actions()).some(({ tool, target }) => tool === "node_inspect-ticket" && (target as { state: string }).state === "completed")).toBe(true);
 
         const writePath: string = "templates/nodes/publish-from-chat.json";
         const comments: string = join(t.root, "comments");
         const publish: Node = Node.parse({
           kind: "repository", name: "publish-from-chat", description: "Publish a note", account: forge.id,
-          script: "cat >> " + JSON.stringify(comments), inputs: ["text"], outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }],
+          script: "cat >> " + JSON.stringify(comments), inputs: ["feedback"], outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }],
         });
         await t.call("saveDefinition", { params: { path: writePath }, body: { content: JSON.stringify(publish), baseSha256: null } });
-        const comment: { ticketId: string; inputs: { text: string } } = { ticketId: "7", inputs: { text: "Check the browser" } };
+        const comment: { ticketId: string; inputs: { feedback: string } } = { ticketId: "7", inputs: { feedback: "Check the browser" } };
         const propose = async (): Promise<string> => {
           expect((await m.tool("node_publish-from-chat", comment)).result!.content![0]!.text).toBe('{"state":"awaiting_answer"}');
           return (await actions()).findLast(({ tool }) => tool === "node_publish-from-chat")!.id;
@@ -1208,7 +1208,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       pm: (root) => [
         init(true),
         [...init(true), ...newSession, { expect: "session/prompt" }, { dump: join(root, "pm-order.json") }, { waitFile: join(root, "order-planned") }, ...replyWith("One job created.")],
-        [...init(true), ...newSession, { expect: "session/prompt" }, { dump: join(root, "spec-prompt.json") }, { waitFile: join(root, "spec-checked") }, ...replyWith('{"outcome":"success","output":{"criteria":["Login works"],"tests":[],"interfaces":[]}}')],
+        [...init(true), ...newSession, { expect: "session/prompt" }, { dump: join(root, "spec-prompt.json") }, { waitFile: join(root, "spec-checked") }, ...replyWith('{"outcome":"success","output":{"feature":"Login works","scenarios":[{"name":"Login","given":["A workspace"],"when":"The user signs in","then":["The workspace is retained"]}]}}')],
       ],
     });
     const url: string = "https://example.com/login-behavior";
@@ -1220,14 +1220,13 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       const { ctx } = t.engine.project(project);
       const recipes: string[] = ["check-request"];
       t.engine.catalog.saveNode(Node.parse({
-        name: "echo-request", description: "Echo the request", kind: "command", command: ["cat"], inputs: ["document"],
+        name: "echo-request", description: "Echo the request", kind: "command", command: ["jq", "-r", ".job.request"],
         timeoutSec: 30, changesFiles: false,
         outcomes: ["success"], outcomeRules: [{ exitCode: 0, outcome: "success" }],
-        outputs: { success: "document" }, outputRules: { success: { stdoutJson: "document" } },
       }));
       t.engine.catalog.saveRecipe(Recipe.parse({
         name: "check-request", description: "Write the spec and read the request again", start: "spec",
-        nodes: { spec: { use: "spec-writer", reads: ["@start"] }, read: { use: "echo-request", reads: ["@start"] } },
+        nodes: { spec: { use: "spec-writer" }, read: { use: "echo-request" } },
         edges: [{ from: "spec", on: "success", to: "read" }],
         ends: [{ from: "read", on: "success", result: "succeeded" }, { from: "spec", on: "rejected", result: "failed" }],
       }));
@@ -1263,9 +1262,9 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
         const web = await pm.tool("read_web_page", { url });
         expect(JSON.parse(web.result!.content![0]!.text)).toMatchObject({ body, untrusted: true });
         expect(page).toHaveBeenCalledWith(url);
-        const request: string = `${text}\n\n${source.ticket.title}: ${source.ticket.body}\n\n${"Additional user context. ".repeat(4_000)}\n\n${body}`;
+        const request: string = `${text}\n\n${source.ticket.title}: ${source.ticket.body}\n\n${"Additional user context. ".repeat(6_000)}\n\n${body}`;
         const selected: string[] = ids.slice(0, 8);
-        const entry = { key: "login", title: "Fix login", ticketText: request, ticketId, recipe: "check-request", dependsOn: [], attachmentIds: selected };
+        const entry = { key: "login", title: "Fix login", request, ticketId, recipe: "check-request", dependsOn: [], attachmentIds: selected };
         const unrelated: string = (await t.call("uploadProjectChatAttachment", { params, body: files[8]! })).id;
         const refused = await pm.tool("create_jobs", { project, plan: [{ ...entry, attachmentIds: [...selected, unrelated] }] });
         expect(refused.result!.isError).toBe(true);
@@ -1274,14 +1273,14 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
         const { jobIds }: { jobIds: { login: string } } = JSON.parse(created.result!.content![0]!.text);
         expect(ctx.db.db.prepare("SELECT id FROM jobs WHERE order_id = ?").pluck().all(order.id)).toEqual([jobIds.login]);
         const event = ctx.db.events(jobIds.login).find((event) => event.type === "job.created")!;
-        expect(JSON.parse(ctx.db.requireArtifact(event.payload.ticket!).toString("utf8"))).toMatchObject({ title: entry.title, body: request, id: ticketId });
+        expect(event.payload).toMatchObject({ title: entry.title, request, ticketId });
         expect(event.payload.attachments).toHaveLength(8);
         await writeFile(join(t.root, "order-planned"), "");
         await until(() => existsSync(join(t.root, "spec-prompt.json")));
         const spec: { params: { prompt: { text: string }[] } } = JSON.parse(await readFile(join(t.root, "spec-prompt.json"), "utf8"));
         const prompt: string = spec.params.prompt[0]!.text;
-        expect(prompt.match(/### Job request from Start/g)).toHaveLength(1);
-        expect(prompt).toContain(JSON.stringify(request));
+        expect(prompt.match(/### Job request/g)).toHaveLength(1);
+        expect(prompt).toContain(request);
         expect(prompt).toContain("including images");
         expect(prompt).not.toContain("extra.txt");
         for (const [index, attachment] of event.payload.attachments!.entries()) {
@@ -1295,8 +1294,9 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
           const job = await t.call("getJob", { params: { id: jobIds.login } });
           return job.job.state === "succeeded" && job;
         });
-        const echoed = detail.artifacts.find(({ type, run }) => type === "document" && run !== "ticket")!;
-        expect(JSON.parse(ctx.db.requireArtifact(echoed).toString("utf8"))).toMatchObject({ title: entry.title, body: request, id: ticketId });
+        const echoed = detail.artifacts.find(({ type, run }) => type === "log" && run === "read-0")!;
+        expect(ctx.db.requireArtifact(echoed).toString("utf8")).toContain(request);
+        expect(detail.request).toBe(request);
       } finally {
         pm.close();
       }
@@ -1348,7 +1348,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       expect(pmChat.attachments).toEqual([{ id: expect.not.stringMatching(attachment.id), messageId: pmChat.messages[0]!.id, name: "screenshot.png", mime: "image/png", size: attachment.size }]);
       const pm = mcp(tokenFileOf(intakeChat(t)));
       await pm.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
-      expect((await pm.tool("create_jobs", { project: "demo", plan: [{ key: "api", title: "API", ticketText: "add the endpoint", recipe: "reviewed", dependsOn: [], attachmentIds: [pmChat.attachments[0]!.id] }] })).result!.isError).not.toBe(true);
+      expect((await pm.tool("create_jobs", { project: "demo", plan: [{ key: "api", title: "API", request: "add the endpoint", recipe: "reviewed", dependsOn: [], attachmentIds: [pmChat.attachments[0]!.id] }] })).result!.isError).not.toBe(true);
       pm.close();
       expect(ctx.db.db.prepare("SELECT order_key FROM jobs WHERE order_id = ?").all(pmChat.messages[0]!.id)).toEqual([{ order_key: "api" }]);
 
@@ -1413,7 +1413,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
       const system: { kind: string }[] = [];
       t.engine.on("notify", (n: { kind: string }) => system.push(n));
       const { ctx } = t.engine.project("demo");
-      const jobId: string = await t.engine.createJob("demo", { title: "Fix", recipe: "reviewed", ticket: { text: "x" } });
+      const jobId: string = await t.engine.createJob("demo", { title: "Fix", recipe: "reviewed", request: "x" });
       const ask = (itemId: string, question: string) => ctx.db.append([{ jobId, type: "queue.added", payload: { itemId, kind: "agent-question", subject: { question, node: "write" }, subjectHash: "a".repeat(64), choices: ["answer"] } }]);
       ask("question-1", "Which database?");
       ask("question-2", "Which cache?");

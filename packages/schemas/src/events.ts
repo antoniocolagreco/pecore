@@ -40,19 +40,17 @@ export type TicketSnapshot = z.infer<typeof TicketSnapshot>;
 export const TicketReply = z.object({ id: z.string().optional(), body: z.string(), author: z.string().nullable(), createdAt: z.string() });
 export type TicketReply = z.infer<typeof TicketReply>;
 
-export const OrderPlan = z.array(z.object({
+export const JobRequest = z.object({
   key: z.string().min(1),
   title: z.string().min(1),
   recipe: z.string().min(1).optional(),
-  ticketText: z.string().describe("The complete request for Start, including relevant ticket, page, and chat context."),
+  request: z.string().trim().min(1).describe("The complete request, including relevant ticket, page, and chat context."),
   ticketId: z.string().trim().min(1).optional().describe("The original tracker ticket ID or link when this job is for a ticket."),
   dependsOn: z.array(z.string().min(1)).max(1),
   baseBranch: z.string().min(1).optional(),
   attachmentIds: z.array(z.ulid()).optional().describe("IDs of original files from the current order to attach to this job."),
-}).strict());
-export type OrderPlan = z.infer<typeof OrderPlan>;
-
-const StoredOrderPlan = z.array(OrderPlan.element.extend({ recipeConfirmationId: z.ulid().optional() }));
+}).strict();
+export type JobRequest = z.infer<typeof JobRequest>;
 const OrderId = z.string().min(1);
 const ev = <T extends string, P extends z.ZodType>(type: T, payload: P) => z.object({ type: z.literal(type), payload });
 
@@ -63,7 +61,8 @@ export const EventBody = z.discriminatedUnion("type", [
       title: z.string(),
       recipe: z.unknown(),
       definitions: JobDefinitions.optional(),
-      ticket: Artifact.nullable(),
+      request: z.string(),
+      ticketId: z.string().optional(),
       attachments: z.array(Artifact).optional(),
       recipeConfirmationId: z.ulid().optional(),
       parentJobId: z.string().nullable(),
@@ -118,7 +117,7 @@ export const EventBody = z.discriminatedUnion("type", [
   ),
   ev(
     "node_run.completed",
-    z.object({ nodeRunId: z.string(), outcome: z.string(), contentBefore: z.string().nullable(), contentAfter: z.string().nullable(), artifacts: z.array(Artifact) }),
+    z.object({ nodeRunId: z.string(), outcome: z.string(), filesHashBefore: z.string().nullable(), filesHashAfter: z.string().nullable(), artifacts: z.array(Artifact) }),
   ),
   ev("node_run.failed", z.object({ nodeRunId: z.string(), reason: FailureReason })),
   ev(
@@ -164,7 +163,7 @@ export const EventBody = z.discriminatedUnion("type", [
   ev("order.read", z.object({ orderId: OrderId, ticket: TicketSnapshot, trusted: z.boolean() })),
   ev("order.handed", z.object({ orderId: OrderId, replies: z.array(TicketReply).optional(), askId: z.ulid().nullish() })),
   ev("order.asked", z.object({ orderId: OrderId, commentAt: z.number().int().nonnegative() })),
-  ev("order.planned", z.object({ orderId: OrderId, plan: StoredOrderPlan })),
+  ev("order.planned", z.object({ orderId: OrderId, plan: z.array(JobRequest) })),
   ev("order.done", z.object({ orderId: OrderId })),
   ev("order.dropped", z.object({ orderId: OrderId, reason: z.string() })),
 ]);

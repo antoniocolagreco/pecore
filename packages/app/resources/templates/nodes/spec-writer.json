@@ -6,7 +6,7 @@
   "prompt": "spec-writer.md",
   "agent": { "tier": "strong" },
   "outcomes": ["success", "rejected"],
-  "outputs": { "success": "spec", "rejected": "text" },
+  "outputs": { "success": "spec", "rejected": "feedback" },
   "changesFiles": false,
   "timeoutSec": 1800
 }

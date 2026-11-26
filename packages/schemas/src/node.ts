@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ArtifactType } from "./artifacts";
+import { ArtifactType, NodeOutputType } from "./artifacts";
 import { Argv, DefinitionName, JsonSchemaObject, Name, Outcome, TierName } from "./common";
 
 const jobPlaceholders = ["job.id", "job.title", "job.branch", "job.base", "job.oldBase", "job.target", "job.commit"];
@@ -62,7 +62,7 @@ const Base = {
 
 const Runnable = {
   outcomes: z.array(Outcome).min(1),
-  outputs: z.record(Outcome, ArtifactType).default({}),
+  outputs: z.record(Outcome, NodeOutputType).default({}),
   failOutcomes: z.array(Outcome).default([]),
   scratchPaths: z.array(z.string()).default([]),
   retry: z.number().int().nonnegative().default(1),
@@ -128,7 +128,7 @@ export type HumanInterface = z.infer<typeof HumanInterface>;
 
 export const humanInterfaces: Readonly<Record<HumanInterface, { readonly label: string; readonly description: string; readonly outcomes: readonly string[] | null }>> = {
   decision: { label: "Decision", description: "Asks a question in Notifications and follows the answer you choose.", outcomes: null },
-  "code-review": { label: "Code review", description: "Shows the job's code changes, with the findings of the nodes it reads, and asks you to approve, request changes or reject.", outcomes: ["approved", "changes_requested", "rejected"] },
+  "code-review": { label: "Code review", description: "Shows the job's code changes, with the analysis and reviews of the nodes it reads, and asks you to approve, request changes or reject.", outcomes: ["approved", "changes_requested", "rejected"] },
   "report-review": { label: "Report review", description: "Shows what the nodes it reads produced and asks you to approve, request changes or reject.", outcomes: ["approved", "changes_requested", "rejected"] },
 };
 
@@ -221,7 +221,7 @@ function checkNode(node: z.infer<typeof NodeShape>): Issue[] {
   }
   if (node.kind === "human") {
     for (const [outcome, type] of Object.entries(node.outputs)) {
-      if (type !== "text") issues.push({ path: ["outputs", outcome], message: "a person can only write text" });
+      if (type !== "feedback" && !(node.interface === "code-review" && type === "code_review")) issues.push({ path: ["outputs", outcome], message: "Choose feedback or a code review for human input." });
     }
     const outcomes: readonly string[] | null = humanInterfaces[node.interface].outcomes;
     const legacyReview: boolean = node.outcomes.length === 3 && ["approve", "changes", "reject"].every((outcome) => node.outcomes.includes(outcome));
@@ -267,5 +267,5 @@ export function isHumanNode(node: Node): node is HumanNode {
 
 export function automaticOutputs(node: Node): ArtifactType[] {
   if (node.kind === "human") return [];
-  return [...(node.changesFiles ? ["diff" as const] : []), ...(node.kind !== "agent" ? ["text" as const] : [])];
+  return [...(node.changesFiles ? ["diff" as const] : []), ...(node.kind === "command" ? ["log" as const] : [])];
 }

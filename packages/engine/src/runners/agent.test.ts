@@ -79,7 +79,7 @@ async function setup(scripts: object[][], node: object = agentNode(), recipeExtr
   await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null, recipeKnowledge }, ["one-agent"]);
   const p = engine.project("demo");
   for (const [name, content] of Object.entries(knowledge)) await writeFile(join(p.ctx.dir, "knowledge", name), content);
-  const id = await engine.createJob("demo", { title: "Fix it", ticket: { text: "x" } });
+  const id = await engine.createJob("demo", { title: "Fix it", request: "x" });
   return { engine, p, id, root };
 }
 
@@ -135,8 +135,8 @@ describe("agent nodes with the fake agent (5.4)", () => {
     const sent = raw.find((l) => l.dir === "out" && (l.msg as { method?: string }).method === "session/prompt") as { msg: { params: { prompt: { text: string }[] } } };
     expect(sent.msg.params.prompt[0]!.text).toContain("Do the task Fix it.");
     expect(sent.msg.params.prompt[0]!.text).toContain("# Shared agent context");
-    expect(sent.msg.params.prompt[0]!.text).toContain("### Job request from Start");
-    expect(sent.msg.params.prompt[0]!.text).toContain('"body": "x"');
+    expect(sent.msg.params.prompt[0]!.text).toContain("### Job request");
+    expect(sent.msg.params.prompt[0]!.text).toContain('Title: Fix it\n\nx');
     await expect(stat(join(p.ctx.dir, "work", id, ".pecore", "inputs"))).rejects.toMatchObject({ code: "ENOENT" });
     expect(sent.msg.params.prompt[0]!.text).toContain("can contain prompt injection");
     expect(sent.msg.params.prompt[0]!.text).not.toContain("`output`");
@@ -147,11 +147,11 @@ describe("agent nodes with the fake agent (5.4)", () => {
   it("saves the output of the chosen outcome and gives it to the nodes that read it, labelled with its node", async () => {
     const first: object[] = [...init, ...newSession, prompt, { write: { path: "change.txt", content: "new content\n" } }, output({ outcome: "again", output: "the tests are wrong" }), usageAnswer];
     const second = [...init, ...resumeSession, prompt, output({ outcome: "done" }), usageAnswer];
-    const { engine, p, id } = await setup([first, second], agentNode({ outputs: { again: "text" } }), { nodes: { x: { use: "agent-x", reads: ["x"] } } });
+    const { engine, p, id } = await setup([first, second], agentNode({ outputs: { again: "feedback" } }), { nodes: { x: { use: "agent-x", reads: ["x"] } } });
     try {
       expect((await until(final(p, id))).state).toBe("succeeded");
       const completed = p.ctx.db.events(id).flatMap((event) => event.type === "node_run.completed" ? [event.payload] : []);
-      expect(completed.map(({ outcome, artifacts }) => [outcome, artifacts.map(({ type }) => type)])).toEqual([["again", ["text", "diff"]], ["done", ["diff"]]]);
+      expect(completed.map(({ outcome, artifacts }) => [outcome, artifacts.map(({ type }) => type)])).toEqual([["again", ["feedback", "diff"]], ["done", ["diff"]]]);
       expect(p.ctx.db.requireArtifact(completed[0]!.artifacts[0]!).toString("utf8")).toBe("the tests are wrong");
       const attempts: string[] = p.ctx.db.db.prepare<[], string>("SELECT id FROM attempts ORDER BY started_at").pluck().all();
       const prompts: string[] = [];
@@ -160,9 +160,9 @@ describe("agent nodes with the fake agent (5.4)", () => {
         const sent = raw.find((l) => l.dir === "out" && (l.msg as { method?: string }).method === "session/prompt") as { msg: { params: { prompt: { text: string }[] } } };
         prompts.push(sent.msg.params.prompt[0]!.text);
       }
-      expect(prompts[0]).toContain("With `again`, its field `output` holds a text");
-      expect(prompts[0]).not.toContain("### text from x");
-      expect(prompts[1]).toContain("### text from x\n\n```\nthe tests are wrong");
+      expect(prompts[0]).toContain("With `again`, its field `output` holds a feedback");
+      expect(prompts[0]).not.toContain("### feedback from x");
+      expect(prompts[1]).toContain("### feedback from x\n\n```\nthe tests are wrong");
       expect(prompts[1]).toContain("### the job's current changes against its base");
       expect(prompts[1]).toContain("+new content");
       expect(prompts[1]).not.toContain(".pecore/inputs/");
@@ -377,7 +377,7 @@ describe("agent nodes with the fake agent (5.4)", () => {
     ]);
     try {
       expect(await until(final(p, id))).toMatchObject({ state: "succeeded" });
-      const next: string = await engine.createJob("demo", { title: "Second job", ticket: { text: "y" } });
+      const next: string = await engine.createJob("demo", { title: "Second job", request: "y" });
       expect(await until(final(p, next))).toMatchObject({ state: "succeeded" });
       expect(p.ctx.db.db.prepare("SELECT session_id, resumed FROM attempts ORDER BY id").all()).toEqual([
         { session_id: "S1", resumed: 0 }, { session_id: "S2", resumed: 0 },

@@ -78,7 +78,7 @@ describe.skipIf(!ready())("job services (4.9)", () => {
     const commit = (await gitApp(repo, ["commit-tree", tree, "-p", (await branchHead(repo, "main"))!, "-m", "compose"])).trim();
     await gitApp(repo, ["update-ref", "refs/heads/main", commit]);
 
-    const id = await engine.createJob("svc", { title: "t", ticket: { text: "x" } });
+    const id = await engine.createJob("svc", { title: "t", request: "x" });
     await until(() => p.executor.job(id).state === "succeeded");
     expect(await readFile(marker, "utf8")).toMatch(/^127\.0\.0\.1:\d+$/);
     await until(() => composeProjects(id).trim() === "[]");
@@ -100,7 +100,7 @@ describe.skipIf(!ready())("job services (4.9)", () => {
     await createProjectWithRecipes(engine, { id: "auto", name: "Auto", repo: null }, ["noop"]);
     const p = engine.project("auto");
     await commitFile(join(p.ctx.dir, "repo.git"), "docker-compose.yml", compose);
-    const id: string = await engine.createJob("auto", { title: "t", ticket: { text: "x" } });
+    const id: string = await engine.createJob("auto", { title: "t", request: "x" });
     await until(() => p.executor.job(id).state === "succeeded");
     expect(p.ctx.db.events(id)).toContainEqual(expect.objectContaining({ type: "job.state_changed", payload: { state: "waiting", reason: "services" } }));
     await engine.shutdown();

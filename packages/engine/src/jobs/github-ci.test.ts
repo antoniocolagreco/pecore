@@ -31,12 +31,12 @@ it("restarts a pending CI wait and runs a correction on the same pull request", 
     engine.catalog.saveRecipe(Recipe.parse(recipe));
     engine.catalog.saveNode(Node.parse({
       name: "fix-tests", description: "Make a new commit", kind: "command",
-      command: ["/bin/sh", "-c", "jq -ej '.text' > ci-log.txt && echo fixed >> hello.txt"], inputs: ["text"],
+      command: ["/bin/sh", "-c", "jq -ej '.log' > ci-log.txt && echo fixed >> hello.txt"], inputs: ["log"],
       changesFiles: true, outcomes: ["done"], outcomeRules: [{ exitCode: 0, outcome: "done" }], timeoutSec: 10,
     }));
     ctx.db.definition.write({ ...ctx.project, recipes: ["with-ci"] });
     expect(await engine.reloadProject("shop")).toEqual([]);
-    const job: string = await engine.createJob("shop", { title: "Exercise CI", ticket: { text: "x" } });
+    const job: string = await engine.createJob("shop", { title: "Exercise CI", request: "x" });
     const first: string = await until<string>(() => {
       const current = engine.project("shop").executor.job(job);
       return current.waiting_reason === "ci" ? fixture.forge.remoteHead("acme/shop", current.branch) ?? undefined : undefined;

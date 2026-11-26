@@ -20,7 +20,8 @@ function fail(e: unknown): never {
 
 export type CreateJob = {
   title: string;
-  ticket: { text: string; source?: string; id?: string };
+  request: string;
+  ticketId?: string;
   recipe?: string;
   baseBranch?: string;
   parentJobId?: string | null;
@@ -105,15 +106,13 @@ async function createJobInProject(ctx: ProjectContext, req: CreateJob): Promise<
     }
   } else base = await fetchBase(ctx, baseBranch).catch((e: unknown) => fail(e));
   const id = ulid();
-  const content = JSON.stringify({ title: req.title, body: req.ticket.text, source: req.ticket.source ?? null, id: req.ticket.id ?? null }, null, 2);
   ctx.db.db.transaction(() => {
-    const ticket: Artifact = ctx.db.saveArtifact(id, "ticket", "ticket.json", "document", content, null);
     const attachments: Artifact[] = (req.attachments ?? []).map(({ name, data }) => ctx.db.saveArtifact(id, "attachments", name, "attachment", data, null));
     ctx.db.append([
       {
         jobId: id,
         type: "job.created",
-        payload: { title: req.title, recipe, definitions, ticket, ...(attachments.length ? { attachments } : {}), parentJobId: parent?.id ?? null, baseBranch, base, target, branch: jobBranch(id), orderId: req.orderId, orderKey: req.orderKey },
+        payload: { title: req.title, recipe, definitions, request: req.request, ticketId: req.ticketId, ...(attachments.length ? { attachments } : {}), parentJobId: parent?.id ?? null, baseBranch, base, target, branch: jobBranch(id), orderId: req.orderId, orderKey: req.orderKey },
       },
       ...(reason ? [{ jobId: id, type: "job.state_changed" as const, payload: { state: "queued" as const, reason } }] : []),
     ]);

@@ -5,7 +5,7 @@ import { CommandNode } from "@pecore/schemas";
 import { tempDir } from "../../test/tmp";
 import { outcomeOutputs, runCommandNode } from "../runners/command";
 import { appUser } from "../runners/process";
-import { contentState, deleteScratch } from "./content-state";
+import { filesHash, deleteScratch } from "./files-hash";
 import { FsAsError, readFileAs, removeFilesAs, writeFileAs } from "./fs-as";
 import { createLocalRepo } from "./repo";
 import { addWorktree } from "./worktrees";
@@ -39,7 +39,7 @@ describe("fs-as: symlinks at every engine file path", () => {
     await mkdir(join(wd, ".pecore"));
     const link: string = join(wd, ".pecore", "inputs");
     await symlink(secret, link);
-    const node = CommandNode.parse({ name: "c", description: "c", kind: "command", command: ["cat"], inputs: ["text"], outcomes: ["passed"], changesFiles: false, outcomeRules: [{ exitCode: 0, outcome: "passed" }], timeoutSec: 10 });
+    const node = CommandNode.parse({ name: "c", description: "c", kind: "command", command: ["cat"], inputs: ["log"], outcomes: ["passed"], changesFiles: false, outcomeRules: [{ exitCode: 0, outcome: "passed" }], timeoutSec: 10 });
     await expect(
       runCommandNode({
         node,
@@ -48,10 +48,10 @@ describe("fs-as: symlinks at every engine file path", () => {
         params: {},
         user: u,
         workdir: wd,
-        context: { job: { id: "J1", title: "t", branch: "factory/J1", base, oldBase: base, target: "main", commit: null }, ticketId: null, project: { repoDir: join(project, "repo.git"), repoUrl: null, baseBranch: "main" } },
-        inputs: [{ type: "text", content: "input" }],
+        context: { job: { id: "J1", title: "t", request: "Verify the job", branch: "factory/J1", base, oldBase: base, target: "main", commit: null }, ticketId: null, project: { repoDir: join(project, "repo.git"), repoUrl: null, baseBranch: "main" } },
+        inputs: [{ type: "log", content: "input" }],
       }),
-    ).resolves.toMatchObject({ kind: "completed", log: expect.stringContaining('{"text":"input"}') });
+    ).resolves.toMatchObject({ kind: "completed", log: expect.stringContaining('{"log":"input","job":{"title":"t","request":"Verify the job"}}') });
     expect(await readlink(link)).toBe(secret);
     expect(await readFile(secret, "utf8")).toBe("token");
   });
@@ -59,7 +59,7 @@ describe("fs-as: symlinks at every engine file path", () => {
   it("output read: outputRules.file through a symlink fails the node", async () => {
     const { wd, base, project, secret } = await setup();
     await symlink(secret, join(wd, "result.json"));
-    const node = CommandNode.parse({ name: "c", description: "c", kind: "command", command: ["true"], outputs: { passed: "findings" }, outputRules: { passed: { file: "result.json" } }, outcomes: ["passed"], changesFiles: false, outcomeRules: [{ exitCode: 0, outcome: "passed" }], timeoutSec: 10 });
+    const node = CommandNode.parse({ name: "c", description: "c", kind: "command", command: ["true"], outputs: { passed: "code_analysis" }, outputRules: { passed: { file: "result.json" } }, outcomes: ["passed"], changesFiles: false, outcomeRules: [{ exitCode: 0, outcome: "passed" }], timeoutSec: 10 });
     const r = await runCommandNode({
       node,
       outputs: outcomeOutputs(node),
@@ -67,7 +67,7 @@ describe("fs-as: symlinks at every engine file path", () => {
       params: {},
       user: u,
       workdir: wd,
-      context: { job: { id: "J1", title: "t", branch: "factory/J1", base, oldBase: base, target: "main", commit: null }, ticketId: null, project: { repoDir: join(project, "repo.git"), repoUrl: null, baseBranch: "main" } },
+      context: { job: { id: "J1", title: "t", request: "Verify the job", branch: "factory/J1", base, oldBase: base, target: "main", commit: null }, ticketId: null, project: { repoDir: join(project, "repo.git"), repoUrl: null, baseBranch: "main" } },
       inputs: [],
     });
     expect(r).toMatchObject({ kind: "failed", reason: "HARNESS_ERROR" });
@@ -76,7 +76,7 @@ describe("fs-as: symlinks at every engine file path", () => {
 
   it("scratch delete: removes a planted symlink, never its target", async () => {
     const { wd, secret } = await setup();
-    const before = await contentState(u, wd);
+    const before = await filesHash(u, wd);
     await symlink(secret, join(wd, "x.tmp"));
     expect(await deleteScratch(u, wd, ["*.tmp"], before)).toEqual(["x.tmp"]);
     expect(await readFile(secret, "utf8")).toBe("token");

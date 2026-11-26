@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { recipeStart, ReferenceArtifact } from "@pecore/schemas";
+import { PullRequestArtifact } from "@pecore/schemas";
 import type { Artifact, ForgeAccount, Project, StoredEvent } from "@pecore/schemas";
 import { loadForgeDefaults } from "../projects/defaults";
 import { forgeEnv } from "../runners/forge-env";
@@ -30,7 +30,6 @@ export function jobArtifacts(events: StoredEvent[]): JobArtifact[] {
   const out: JobArtifact[] = [];
   for (const e of events) {
     if (e.type === "job.created") {
-      if (e.payload.ticket) out.push({ artifact: e.payload.ticket, node: recipeStart });
       for (const artifact of e.payload.attachments ?? []) out.push({ artifact, node: null });
     }
     if (e.type === "node_run.completed") for (const artifact of e.payload.artifacts) out.push({ artifact, node: nodeOfRun(e.payload.nodeRunId) });
@@ -39,21 +38,14 @@ export function jobArtifacts(events: StoredEvent[]): JobArtifact[] {
   return out;
 }
 
-export function readReference(db: ProjectDb, artifact: Artifact): ReferenceArtifact {
-  return ReferenceArtifact.parse(JSON.parse(db.requireArtifact(artifact).toString("utf8")));
-}
-
-export function latestReference(db: ProjectDb, artifacts: JobArtifact[], has: (reference: ReferenceArtifact, node: string | null) => boolean): (JobArtifact & { reference: ReferenceArtifact }) | undefined {
-  for (const found of artifacts.toReversed()) {
-    if (found.artifact.type !== "reference") continue;
-    const reference: ReferenceArtifact = readReference(db, found.artifact);
-    if (has(reference, found.node)) return { ...found, reference };
-  }
-  return undefined;
+export function latestPullRequest(db: ProjectDb, artifacts: JobArtifact[], node: string): PullRequestArtifact | null {
+  const found = artifacts.findLast(({ artifact, node: step }) => step === node && artifact.type === "pull_request");
+  return found ? PullRequestArtifact.parse(JSON.parse(db.requireArtifact(found.artifact).toString("utf8"))) : null;
 }
 
 export function jobCommit(db: ProjectDb, events: StoredEvent[]): string | null {
-  return latestReference(db, jobArtifacts(events), (reference) => reference.sha !== undefined)?.reference.sha ?? null;
+  const commit = jobArtifacts(events).findLast(({ artifact }) => artifact.type === "sha");
+  return commit ? db.requireArtifact(commit.artifact).toString("utf8") : null;
 }
 
 export async function fetchBase(

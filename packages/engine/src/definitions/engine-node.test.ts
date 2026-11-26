@@ -62,7 +62,7 @@ describe("repository nodes", () => {
       const recipe = p.ctx.defs.recipes.get("notify")!;
       p.ctx.db.append([
         { jobId: null, type: "queue.added", payload: { itemId, kind: "recipe-change", subject: {}, subjectHash: "a".repeat(64), choices: ["confirm", "reject"] } },
-        { jobId, type: "job.created", payload: { title: "Legacy draft", recipe, ticket: null, parentJobId: null, baseBranch: "main", base: "a".repeat(40), target: "main", branch: `factory/${jobId}`, recipeConfirmationId: itemId } },
+        { jobId, type: "job.created", payload: { title: "Legacy draft", recipe, request: "", parentJobId: null, baseBranch: "main", base: "a".repeat(40), target: "main", branch: `factory/${jobId}`, recipeConfirmationId: itemId } },
         { jobId, type: "job.state_changed", payload: { state: "queued", reason: "confirmation" } },
       ]);
     } finally {
@@ -81,11 +81,11 @@ describe("repository nodes", () => {
   it("runs an imported recipe and later edits to its script without queue items", async () => {
     const { root, engine, p } = await setup();
     try {
-      const first: string = await engine.createJob("demo", { title: "First", ticket: { text: "x" } });
+      const first: string = await engine.createJob("demo", { title: "First", request: "x" });
       await until(() => p.executor.job(first).state === "succeeded");
       engine.catalog.saveNode(Node.parse({ ...engine.catalog.node("notify"), script: `echo second >> ${marker(root)}` }));
       await engine.reloadProject("demo");
-      const second: string = await engine.createJob("demo", { title: "Second", ticket: { text: "x" } });
+      const second: string = await engine.createJob("demo", { title: "Second", request: "x" });
       await until(() => p.executor.job(second).state === "succeeded");
       expect((await readFile(marker(root), "utf8")).trim()).toBe("first\nsecond");
       expect(p.ctx.db.db.prepare("SELECT id FROM human_queue").all()).toEqual([]);
@@ -99,7 +99,7 @@ describe("repository nodes", () => {
     let first: string;
     try {
       await engine.pauseAll();
-      first = await engine.createJob("demo", { title: "First", ticket: { text: "x" } });
+      first = await engine.createJob("demo", { title: "First", request: "x" });
       expect(p.executor.job(first).state).toBe("queued");
       engine.catalog.saveNode(Node.parse({ ...engine.catalog.node("notify"), script: `echo second >> ${marker(root)}` }));
     } finally {
@@ -109,7 +109,7 @@ describe("repository nodes", () => {
     try {
       const project = reopened.project("demo");
       await until(() => project.executor.job(first).state === "succeeded");
-      const second: string = await reopened.createJob("demo", { title: "Second", ticket: { text: "x" } });
+      const second: string = await reopened.createJob("demo", { title: "Second", request: "x" });
       await until(() => project.executor.job(second).state === "succeeded");
       expect((await readFile(marker(root), "utf8")).trim()).toBe("first\nsecond");
       const firstSnapshot = jobDefinitions(project.ctx.db, first);
@@ -145,7 +145,7 @@ describe("repository nodes", () => {
       expect(project.ctx.defs.recipes.get("notify")?.nodes.n?.use).toBe("notify");
       expect((await stat(join(dir, "nodes"))).isDirectory()).toBe(true);
       expect((await stat(join(dir, "recipes"))).isDirectory()).toBe(true);
-      const job: string = await reopened.createJob("demo", { title: "Legacy", ticket: { text: "x" } });
+      const job: string = await reopened.createJob("demo", { title: "Legacy", request: "x" });
       await until(() => project.executor.job(job).state === "succeeded");
       expect((await readFile(marker(root), "utf8")).trim()).toBe("first");
       expect(reopened.catalog.node("notify")).toHaveProperty("script", `echo first >> ${marker(root)}`);
@@ -171,7 +171,7 @@ describe("repository nodes", () => {
       p.ctx.db.definition.write(project);
       expect(await engine.reloadProject("demo")).toEqual([]);
       const decide = async (choice: string): Promise<string> => {
-        const id: string = await engine.createJob("demo", { title: choice, recipe: "pick", ticket: { text: "x" } });
+        const id: string = await engine.createJob("demo", { title: choice, recipe: "pick", request: "x" });
         const item = await until(() => p.ctx.db.db.prepare("SELECT id, subject_hash, subject FROM human_queue WHERE job_id = ? AND state = 'open'").get(id) as { id: string; subject_hash: string; subject: string } | undefined);
         expect(JSON.parse(item.subject)).toMatchObject({ interface: "decision", description: "Which branch should run?" });
         await p.executor.answer(item.id, choice, null, item.subject_hash);

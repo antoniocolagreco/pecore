@@ -9,7 +9,7 @@ function job(id: string, extra: Partial<{ parentJobId: string }> = {}): NewEvent
   return {
     jobId: id,
     type: "job.created",
-    payload: { title: `Job ${id}`, recipe, ticket: null, parentJobId: extra.parentJobId ?? null, baseBranch: "main", base: "0".repeat(40), target: "main", branch: `factory/${id}` },
+    payload: { title: `Job ${id}`, recipe, request: "", parentJobId: extra.parentJobId ?? null, baseBranch: "main", base: "0".repeat(40), target: "main", branch: `factory/${id}` },
   };
 }
 

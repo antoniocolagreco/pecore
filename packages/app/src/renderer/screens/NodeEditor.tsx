@@ -1,7 +1,7 @@
 import { cloneElement, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { ReactElement, ReactNode, Ref } from "react";
 import { Link, useBlocker, useNavigate, useParams } from "react-router";
-import { AgentSession, ApiError, ArtifactType, HumanInterface, humanInterfaces, isNodeKindTag, Name } from "@pecore/schemas";
+import { AgentSession, ApiError, ArtifactType, HumanInterface, humanInterfaces, isNodeKindTag, Name, NodeOutputType } from "@pecore/schemas";
 import type { DefinitionFile, Node, RouteResult } from "@pecore/schemas";
 import { basicSetup, EditorView, minimalSetup } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
@@ -397,24 +397,28 @@ const nodeKinds: { value: Node["kind"]; label: string }[] = [
 const interfaceOptions: { value: HumanInterface; label: string }[] = HumanInterface.options.map((value) => ({ value, label: humanInterfaces[value].label }));
 const humanFields: Record<HumanInterface, Record<string, unknown>> = {
   decision: { interface: "decision", outcomes: ["yes", "no"], outputs: undefined },
-  "code-review": { interface: "code-review", outcomes: ["approved", "changes_requested", "rejected"], outputs: { changes_requested: "text" } },
-  "report-review": { interface: "report-review", outcomes: ["approved", "changes_requested", "rejected"], outputs: { changes_requested: "text" } },
+  "code-review": { interface: "code-review", outcomes: ["approved", "changes_requested", "rejected"], outputs: { changes_requested: "code_review" } },
+  "report-review": { interface: "report-review", outcomes: ["approved", "changes_requested", "rejected"], outputs: { changes_requested: "feedback" } },
 };
 const typeLabels: Record<ArtifactType, string> = {
-  text: "Text", diff: "Diff", document: "Document", spec: "Spec", findings: "Findings", reference: "Reference",
+  diff: "Diff", spec: "Spec", code_review: "Code review", code_analysis: "Code analysis", sha: "Commit SHA",
+  pull_request: "Pull request", feedback: "Feedback", log: "Log",
 };
 const typeExamples: Record<ArtifactType, string> = {
-  text: "words written freely. For example, the Spec Writer rejects a ticket and explains why, or a check writes what went wrong.",
-  diff: "the changes made to the code, line by line, as you see them in a pull request. PeCore creates it after a node with Can edit files enabled.",
-  document: "a text with a title, such as the ticket you sent or the description of a pull request.",
-  spec: "the plan of the work: what must work at the end, which tests to write and which functions to add. The Spec Writer writes it and the Builder follows it.",
-  findings: "a list of problems found in the code. Each one points to a file and a line, says how serious it is and explains it. A code review writes it and the Builder fixes the problems.",
-  reference: "the address of something outside the code: a commit, a branch pushed to GitHub or the link of a pull request. The nodes that publish the work write it.",
+  diff: "Changes to the code, generated from Git.",
+  spec: "A feature and the scenarios that describe how it works.",
+  code_review: "A general review with comments on specific lines or hunks.",
+  code_analysis: "A summary and a risk classification for each hunk.",
+  sha: "The SHA of a Git commit.",
+  pull_request: "The title and body of a pull request, plus its URL after delivery.",
+  feedback: "What needs to change before the work can continue.",
+  log: "Output from running a node, such as errors from TypeScript.",
 };
+const inputTypes: ArtifactType[] = [...NodeOutputType.options, "diff"];
 const typesHelp: ReactNode = <>
-  {ArtifactType.options.map((type) => <span key={type}><br /><br /><strong>{typeLabels[type]}</strong>: {typeExamples[type]}</span>)}
+  {inputTypes.map((type) => <span key={type}><br /><br /><strong>{typeLabels[type]}</strong>: {typeExamples[type]}</span>)}
 </>;
-const typeOptions: { value: string; label: string }[] = [{ value: "", label: "Nothing" }, ...ArtifactType.options.map((type) => ({ value: type, label: typeLabels[type] }))];
+const typeOptions: { value: string; label: string }[] = [{ value: "", label: "Nothing" }, ...NodeOutputType.options.map((type) => ({ value: type, label: typeLabels[type] }))];
 const ruleKinds: { value: string; label: string }[] = [
   { value: "stdoutLastLine", label: "Last line of the output" },
   { value: "stdoutJson", label: "Field of JSON output" },
@@ -438,8 +442,8 @@ const initialNodeFields: Record<Node["kind"], Record<string, unknown>> = {
   },
 };
 
-function OutcomeOutputs({ kind, outcomes, outputs, rules, disabled, onChange }: {
-  kind: string; outcomes: string[]; outputs: Record<string, unknown>; rules: Record<string, unknown>; disabled: boolean;
+function OutcomeOutputs({ kind, humanInterface, outcomes, outputs, rules, disabled, onChange }: {
+  kind: string; humanInterface: HumanInterface | undefined; outcomes: string[]; outputs: Record<string, unknown>; rules: Record<string, unknown>; disabled: boolean;
   onChange(outputs: Record<string, ArtifactType>, rules: Record<string, Record<string, string>>): void;
 }) {
   const human: boolean = kind === "human";
@@ -455,7 +459,7 @@ function OutcomeOutputs({ kind, outcomes, outputs, rules, disabled, onChange }: 
     else delete nextOutputs[outcome];
     if (kind === "command" || kind === "repository") {
       if (!type) delete nextRules[outcome];
-      else if (!nextRules[outcome]) nextRules[outcome] = type === "reference" ? { stdoutLastLine: "url" } : { file: "" };
+      else if (!nextRules[outcome]) nextRules[outcome] = type === "sha" ? { stdoutLastLine: "sha" } : { file: "" };
     }
     onChange(nextOutputs, nextRules);
   };
@@ -468,9 +472,9 @@ function OutcomeOutputs({ kind, outcomes, outputs, rules, disabled, onChange }: 
       const ruleKind: string = Object.keys(rule)[0] ?? "";
       return <div key={outcome} className={s.outputRow}>
         {human
-          ? <Checkbox label={`${outcome}: the person can write a note`} checked={type === "text"} disabled={disabled} onCheckedChange={(checked) => setType(outcome, checked ? "text" : undefined)} />
+          ? <Checkbox label={`${outcome}: the person can write a note`} checked={type === "feedback" || type === "code_review"} disabled={disabled} onCheckedChange={(checked) => setType(outcome, checked ? humanInterface === "code-review" && outcome === "changes_requested" ? "code_review" : "feedback" : undefined)} />
           : <Select label={`Output of ${outcome}`} options={typeOptions} value={type ?? ""} disabled={disabled}
-            onValueChange={(value) => setType(outcome, ArtifactType.safeParse(value).data)} />}
+            onValueChange={(value) => setType(outcome, NodeOutputType.safeParse(value).data)} />}
         {(kind === "command" || kind === "repository") && type && <>
           <Select label="Read it from" options={ruleKinds} value={ruleKind || null} disabled={disabled}
             onValueChange={(value) => value && setRule(outcome, { [value]: rule[ruleKind] ?? "" })} />
@@ -491,7 +495,7 @@ function CommandInputs({ inputs, optional, disabled, onChange }: { inputs: unkno
       The data this command works on, produced by earlier nodes of the job. For example, a command that opens a pull request needs the spec to write its description. Pick the kinds of data it needs: a required one must exist or the recipe cannot be saved; an optional one is used only if it exists. In the recipe you then choose which node it comes from, with Reads from.{typesHelp}
     </FieldHelp></div>
     <Chips label={label}>
-      {ArtifactType.options.map((type) => <Chip key={type} pressed={selected.includes(type)} disabled={disabled}
+      {inputTypes.map((type) => <Chip key={type} pressed={selected.includes(type)} disabled={disabled}
         onClick={() => set(selected.includes(type) ? selected.filter((t) => t !== type) : [...selected, type], other.filter((t) => t !== type))}>{typeLabels[type]}</Chip>)}
     </Chips>
   </div>;
@@ -688,9 +692,9 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
                   : "Use success and failure for ordinary results. Add a named outcome for a separate path. The command or agent must return one of these names.")}
             <div>
               <div className={s.fieldHeading}><span>{human ? "Notes" : "Outputs"}</span>{help(human ? "Notes" : "Outputs", human
-                ? "Choose the answers that come with a note. The note is text that the nodes reading this one receive."
-                : <>A job is a chain of nodes. Each node does its work and ends with one of its outcomes, for example success or rejected. With each outcome it can hand a result to the nodes that come later, which use it to do their own work.<br /><br />For each outcome, choose what this node hands on, or Nothing. For example, the Spec Writer hands on a Spec when it accepts a ticket, so the Builder knows what to build, and a Text with the reason when it rejects it, so you know why.<br /><br />The later nodes receive it only if, in the recipe, they read this node (Reads from).{typesHelp}</>)}</div>
-              <OutcomeOutputs kind={kind} outcomes={outcomes} outputs={object(draft.outputs)} rules={object(draft.outputRules)} disabled={!file.editable}
+                ? "Choose which answers include feedback. Code review can send comments on individual lines with the feedback."
+                : <>A job is a chain of nodes. Each node does its work and ends with one of its outcomes, for example success or rejected. With each outcome it can hand a result to the nodes that come later, which use it to do their own work.<br /><br />For each outcome, choose what this node hands on, or Nothing. For example, the Spec Writer hands on a Spec when it accepts a request, so the Builder knows what to build, and Feedback with the reason when it rejects it, so you know why.<br /><br />The later nodes receive it only if, in the recipe, they read this node (Reads from).{typesHelp}</>)}</div>
+              <OutcomeOutputs kind={kind} humanInterface={iface} outcomes={outcomes} outputs={object(draft.outputs)} rules={object(draft.outputRules)} disabled={!file.editable}
                 onChange={(outputs, outputRules) => updateFields({
                   outputs: Object.keys(outputs).length ? outputs : undefined,
                   ...(kind === "command" || remote ? { outputRules: Object.keys(outputRules).length ? outputRules : undefined } : {}),

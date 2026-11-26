@@ -6,7 +6,7 @@
   "prompt": "resolve-rebase-conflicts.md",
   "agent": { "tier": "strong" },
   "outcomes": ["success", "failure"],
-  "outputs": { "failure": "text" },
+  "outputs": { "failure": "feedback" },
   "failOutcomes": ["failure"],
   "changesFiles": true,
   "timeoutSec": 1800

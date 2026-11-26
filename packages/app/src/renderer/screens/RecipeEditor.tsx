@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import type { Connection, XYPosition } from "@xyflow/react";
-import { AgentSession, assistantAgentId, builtInAgentNames, defaultAgentId, HumanInterface, humanInterfaces, KnowledgeFileName, Name, Outcome, ProjectId, RecipeEnd, RecipeEndResult } from "@pecore/schemas";
+import { AgentSession, automaticOutputs, Node, assistantAgentId, builtInAgentNames, defaultAgentId, HumanInterface, humanInterfaces, KnowledgeFileName, Name, Outcome, ProjectId, RecipeEnd, RecipeEndResult } from "@pecore/schemas";
 import type { DefinitionEntry, NodeAgent } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
@@ -290,7 +290,6 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
     const sourceOutcomes: unknown = object(nodeDefinitions.get(string(node.use))?.value).outcomes;
     const outcomes: string[] = Array.isArray(sourceOutcomes) ? sourceOutcomes.map(string).filter(Boolean) : [];
     if (Array.isArray(node.requires) && node.requires.length) outcomes.push("stale");
-    if (node.optional === true) outcomes.push("skipped");
     if (id === ci.after) {
       const trigger: number = outcomes.indexOf(string(ci.on));
       if (trigger >= 0) outcomes.splice(trigger, 1);
@@ -352,6 +351,15 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
   const required: string[] = Array.isArray(selectedNode.requires) ? selectedNode.requires.map(string) : [];
   const reads: string[] = Array.isArray(selectedNode.reads) ? selectedNode.reads.map(string) : [];
   const nodeInputs: string[] = [...(Array.isArray(nodeValue.inputs) ? nodeValue.inputs : []), ...(Array.isArray(nodeValue.optionalInputs) ? nodeValue.optionalInputs : [])].map(string);
+  const readOptions: Option[] = stepOptions.filter(({ value }) => {
+    if (reads.includes(value)) return true;
+    if (value === selected) return false;
+    const source = Node.safeParse(nodeDefinitions.get(string(object(nodes[value]).use))?.value);
+    if (!source.success) return false;
+    const outputs = [...Object.values(source.data.outputs), ...automaticOutputs(source.data)];
+    if (object(draft?.ci).after === value) outputs.push("log");
+    return outputs.some((type) => !("inputs" in nodeValue) || nodeInputs.includes(type));
+  });
   const humanInterface: HumanInterface | undefined = nodeValue.kind === "human" ? HumanInterface.safeParse(nodeValue.interface).data : undefined;
 
   const recipeOptions = templateOptions(recipeTemplates.data);
@@ -425,9 +433,9 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
                   <span>{inspectorOutcomes.join(", ")}</span>
                 </div>}
                 <MultiCombobox label="Reads from" placeholder="Choose nodes" value={reads} disabled={!editable}
-                  labelAction={<FieldHelp title="Reads from">Choose Start for the job request, or choose steps for their latest output, such as the spec writer's spec or a check's log.</FieldHelp>}
+                  labelAction={<FieldHelp title="Reads from">Choose steps for their latest output, such as the spec writer’s spec or a check’s log.</FieldHelp>}
                   description={("inputs" in nodeValue) && nodeInputs.length ? `This command takes ${nodeInputs.join(", ")}. Read one node for each.` : undefined}
-                  options={[{ value: recipeStart, label: "Start (job request)" }, ...stepOptions.filter(({ value }) => value !== selected || reads.includes(value))]}
+                  options={readOptions}
                   onValueChange={(next) => updateNode("reads", next.length ? next : undefined)} />
                 {humanInterface === "decision" && questionParameter.type === "string" && <TextField label="Question"
                   value={string(object(selectedNode.params).question)} placeholder={string(questionParameter.default)} disabled={!editable}
@@ -439,10 +447,6 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
                   labelAction={<FieldHelp title="Requires">Steps that must have passed on the current code before this step runs. If the code changed after they passed, this step does not run and ends with stale, which you can connect, for example back to the checks. Commit uses it to commit only checked code.</FieldHelp>}
                   options={stepOptions.filter(({ value }) => value !== selected || required.includes(value))}
                   onValueChange={(next) => updateNode("requires", next)} />
-                <div className={s.checkHelp}>
-                  <Checkbox label="Optional" checked={selectedNode.optional === true} disabled={!editable} onCheckedChange={(checked) => updateNode("optional", checked)} />
-                  <FieldHelp title="Optional">Being in the recipe is not enough: the step runs only if the Spec Writer lists it in the job's specification, because the ticket needs it. For example, an Update docs step that runs only for tickets that change documented behaviour. Otherwise it ends at once with skipped, so connect skipped to the next step.</FieldHelp>
-                </div>
                 <div className={s.checkHelp}>
                   <Checkbox label="Keep result after a clean rebase" checked={selectedNode.skipWhenUnchanged === true} disabled={!editable} onCheckedChange={(checked) => updateNode("skipWhenUnchanged", checked)} />
                   <FieldHelp title="Keep result after a clean rebase">After the base branch moves, if the rebase was clean and the job's own changes are the same as before, the step does not run again and keeps its previous result. Use it for reviews and approvals; checks should always run.</FieldHelp>

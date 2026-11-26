@@ -52,7 +52,7 @@ describe("system routes", () => {
     const api = await startApi(engine, { handlers: handlers("t"), validateResponses: true });
     const call = apiClient({ port: api.port, token: api.token });
     const p = engine.project("shop");
-    const { id } = await call("createJob", { body: { project: "shop", title: "Add hello", ticket: { text: "x", id: "7" } } });
+    const { id } = await call("createJob", { body: { project: "shop", title: "Add hello", request: "x", ticketId: "7" } });
     await until(() => p.executor.job(id).state !== "queued");
     await forge.set({ tokenValid: false });
     await until(() => p.executor.job(id).waiting_reason === "auth");

@@ -92,7 +92,8 @@ export const CreateJobBody = z
     project: ProjectId,
     recipe: Name.optional(),
     title: z.string().min(1),
-    ticket: z.object({ text: z.string(), source: z.string().optional(), id: z.string().optional() }).strict(),
+    request: z.string().trim().min(1),
+    ticketId: z.string().trim().min(1).optional(),
     parentJobId: z.string().nullable().default(null),
     baseBranch: z.string().min(1).optional(),
   })
@@ -355,6 +356,7 @@ export type AttemptView = z.infer<typeof AttemptView>;
 
 export const JobDetail = z.object({
   job: JobView,
+  request: z.string(),
   nodeRuns: z.array(NodeRunView),
   attempts: z.array(AttemptView),
   artifacts: z.array(Artifact),

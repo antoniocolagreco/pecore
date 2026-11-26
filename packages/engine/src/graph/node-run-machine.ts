@@ -1,13 +1,12 @@
 import type { NodeRunState } from "@pecore/schemas";
 
 const table: Record<NodeRunState, NodeRunState[]> = {
-  pending: ["waiting", "running", "skipped", "interrupted"],
+  pending: ["waiting", "running", "interrupted"],
   waiting: ["waiting", "running", "interrupted", "completed"],
   running: ["waiting", "completed", "failed", "interrupted"],
   completed: [],
   failed: [],
   interrupted: [],
-  skipped: [],
 };
 
 export function canTransitionRun(from: NodeRunState, to: NodeRunState): boolean {

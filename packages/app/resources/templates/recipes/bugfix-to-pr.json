@@ -14,7 +14,7 @@
     { "from": "comment", "on": "failure", "result": "failed" }
   ],
   "nodes": {
-    "spec": { "use": "spec-writer", "reads": ["@start"] },
+    "spec": { "use": "spec-writer" },
     "tests": { "use": "tests-writer", "reads": ["spec", "tests-check", "tests-fail", "code"] },
     "tests-check": { "use": "typecheck" },
     "tests-fail": { "use": "tests-fail-check", "params": { "suite": "unit" } },
@@ -29,7 +29,8 @@
     "rebase": { "use": "git-rebase" },
     "resolve-conflicts": { "use": "resolve-rebase-conflicts", "reads": ["spec", "rebase"] },
     "push": { "use": "git-push" },
-    "pr": { "use": "github-pr", "reads": ["spec"] },
+    "write-pr": { "use": "write-pr", "reads": ["spec", "lint", "types", "test"] },
+    "pr": { "use": "github-pr", "reads": ["write-pr"] },
     "comment": { "use": "post-delivery-to-ticket", "reads": ["pr"] }
   },
   "edges": [
@@ -54,7 +55,8 @@
     { "from": "human", "on": "changes_requested", "to": "code" },
     { "from": "commit", "on": "success", "to": "push" },
     { "from": "commit", "on": "stale", "to": "lint" },
-    { "from": "push", "on": "success", "to": "pr" },
+    { "from": "push", "on": "success", "to": "write-pr" },
+    { "from": "write-pr", "on": "success", "to": "pr" },
     { "from": "rebase", "on": "success", "to": "lint" },
     { "from": "rebase", "on": "rebase_conflict", "to": "resolve-conflicts" },
     { "from": "resolve-conflicts", "on": "success", "to": "lint" },

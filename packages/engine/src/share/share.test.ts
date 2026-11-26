@@ -126,7 +126,7 @@ function items(engine: Engine, id: string, kind = "import"): Item[] {
 }
 
 async function finishedJob(p: Awaited<ReturnType<typeof apiProject>>): Promise<string> {
-  const { id } = await p.call("createJob", { body: { project: "demo", title: "Add hello", ticket: { text: "x" } } });
+  const { id } = await p.call("createJob", { body: { project: "demo", title: "Add hello", request: "x" } });
   await until(async () => (await p.call("getJob", { params: { id } })).job.state === "waiting");
   const human = items(p.engine, "demo", "human-node").find((i) => i.state === "open")!;
   await p.engine.project("demo").executor.answer(human.id, "approved", null, human.subject_hash);
@@ -139,7 +139,7 @@ describe("project export (share/, section 8)", () => {
     const p = await apiProject();
     const dir = p.engine.projectDir("demo");
     await writeFile(join(dir, "knowledge", "notes.md"), "# Notes\n");
-    const { id } = await p.call("createJob", { body: { project: "demo", title: "Add hello", ticket: { text: "x" } } });
+    const { id } = await p.call("createJob", { body: { project: "demo", title: "Add hello", request: "x" } });
     await until(async () => (await p.call("getJob", { params: { id } })).job.state === "waiting");
     const out = join(await tempDir(), "demo.tar.zst");
 
@@ -161,7 +161,7 @@ describe("project export (share/, section 8)", () => {
 
   it("with history: refused while a job is active, lists findings without the secret, and writes after they are accepted", async () => {
     const p = await apiProject();
-    const { id: active } = await p.call("createJob", { body: { project: "demo", title: "Active", ticket: { text: "x" } } });
+    const { id: active } = await p.call("createJob", { body: { project: "demo", title: "Active", request: "x" } });
     await until(async () => (await p.call("getJob", { params: { id: active } })).job.state === "waiting");
     const out = join(await tempDir(), "demo.tar.zst");
     await expect(p.call("exportProject", { params: { id: "demo" }, body: { path: out, history: true } })).rejects.toMatchObject({ status: 409, message: expect.stringContaining("1 job is active: stop or archive them first") });
@@ -169,7 +169,7 @@ describe("project export (share/, section 8)", () => {
 
     const done = await finishedJob(p);
     const db = p.engine.project("demo").ctx.db;
-    db.saveArtifact(done, "leak", "out.txt", "text", `first line\ntoken ${secret}\n`, null);
+    db.saveArtifact(done, "leak", "out.txt", "log", `first line\ntoken ${secret}\n`, null);
     const attemptId: string = db.db.prepare<[], string>("SELECT id FROM attempts LIMIT 1").pluck().get()!;
     const logText: string = "private attempt message";
     db.logs.write(attemptId, { dir: "err", line: logText, at: 1 });
@@ -276,7 +276,7 @@ describe("project import (share/, CUJ 7)", () => {
     }
 
     expect(items(b.engine, "demo", "import")).toEqual([]);
-    const { id } = await b.call("createJob", { body: { project: "demo", title: "After import", ticket: { text: "x" } } });
+    const { id } = await b.call("createJob", { body: { project: "demo", title: "After import", request: "x" } });
     await until(async () => (await b.call("getJob", { params: { id } })).job.state === "waiting");
     const human = items(b.engine, "demo", "human-node").find((i) => i.state === "open")!;
     await executor.answer(human.id, "approved", null, human.subject_hash);
@@ -295,7 +295,7 @@ describe("project import (share/, CUJ 7)", () => {
         { name: "project.json", body: JSON.stringify({ id: "demo", name: "Demo", repo: null, recipes: ["legacy-review"] }) },
         { name: "nodes/human-review.json", body: JSON.stringify({
           name: "human-review", kind: "human", interface: "code-review", description: "Review the change",
-          outcomes: ["approve", "changes", "reject"], outputs: { changes: "text" },
+          outcomes: ["approve", "changes", "reject"], outputs: { changes: "code_review" },
         }) },
         { name: "recipes/legacy-review.json", body: JSON.stringify({
           name: "legacy-review", description: "Review the change", start: "review", nodes: { review: { use: "human-review" } },
@@ -304,7 +304,7 @@ describe("project import (share/, CUJ 7)", () => {
         }) },
       ]);
       await expect(receiver.call("importProject", { body: { path: archive } })).resolves.toMatchObject({ state: "imported", id: "demo" });
-      const { id } = await receiver.call("createJob", { body: { project: "demo", title: "Review", ticket: { text: "x" } } });
+      const { id } = await receiver.call("createJob", { body: { project: "demo", title: "Review", request: "x" } });
       const human: Item = await until(() => items(receiver.engine, "demo", "human-node").find((item) => item.state === "open"));
       await receiver.engine.project("demo").executor.answer(human.id, "approved", null, human.subject_hash);
       await until(async () => (await receiver.call("getJob", { params: { id } })).job.state === "succeeded");
@@ -359,8 +359,8 @@ describe("project import (share/, CUJ 7)", () => {
     await p.close();
     const b = await secondHome(templates);
     await b.call("importProject", { body: { path: out } });
-    const parent = await b.engine.createJob("demo", { title: "Parent", ticket: { text: "x" } });
-    const child = await b.engine.createJob("demo", { title: "Child", ticket: { text: "x" }, parentJobId: parent });
+    const parent = await b.engine.createJob("demo", { title: "Parent", request: "x" });
+    const child = await b.engine.createJob("demo", { title: "Child", request: "x", parentJobId: parent });
     const { executor } = b.engine.project("demo");
     await until(() => executor.job(parent).state === "waiting");
     await until(() => executor.job(child).waiting_reason === "parent_job");
@@ -448,7 +448,7 @@ describe("project import (share/, CUJ 7)", () => {
 
   it("an archive whose history has an active job is refused", async () => {
     const p = await apiProject();
-    const { id } = await p.call("createJob", { body: { project: "demo", title: "Active", ticket: { text: "x" } } });
+    const { id } = await p.call("createJob", { body: { project: "demo", title: "Active", request: "x" } });
     await until(async () => (await p.call("getJob", { params: { id } })).job.state === "waiting");
     const dir = p.engine.projectDir("demo");
     const t = await tempDir();

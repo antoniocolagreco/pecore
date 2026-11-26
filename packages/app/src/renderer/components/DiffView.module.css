@@ -4,6 +4,19 @@
   gap: 10px;
 }
 
+.comment {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  white-space: inherit;
+  cursor: pointer;
+}
+
 .file {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -140,4 +153,8 @@
   margin: 0;
   padding: 8px 10px;
   color: var(--text-muted);
+}
+
+.comment:hover {
+  text-decoration: underline;
 }

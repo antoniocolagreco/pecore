@@ -12,10 +12,14 @@ describe("crash during delivery (G12, 4.8)", () => {
   it("a job without a crash pushes and opens one pull request", async () => {
     const { forge, engine } = await forgeProject();
     const p = engine.project("shop");
-    const id = await engine.createJob("shop", { title: "Add hello", ticket: { text: "x", id: "7" } });
+    const id = await engine.createJob("shop", { title: "Add hello", request: "x", ticketId: "7" });
     await until(() => p.executor.job(id).state === "succeeded");
     const s = await forge.state();
-    expect(s.prs).toMatchObject([{ head: `factory/${id}`, base: "main", state: "OPEN" }]);
+    expect(s.prs).toMatchObject([{ head: `factory/${id}`, base: "main", state: "OPEN", title: "Add hello", body: "Add hello.txt" }]);
+    const delivery = p.executor.artifacts(id).filter(({ type }) => type === "pull_request").at(-1)!;
+    expect(JSON.parse(p.ctx.db.requireArtifact(delivery).toString("utf8"))).toEqual({
+      title: "Add hello", body: "Add hello.txt", url: s.prs[0]!.url,
+    });
     const sha: string | null = jobCommit(p.ctx.db, p.ctx.db.events(id));
     expect(sha).toMatch(/^[0-9a-f]{40}$/);
     expect(forge.remoteHead("acme/shop", `factory/${id}`)).toBe(sha);
@@ -27,7 +31,7 @@ describe("crash during delivery (G12, 4.8)", () => {
       const { forge, home, templates, engine } = await forgeProject();
       const p = engine.project("shop");
       await forge.set({ hang });
-      const id = await engine.createJob("shop", { title: "Add hello", ticket: { text: "x", id: "7" } });
+      const id = await engine.createJob("shop", { title: "Add hello", request: "x", ticketId: "7" });
       await until(() => p.ctx.db.events(id).some((e) => e.type === "effect.requested" && e.payload.node === node));
       await new Promise((r) => setTimeout(r, 300));
       await engine.shutdown();

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { builtInAgentNames } from "@pecore/schemas";
 import type { Artifact, AttemptView, JobDetail, NodeRunView } from "@pecore/schemas";
 import { useConnected } from "../api/live";
-import { artifactKey, ArtifactView, latestFindings } from "./ArtifactView";
+import { artifactKey, ArtifactView, latestAnalysis } from "./ArtifactView";
 import { DefinitionIcon, useDefinitionIcons } from "./DefinitionIcon";
 import { LogView } from "./LogView";
 import { duration, ui } from "./ui";
@@ -47,7 +47,7 @@ export function NodeRunDetail({ detail, run, nodeName, icon, onSelect }: {
   const artifactRun: string | undefined = run.id.split("/")[1]?.replace("#", "-");
   const artifacts: Artifact[] = detail.artifacts.filter((artifact) => artifact.run === artifactRun);
   const artifact: Artifact | undefined = artifacts.find((entry) => artifactKey(entry) === selected);
-  const risk: Artifact | undefined = artifact?.type === "diff" ? latestFindings(detail.artifacts, artifact.contentState) : undefined;
+  const risk: Artifact | undefined = artifact?.type === "diff" ? latestAnalysis(detail.artifacts, artifact.filesHash) : undefined;
   return (
     <Card padded>
       <section className={ui.stack} aria-label="Node run detail">
@@ -96,7 +96,7 @@ export function NodeRunDetail({ detail, run, nodeName, icon, onSelect }: {
               })}
             </div>
             <Pages page={artifactPage} count={artifacts.length} onChange={setArtifactPage} />
-            {artifact && <ArtifactView key={artifactKey(artifact)} artifact={artifact} findings={risk} />}
+            {artifact && <ArtifactView key={artifactKey(artifact)} artifact={artifact} analysis={risk} />}
           </section>
         )}
         {latest && <LogView key={latest.id} attemptId={latest.id} running={run.state === "running" && latest.endedAt === null} />}

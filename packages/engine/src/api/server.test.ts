@@ -65,10 +65,10 @@ describe("local API (phase 5 decisions 2-5)", () => {
 
   it("validates input and maps engine errors to codes", async () => {
     const { call, close } = await apiProject();
-    await expect(call("createJob", { body: { project: "demo", title: "", ticket: { text: "x" } } })).rejects.toMatchObject({ status: 400, code: "bad_request" });
+    await expect(call("createJob", { body: { project: "demo", title: "", request: "x" } })).rejects.toMatchObject({ status: 400, code: "bad_request" });
     await expect(call("getJob", { params: { id: "nope" } })).rejects.toMatchObject({ status: 404, code: "not_found" });
-    await expect(call("createJob", { body: { project: "other", title: "x", ticket: { text: "x" } } })).rejects.toMatchObject({ status: 404 });
-    await expect(call("createJob", { body: { project: "demo", title: "x", recipe: "missing", ticket: { text: "x" } } })).rejects.toBeInstanceOf(ApiError);
+    await expect(call("createJob", { body: { project: "other", title: "x", request: "x" } })).rejects.toMatchObject({ status: 404 });
+    await expect(call("createJob", { body: { project: "demo", title: "x", recipe: "missing", request: "x" } })).rejects.toBeInstanceOf(ApiError);
     await close();
   });
 
@@ -76,7 +76,7 @@ describe("local API (phase 5 decisions 2-5)", () => {
     const { api, call, close } = await apiProject();
     const l = live(api.port, JSON.stringify({ auth: api.token }));
     await l.open;
-    const { id } = await call("createJob", { body: { project: "demo", title: "Add hello", ticket: { text: "x" } } });
+    const { id } = await call("createJob", { body: { project: "demo", title: "Add hello", request: "x" } });
     await until(async () => (await call("getJob", { params: { id } })).job.state === "waiting");
     const why = await call("whyJob", { params: { id } });
     expect(why.reasons).toMatchObject([{ reason: "human", queueItemId: expect.any(String) }]);
@@ -102,7 +102,7 @@ describe("local API (phase 5 decisions 2-5)", () => {
 
   it("reads an artifact of a job; deletes the project locally, stopping its waiting job", async () => {
     const { engine, call, close } = await apiProject();
-    const { id } = await call("createJob", { body: { project: "demo", title: "Add hello", ticket: { text: "x" } } });
+    const { id } = await call("createJob", { body: { project: "demo", title: "Add hello", request: "x" } });
     await until(async () => (await call("getJob", { params: { id } })).job.state === "waiting");
     const diff = (await call("getJob", { params: { id } })).artifacts.find((a) => a.type === "diff")!;
     const { run, name } = diff;
@@ -121,7 +121,7 @@ describe("local API (phase 5 decisions 2-5)", () => {
   it("deletes the job's artifact and log rows with the job", async () => {
     const { engine, call, close } = await apiProject();
     try {
-      const { id } = await call("createJob", { body: { project: "demo", title: "Add hello", ticket: { text: "x" } } });
+      const { id } = await call("createJob", { body: { project: "demo", title: "Add hello", request: "x" } });
       await until(async () => (await call("getJob", { params: { id } })).job.state === "waiting");
       await call("stopJob", { params: { id } });
       const db = engine.project("demo").ctx.db;
