@@ -525,3 +525,51 @@
 - Decision: Cursor CLI, Qwen, Kimi and Muse are removed from the AI tools list and from the colour defaults. The coming soon rows are Antigravity CLI, GitHub Copilot CLI, DeepSeek and Grok.
 - Why: The author will not support them, and the list should show only what is planned.
 - Replaces: The eight coming soon rows of 2026-11-24.
+
+## 2026-11-26: Codex defaults to light grey
+
+- Decision: Codex's default colour is `#EEF1F2`, a light grey outside the 24 agent colours, like Claude Code's terracotta. The user's saved colour still wins.
+- Why: The author's choice, closer to OpenAI's look.
+- Replaces: Codex slate `#64748B`.
+
+## 2026-11-26: Reset an AI tool colour from its picker
+
+- Decision: the AI tool colour dialog has a Reset button beside Done. It removes the saved colour, so the tool's default applies; it is disabled when no colour is saved.
+- Why: changing a colour had no way back to the default.
+- Replaces: nothing.
+
+## 2026-11-26: OpenCode defaults to blue
+
+- Decision: OpenCode's default colour is `#5D9BEA`, a blue outside the 24 agent colours, like Claude Code's terracotta and Codex's light grey. The user's saved colour still wins.
+- Why: The author's choice, closer to OpenCode's look.
+- Replaces: OpenCode ice `#BAE6FD`.
+
+## 2026-11-26: Pi is capitalised and defaults to amber
+
+- Decision: the AI tool is called "Pi" in the GUI, with the id `pi` unchanged. Its default colour is `#F59E0B`, an amber outside the 24 agent colours. The user's saved colour still wins.
+- Why: the author's choice of name and colour for the tool.
+- Replaces: the lowercase name "pi" and its lavender `#C4B5FD`.
+
+## 2026-11-26: Antigravity CLI defaults to green
+
+- Decision: Antigravity CLI's default colour is `#3DA955`, a green outside the 24 agent colours. The user's saved colour still wins.
+- Why: the author's choice for the tool's colour.
+- Replaces: green `#16A34A`.
+
+## 2026-11-26: DeepSeek defaults to blue
+
+- Decision: DeepSeek's default colour is `#5785FA`, a blue outside the 24 agent colours. The user's saved colour still wins.
+- Why: the author's choice for the tool's colour.
+- Replaces: blue `#1D4ED8`.
+
+## 2026-11-26: Grok defaults to near-black
+
+- Decision: Grok's default colour is `#0F1419`. The user's saved colour still wins.
+- Why: the author's choice for the tool's colour.
+- Replaces: purple `#7E22CE`.
+
+## 2026-11-26: GitHub Copilot CLI defaults to purple
+
+- Decision: GitHub Copilot CLI's default colour is `#8957E5`, a purple outside the 24 agent colours. The user's saved colour still wins.
+- Why: the author's choice for the tool's colour.
+- Replaces: indigo `#6366F1`.
