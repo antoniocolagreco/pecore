@@ -103,6 +103,7 @@ describe.skipIf(!ready())("job services (4.9)", () => {
     const id: string = await engine.createJob("auto", { title: "t", request: "x" });
     await until(() => p.executor.job(id).state === "succeeded");
     expect(p.ctx.db.events(id)).toContainEqual(expect.objectContaining({ type: "job.state_changed", payload: { state: "waiting", reason: "services" } }));
+    await until(() => composeProjects(id).trim() === "[]");
     await engine.shutdown();
   }, 120_000);
 });
