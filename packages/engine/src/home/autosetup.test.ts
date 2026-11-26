@@ -37,6 +37,14 @@ const opencode: FakeHarness = {
   models: { "opencode/big-pickle": ["low", "high"], "openrouter/qwen/qwen3-max": ["low", "medium", "high"], "openrouter/deepseek/deepseek-v4-flash": ["minimal", "low"] },
 };
 
+
+const pi: FakeHarness = {
+  version: "1.5.2",
+  email: null,
+  defaultModel: "opencode-go/kimi-k3",
+  models: { "opencode-go/kimi-k3": ["low", "high", "max"], "opencode-go/glm-5.3": ["low", "high"] },
+};
+
 const opencodeConfig = `{
   // chosen in opencode
   "$schema": "https://opencode.ai/config.json",
@@ -149,6 +157,7 @@ describe("auto-setup", () => {
         { connector: "claude-code", installed: true, version: "2.1.400", loggedIn: true },
         { connector: "codex", installed: true, version: "0.170.0", loggedIn: true },
         { connector: "opencode", installed: true, version: "2.4.0", loggedIn: true },
+        { connector: "pi", installed: false, version: null, loggedIn: false },
       ],
       modelAccountWorks: true,
     });
@@ -256,6 +265,7 @@ describe("auto-setup", () => {
         { connector: "claude-code", installed: true, version: "2.1.400", loggedIn: false },
         { connector: "codex", installed: true, version: "0.100.0", loggedIn: false },
         { connector: "opencode", installed: false, version: null, loggedIn: false },
+        { connector: "pi", installed: false, version: null, loggedIn: false },
       ],
       modelAccountWorks: false,
     });
@@ -276,6 +286,7 @@ describe("auto-setup", () => {
         { connector: "claude-code", installed: true, version: "2.1.400", loggedIn: true },
         { connector: "codex", installed: true, version: "0.100.0", loggedIn: false },
         { connector: "opencode", installed: false, version: null, loggedIn: false },
+        { connector: "pi", installed: false, version: null, loggedIn: false },
       ],
       modelAccountWorks: true,
     });
@@ -322,6 +333,30 @@ describe("auto-setup", () => {
     });
     await s.harnesses.set("opencode", { ...opencode, cliModels: undefined });
     expect(await app.call("recheckLogin", { params: { id: (await login())!.id } })).toMatchObject({ state: "unknown", email: null });
+    await app.close();
+  });
+
+  it("shows pi as logged in when its ACP session lists models, and takes its models and efforts from the session", async () => {
+    const s = await setup();
+    await s.harnesses.set("pi", pi);
+    const app = await s.start();
+    const login = async () => (await app.call("listLogins")).find((item) => item.connector === "pi");
+    await vi.waitFor(async () => expect(await login()).toMatchObject({ state: "logged_in", email: null }), { timeout: 15_000 });
+    expect(await app.call("recheckLogin", { params: { id: (await login())!.id } })).toMatchObject({ state: "logged_in", email: null, plan: null });
+    expect(await app.call("accountOptions", { params: { id: "pi" }, query: {} })).toEqual({
+      models: ["opencode-go/kimi-k3", "opencode-go/glm-5.3"],
+      efforts: ["low", "high", "max"],
+    });
+    expect(await app.call("accountOptions", { params: { id: "pi" }, query: { model: "opencode-go/glm-5.3" } })).toEqual({
+      models: ["opencode-go/kimi-k3", "opencode-go/glm-5.3"],
+      efforts: ["low", "high"],
+    });
+    expect((await s.records()).profiles).toEqual({ profiles: [
+      { id: "pi-frontier", account: "pi", model: "opencode-go/kimi-k3", effort: "max" },
+      { id: "pi-strong", account: "pi", model: "opencode-go/kimi-k3", effort: "max" },
+      { id: "pi-standard", account: "pi", model: "opencode-go/kimi-k3", effort: "high" },
+      { id: "pi-cheap", account: "pi", model: "opencode-go/kimi-k3", effort: "low" },
+    ] });
     await app.close();
   });
 

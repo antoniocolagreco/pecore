@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { requestTimeoutMs } from "./acp/client";
+import { requestTimeoutMs, RpcError } from "./acp/client";
 import { connectorProcess, fill, forPlatform } from "./connectors";
 import { openConnection } from "./session";
 import type { Login, ResolvedConnector, Spawn } from "./types";
@@ -31,11 +31,15 @@ export async function probeSession(p: LoginProbeParams & { model?: string }): Pr
   const conn = await openConnection({ connector: p.connector, login: p.login, spawn: p.spawn, cwd });
   try {
     const meta = p.connector.sessionMeta ?? undefined;
+    let missingAuth = false;
     const s: SessionOptions | undefined = await conn.client
       .request<SessionOptions>("session/new", { cwd, mcpServers: [], ...(meta ? { _meta: meta } : {}) })
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        missingAuth = error instanceof RpcError && error.error.code === -32000 && error.error.message.startsWith("Authentication required");
+        return undefined;
+      });
     const a = conn.account();
-    const state: LoginState = a ?? { state: "unknown" };
+    const state: LoginState = a ?? (missingAuth ? { state: "logged_out" } : { state: "unknown" });
     const availableModels: unknown = s?.models?.availableModels;
     const models: string[] = p.connector.reader === "codex" && Array.isArray(availableModels)
       ? availableModels.flatMap((model: { modelId?: unknown } | null) => typeof model?.modelId === "string" && model.modelId ? [model.modelId] : [])

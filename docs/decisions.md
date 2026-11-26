@@ -499,3 +499,11 @@
 - Decision: In a project's chat, `write_knowledge` accepts the file name alone, for example `notes.md`, and saves it in that project's `knowledge/`. The full path `projects/<id>/knowledge/<name>.md` still works, and the Assistant uses it outside a project chat.
 - Why: The Project Manager lost its first attempt on a bare file name, retried, and told the user about the failure.
 - Replaces: The full path as the only accepted form.
+
+## 2026-11-26: Support pi through the pi-acp adapter
+
+- Decision: pi is a built-in harness through the `pi-acp` adapter (0.0.35), which starts the user's installed `pi` in ACP mode. `packages/app/resources/connectors/pi.json` pins the adapter and sets `PI_ACP_PI_COMMAND`. Models and thinking levels come from the ACP session's `model` and `thought_level` config options, so pi uses the same model-only login check as OpenCode: it is logged in when its session lists at least one model.
+- Why: pi has no ACP mode of its own. `pi-acp` is an ACP adapter for pi, so the connector needs no engine change and the user's existing `pi` login and providers stay in place.
+- Login: `pi auth login` requires a provider and an interactive terminal. The connector runs `pi auth login openrouter --no-browser` inside `script` on Linux and macOS, so the row and the setup banner can show the URL and send the code the command reads. A user already logged in to another pi provider only needs Check.
+- Errors: `pi-acp` maps a missing login to `-32000` "Authentication required", which is `auth`. It retries provider failures itself and reports only "Retrying (attempt n/m)…" or "Retry finished, resuming."; the connector classifies those messages as `rate_limit`, so the node waits instead of failing. pi-acp reports no token usage or cost, so attempts show no token counts; the selected model is still recorded from the session config option.
+- Replaces: pi in the list of harnesses planned after phase 6.

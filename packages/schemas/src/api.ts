@@ -480,7 +480,7 @@ export type AccountOptions = z.infer<typeof AccountOptions>;
 export const PrerequisiteView = z.object({ tool: z.string(), ok: z.boolean(), version: z.string().nullable(), problem: z.string().nullable(), setting: z.string().nullable() });
 export type PrerequisiteView = z.infer<typeof PrerequisiteView>;
 
-export const BuiltInHarness = z.enum(["claude-code", "codex", "opencode"]);
+export const BuiltInHarness = z.enum(["claude-code", "codex", "opencode", "pi"]);
 export type BuiltInHarness = z.infer<typeof BuiltInHarness>;
 
 export const ForgeDiscovery = z.enum(["github", "gitlab", "codecommit"]);

@@ -4,9 +4,9 @@ import { harnessColor, harnesses } from "./harnesses";
 import { Settings } from "./settings";
 
 describe("AI tool colours", () => {
-  it("lists three working AI tools and eight coming soon, each with its own colour, from the palette except Claude Code's terracotta", () => {
+  it("lists four working AI tools and eight coming soon, each with its own colour, from the palette except Claude Code's terracotta", () => {
     expect(harnesses.map(({ id, supported }) => [id, supported])).toEqual([
-      ["claude-code", true], ["codex", true], ["opencode", true],
+      ["claude-code", true], ["codex", true], ["opencode", true], ["pi", true],
       ["antigravity", false], ["copilot", false], ["cursor", false], ["deepseek", false], ["qwen", false], ["kimi", false], ["grok", false], ["muse", false],
     ]);
     expect(new Set(harnesses.map(({ color }) => color)).size).toBe(harnesses.length);

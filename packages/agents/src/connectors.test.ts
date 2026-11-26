@@ -88,9 +88,9 @@ describe("claude-code connector: recorded traffic through the reader and the cla
 
 describe("shipped connector files", () => {
   const dir = fileURLToPath(new URL("../../app/resources/connectors/", import.meta.url));
-  it("are claude-code, codex and opencode, and each one is valid", () => {
+  it("are claude-code, codex, opencode and pi, and each one is valid", () => {
     const files = readdirSync(dir).filter((f) => f.endsWith(".json")).sort();
-    expect(files).toEqual(["claude-code.json", "codex.json", "opencode.json"]);
+    expect(files).toEqual(["claude-code.json", "codex.json", "opencode.json", "pi.json"]);
     for (const f of files) expect({ file: f, errors: parseConnector(JSON.parse(readFileSync(join(dir, f), "utf8"))).errors }).toEqual({ file: f, errors: [] });
   });
 });

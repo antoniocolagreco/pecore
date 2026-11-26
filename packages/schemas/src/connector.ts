@@ -40,7 +40,7 @@ export const Connector = z
     configDirFiles: z.array(z.object({ path: z.string().min(1), content: z.string() }).strict()).default([]),
     sessionConfig: z.array(SessionConfigEntry).default([]),
     sessionMeta: z.record(z.string(), z.unknown()).nullable().default(null),
-    reader: z.enum(["claude-code", "codex", "opencode"]).nullable().default(null),
+    reader: z.enum(["claude-code", "codex", "opencode", "pi"]).nullable().default(null),
     errors: z.array(ErrorRule).default([]),
     loginCommand: platformValue(Argv).nullable().default(null),
     loginUrlPattern: z.string().nullable().default(null),
