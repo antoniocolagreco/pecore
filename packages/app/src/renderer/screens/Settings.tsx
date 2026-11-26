@@ -8,6 +8,7 @@ import { call } from "../api/client";
 import { useAction, useAutoSave, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
 import { ErrorText, Page, ui } from "../components/ui";
+import { useViewState } from "../components/useViewState";
 import { harnessName } from "../components/AgentFields";
 import { Button } from "../ds/button";
 import { Switch } from "../ds/choice";
@@ -43,6 +44,7 @@ function useGlobalFile<T>(name: string, get: () => Promise<Snapshot<T>>, put: (b
   return {
     ...useAutoSave(remote, put, valid),
     loadError: remote.error,
+    loading: remote.loading,
   };
 }
 
@@ -346,7 +348,7 @@ export function Settings() {
   const discovery = useData(() => call("getAccountDiscovery"), [], (message) => message.type === "accounts.discovery_changed");
   const jira = useData(() => call("getActiveJira"), []);
   const status = useData(() => call("getStatus"), []);
-  const [checks, setChecks] = useState<RouteResult<"checkPrerequisites">>();
+  const [checks, setChecks] = useViewState<RouteResult<"checkPrerequisites"> | undefined>("settings.checks", undefined);
   const [disableDialog, setDisableDialog] = useState(false);
   const [forgeDialog, setForgeDialog] = useState<ForgeAccount | "new">();
   const [pendingLogin, setPendingLogin] = useState<string>();
@@ -357,8 +359,9 @@ export function Settings() {
     setTrackerLogin(account.id);
     accounts.reload();
   });
-  const [showUnavailable, setShowUnavailable] = useState(false);
-  const [active, setActive] = useState<string>(sections[0]!.id);
+  const sectionId = new URLSearchParams(search).get("section");
+  const [showUnavailable, setShowUnavailable] = useViewState("settings.showUnavailable", false);
+  const [active, setActive] = useViewState("settings.active", sections.find(({ id }) => id === sectionId)?.id ?? sections[0]!.id);
   const actualProtected: boolean = settings.current?.protectedMode ?? false;
   const check = useAction(async () => setChecks(await call("checkPrerequisites")));
   const protect = useAction(async (on: boolean, removeUser: boolean = false) => {
@@ -380,17 +383,12 @@ export function Settings() {
     onColor: (harness, color) => update({ ...value, harnessColors: { ...value.harnessColors, [harness]: color } }),
   };
 
-  useEffect(() => {
-    const id: string | null = new URLSearchParams(search).get("section");
-    if (id) document.getElementById(id)?.scrollIntoView({ block: "start" });
-  }, [search, !!settings.value, !!accounts.value]);
-
   const go = (id: string): void => {
     setActive(id);
     document.getElementById(id)?.scrollIntoView({ block: "start", behavior: "smooth" });
   };
 
-  return <Page title="Settings" width={820}>
+  return <Page title="Settings" width={820} scrollTo={sectionId} scrollReady={!settings.loading && !accounts.loading}>
     <SidebarSection title="Settings" label="Settings sections">
       {sections.map((section) => <SidebarItem key={section.id} active={active === section.id} onClick={() => go(section.id)}>{section.title}</SidebarItem>)}
     </SidebarSection>

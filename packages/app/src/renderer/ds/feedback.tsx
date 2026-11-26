@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, ReactNode, Ref } from "react";
 import { IconButton } from "./button";
 import s from "./feedback.module.css";
 import { AlertIcon, CheckCircleIcon, InfoIcon, XIcon } from "./icons";
@@ -64,16 +64,16 @@ export function EmptyState({ icon, title, children, action }: { icon?: ReactNode
   );
 }
 
-export function Card({ title, actions, padded, className, children }: { title?: ReactNode; actions?: ReactNode; padded?: boolean; className?: string; children: ReactNode }) {
+export function Card({ title, actions, padded, className, children, ref, bodyRef }: { title?: ReactNode; actions?: ReactNode; padded?: boolean; className?: string; children: ReactNode; ref?: Ref<HTMLElement>; bodyRef?: Ref<HTMLDivElement> }) {
   return (
-    <section className={[s.card, padded && !title ? s.cardPadded : "", className ?? ""].join(" ")}>
+    <section ref={ref} className={[s.card, padded && !title ? s.cardPadded : "", className ?? ""].join(" ")}>
       {title !== undefined && (
         <header className={s.cardHeader}>
           <h3 className={s.cardTitle}>{title}</h3>
           {actions}
         </header>
       )}
-      {title !== undefined ? <div className={padded === false ? undefined : s.cardBody}>{children}</div> : children}
+      {title !== undefined ? <div ref={bodyRef} className={padded === false ? undefined : s.cardBody}>{children}</div> : children}
     </section>
   );
 }

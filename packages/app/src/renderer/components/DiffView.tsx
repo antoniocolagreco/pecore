@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { CodeAnalysisArtifact } from "@pecore/schemas";
 import { ui } from "./ui";
+import { useViewState } from "./useViewState";
 import { Button } from "../ds/button";
 import { ChevronDownIcon } from "../ds/icons";
 import s from "./DiffView.module.css";
@@ -139,8 +140,8 @@ function HunkTable({ hunk, risk, onComment }: { hunk: Hunk; risk: string | undef
   );
 }
 
-function FileBlock({ file, hunks, onComment }: { file: PatchFile; hunks: { hunk: Hunk; risk: string | undefined }[]; onComment: ReviewLine | undefined }) {
-  const [open, setOpen] = useState(true);
+function FileBlock({ view, file, hunks, onComment }: { view: string; file: PatchFile; hunks: { hunk: Hunk; risk: string | undefined }[]; onComment: ReviewLine | undefined }) {
+  const [open, setOpen] = useViewState(`diff.open:${view}`, true);
   const adds = file.hunks.reduce((n, h) => n + h.lines.filter((l) => l.startsWith("+")).length, 0);
   const dels = file.hunks.reduce((n, h) => n + h.lines.filter((l) => l.startsWith("-")).length, 0);
   const binary = file.hunks.length === 0;
@@ -158,14 +159,14 @@ function FileBlock({ file, hunks, onComment }: { file: PatchFile; hunks: { hunk:
   );
 }
 
-export function DiffView({ content, risk, onComment }: { content: string; risk?: CodeAnalysisArtifact | undefined; onComment?: ((line: { file: string; line: number }) => void) | undefined }) {
-  const [limit, setLimit] = useState(30);
+export function DiffView({ view = "", content, risk, onComment }: { view?: string; content: string; risk?: CodeAnalysisArtifact | undefined; onComment?: ((line: { file: string; line: number }) => void) | undefined }) {
+  const [limit, setLimit] = useViewState(`diff.limit:${view}`, 30);
   const files = useMemo(() => parsePatch(content), [content]);
   const risky = new Map((risk?.hunks ?? []).filter((h) => h.level === "risky").map((h) => [`${h.file}\0${h.hunk}`, h.text]));
   const blocks = files
-    .map((file) => {
+    .map((file, index) => {
       const hunks = file.hunks.map((hunk, i) => ({ hunk, risk: risky.get(`${file.name}\0${i}`) }));
-      return { file, hunks: [...hunks.filter((h) => h.risk !== undefined), ...hunks.filter((h) => h.risk === undefined)] };
+      return { file, index, hunks: [...hunks.filter((h) => h.risk !== undefined), ...hunks.filter((h) => h.risk === undefined)] };
     })
     .sort((a, b) => Number(b.hunks.some((h) => h.risk !== undefined)) - Number(a.hunks.some((h) => h.risk !== undefined)));
   if (blocks.length === 0) return <pre className={ui.mono}>{content || "Empty diff"}</pre>;
@@ -174,8 +175,8 @@ export function DiffView({ content, risk, onComment }: { content: string; risk?:
       <div className={ui.muted}>
         {files.length} file{files.length === 1 ? "" : "s"} changed{risky.size ? ` · ${risky.size} risky hunk${risky.size === 1 ? "" : "s"} shown first` : ""}
       </div>
-      {blocks.slice(0, limit).map((b, i) => (
-        <FileBlock key={`${b.file.name}:${i}`} file={b.file} hunks={b.hunks} onComment={onComment && ((line) => onComment({ file: b.file.name, line }))} />
+      {blocks.slice(0, limit).map((b) => (
+        <FileBlock key={`${b.file.name}:${b.index}`} view={`${view}:${b.file.name}:${b.index}`} file={b.file} hunks={b.hunks} onComment={onComment && ((line) => onComment({ file: b.file.name, line }))} />
       ))}
       {blocks.length > limit ? <Button onClick={() => setLimit(limit + 30)}>Show {Math.min(30, blocks.length - limit)} more files</Button> : null}
     </div>

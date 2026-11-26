@@ -11,6 +11,7 @@ import { JobGraph, latestRuns, useRecipe } from "../components/JobGraph";
 import { NodeRunDetail } from "../components/NodeRunDetail";
 import { jobState, StateLabel } from "../components/states";
 import { duration, ErrorText, Page, time, ui } from "../components/ui";
+import { useViewState } from "../components/useViewState";
 import { Button } from "../ds/button";
 import { TextTable } from "../ds/data";
 import { Tabs } from "../ds/data";
@@ -44,8 +45,8 @@ function WhyLine({ reason, detail }: { reason: WhyReason; detail: JobDetail }) {
 
 function Result({ detail, definitions }: { detail: JobDetail; definitions: ReturnType<typeof useRecipe>["data"] }) {
   const connected: boolean = useConnected();
-  const [patchOpen, setPatchOpen] = useState<boolean>(false);
-  const [fileLimit, setFileLimit] = useState<number>(40);
+  const [patchOpen, setPatchOpen] = useViewState("job.result.diff", false);
+  const [fileLimit, setFileLimit] = useViewState("job.result.fileLimit", 40);
   const { job, artifacts, nodeRuns } = detail;
   const diff: Artifact | undefined = artifacts.findLast((artifact) => artifact.type === "diff");
   const risk: Artifact | undefined = latestAnalysis(artifacts, diff?.filesHash ?? null);
@@ -77,13 +78,13 @@ function Result({ detail, definitions }: { detail: JobDetail; definitions: Retur
               </>
             )}
             <Button disabled={!connected} onClick={() => setPatchOpen(!patchOpen)} aria-expanded={patchOpen}>Diff</Button>
-            {patchOpen && <ArtifactView artifact={diff} analysis={risk} />}
+            {patchOpen && <ArtifactView scope="result" artifact={diff} analysis={risk} />}
           </section>
         )}
         {!!checks.length && (
           <section><h3>Checks</h3><ul>{checks.map((run) => <li key={run.node}>{run.node} · {run.outcome ?? run.failureReason ?? run.state}</li>)}</ul></section>
         )}
-        {review && <section><h3>Latest code review</h3><ArtifactView artifact={review} /></section>}
+        {review && <section><h3>Latest code review</h3><ArtifactView scope="result" artifact={review} /></section>}
         {(delivered.data || branchDelivered) && <section><h3>Delivery</h3>{delivered.data ? <PullRequestLink url={delivered.data} /> : <code>{job.branch}</code>}</section>}
         <ErrorText error={delivered.error} />
       </section>
@@ -93,7 +94,7 @@ function Result({ detail, definitions }: { detail: JobDetail; definitions: Retur
 
 function History({ detail, selected, onSelect }: { detail: JobDetail; selected: string | null; onSelect(id: string): void }) {
   const connected: boolean = useConnected();
-  const [page, setPage] = useState<number>(0);
+  const [page, setPage] = useViewState("job.history.page", 0);
   const attemptsByRun = new Map<string, AttemptView[]>();
   for (const attempt of detail.attempts) {
     const entries: AttemptView[] = attemptsByRun.get(attempt.nodeRunId) ?? [];
@@ -137,8 +138,8 @@ function History({ detail, selected, onSelect }: { detail: JobDetail; selected: 
 function Loaded({ detail, error, reasons, whyError, reload }: { detail: JobDetail; error: Error | null; reasons: WhyReason[]; whyError: Error | null; reload(): void }) {
   const connected: boolean = useConnected();
   const { job, nodeRuns, artifacts } = detail;
-  const [tab, setTab] = useState<Tab>("graph");
-  const [selection, setSelection] = useState<string | null>(null);
+  const [tab, setTab] = useViewState<Tab>("job.tab", "graph");
+  const [selection, setSelection] = useViewState<string | null>("job.selection", null);
   const firstBase = useRef<string | null>(job.base);
   const firstTarget = useRef<string>(job.target);
   const checked = useRef<boolean>(false);

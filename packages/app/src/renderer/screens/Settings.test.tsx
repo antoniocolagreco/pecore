@@ -1,9 +1,10 @@
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Accounts, Settings as SettingsSchema } from "@pecore/schemas";
 import type { LiveMessage, LoginView, RouteInput, RouteResult } from "@pecore/schemas";
-import { MemoryRouter } from "react-router";
+import { createMemoryRouter, MemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { ui } from "../components/ui";
 import { Settings } from "./Settings";
 
 const api = vi.hoisted(() => ({ call: vi.fn(), listeners: new Set<(message: LiveMessage) => void>() }));
@@ -55,6 +56,26 @@ beforeEach(() => {
 });
 
 afterEach(cleanup);
+
+it("restores the Settings filter and scroll without jumping to the original section again", async () => {
+  const user = userEvent.setup();
+  const router = createMemoryRouter([
+    { path: "/settings", element: <Settings /> },
+    { path: "/elsewhere", element: <p>Elsewhere</p> },
+  ], { initialEntries: ["/settings?section=accounts"] });
+  render(<RouterProvider router={router} />);
+  const viewport = () => screen.getByRole("heading", { name: "Settings", level: 1 }).closest<HTMLElement>(`.${ui.page}`)!;
+  await screen.findByRole("heading", { name: "Appearance" });
+  await user.click(screen.getByRole("button", { name: "Show unavailable" }));
+  viewport().scrollTop = 760;
+  fireEvent.scroll(viewport());
+
+  await act(() => router.navigate("/elsewhere"));
+  await act(() => router.navigate(-1));
+  await screen.findByRole("heading", { name: "Appearance" });
+  expect(screen.getByRole("button", { name: "Hide unavailable" }).getAttribute("aria-pressed")).toBe("true");
+  expect(viewport().scrollTop).toBe(760);
+});
 
 it.each([
   { id: "atlassian", name: "Atlassian" },

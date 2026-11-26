@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import type { ReactNode } from "react";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import type { Connection, XYPosition } from "@xyflow/react";
 import { AgentSession, automaticOutputs, Node, assistantAgentId, builtInAgentNames, defaultAgentId, HumanInterface, humanInterfaces, KnowledgeFileName, Name, Outcome, ProjectId, RecipeEnd, RecipeEndResult } from "@pecore/schemas";
 import type { DefinitionEntry, NodeAgent } from "@pecore/schemas";
@@ -7,7 +8,8 @@ import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { defaultDefinitionIcon, definitionIconName, DefinitionIcon, DefinitionIconField, useDefinitionIcons } from "../components/DefinitionIcon";
 import { AgentSessionField } from "../components/AgentFields";
-import { restorePageScroll } from "../components/usePageScroll";
+import { restorePageScroll, usePageScroll } from "../components/usePageScroll";
+import { useViewState } from "../components/useViewState";
 import { ErrorText, Page } from "../components/ui";
 import { Button, IconButton } from "../ds/button";
 import { Checkbox } from "../ds/choice";
@@ -48,8 +50,15 @@ function graphTitle(id: string): string {
   return templateTitle(id);
 }
 
+function RecipeInspector({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
+  const { page } = usePageScroll("recipe.inspector");
+  return <Card title={title} actions={actions} className={s.inspector} bodyRef={page}>{children}</Card>;
+}
+
 function RecipeFile({ path, project, projectContext, newTemplate }: { path: string; project?: string; projectContext?: string; newTemplate: boolean }) {
   const navigate = useNavigate();
+  const { state } = useLocation();
+  const recipesSearch = (state as { recipesSearch?: string } | null)?.recipesSearch ?? "?tab=recipes";
   const scope: string = newTemplate ? "templates" : project ? `projects/${project}` : path.slice(0, path.lastIndexOf("/recipes/"));
   const creation = useMemo<NewDefinition | undefined>(() => newTemplate || project ? {
     content: JSON.stringify({ name: "", description: "", icon: defaultDefinitionIcon.recipe, nodes: {}, edges: [], ends: [] }, null, 2) + "\n",
@@ -89,14 +98,14 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
     const saved: string | undefined = destination ?? file.savedPath;
     if (saved) void navigate(definitionUrl("recipe", saved), { replace: true });
   }, [destination, file.savedPath]);
-  const [selected, setSelected] = useState("");
+  const [selected, setSelected] = useViewState("recipe.selection", "");
   const [connection, setConnection] = useState<DraftConnection>();
   const canvas = useRef<RecipeCanvas>(null);
   const projectId: string | undefined = projectContext ?? project ?? /^projects\/([^/]+)$/.exec(scope)?.[1];
   const directory: string = scope + "/nodes";
   const definitions = useData(() => call("listDefinitions", { query: { dir: directory } }), [directory], (event) => event.type === "definition.changed" && event.path.startsWith(directory + "/"));
-  const [recipeTemplate, setRecipeTemplate] = useState<string | null>(null);
-  const [templateNode, setTemplateNode] = useState<string | null>(null);
+  const [recipeTemplate, setRecipeTemplate] = useViewState<string | null>("recipe.recipeTemplate", null);
+  const [templateNode, setTemplateNode] = useViewState<string | null>("recipe.nodeTemplate", null);
   const recipeTemplates = useTemplates("recipes", !!project);
   const nodeTemplates = useTemplates("nodes", !!project);
   const importRecipe = useAction(async () => {
@@ -372,7 +381,7 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
       onClick={() => void duplicate.run()}>Duplicate</Button>}
     {knowledgeMode ? projectFile.saveButton(!knowledgeEditable) : file.saveButton(importing)}
   </>}>
-    {projectId && <Link to={`/projects/${encodeURIComponent(projectId)}?tab=recipes`} state={restorePageScroll}>Back to recipes</Link>}
+    {projectId && <Link to={{ pathname: `/projects/${encodeURIComponent(projectId)}`, search: recipesSearch }} state={restorePageScroll}>Back to recipes</Link>}
     {!knowledgeMode && scope === "templates" && <Link to="/templates?tab=recipes" state={restorePageScroll}>Back to templates</Link>}
     {file.feedback}
     {knowledgeMode && <>{projectFile.feedback}<ErrorText error={knowledgeFiles.error} /></>}
@@ -399,11 +408,11 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
             layout={graphLayout} automatic={withRecipeBoundaries(automatic, start)}
             start={recipeStart} editable={editable} inspectable={knowledgeMode} selected={selected} onSelect={setSelected}
             onConnect={connect} onReconnect={reconnect} onDelete={deleteConnections} onLayout={(next) => update({ layout: next })} />
-          <Card title={selected ? templateTitle(string(selectedNode.use) || selected) : knowledgeMode ? "Knowledge" : "Recipe settings"}
+           <RecipeInspector title={selected ? templateTitle(string(selectedNode.use) || selected) : knowledgeMode ? "Knowledge" : "Recipe settings"}
             actions={selected && !knowledgeMode ? <div className={s.inspectorActions}>
               <IconButton label="Remove node" icon={<TrashIcon />} disabled={!editable} onClick={removeSelected} />
             </div> : undefined}
-            className={s.inspector}>
+           >
             {knowledgeMode ? <div className={s.inspectorFields}>
               {selectedKind === "agent" ? <MultiCombobox label="Knowledge" placeholder="Choose knowledge files"
                 disabled={!knowledgeEditable || !knowledgeFiles.data || !!knowledgeFiles.error} value={knowledge}
@@ -491,7 +500,7 @@ function RecipeFile({ path, project, projectContext, newTemplate }: { path: stri
                   onValueChange={(step) => update({ onBaseChanged: step || undefined })} />}
               </>}
             </fieldset>}
-          </Card>
+           </RecipeInspector>
         </div>
       </> : <ErrorText error="Unable to read the recipe definition." />}
       <DefinitionErrors errors={file.errors} showPath={false} />

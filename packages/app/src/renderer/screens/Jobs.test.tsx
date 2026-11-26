@@ -1,7 +1,7 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { JobView, RouteInput } from "@pecore/schemas";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Factory } from "./Factory";
 import { Jobs } from "./Jobs";
@@ -79,4 +79,23 @@ it("offers recovery after a restart and takes a pending review to Notifications"
   await user.click(screen.getByRole("button", { name: "Review login" }));
   expect(await screen.findByText("Review opened")).toBeTruthy();
   expect(api.call).toHaveBeenCalledWith("whyJob", { params: { id: "parent" } });
+});
+
+it("restores job filters and collapsed stacks after opening a job", async () => {
+  const user = userEvent.setup();
+  const router = createMemoryRouter([
+    { path: "/jobs", element: <Jobs /> },
+    { path: "/jobs/:id", element: <h1>Job opened</h1> },
+  ], { initialEntries: ["/jobs"] });
+  render(<RouterProvider router={router} />);
+  await screen.findByRole("button", { name: "Review login" });
+  await user.type(screen.getByPlaceholderText("Search job titles"), "login");
+  await user.click(screen.getByRole("button", { name: "Collapse stacked jobs" }));
+  await user.click(screen.getByRole("button", { name: "Review login" }));
+  await screen.findByRole("heading", { name: "Job opened" });
+  await act(() => router.navigate(-1));
+  expect((await screen.findByPlaceholderText("Search job titles"))).toHaveProperty("value", "login");
+  expect(await screen.findByRole("button", { name: "Expand stacked jobs" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Update login docs" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Build failed" })).toBeNull();
 });

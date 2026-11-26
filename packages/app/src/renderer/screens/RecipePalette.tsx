@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 import type { PointerEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { XYPosition } from "@xyflow/react";
+import { usePageScroll } from "../components/usePageScroll";
+import { useViewState } from "../components/useViewState";
 import { SearchField } from "../ds/field";
 import { Card, Spinner } from "../ds/feedback";
 import { NodeCard, nodeKindLabels } from "../components/NodeCard";
@@ -26,9 +28,9 @@ export function RecipePalette({ nodes, defaultAgent, disabled, loading, onAdd, c
   onAdd(name: string, point: XYPosition): void;
   children?: ReactNode;
 }) {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useViewState("recipe.palette.search", "");
   const [preview, setPreview] = useState<{ name: string; point: XYPosition }>();
-  const rail = useRef<HTMLUListElement>(null);
+  const { page: rail } = usePageScroll<HTMLUListElement>("recipe.palette");
   const gesture = useRef<Gesture | undefined>(undefined);
   const terms: string[] = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
   const filtered: PaletteNode[] = nodes.filter(({ name, title, tags, kind }) => {

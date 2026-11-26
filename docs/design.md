@@ -135,6 +135,8 @@ The app fits a 1024×720 window. The sidebar stays on the left, the page in the 
 
 Tables, lists and graphs use the full width. Standalone forms and reading pages have a centred maximum width. A form inside a full-width page keeps its maximum width and aligns left. The top bar has global search and pause or play. Project filtering belongs on the pages that support it. The sidebar has no engine status line. The disconnected banner tells the user when the engine is unavailable.
 
+Back and Forward restore how the user left each visit: filters, search, selected tab, expanded sections and scroll. Opening the same page again starts a separate visit.
+
 ### Settings and accounts
 
 Settings lists its sections in the main sidebar. Fields adapt to the window width and every section has a one-line description, including Accounts. Changes save automatically once valid. Invalid values get a readable message and stay unsaved, including a provider choice without a model. The GUI uses form controls without raw JSON, manually entered IDs or raw validation errors.

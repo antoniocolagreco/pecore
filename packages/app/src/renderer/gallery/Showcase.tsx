@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Page } from "../components/ui";
+import { useViewState } from "../components/useViewState";
 import { SidebarItem, SidebarSection } from "../shell/sidebar";
 import { applyTheme, builtInThemes, defaultTheme } from "../theme/themes";
 import type { Mode } from "../theme/themes";
@@ -133,7 +134,9 @@ export function Showcase() {
   const [color, setColor] = useState("#DC2626");
   const [mode, setMode] = useState("ask");
   const [all, setAll] = useState<boolean[]>([true, false, true]);
-  const [filters, setFilters] = useState<string[]>(["Running"]);
+  const [filters, setFilters] = useViewState<string[]>("showcase.filters", ["Running"]);
+  const [search, setSearch] = useViewState("showcase.search", "");
+  const [filterText, setFilterText] = useViewState("showcase.filterText", "");
   const someChecked = all.some(Boolean);
   const allChecked = all.every(Boolean);
 
@@ -190,8 +193,8 @@ export function Showcase() {
         </Example>
         <Example caption="Search">
           <div className={g.stack}>
-            <SearchField placeholder="Search jobs, projects, nodes" shortcut="Ctrl K" />
-            <SearchField size="sm" placeholder="Filter" />
+            <SearchField placeholder="Search jobs, projects, nodes" shortcut="Ctrl K" value={search} onValueChange={setSearch} />
+            <SearchField size="sm" placeholder="Filter" value={filterText} onValueChange={setFilterText} />
           </div>
         </Example>
       </Section>
@@ -315,6 +318,7 @@ function MoreComponents() {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [file, setFile] = useState("brand.md");
+  const [tab, setTab] = useViewState("showcase.tab", "graph");
   return (
     <>
       <Section title="Buttons" note="Press any button: it gives a little under the finger. Hover the icon buttons for tooltips.">
@@ -461,6 +465,8 @@ function MoreComponents() {
         </Example>
         <div className={g.wide}>
           <Tabs
+            value={tab}
+            onValueChange={setTab}
             tabs={[
               { value: "graph", label: "Graph", content: <span className={g.output}>The recipe graph goes here.</span> },
               { value: "history", label: "History", content: <span className={g.output}>Every attempt with its logs.</span> },

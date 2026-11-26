@@ -1,38 +1,56 @@
-import { useLayoutEffect, useRef } from "react";
-import { useLocation } from "react-router";
+import { useContext, useLayoutEffect, useRef } from "react";
+import { UNSAFE_LocationContext, UNSAFE_NavigationContext } from "react-router";
 
-const positions = new Map<string, number>();
-const recentPositions = new Map<string, number>();
+type Position = { top: number; left: number };
+type History = { entries: Map<string, Position>; recent: Map<string, Position> };
+const histories = new WeakMap<object, History>();
 export const restorePageScroll = { restorePageScroll: true };
 
-export function usePageScroll() {
-  const page = useRef<HTMLDivElement>(null);
+export function usePageScroll<T extends HTMLElement = HTMLDivElement>(scope = "page", anchor?: string | null, anchorReady = true) {
+  const page = useRef<T>(null);
   const content = useRef<HTMLDivElement>(null);
-  const { key, pathname, search, hash, state } = useLocation();
-  const path: string = pathname + search + hash;
-  const restoreRecent: boolean = (state as { restorePageScroll?: boolean } | null)?.restorePageScroll === true;
+  const location = useContext(UNSAFE_LocationContext)?.location;
+  const navigator = useContext(UNSAFE_NavigationContext)?.navigator;
 
   useLayoutEffect(() => {
-    const viewport: HTMLDivElement | null = page.current;
-    const inner: HTMLDivElement | null = content.current;
-    if (!viewport || !inner) return;
-    const target: number = positions.get(key) ?? (restoreRecent ? recentPositions.get(path) : undefined) ?? 0;
+    const viewport = page.current;
+    if (!viewport || !location || !navigator) return;
+    const history = histories.get(navigator) ?? { entries: new Map(), recent: new Map() };
+    histories.set(navigator, history);
+    const { key, pathname, search, hash, state } = location;
+    const entry = JSON.stringify([key, pathname, scope]);
+    const path = JSON.stringify([pathname + search + hash, scope]);
+    const restoreRecent = (state as typeof restorePageScroll | null)?.restorePageScroll === true;
+    const target = history.entries.get(entry) ?? (restoreRecent ? history.recent.get(path) : undefined);
     let pending: boolean = true;
     let resize: ResizeObserver | null = null;
+    let mutations: MutationObserver | null = null;
 
     const remember = (): void => {
       if (pending) return;
-      positions.set(key, viewport.scrollTop);
-      recentPositions.set(path, viewport.scrollTop);
+      const position = { top: viewport.scrollTop, left: viewport.scrollLeft };
+      history.entries.set(entry, position);
+      history.recent.set(path, position);
     };
     const finish = (): void => {
       pending = false;
       resize?.disconnect();
+      mutations?.disconnect();
       remember();
     };
     const restore = (): void => {
-      viewport.scrollTop = target;
-      if (Math.abs(viewport.scrollTop - target) < 1) finish();
+      if (!pending) return;
+      if (!target && anchor) {
+        if (!anchorReady) return;
+        const section = document.getElementById(anchor);
+        if (section && viewport.contains(section)) section.scrollIntoView?.({ block: "start" });
+        finish();
+        return;
+      }
+      const { top, left } = target ?? { top: 0, left: 0 };
+      viewport.scrollTop = top;
+      viewport.scrollLeft = left;
+      if (Math.abs(viewport.scrollTop - top) < 1 && Math.abs(viewport.scrollLeft - left) < 1) finish();
     };
     const scrollKeys = new Set(["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End", " "]);
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -40,10 +58,14 @@ export function usePageScroll() {
     };
 
     restore();
-    if (pending) {
+    if (pending && target) {
       resize = new ResizeObserver(restore);
-      resize.observe(inner);
       resize.observe(viewport);
+      if (content.current) resize.observe(content.current);
+      else {
+        mutations = new MutationObserver(restore);
+        mutations.observe(viewport, { childList: true, subtree: true });
+      }
     }
     viewport.addEventListener("scroll", remember, { passive: true });
     viewport.addEventListener("wheel", finish, { passive: true });
@@ -51,12 +73,13 @@ export function usePageScroll() {
     viewport.addEventListener("keydown", onKeyDown);
     return () => {
       resize?.disconnect();
+      mutations?.disconnect();
       viewport.removeEventListener("scroll", remember);
       viewport.removeEventListener("wheel", finish);
       viewport.removeEventListener("pointerdown", finish);
       viewport.removeEventListener("keydown", onKeyDown);
     };
-  }, [key, path, restoreRecent]);
+  }, [location, navigator, scope, anchor, anchorReady]);
 
   return { page, content };
 }

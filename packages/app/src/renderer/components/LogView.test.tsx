@@ -1,7 +1,8 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ApiError } from "@pecore/schemas";
 import type { LiveMessage, LogEvent } from "@pecore/schemas";
+import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LogView } from "./LogView";
 
@@ -97,6 +98,29 @@ describe("attempt log", () => {
     expect(screen.queryByText("Event 150")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Newer" }));
     expect(screen.getByText("Event 150")).toBeTruthy();
+  });
+
+  it("restores the raw log, its older page and scroll on Back", async () => {
+    const lines = Array.from({ length: 151 }, (_, at) => ({ line: `Line ${at}`, at }));
+    api.call.mockImplementation(async (_route, input: { query: { view: string } }) => input.query.view === "raw"
+      ? { view: "raw", lines } : { view: "events", events: [] });
+    const router = createMemoryRouter([
+      { path: "/", element: <LogView attemptId="attempt-history" running={false} /> },
+      { path: "/jobs", element: <h1>Jobs</h1> },
+    ]);
+    render(<RouterProvider router={router} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Raw" }));
+    await user.click(await screen.findByRole("button", { name: "Show more (older)" }));
+    const oldest = JSON.stringify({ line: "Line 0", at: 0 });
+    const log = screen.getByText(oldest);
+    log.scrollLeft = 42;
+    fireEvent.scroll(log);
+
+    await act(() => router.navigate("/jobs"));
+    await act(() => router.navigate(-1));
+    expect(screen.getByRole("button", { name: "Raw" }).getAttribute("aria-pressed")).toBe("true");
+    expect((await screen.findByText(oldest)).scrollLeft).toBe(42);
   });
 
   it("shows that an omitted log is unavailable in both views", async () => {

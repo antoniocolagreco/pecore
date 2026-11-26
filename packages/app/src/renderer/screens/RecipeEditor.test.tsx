@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { DefinitionEntry, RecipeInput, RouteInput } from "@pecore/schemas";
 import { createMemoryRouter, RouterProvider } from "react-router";
@@ -49,7 +49,10 @@ it("keeps the job request out of Reads from and Requires", async () => {
     if (route === "saveDefinition") return { sha256: "recipe-v2" };
     throw new Error(`Unexpected route ${route}`);
   });
-  const router = createMemoryRouter([{ path: "/edit/recipe/*", element: <RecipeEditor /> }], { initialEntries: ["/edit/recipe/templates/recipes/request-review.json"] });
+  const router = createMemoryRouter([
+    { path: "/edit/recipe/*", element: <RecipeEditor /> },
+    { path: "/edit/node/*", element: <h1>Node opened</h1> },
+  ], { initialEntries: ["/edit/recipe/templates/recipes/request-review.json"] });
   render(<RouterProvider router={router} />);
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Inspect review" }));
@@ -59,6 +62,13 @@ it("keeps the job request out of Reads from and Requires", async () => {
   await user.click(screen.getByRole("combobox", { name: "Reads from" }));
   expect(screen.queryByRole("option", { name: "Start (job request)" })).toBeNull();
   expect(screen.queryByRole("checkbox", { name: "Optional" })).toBeNull();
+  await user.keyboard("{Escape}");
+  await user.type(screen.getByRole("searchbox", { name: "Filter nodes" }), "review");
+  await user.click(screen.getByRole("link", { name: "Edit definition" }));
+  await screen.findByRole("heading", { name: "Node opened" });
+  await act(() => router.navigate(-1));
+  expect(await screen.findByRole("link", { name: "Edit definition" })).toBeTruthy();
+  expect(screen.getByRole("searchbox", { name: "Filter nodes" })).toHaveProperty("value", "review");
 });
 
 it("shows the validation sentence and lets the user clear the base-change step", async () => {

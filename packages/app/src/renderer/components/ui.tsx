@@ -4,8 +4,8 @@ import s from "./ui.module.css";
 
 export { s as ui };
 
-export function Page({ title, actions, width, fillHeight, children }: { title: string; actions?: ReactNode; width?: number; fillHeight?: boolean; children: ReactNode }) {
-  const { page, content } = usePageScroll();
+export function Page({ title, actions, width, fillHeight, scrollTo, scrollReady, children }: { title: string; actions?: ReactNode; width?: number; fillHeight?: boolean; scrollTo?: string | null; scrollReady?: boolean; children: ReactNode }) {
+  const { page, content } = usePageScroll("page", scrollTo, scrollReady);
   return (
     <div ref={page} className={s.page} data-fill-height={fillHeight || undefined}>
       <div ref={content} className={s.pageInner} style={width ? { maxWidth: width } : undefined}>

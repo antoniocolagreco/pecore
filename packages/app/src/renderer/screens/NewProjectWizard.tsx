@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { appName, projectIdCandidate } from "@pecore/schemas";
 import type { CreationView, CreateProjectBody, ForgeAccount, ProjectManagerIdentity } from "@pecore/schemas";
@@ -7,6 +6,7 @@ import { errorText, useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
 import { reasonLabel } from "../components/states";
 import { ErrorText, Page, ui } from "../components/ui";
+import { useViewState } from "../components/useViewState";
 import { Button } from "../ds/button";
 import { RadioGroup } from "../ds/choice";
 import { Alert, Badge, Card, Spinner } from "../ds/feedback";
@@ -65,9 +65,9 @@ export function NewProjectWizard() {
   const [params] = useSearchParams();
   const resume: string | null = params.get("resume");
   const connected: boolean = useConnected();
-  const [inputs, setInputs] = useState<Inputs>(initialInputs);
-  const [creationId, setCreationId] = useState<string | null>(resume);
-  const [restoring, setRestoring] = useState<boolean>(resume !== null);
+  const [inputs, setInputs] = useViewState<Inputs>("project.setup.inputs", initialInputs);
+  const [creationId, setCreationId] = useViewState("project.setup.creation", resume);
+  const restoring: boolean = resume !== null && creationId === resume;
   const accounts = useData(() => call("getAccounts"), [], (m) => m.type === "login.progress" && m.done);
   const settings = useData(() => call("getSettings"), [], (m) => m.type === "configuration.changed" && m.kind === "settings");
   const projectsFolder: string = settings.data?.value.projectsFolder ?? "";
@@ -147,7 +147,6 @@ export function NewProjectWizard() {
         baseBranch: project.baseBranch,
         pm: project.pm,
       });
-      setRestoring(false);
       void navigate("/projects/new", { replace: true });
     } else {
       await call("cancelCreation", { params: { id } });
