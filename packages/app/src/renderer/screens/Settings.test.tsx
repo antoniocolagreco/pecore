@@ -246,6 +246,34 @@ it("shows every supported AI tool without an account and logs in from its row", 
   await waitFor(() => expect(api.call).toHaveBeenCalledWith("recheckLogin", { params: { id: "pi:local" } }));
 });
 
+it.each([
+  { final: "logged_in", badge: "Logged in" },
+  { final: "unknown", badge: "No models" },
+])("waits for the model check before showing $badge", async ({ final, badge }) => {
+  const fallback = api.call.getMockImplementation()!;
+  const accounts: Accounts = Accounts.parse({ accounts: [{ id: "pi", kind: "model", provider: "pi", connector: "pi", login: "subscription" }] });
+  let checked = false;
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const view = (state: LoginView["state"]): LoginView => ({ id: "pi:local", account: "pi", osUser: "local", connector: "pi", defaultDir: true, state, email: null, plan: null, running: false });
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "getAccounts") return { value: accounts, sha256: "accounts-v1" };
+    if (route === "listLogins") return [view(checked ? final as LoginView["state"] : "unchecked")];
+    if (route === "recheckLogin") {
+      await gate;
+      checked = true;
+      return view(final as LoginView["state"]);
+    }
+    return fallback(route);
+  });
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
+  const pi: HTMLElement = (await screen.findByText("pi")).closest("li")!;
+  expect(within(pi).getByText("Checking…")).toBeTruthy();
+  expect(within(pi).queryByText("No models")).toBeNull();
+  act(() => release());
+  await waitFor(() => expect(within(pi).getByText(badge)).toBeTruthy());
+});
+
 it("checks only the accounts in the selected panel and keeps Check out of account rows", async () => {
   const fallback = api.call.getMockImplementation()!;
   const accounts: Accounts = Accounts.parse({ accounts: [
