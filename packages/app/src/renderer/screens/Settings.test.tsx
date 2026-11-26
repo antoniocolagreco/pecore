@@ -263,14 +263,15 @@ it("keeps AI tool colours fixed and puts the state badge last", async () => {
   const codex: HTMLElement = (await screen.findByText("Codex")).closest("li")!;
   expect(within(codex).queryByRole("button", { name: "Colour" })).toBeNull();
   expect((codex.querySelector("span[aria-hidden]") as HTMLElement).style.getPropertyValue("--harness")).toBe("#EEF1F2");
-  const actions: HTMLElement = codex.lastElementChild!.lastElementChild as HTMLElement;
-  expect(actions.firstElementChild).toBe(within(actions).getByRole("button", { name: "Log in" }));
-  expect(actions.lastElementChild?.textContent).toBe("Logged out");
+  const badge: HTMLElement = within(codex).getByText("Logged out");
+  const actions: HTMLElement = within(codex).getByRole("button", { name: "Log in" }).parentElement!;
+  expect(actions.contains(badge)).toBe(true);
+  expect(actions.lastElementChild).toBe(badge);
+  expect(codex.firstElementChild!.lastElementChild).toBe(actions);
   const grok: HTMLElement = (await screen.findByText("Grok")).closest("li")!;
   expect(within(grok).queryByRole("button")).toBeNull();
-  const grokActions: HTMLElement = grok.lastElementChild!.lastElementChild as HTMLElement;
-  expect(grokActions.children).toHaveLength(1);
-  expect(grokActions.lastElementChild?.textContent).toBe("Coming soon");
+  const grokBadge: HTMLElement = within(grok).getByText("Coming soon");
+  expect(grokBadge.parentElement).toBe(grok.firstElementChild!.lastElementChild);
 });
 
 it.each([

@@ -3,13 +3,12 @@ import { agentColors } from "./colors";
 import { harnessColor, harnesses } from "./harnesses";
 
 describe("AI tool colours", () => {
-  it("lists four working AI tools and four coming soon, each with a colour from the palette or a fixed default", () => {
+  it("lists four working AI tools and four coming soon, each with its own fixed colour outside the agent palette", () => {
     expect(harnesses.map(({ id, supported }) => [id, supported])).toEqual([
       ["claude-code", true], ["codex", true], ["opencode", true], ["pi", true],
       ["antigravity", false], ["copilot", false], ["deepseek", false], ["grok", false],
     ]);
-    const fixedColours: readonly string[] = ["claude-code", "codex", "opencode", "pi", "antigravity", "copilot", "deepseek", "grok"];
-    for (const { id, color } of harnesses) expect(agentColors.some(({ hex }) => hex === color)).toBe(!fixedColours.includes(id));
+    for (const { color } of harnesses) expect(agentColors.some(({ hex }) => hex === color)).toBe(false);
     expect(harnesses.find(({ id }) => id === "claude-code")?.color).toBe("#D97757");
     expect(harnesses.find(({ id }) => id === "codex")?.color).toBe("#EEF1F2");
     expect(harnesses.find(({ id }) => id === "opencode")?.color).toBe("#5D9BEA");

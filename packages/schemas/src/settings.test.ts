@@ -10,6 +10,10 @@ describe("settings", () => {
     expect(compaction({ auto: 2_000_000, max: 5_000_000 })).toEqual({ auto: 524_288, max: 1_048_576 });
   });
 
+  it("refuses the removed AI tool colours setting", () => {
+    expect(Settings.safeParse({ harnessColors: { codex: "#EEF1F2" } }).success).toBe(false);
+  });
+
   it("keep the user's name trimmed and refuse an empty one", () => {
     expect(Settings.parse({ user: { name: " Antonio " } }).user).toEqual({ name: "Antonio" });
     expect(Settings.safeParse({ user: { name: " " } }).success).toBe(false);

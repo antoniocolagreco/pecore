@@ -731,6 +731,25 @@ describe("chats.db", () => {
     }
   });
 
+  it("drops the AI tool colours saved by an older database", async () => {
+    const file: string = join(await tempDir(), "chats.db");
+    const old: Database.Database = new Database(file);
+    old.exec(await readFile(new URL("./migrations/chats-010-configuration.sql", import.meta.url), "utf8"));
+    old.exec(`CREATE TABLE schema_version (version INTEGER PRIMARY KEY);
+      INSERT INTO schema_version VALUES (39);
+      INSERT INTO harness_colors (harness, color) VALUES ('codex', '#14B8A6');
+      INSERT INTO settings VALUES (1, NULL, NULL, 4, NULL, 10, 300, '~', 0, NULL, 131072, 262144, NULL, 131072, 262144);`);
+    old.close();
+    const db = new ChatsDb(file);
+    try {
+      expect(db.version()).toBe(40);
+      expect(db.db.prepare("SELECT count(*) FROM sqlite_schema WHERE name = 'harness_colors'").pluck().get()).toBe(0);
+      expect(new Configuration(db.db).settings()).not.toHaveProperty("harnessColors");
+    } finally {
+      db.close();
+    }
+  });
+
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
     expect(db.version()).toBe(40);
