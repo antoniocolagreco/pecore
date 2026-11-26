@@ -81,7 +81,7 @@ export function NewProjectWizard() {
   const account: ForgeAccount | undefined = available.find((entry) => entry.id === inputs.account);
   const privateGit: boolean = account?.forge === "git";
   const newRepoUnavailable: boolean = forgeAccounts.length > 0 && !forgeAccounts.some((entry) => entry.forge === "github" || entry.forge === "gitlab");
-  const createRepo: string | null = inputs.mode === "new" && account ? `${account.forge}-create-repo` : null;
+  const createRepo: string | null = inputs.mode === "new" && account ? "create-repo" : null;
   const suggestedUrl: string = createRepo && account && inputs.name.trim()
     ? `https://${account.host}/${account.user}/${projectIdCandidate(inputs.name.trim(), 1)}.git`
     : "";
@@ -213,7 +213,6 @@ export function NewProjectWizard() {
                 {inputs.mode === "new" ? "Add a GitHub or GitLab account in " : "Add a forge account in "}
                 {connected ? <Link to="/settings">Settings</Link> : "Settings"}.
               </Alert>}
-              {createRepo && <span className={ui.muted}>Repository creation node <code>{createRepo}</code></span>}
             </div>
           )}
           <TextField label="Folder" required mono disabled={!connected} value={folder} description="Your copy of the code. Each job's branch is copied here."

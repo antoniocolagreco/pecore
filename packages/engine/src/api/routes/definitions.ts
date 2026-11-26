@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
-import { KnowledgeFileName, Name, Node, Project, projectManagerClash, Recipe } from "@pecore/schemas";
+import { isForgeOperation, KnowledgeFileName, Name, Node, Project, projectManagerClash, Recipe } from "@pecore/schemas";
 import type { DefinitionEntry, InstantiateBody, RouteOutput } from "@pecore/schemas";
 import { validIcon } from "../../definitions/icon";
 import { checkKnowledge, knowledgeLinks, knowledgeNames, removeBrokenKnowledgeLinks, renameKnowledgeLinks } from "../../definitions/knowledge";
@@ -13,8 +13,6 @@ import { isFinal } from "../../graph/job-machine";
 import { homePaths } from "../../home/layout";
 import { NotFoundError } from "../../main";
 import type { Engine } from "../../main";
-import { forgeAccountOf, ProjectCreateError } from "../../projects/create";
-import { loadForgeDefaults, projectDefaults, recipeForForge } from "../../projects/defaults";
 import { absoluteProjectFolder, changeProjectLocation, ProjectLocationConflict, sameRepository } from "../../projects/location";
 import type { Catalog } from "../../store/catalog";
 import { HttpError } from "../server";
@@ -225,7 +223,7 @@ export function definitionOperations(engine: Engine) {
     return { value: inspected.value, errors: checkRecipe(recipe, nodes, true).map((issue) => ({ file: path, ...issue })) };
   }
 
-  async function nodeTemplateUsers(name: string): Promise<string[]> {
+  function nodeTemplateUsers(name: string): string[] {
     const users: string[] = [];
     for (const recipe of engine.catalog.names("recipes")) {
       if (Object.values(engine.catalog.recipe(recipe)!.nodes).some(({ use }) => use === name)) users.push(`recipe ${recipe}`);
@@ -238,15 +236,6 @@ export function definitionOperations(engine: Engine) {
           if (Object.values(recipe.nodes).some((step) => step.use === name)) users.push(`recipe ${recipe.name} in project ${ctx.id}`);
         }
       }
-    }
-    const forges: string[] = await readdir(join(engine.opts.templates, "forges")).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return [];
-      throw error;
-    });
-    for (const file of forges.filter((entry) => entry.endsWith(".json")).sort()) {
-      const forge: string = basename(file, ".json");
-      const { delivery, comment, createRepo } = await loadForgeDefaults(engine.opts.templates, forge);
-      if ([delivery, comment, createRepo].includes(name)) users.push(`forge ${forge}`);
     }
     return users;
   }
@@ -358,7 +347,7 @@ export function definitionOperations(engine: Engine) {
     }),
     saveDefinition: ({ params: { path }, body: { content, baseSha256 } }) => mutate(async () =>
       /^projects\/[^/]+\/project\.json$/.test(path) ? engine.withConfiguration(() => save(path, content, baseSha256, true)) : save(path, content, baseSha256, true)),
-    getNodeTemplateUsage: ({ params: { name } }) => nodeTemplateUsers(name),
+    getNodeTemplateUsage: async ({ params: { name } }) => nodeTemplateUsers(name),
     deleteTemplate: ({ params: { path }, body: { baseSha256 } }) => mutate(() => engine.withConfiguration(async () => {
       const target: ReturnType<typeof location> = location(path, false);
       const { kind, file } = target;
@@ -370,8 +359,9 @@ export function definitionOperations(engine: Engine) {
       if (sha256(bytes) !== baseSha256) throw new HttpError("conflict", "The template changed since it was loaded. Reopen it before deleting.");
 
       const name: string = basename(file, ".json");
+      if (kind === "node" && isForgeOperation(name)) throw new HttpError("bad_request", "This built-in node cannot be deleted.");
       const projects: Project[] = [...engine.projects.values()].map(({ ctx }) => ctx.project).filter(({ recipes }) => recipes !== undefined);
-      const users: string[] = kind === "node" ? await nodeTemplateUsers(name)
+      const users: string[] = kind === "node" ? nodeTemplateUsers(name)
         : projects.filter((project) => project.recipes?.includes(name)).map(({ id }) => `project ${id}`);
       if (users.length) throw new HttpError("conflict", `This template is used by ${users.join(", ")}.`);
 
@@ -390,6 +380,7 @@ export function definitionOperations(engine: Engine) {
   async function save(path: string, content: string, baseSha256: string | null, userSave = false): Promise<RouteOutput<"saveDefinition">> {
     const target: ReturnType<typeof location> = location(path, false);
     const { absPath, catalog, kind, id, file } = target;
+    if (kind === "node" && isForgeOperation(basename(file, ".json"))) throw new HttpError("bad_request", "This built-in node cannot be edited.");
     const before: Buffer | null = await definitionBytes(target);
     const bytes: Buffer = Buffer.from(content, "utf8");
     if ((before === null ? null : sha256(before)) !== baseSha256) {
@@ -492,10 +483,7 @@ export function definitionOperations(engine: Engine) {
       if (kind === "node") return { created: [], kept: [], errors: [{ file: `templates/nodes/${name}.json`, path: "", message: "Add the node to a recipe in Templates." }] };
       if (project.recipes.includes(name)) return { created: [], kept: [path], errors: [] };
       const templates = await loadTemplates(home.templates, engine.catalog);
-      const template: Recipe | undefined = templates.recipes.get(name);
-      const account = project.repo && forgeAccountOf(project, engine.global().accounts);
-      const defaults = account ? await projectDefaults(engine.opts.templates, project.repo, account.forge) : null;
-      const recipe: Recipe | undefined = template && recipeForForge(template, defaults?.rename ?? {});
+      const recipe: Recipe | undefined = templates.recipes.get(name);
       const errors: DefinitionError[] = recipe
         ? checkRecipe(recipe, templates.nodes, project.repo !== null).map((issue) => ({ file: path, ...issue }))
         : [{ file: path, path: "name", message: `recipe template ${name} not found` }];
@@ -508,18 +496,7 @@ export function definitionOperations(engine: Engine) {
       await save(projectPath, JSON.stringify(updated, null, 2) + "\n", sha256(before));
       return { created: [path], kept: [], errors: [] };
     }
-    let rename: Record<string, string> = {};
-    if (kind === "recipe" && project.repo !== null) {
-      try {
-        const account = forgeAccountOf(project, engine.global().accounts);
-        ({ rename } = await projectDefaults(engine.opts.templates, project.repo, account?.forge ?? null));
-      } catch (e) {
-        if (e instanceof ProjectCreateError) throw new HttpError("bad_request", e.message);
-        throw e;
-      }
-    }
-    const template: Recipe | null = kind === "recipe" ? engine.catalog.recipe(name) : null;
-    const recipe: Recipe | null = template && recipeForForge(template, rename);
+    const recipe: Recipe | null = kind === "recipe" ? engine.catalog.recipe(name) : null;
     const errors: DefinitionError[] = [];
     if (kind === "recipe" && !recipe) {
       return { created: [], kept: [], errors: [{ file: `templates/recipes/${name}.json`, path: "", message: `recipe template ${name} not found` }] };

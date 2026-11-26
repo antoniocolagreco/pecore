@@ -903,7 +903,7 @@ describe("Assistant and Project Manager chats with the MCP shim (section 6, Phas
         role === "assistant" && state === "completed" && text === "Project settings checked."));
       await answer(fresh, "approve");
       expect((await t.call("getChat")).actions.at(-1)?.target).toMatchObject({ state: "approved", creating: true });
-      expect(t.engine.project("fresh").ctx.project).toMatchObject({ createRepo: "github-create-repo", baseBranch: "develop" });
+      expect(t.engine.project("fresh").ctx.project).toMatchObject({ createRepo: "create-repo", baseBranch: "develop" });
       const db = t.engine.project("fresh").ctx.db.db;
       expect(db.prepare("SELECT id FROM human_queue WHERE job_id = ? AND kind = 'engine-node'").get("project-setup")).toBeUndefined();
     } finally {

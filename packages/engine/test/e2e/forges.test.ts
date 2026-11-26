@@ -26,7 +26,7 @@ const cases: ForgeCase[] = [
     forge: "github",
     tool: "gh",
     host: "github.com",
-    createRepo: "github-create-repo",
+    createRepo: "create-repo",
     repo: process.env.PECORE_E2E_GITHUB_REPO,
     user: process.env.PECORE_E2E_GITHUB_USER,
     requests: (repo, branch) =>
@@ -39,7 +39,7 @@ const cases: ForgeCase[] = [
     forge: "gitlab",
     tool: "glab",
     host: "gitlab.com",
-    createRepo: "gitlab-create-repo",
+    createRepo: "create-repo",
     repo: process.env.PECORE_E2E_GITLAB_REPO,
     user: process.env.PECORE_E2E_GITLAB_USER,
     requests: (repo, branch) =>
@@ -68,7 +68,7 @@ const recipe = {
   description: "write, commit, push, pull or merge request",
   start: "write",
   successOutcomes: ["pr:success"],
-  nodes: { write: { use: "write-job-file" }, commit: { use: "git-commit" }, push: { use: "git-push" }, pr: { use: "github-pr", reads: ["write"] } },
+  nodes: { write: { use: "write-job-file" }, commit: { use: "git-commit" }, push: { use: "git-push" }, pr: { use: "open-pr", reads: ["write"] } },
   edges: [
     { from: "write", on: "done", to: "commit" },
     { from: "commit", on: "success", to: "push" },

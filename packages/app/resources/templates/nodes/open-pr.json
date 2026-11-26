@@ -1,0 +1,16 @@
+{
+  "name": "open-pr",
+  "description": "Open or update the pull request for this job, or deliver its branch on a server without pull requests.",
+  "tags": ["source control"],
+  "kind": "repository",
+  "account": "project.account",
+  "inputs": ["pull_request"],
+  "outcomes": ["success", "failure"],
+  "failOutcomes": ["failure"],
+  "outputs": { "success": "pull_request" },
+  "outputRules": { "success": { "stdoutJson": "" } },
+  "outcomeRules": [
+    { "exitCode": 0, "outcome": "success" },
+    { "exitCode": "other", "outcome": "failure" }
+  ]
+}

@@ -71,7 +71,7 @@ What none of them offers together:
 
 *   **G1. Order to delivered result.** An order (chat text, a link, an image, or a ticket reference) becomes one or more jobs. Each job ends with the outcome of its last node (for example an open PR, a pushed branch, a local commit), with a failure reason from a fixed list (4.3) shown to the user, or because the user stopped it.
 *   **G2. No built-in language.** Support for a new language or toolchain needs only new node templates, with no change to engine code. Verified by running the same recipe shape on a TypeScript project and on a Rust project, with different check nodes.
-*   **G3. No built-in forge.** Support for a new delivery target needs only new node templates. Verified by delivering the same job to GitHub, to GitLab, and to the local repo only, changing only the delivery nodes.
+*   **G3. Portable delivery.** Open PR and Create Repo select their implementation from forge definitions. The same recipe delivers to GitHub, GitLab, private Git and CodeCommit. A local-only recipe can end with a commit.
 *   **G4. Every operation is a node.** Agents, checks, human reviews, commit, rebase, push and PR/MR are nodes. A recipe can put a human review before the commit node. The engine handles only workdirs, job branches, and clone and fetch of the project's remote with the project's account: it creates workdirs and branches when a job needs them, removes workdirs when the job ends `succeeded` or `not_delivered` (or, for a failed or stopped job, when it is archived or deleted) and branches when the job is deleted.
 *   **G5. Shared templates.** Templates holds node and recipe definitions. A project saves its chosen recipe names, variables and account bindings. A job saves the recipe, node definitions, prompt and script contents, and their hashes at creation. Saving a template affects jobs created after the save.
 *   **G6. Several providers at once.** One job can run agents from at least three different harnesses (for example Claude Code builder, Codex reviewer, opencode with a DeepSeek model for tests). Verified by an end-to-end test of the `feature` recipe with three harnesses.
@@ -169,19 +169,19 @@ Project Settings shows the fixed project ID and lets the user edit the name, bas
 
 ### CUJ 1: Bug fix from a GitHub issue
 
-*   **Given**: project `progetto-1` points to `github.com/pappa/pippo` with account `account-1`. Its `bugfix-to-pr` recipe uses instances of check templates for the project's toolchain and the nodes `git-commit`, `git-push`, `github-pr` and `github-issue-comment`. An issue is open in that repository.
+*   **Given**: project `progetto-1` points to `github.com/pappa/pippo` with account `account-1`. Its `bugfix-to-pr` recipe uses the toolchain checks, Git Commit, Git Push, Open PR and the final ticket Agent. An issue is open in that repository.
 *   **When**: the user tells the Assistant “fix issue 42 of progetto-1”.
 *   **Then**:
     1.  The Assistant passes the order to progetto-1's Project Manager, which reads the issue, picks the recipe and starts a job.
     2.  The engine creates a workdir and branch.
     3.  The spec writer writes acceptance criteria; the tests node writes a failing test; the builder fixes the code.
     4.  Checks pass on the workdir content; the code reviewer approves; the user approves in the human review node.
-    5.  `git-commit` commits; `git-push` pushes the commit with `account-1`; `github-pr` opens a PR; `github-issue-comment` posts the PR link on the issue.
+    5.  Git Commit commits, Git Push pushes with `account-1`, Open PR opens the GitHub pull request and the ticket Agent posts its link.
     6.  The engine removes the workdir.
 
 ### CUJ 2: New game from a chat order
 
-*   **Given**: the user created project `progetto-3` for `gitlab.com/ciccio/pimpo` with `account-3`. The remote repo did not exist, so at project creation `gitlab-create-repo` created it with `account-3`. The project's recipes deliver through a `gitlab-mr` node.
+*   **Given**: the user created project `progetto-3` for `gitlab.com/ciccio/pimpo` with `account-3`. Create Repo created the remote on GitLab. Open PR creates a merge request there.
 *   **When**: the user writes "make a 2D platform game for Linux and macOS" in the project's chat.
 *   **Then**: the Project Manager asks clarifying questions and creates jobs for the scaffold, game loop, movement, levels, menu and packaging. Each child starts from its parent's last commit when the parent succeeds. Its MR targets the parent's branch. When a parent changes, its children run the recipe's rebase path.
 
@@ -319,7 +319,7 @@ Fields by kind:
     *   `outputRules`: for each outcome that has an output, how it is read: `{ "file": "<path>" }`, `{ "stdoutJson": "<field>" }`, or `{ "stdoutLastLine": "<name>" }` (the last line of stdout, saved in the artifact under that name, for example `url`). The engine checks the result against the structure of its type and fails the node with `INVALID_OUTPUT` when it does not match.
 *   **Repository**
     *   Choose one Git hosting account on the node template. Shipped templates use the project's account. Jobs resolve and record the account before they start. A missing account blocks the job.
-    *   Enter one shell script in the node editor. It runs as the app user in an empty directory, with the selected account in both normal and protected mode. Inputs, outcome rules and output rules work as for Command. Scripts read values from the same environment variables.
+    *   For a custom Repository node, enter one shell script. It runs as the app user in an empty directory, with the selected account in both normal and protected mode. Inputs, outcome rules and output rules work as for Command. Scripts read values from the same environment variables.
     *   The shipped repeat and merge checks are internal (4.8 and 4.6). Custom Repository nodes need only their action script.
     *   The migration converts old credentialed commands to Repository nodes and carries over their first account. If the old node named none, it uses the project account.
 *   **`agent`**
@@ -339,7 +339,7 @@ Fields by kind:
 
 Placeholders in executable argument arrays and prompts use plain substitution. They include `{params.<name>}`, `{job.id}`, `{job.title}`, `{job.branch}`, `{job.base}` (the required base commit), `{job.oldBase}` (the previous base commit), `{job.target}` (the delivery branch, see 4.6), `{job.commit}` (the latest `sha`), `{ticket.id}` (the ticket ID at its source, if present), `{workdir}`, `{project.repoDir}`, `{project.repo.url}`, `{project.repo.owner}` and `{project.repo.name}`.
 
-`github-pr` and `gitlab-mr` publish the title and body from `write-pr` and return the same `pull_request` with its URL. Their retry checks compare the remote title, body and target. Git and CodeCommit use the same recipe with Push connected directly to Git Delivery.
+Open PR (`open-pr`) and Create Repo (`create-repo`) are read-only templates. The project account selects their implementation from `templates/forges/<forge>.json` at execution preparation. Jobs record the selected implementation and its repeat and merge checks in the snapshot, so retries use the same scripts. GitHub and GitLab Open PR publish the draft from Write PR and return it with its URL. For private Git and CodeCommit, the job connects Push directly to Open PR, skips Write PR and records branch delivery without an artifact. Those providers require an existing repository.
 
 #### 3.2 Recipe templates
 
@@ -353,7 +353,7 @@ A decision asks the user to choose an outcome. A code review or report review sh
 
 Data passes between nodes through `reads`. A step gets the latest artifact of each type from each selected source. Every node gets the job title and request as context. The PM sends one `JobRequest` per job with `key`, `title`, `request`, `dependsOn` and optional `recipe`, `ticketId`, `baseBranch` and `attachmentIds`. Agents also get attachment paths and the current diff. Each command input type comes from exactly one source. Required inputs must be available on every route to the step, including after a base change. A connection to End stops its route.
 
-A GitHub recipe can use `write-pr` to write a title and description and `github-pr` to publish them. With a `ci` configuration such as `{"after":"pr","on":"success","checks":["tests"],"intervalSec":30,"timeoutSec":1800,"maxCorrections":2}`, the scheduler waits for the listed checks on the recorded commit. Connect `ci_failed` to a correction step and use `ci_passed`, `ci_exhausted` and `ci_timeout` to route the other outcomes. The CI report of a failure is a `log` produced by the `ci.after` step, so the correction step reads that step. Persisted deadlines and correction counts survive restarts. If the PR head changes unexpectedly, the job waits for the user.
+A GitHub recipe can use Write PR to draft a title and description and Open PR to publish them. With a `ci` configuration such as `{"after":"pr","on":"success","checks":["tests"],"intervalSec":30,"timeoutSec":1800,"maxCorrections":2}`, the scheduler waits for the listed checks on the recorded commit. This CI gate requires a pull request. Connect `ci_failed` to a correction step and use `ci_passed`, `ci_exhausted` and `ci_timeout` to route the other outcomes. The CI report of a failure is a `log` produced by the `ci.after` step, so the correction step reads that step. Persisted deadlines and correction counts survive restarts. If the PR head changes unexpectedly, the job waits for the user.
 
 ```json
 {
@@ -384,7 +384,7 @@ A GitHub recipe can use `write-pr` to write a title and description and `github-
     "rebase":  { "use": "git-rebase" },
     "push":    { "use": "git-push" },
     "write-pr": { "use": "write-pr", "reads": ["spec", "lint", "types", "test"] },
-    "pr":      { "use": "github-pr", "reads": ["write-pr"] }
+    "pr":      { "use": "open-pr", "reads": ["write-pr"] }
   },
   "edges": [
     { "from": "spec",    "on": "success",  "to": "tests" },
@@ -518,7 +518,7 @@ An upgrade removes job history in the old format. Catalog migration removes gene
 | `services` | path of a compose file for job services, relative to the repo (4.9); `null` (the default) means automatic: the first of `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml` found at the root of the job's base commit, and none when the services runtime is not set |
 | `tracker` | optional project tracker account for the Project Manager and for Agent nodes that select Project account. Without it, they use the repository's account if it supports ticket tools |
 
-Settings can connect, replace or disconnect an existing remote. The engine validates the base branch with the selected forge account before changing its `origin`. Changing the remote URL clears its repo creation node. Existing recipes and job history are preserved. Review the recipes if they use a specific forge.
+Settings can connect, replace or disconnect an existing remote. The engine validates the base branch with the selected forge account before changing its `origin`. Changing the remote URL clears its repo creation node. Existing recipes and job history are preserved. Future jobs using Open PR follow the new provider. Review any custom Repository nodes tied to the previous provider.
 
 Moving the checkout preserves its working files and Git history. The destination must be empty. If there is no checkout at the old path, Settings can attach an existing checkout or create a copy in an empty folder. A change to the repository or folder requires the project's jobs to finish or stop first.
 
@@ -1215,7 +1215,7 @@ Everything that knows ACP or a harness lives here (section 5). It imports only `
 | `src/home/prerequisites.ts` | first-run and start checks: git, sudo, setfacl (Linux), Compose v2; when an account needs them: gh 2.40 or later, glab; for each harness login, `checkPrerequisites` as its OS user (5.1), after adding the traverse ACLs of 5.7 |
 | **projects/** | |
 | `src/projects/create.ts` | Project creation above |
-| `src/projects/defaults.ts` | the forge's nodes from `templates/forges/`: a recipe added to a project gets the delivery, comment, repo creation nodes of the project's forge (`github-pr` and `github-issue-comment`, or `gitlab-mr` and `gitlab-issue-comment`); a project without a remote repo (`repo: null`) gets no renames. A new project has no recipes: the user adds them afterwards |
+| `src/projects/defaults.ts` | reads the forge mapping and connects Push directly to Open PR in jobs that deliver a branch |
 | **definitions/** | |
 | `src/definitions/load.ts` | loads and validates shipped definitions, archive entries and catalog records |
 | `src/definitions/knowledge.ts` | knowledge checks with `markdownlint` and a custom link rule, link renaming, and the files a node receives with the files they link to |
@@ -1355,10 +1355,8 @@ Stored in the repository under `packages/app/resources/` and bundled with the ap
 | `templates/nodes/git-commit.json` | commit; `success` also when there is nothing to commit |
 | `templates/nodes/git-rebase.json` + `.sh` | `git stash push --include-untracked`, `git rebase --onto {job.base} {job.oldBase}`, `git stash pop` |
 | `templates/nodes/git-push.json` | push of Fixed choices; probe script: `h=$(git --git-dir="$PECORE_PROJECT_REPODIR" ls-remote origin "refs/heads/$PECORE_JOB_BRANCH" \| cut -f1); [ "$h" = "$PECORE_JOB_COMMIT" ] && echo "$h"; exit 0` |
-| `templates/nodes/github-pr.json` | 3.1 example; `mergedCheck`: `gh pr view <url> --json state --jq 'select(.state=="MERGED") \| .state'` |
-| `templates/nodes/github-create-repo.json` | Repo creation with `gh repo create {project.repo.owner}/{project.repo.name} --private`, then push of `baseBranch`; probe `gh repo view` |
-| `templates/nodes/gitlab-mr.json` + `.sh` | probe `glab mr list --source-branch <b> --target-branch <t> -R <repo> --output json`; create `glab mr create --source-branch --target-branch --title --description -R --yes`; retarget `glab mr update <id> --target-branch <t> -R`; `mergedCheck` `glab mr view <id> -R --output json` with a JSON rule on `state == "merged"`. Flags verified against the pinned glab version in phase 4 |
-| `templates/nodes/gitlab-create-repo.json` | `glab repo create`, with an internal repeat check |
+| `templates/nodes/open-pr.json`, `create-repo.json` | portable Repository templates available in the recipe editor |
+| `templates/forges/nodes/` | internal GitHub, GitLab and branch implementations with retry and merge checks |
 | `templates/nodes/typecheck.json`, `eslint.json`, `vitest.json`, `tests-fail-check.json` | TypeScript project checks in the job's workdir |
 | `templates/nodes/cargo-check.json`, `cargo-clippy.json`, `cargo-test.json` | Rust project checks in the job's workdir (G2) |
 | `templates/nodes/post-delivery-to-ticket.json` | Agent that links the delivered pull request to the job's ticket |

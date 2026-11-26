@@ -30,7 +30,7 @@
     "resolve-conflicts": { "use": "resolve-rebase-conflicts", "reads": ["spec", "rebase"] },
     "push": { "use": "git-push" },
     "write-pr": { "use": "write-pr", "reads": ["spec", "lint", "types", "test"] },
-    "pr": { "use": "github-pr", "reads": ["write-pr"] },
+    "pr": { "use": "open-pr", "reads": ["write-pr"] },
     "comment": { "use": "post-delivery-to-ticket", "reads": ["pr"] }
   },
   "edges": [

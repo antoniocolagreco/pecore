@@ -328,7 +328,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 
 ### Node editor
 
-*   Opened from a recipe or from Templates. New Node offers Agent, Command, Human and Repository. Repository shows an Account select and one shell script editor. A Human node has an Interface select: Decision, Code review or Report review.
+*   Opened from a recipe or from Templates. New Node offers Agent, Command, Human and Repository. A custom Repository node shows an Account select and one shell script editor. A Human node has an Interface select: Decision, Code review or Report review.
 *   Use Success and Failure for ordinary results. Add a named outcome when the recipe needs a distinct path, such as Changes requested. Decision outcomes can be literal answers.
 *   Under the outcomes, Outputs has one row per outcome: a select of the seven node output types (Nothing by default). The engine generates Diff. No text under the field. The info icon of Outputs explains, for a user who knows nothing of the app, that a job is a chain of nodes, that each outcome can hand a result to later nodes, and that they receive it only through Reads from, with the Spec Writer as example. It then explains each type in a short paragraph: what it is, an example, who writes it and who uses it. The menus show only the names. The info icons of Required inputs and Optional inputs explain inputs with an example and show the same paragraphs. For a command, a row with an output also asks where to read it: Last line of the output, Field of JSON output or File in the workdir, and the name, field or path. For a Human node the rows are checkboxes, "<outcome>: the person can write a note".
 *   Every select in the app opens its menu below the field, or above it when there is no room below, so the whole list is visible; it does not cover the field.
@@ -339,6 +339,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   Validation errors next to the field. Save is disabled while the draft is invalid. The draft lives in memory until saved or discarded; leaving the page with an unsaved draft asks first.
 *   In protected mode, a Repository node that needs review shows To approve. Approve opens the saved script and checks. Saving a node as the user authorizes the saved version. In normal mode the editor has no approval control.
 *   Repository lists Git hosting accounts from Settings. Shipped Repository templates select Project account. Their repeat and merge checks run behind the scenes.
+*   Open PR and Create Repo are read-only templates that use the project's Git hosting account. The node picker lists each once. With private Git or CodeCommit, the job graph connects Push to Open PR and omits Write PR. The result shows the delivered branch. GitHub and GitLab results link to the pull request or merge request.
 *   Agent nodes offer Tracker: None, Read, or Read and write. Selecting access shows Tracker account. Project account follows the choice in the project's Settings. Configured accounts are managed in Settings > Accounts. The Project Manager's chat asks the user to approve a tracker write.
 *   Node cards and the node kind menu use Agent, Command, Human and Repository.
 *   Save in the page header writes the changed node fields and prompt or script.
