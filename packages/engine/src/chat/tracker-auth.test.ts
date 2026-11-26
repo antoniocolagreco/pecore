@@ -34,6 +34,7 @@ async function fakeBridge() {
     '    appendFileSync(calls, JSON.stringify(req.params) + "\\n");',
     '    if (interactive) rmSync(expired, { force: true });',
     '    result = existsSync(expired) ? { isError: true, content: [{ type: "text", text: "401 Unauthorized" }] } : req.params.name === "forbidden" ? { isError: true, content: [{ type: "text", text: "Permission denied" }] }',
+    '      : req.params.name === "getAccessibleAtlassianResources" ? { structuredContent: { resources: [{ url: "site-one.atlassian.net", products: [{ id: "jira" }] }] } }',
     '      : { structuredContent: { site: req.params.arguments.cloudId ?? null, key: req.params.arguments.issueIdOrKey ?? null } };',
     "  }",
     '  console.log(JSON.stringify({ jsonrpc: "2.0", id: req.id, result }));',
@@ -62,6 +63,7 @@ it("uses Jira from chat, confirms writes and rejects an approval after the accou
     await writeFile(bridge.expired, "yes");
     expect(await engine.startAccountLogin("atlassian")).toBe("tool:atlassian");
     await expect.poll(() => engine.recheckAccount("atlassian")).toBe("logged_in");
+    expect(engine.global().accounts.accounts.find(({ id }) => id === "atlassian")).toMatchObject({ site: "site-one.atlassian.net" });
     expect((await callProjectTracker(engine, "demo", "read_ticket", input)).value).toEqual({ untrusted: true, ticket: { site: "site-two", key: "TST-7" } });
     const snapshot = engine.global();
     vi.spyOn(engine, "global").mockReturnValue({ ...snapshot, settings: { ...snapshot.settings, protectedMode: true } });

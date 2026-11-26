@@ -499,3 +499,9 @@
 - Decision: In a project's chat, `write_knowledge` accepts the file name alone, for example `notes.md`, and saves it in that project's `knowledge/`. The full path `projects/<id>/knowledge/<name>.md` still works, and the Assistant uses it outside a project chat.
 - Why: The Project Manager lost its first attempt on a bare file name, retried, and told the user about the failure.
 - Replaces: The full path as the only accepted form.
+
+## 2026-11-26: One Trackers group in Accounts
+
+- Decision: Settings > Accounts has one Trackers group with one row per tracker account, showing its name, site and login state. A Jira login from the Atlassian CLI appears on its own and shares the Jira row, so Jira shows once. The app stores the Jira site after login and check. Add account asks which tracker and starts browser sign-in. The app chooses the CLI or the MCP bridge; the user never sees the choice.
+- Why: Atlassian and Jira were separate panels for the same tracker, with different layouts and technical text.
+- Replaces: The Atlassian, Linear and Jira panels.

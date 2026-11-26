@@ -161,6 +161,7 @@ describe("pecore.db", () => {
     const old: ChatsDb = new ChatsDb(path);
     const catalog: Catalog = new Catalog(old.db);
     await restoreTrackerColumns(old.db);
+    old.db.exec("ALTER TABLE accounts DROP COLUMN site");
     old.db.exec(`INSERT INTO catalog_nodes (name, description, kind, shipped, timeout_sec, changes_files, retry, tracker_provider, tracker_account, tracker_server, tracker_tool)
       VALUES ('jira-mcp-ticket-read', 'Read Jira', 'tracker', 1, 120, 0, 1, 'jira', 'atlassian', 'atlassian', 'getJiraIssue'),
       ('jira-mcp-ticket-search', 'Find Jira tickets', 'tracker', 0, 120, 0, 1, 'jira', 'atlassian', 'atlassian', 'searchJiraIssuesUsingJql');
@@ -678,7 +679,7 @@ describe("chats.db", () => {
 
   it("applies its migrations and keeps the last notifications", async () => {
     const db = new ChatsDb(join(await tempDir(), "chats.db"));
-    expect(db.version()).toBe(36);
+    expect(db.version()).toBe(38);
     for (let i = 0; i < notificationsKept + 3; i++) db.addNotification({ kind: "job", title: `n${i}`, body: "" }, 1000 + i);
     const kept = db.notifications();
     expect(kept).toHaveLength(notificationsKept);
@@ -700,7 +701,7 @@ describe("chats.db", () => {
       UPDATE schema_version SET version = 5`);
     old.close();
     const db = new ChatsDb(file);
-    expect(db.version()).toBe(36);
+    expect(db.version()).toBe(38);
     expect(db.messages(assistantChat)).toEqual([]);
     db.close();
   });

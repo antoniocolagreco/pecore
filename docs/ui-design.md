@@ -125,7 +125,7 @@
 
 | Id | Element | Source |
 |---|---|---|
-| IG1 | Accounts: AI tools (found by themselves), Git hosting (public services and private Git servers), services | 3.4 |
+| IG1 | Accounts: AI tools (found by themselves), Git hosting (public services and private Git servers), trackers | 3.4 |
 | IG2 | Agents lists reusable configurations for future use by recipe nodes. | 3.4, 6 |
 | IG3 | Global limits, services runtime, disk threshold, merge check interval | 4.7, 4.9, "Risks & Limits" |
 | IG4 | Withdrawn: the Usage page | 4.7 |
@@ -368,8 +368,8 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   The section list is in the main sidebar. Sections adapt to the window width, and each has a one-line description under its title.
 *   No text or JSON editing and no user-typed IDs; raw validation errors are never shown.
 *   A valid change saves in the global database after the last keystroke or when the page is left. An invalid value shows an error and stays unsaved.
-*   Accounts shows AI tools, Git hosting and the active Jira CLI login. Each panel header shows its buttons at the right end, with the Check button last; it re-checks all logins of the group. Each pending provider shows Checking in its own row. Discovered accounts appear as soon as their provider finishes, and the other settings stay usable.
-    *   Atlassian and Linear have Add account and Log in actions. Both start browser sign-in through the local MCP bridge. A chat action that needs sign-in links to Accounts.
+*   Accounts shows AI tools, Git hosting and Trackers. Each panel header shows its buttons at the right end, with the Check button last; it re-checks all logins of the group. Each pending provider shows Checking in its own row. Discovered accounts appear as soon as their provider finishes, and the other settings stay usable.
+    *   Trackers lists one row per tracker account with its name, site and login state. A Jira login from the Atlassian CLI appears on its own and shares the Jira row. Check also looks for a Jira CLI login. Add account asks which tracker and starts browser sign-in. The app chooses the CLI or the MCP bridge; the user never sees the choice. A chat action that needs sign-in links to Accounts.
     *   AI tools: every installed harness appears by itself. A row shows the tool, the account, its state and Log in only when needed. A working account shows "Logged in", OpenCode and a private Git server included. OpenCode is logged in when it lists at least one model; with none, the row says to set up a model provider in OpenCode. Each AI tool has a colour, shown on its row's initials, and a Colour button opens the colour picker; the choice is saved at once. Defaults: Claude Code terracotta, Codex slate, OpenCode ice. "Show unavailable" in the card header shows, and "Hide unavailable" hides again, the AI tools with no login found and the tools not supported yet; they are hidden when the page opens. Shown, greyed rows "Coming soon" list the tools not supported yet (Antigravity CLI, GitHub Copilot CLI, Cursor CLI, DeepSeek, Qwen, Kimi, Grok, Muse), each with its colour and Colour button and no other action.
     *   Git hosting lists discovered accounts and offers Add account. GitHub and GitLab show Server with the public host as the default. Adding one starts login and saves the username on success. CodeCommit shows AWS profile, initially `default`. Private Git requires Server and uses the user's Git credentials. Commit author name and email start with the app user's global Git settings or stay blank. Edit opens the account's settings, including its username and commit author.
 *   You: "Your name", empty by default. The Assistant and the Project Managers get it at the start of a conversation; when it is empty the Assistant asks for it in the chat and saves it here.

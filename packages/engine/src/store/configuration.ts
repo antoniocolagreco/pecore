@@ -31,6 +31,7 @@ type AccountRow = {
   author_name: string | null;
   author_email: string | null;
   service: string | null;
+  site: string | null;
 };
 
 type AgentRow = {
@@ -76,7 +77,7 @@ export class Configuration {
     return Accounts.parse({ accounts: rows.map((row) => {
       const { id, kind } = row;
       if (kind === "model") return { id, kind, provider: row.provider, connector: row.connector, login: row.login, email: row.email, maxParallel: row.max_parallel };
-      if (kind === "service") return { id, kind, service: row.service, tool: row.tool, user: row.user };
+      if (kind === "service") return { id, kind, service: row.service, tool: row.tool, user: row.user, ...(row.site === null ? {} : { site: row.site }) };
       return { id, kind, forge: row.forge, host: row.host, tool: row.tool, user: row.user, ...(row.aws_profile === null ? {} : { awsProfile: row.aws_profile }), author: { name: row.author_name, email: row.author_email } };
     }) });
   }
@@ -133,12 +134,12 @@ export class Configuration {
   private writeAccounts(value: Accounts): void {
     this.db.exec("DELETE FROM accounts");
     const insert: Database.Statement = this.db.prepare(`INSERT INTO accounts
-      (id, position, kind, provider, connector, login, email, max_parallel, forge, host, tool, user, author_name, author_email, service, aws_profile)
-      VALUES (@id, @position, @kind, @provider, @connector, @login, @email, @maxParallel, @forge, @host, @tool, @user, @authorName, @authorEmail, @service, @awsProfile)`);
+      (id, position, kind, provider, connector, login, email, max_parallel, forge, host, tool, user, author_name, author_email, service, aws_profile, site)
+      VALUES (@id, @position, @kind, @provider, @connector, @login, @email, @maxParallel, @forge, @host, @tool, @user, @authorName, @authorEmail, @service, @awsProfile, @site)`);
     for (const [position, account] of value.accounts.entries()) {
       insert.run({
         provider: null, connector: null, login: null, email: null, maxParallel: null,
-        forge: null, host: null, tool: null, user: null, authorName: null, authorEmail: null, service: null,
+        forge: null, host: null, tool: null, user: null, authorName: null, authorEmail: null, service: null, site: null,
         position, ...account,
         ...(account.kind === "forge" ? { authorName: account.author.name, authorEmail: account.author.email } : {}),
         awsProfile: account.kind === "forge" ? account.awsProfile ?? null : null,
