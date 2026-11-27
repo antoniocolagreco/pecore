@@ -145,7 +145,7 @@ Accounts shows every supported harness automatically, even without an account. A
 
 Git hosting discovers GitHub, GitLab and CodeCommit accounts at startup. A manual GitHub or GitLab account starts the forge login and saves its username on success. The author name and email come from global Git settings and can be edited.
 
-Trackers shows one row per tracker account with its name, site and login state. A Jira login from the Atlassian CLI appears on its own and shares the Jira row. The Jira site is saved after login and check. Adding an account asks which tracker and starts browser sign-in. The app chooses the CLI or the MCP bridge; the user never sees the choice.
+Trackers shows one row per tracker account with its name, site and login state. A Jira login from the Atlassian CLI appears on its own and shares the Jira row. The Jira site is saved after login and check. Adding an account asks which tracker and starts browser sign-in. The app chooses the CLI or its native MCP client; the user never sees the choice.
 
 There is no Models section. The user picks provider, model and effort on the Agents page. Effort is locked until a model is chosen. It shows the chosen model's options, falls back to Default alone when none exist and resets to Default on model changes. The app loads model lists at startup and caches them. A refresh button beside Model reloads the choices. Selects and comboboxes use the same arrow and no clear button. Focus uses one ring. Loading choices shows a spinner without making the field look disabled.
 
@@ -475,7 +475,7 @@ An upgrade removes job history in the old format. Catalog migration removes gene
 #### 3.4 Accounts, profiles and tiers
 
 *   Auto-setup creates internal profiles and tiers. The Assistant card configures its chat. Each Project Manager uses the card picked in its project's PM tab. Agent nodes and PMs without a card choice use Default Agent.
-*   <PE/CORE> keeps no secrets of its own. Each tool stores its login. The `accounts` table holds references.
+*   <PE/CORE> keeps no harness or forge secrets of its own. Each tool stores its login. The `accounts` table holds references. The tracker MCP client is the exception: it owns the Atlassian and Linear OAuth tokens, stored under `PECORE_HOME/mcp/<server>/` with directories `0700` and files `0600`. It never reads `~/.mcp-auth` or a harness MCP token. Accounts saved by `mcp-remote` are not migrated; the user signs in once after the switch.
 *   The `accounts` table has three kinds of account.
     *   `model`: provider, connector, login type (`subscription` or `api-key`, both configured inside the harness), the account's `email` (compared with the logged-in account, below), `maxParallel`.
     *   `forge`: forge type, host, tool (`gh`, `glab`, `aws`, `git`), the tool's account name (for example the `gh` login, the AWS profile), commit author.
@@ -799,7 +799,7 @@ Recipes can perform the external actions they define. In Project Manager chat, a
 
 *   The Project Manager can search and read tickets and choose which ones become jobs. A job can have one ticket reference. Automatic scheduling is deferred.
 *   Agent nodes default to None. Read exposes `read_ticket` and `search_tickets`. Read and write adds `comment_ticket`, `change_ticket_status` and `update_ticket_fields`, including provider-specific fields. Each attempt gets access to its own tool scope through the app's MCP server. The app runs the provider integration with the selected account and returns its result as untrusted data. It records calls in the attempt log. The same tools are available to the Project Manager in chat. Each chat write needs the user's approval.
-*   GitHub uses `gh` and GitLab uses `glab`. Jira uses Atlassian Rovo MCP or the active Atlassian CLI login. Jira custom fields use Rovo. Linear uses its MCP server. The app launches the installed `mcp-remote` bridge over stdio for MCP integrations. The bridge opens browser sign-in and owns the tokens. A Jira call selects the site from the ticket link, an explicit site or the only accessible site.
+*   GitHub uses `gh` and GitLab uses `glab`. Jira uses Atlassian Rovo MCP or the active Atlassian CLI login. Jira custom fields use Rovo. Linear uses its MCP server. The app reaches both MCP servers with its own Streamable HTTP client and OAuth provider: an explicit Log in opens the browser, while status checks and tracker calls only use or refresh stored tokens and never start OAuth. A Jira call selects the site from the ticket link, an explicit site or the only accessible site.
 *   The database upgrade converts former Tracker nodes and saved job definitions to Agent nodes. It preserves recipe routes, outputs and job results. Custom actions keep their old configuration as a reference, and the replacement asks the user how to configure it.
 *   Import accepts Agent, Command, Human and Repository nodes. Projects exported with Tracker nodes need to be upgraded and exported again from the original installation.
 *   Bug Fix to PR uses a final Agent to check for an existing delivery comment before posting the PR link and to move the ticket to In review when applicable. Without a ticket it finishes successfully.

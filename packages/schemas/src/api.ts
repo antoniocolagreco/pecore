@@ -630,6 +630,7 @@ export const routes = {
   recheckLogin: { method: "POST", path: "/logins/:id/recheck", params: IdParams, response: LoginView },
   recheckAccount: { method: "POST", path: "/accounts/:id/recheck", params: IdParams, response: z.object({ state: AccountState }) },
   startAccountLogin: { method: "POST", path: "/accounts/:id/login", params: IdParams, response: z.object({ loginId: z.string() }) },
+  startTrackerLogin: { method: "POST", path: "/trackers/:server/login", params: z.object({ server: z.enum(["atlassian", "linear"]) }), response: z.object({ loginId: z.string() }) },
   accountOptions: { method: "GET", path: "/accounts/:id/options", params: IdParams, query: z.object({ model: z.string().min(1).optional() }), response: AccountOptions.nullable() },
   refreshAccountOptions: { method: "POST", path: "/accounts/:id/options/refresh", params: IdParams, response: AccountOptions.nullable() },
   checkPrerequisites: { method: "POST", path: "/prerequisites/check", response: z.array(PrerequisiteView) },

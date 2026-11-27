@@ -126,11 +126,12 @@ function DiscoveringProviders({ providers }: { providers: { id: string; name: st
   </ul>;
 }
 
-function LoginControls({ title, actions, children, accounts, protectedOnly = false, kind = "model", hideMissing = false, pendingLogin, onLoginStarted, onEdit, extra, rowOverrides, refresh }: {
+function LoginControls({ title, actions, children, accounts, protectedOnly = false, kind = "model", hideMissing = false, pendingLogin, onLoginStarted, onEdit, extra, rowOverrides, refresh, pendingTracker, onPendingDismiss }: {
   title?: string; actions?: ReactNode; children?: ReactNode;
   accounts: Account[]; protectedOnly?: boolean; kind?: "model" | "tool"; hideMissing?: boolean;
   pendingLogin?: string; onLoginStarted?(): void; onEdit?(account: ForgeAccount): void; extra?: ExtraAccountRow[];
   rowOverrides?: Record<string, RowOverride>; refresh?(): Promise<unknown> | void;
+  pendingTracker?: { account: ServiceAccount; loginId: string }; onPendingDismiss?(): void;
 }) {
   const connected: boolean = useConnected();
   const logins = useData(() => kind === "model" ? call("listLogins") : Promise.resolve([]), [kind],
@@ -237,7 +238,15 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
   const rows: ReactNode = <>
     <ErrorText error={start.error ?? startSetup.error ?? recheck.error ?? logins.error ?? setup.error} />
     {protectedOnly && !visible.length && <p className={s.groupText}>No AI tools yet.</p>}
-    {!!(visible.length || extra?.length || shownMissing.length) && <ul className={s.rows}>
+    {!!(visible.length || extra?.length || shownMissing.length || pendingTracker) && <ul className={s.rows}>
+      {pendingTracker && (() => {
+        const pendingProgress: Progress | undefined = progress[pendingTracker.loginId];
+        return <AccountRow key={`pending:${pendingTracker.loginId}`} name={pendingTracker.account.service} detail={pendingProgress?.done ? "Sign-in finished." : "Signing in…"}
+          state={pendingProgress?.done ? "logged_out" : "unchecked"} checking={!pendingProgress?.done}
+          actions={pendingProgress?.done ? <Button size="sm" variant="ghost" onClick={onPendingDismiss}>Dismiss</Button> : null}>
+          {pendingProgress && <LoginOutput id={pendingTracker.loginId} progress={pendingProgress} running={false} />}
+        </AccountRow>;
+      })()}
       {visible.map((account) => {
         if (account.kind === "model") {
           const name: string = harnessName(account, accounts);
@@ -366,7 +375,7 @@ function TrackerAccountDialog({ accounts, busy, error, onClose, onAdd }: {
   const [selected, setSelected] = useState(accounts[0]?.id ?? "");
   const account: ServiceAccount | undefined = accounts.find(({ id }) => id === selected) ?? accounts[0];
   return <Dialog open onOpenChange={(open) => !open && !busy && onClose()} title="Add a tracker account"
-    description="Sign in through your browser after adding it." width={420}
+    description="Sign in through your browser. The account is added after a successful sign-in." width={420}
     footer={<>
       <Button disabled={busy} onClick={onClose}>Cancel</Button>
       <Button variant="primary" loading={busy} disabled={busy || !account} onClick={() => account && onAdd(account)}>Add account</Button>
@@ -392,7 +401,7 @@ export function Settings() {
   const [forgeDialog, setForgeDialog] = useState<ForgeAccount | "new">();
   const [trackerDialog, setTrackerDialog] = useState(false);
   const [pendingLogin, setPendingLogin] = useState<string>();
-  const [trackerLogin, setTrackerLogin] = useState<string>();
+  const [trackerLogin, setTrackerLogin] = useState<{ account: ServiceAccount; loginId: string }>();
   const trackerAccounts: ServiceAccount[] = (accounts.current?.accounts ?? []).filter((account): account is ServiceAccount => account.kind === "service");
   const jiraAccount: ServiceAccount | undefined = trackerAccounts.find(({ tool }) => tool === "atlassian");
   const trackerChoices: ServiceAccount[] = [atlassianAccount, linearAccount].filter((account) => !trackerAccounts.some(({ tool }) => tool === account.tool));
@@ -400,11 +409,14 @@ export function Settings() {
     ? { [jiraAccount.id]: { detail: jiraAccount.site ?? jira.data.site, state: "logged_in" } }
     : undefined;
   const addTracker = useAction(async (account: ServiceAccount) => {
-    if (!accounts.value) throw new Error("The accounts are still loading. Try again.");
-    if (!await accounts.commit({ accounts: [...accounts.value.accounts, account] })) throw new Error(accounts.error ?? "The account could not be saved. Try again.");
-    setTrackerLogin(account.id);
-    accounts.reload();
+    const server: "atlassian" | "linear" = account.tool === "linear" ? "linear" : "atlassian";
+    const result = await call("startTrackerLogin", { params: { server } });
+    setTrackerLogin({ account, loginId: result.loginId });
   });
+  useEffect(() => {
+    if (!trackerLogin) return;
+    if (accounts.current?.accounts.some((account) => account.kind === "service" && account.tool === trackerLogin.account.tool)) setTrackerLogin(undefined);
+  }, [accounts.current, trackerLogin]);
   const sectionId = new URLSearchParams(search).get("section");
   const [showUnavailable, setShowUnavailable] = useViewState("settings.showUnavailable", false);
   const [active, setActive] = useViewState("settings.active", sections.find(({ id }) => id === sectionId)?.id ?? sections[0]!.id);
@@ -457,8 +469,8 @@ export function Settings() {
                 <p className={s.groupText}>Add an account, on a public service or on your own server, to push branches and open pull requests.</p>}
               <DiscoveringProviders providers={pendingForges} />
             </LoginControls>
-            <LoginControls title="Trackers" accounts={trackerAccounts} kind="tool" pendingLogin={trackerLogin}
-              onLoginStarted={() => setTrackerLogin(undefined)} refresh={() => jira.reload()} rowOverrides={trackerRows}
+            <LoginControls title="Trackers" accounts={trackerAccounts} kind="tool" pendingTracker={trackerLogin}
+              onPendingDismiss={() => setTrackerLogin(undefined)} refresh={() => jira.reload()} rowOverrides={trackerRows}
               extra={!jiraAccount && jira.data ? [{
                 key: "active-jira", name: "Jira", detail: `${jira.data.account.user} · ${jira.data.site}`, state: "logged_in",
               }] : []}

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { AgentTracker, ForgeAccount } from "@pecore/schemas";
-import { trackerBridgeTool } from "../accounts/atlassian";
+import { trackerBridgeTool, trackerResourceList } from "../accounts/atlassian";
 import { activeJiraAccount } from "../accounts/jira";
 import type { ProjectContext } from "../graph/executor";
 import { forgeEnv, ToolAuthError } from "../runners/forge-env";
@@ -18,7 +18,7 @@ const tools = {
 };
 type ToolName = keyof typeof tools;
 type ToolArgs = { ticketId?: string; site?: string; query?: string; text?: string; status?: string; fields?: Record<string, unknown>; includeComments?: boolean };
-type Account = { id: string; forge: ForgeAccount } | { id: string; bridge: "atlassian" | "linear" } | { id: string; jira: string };
+type Account = { id: string; forge: ForgeAccount } | { id: string; bridge: "atlassian" | "linear"; user?: string } | { id: string; jira: string; user?: string };
 type TrackerContext = Pick<ProjectContext, "project" | "forgeAccount" | "serviceAccount">;
 
 export function trackerToolNames(access: AgentTracker["access"]): ToolName[] {
@@ -43,10 +43,10 @@ export async function trackerAccount(ctx: TrackerContext, permission: string): P
   const forge: ForgeAccount | undefined = id ? ctx.forgeAccount(id) : undefined;
   if ((forge?.forge === "github" && forge.tool === "gh") || (forge?.forge === "gitlab" && forge.tool === "glab")) return { id: forge.id, forge };
   const service = id ? ctx.serviceAccount?.(id) : undefined;
-  if (service?.tool === "atlassian" || service?.tool === "linear") return { id: service.id, bridge: service.tool };
+  if (service?.tool === "atlassian" || service?.tool === "linear") return { id: service.id, bridge: service.tool, user: service.user };
   if (id === "active-jira" || id?.startsWith("jira-")) {
     const active = await activeJiraAccount();
-    if (active && (id === "active-jira" || id === active.account.id)) return { id: active.account.id, jira: active.site };
+    if (active && (id === "active-jira" || id === active.account.id)) return { id: active.account.id, jira: active.site, user: active.account.user };
   }
   throw new Error("Choose an available tracker account in Settings → Accounts.");
 }
@@ -153,7 +153,7 @@ export async function bindTrackerSite(account: Account, call: ReturnType<typeof 
   const { args } = call;
   if (args.site) return call;
   const resources: unknown = await trackerBridgeTool(account.id, account.bridge, "getAccessibleAtlassianResources", {});
-  const sites = z.array(z.object({ id: text, url: text })).safeParse(resources).data ?? [];
+  const sites = z.array(z.object({ id: text, url: text })).safeParse(trackerResourceList(resources)).data ?? [];
   const ticketHost: string | undefined = args.ticketId ? URL.parse(args.ticketId)?.host : undefined;
   const site: string | undefined = ticketHost ? sites.find((site) => URL.parse(site.url)?.host === ticketHost)?.id : sites.length === 1 ? sites[0]?.id : undefined;
   if (!site) throw new Error("Choose a Jira site for this action.");

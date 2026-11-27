@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@fastify/websocket": "11.3.7",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@pecore/agents": "workspace:*",
     "@pecore/schemas": "workspace:*",
     "ajv": "8.20.0",

@@ -138,18 +138,10 @@ it("restores the Settings filter and scroll without jumping to the original sect
 it.each([
   { id: "atlassian", name: "Jira", service: "Atlassian" },
   { id: "linear", name: "Linear", service: "Linear" },
-])("adds a $name tracker from Add account and starts browser sign-in", async ({ id, name, service }) => {
+])("starts a $name tracker sign-in from Add account without saving an account first", async ({ id, name, service }) => {
   const fallback = api.call.getMockImplementation()!;
-  let accounts: Accounts = { accounts: [] };
-  let sha256: string = "accounts-v1";
-  api.call.mockImplementation(async (route: string, input?: RouteInput<"putAccounts">) => {
-    if (route === "getAccounts") return { value: accounts, sha256 };
-    if (route === "putAccounts" && input) {
-      accounts = Accounts.parse(input.body.value);
-      sha256 = "accounts-v2";
-      return { sha256 };
-    }
-    if (route === "startAccountLogin") return { loginId: `tool:${id}` };
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "startTrackerLogin") return { loginId: `tool:${id}` };
     return fallback(route);
   });
   render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
@@ -165,15 +157,16 @@ it.each([
     await user.click(await screen.findByRole("option", { name }));
   }
   await user.click(dialog.getByRole("button", { name: "Add account" }));
-  await waitFor(() => expect(api.call).toHaveBeenCalledWith("startAccountLogin", { params: { id } }));
-  expect(accounts.accounts).toEqual([{ id, kind: "service", service, tool: id, user: `${service} account` }]);
+  await waitFor(() => expect(api.call).toHaveBeenCalledWith("startTrackerLogin", { params: { server: id } }));
+  expect(api.call).not.toHaveBeenCalledWith("putAccounts", expect.anything());
+  expect(await screen.findByText(service)).toBeTruthy();
   expect(screen.queryByLabelText("Login code")).toBeNull();
 });
 
-it("keeps the tracker dialog open when the account cannot be saved", async () => {
+it("keeps the tracker dialog open when sign-in cannot start", async () => {
   const fallback = api.call.getMockImplementation()!;
   api.call.mockImplementation(async (route: string) => {
-    if (route === "putAccounts") throw new Error("The account could not be saved.");
+    if (route === "startTrackerLogin") throw new Error("The tracker sign-in could not start.");
     return fallback(route);
   });
   render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
@@ -184,7 +177,7 @@ it("keeps the tracker dialog open when the account cannot be saved", async () =>
   await user.click(add);
   const dialog = within(await screen.findByRole("dialog", { name: "Add a tracker account" }));
   await user.click(dialog.getByRole("button", { name: "Add account" }));
-  await screen.findByText("The account could not be saved.");
+  await screen.findByText("The tracker sign-in could not start.");
   expect(screen.getByRole("dialog", { name: "Add a tracker account" })).toBeTruthy();
 });
 

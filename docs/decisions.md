@@ -585,3 +585,9 @@
 - Decision: every AI tool has one fixed colour, defined in the app. The Colour button, its picker and Reset are removed from AI tools, and the saved per-tool colours are dropped. The state badge is the last element of an account row, at the right edge.
 - Why: the colours are part of each tool's identity; letting the user change them added state with no use.
 - Replaces: the colour picker, Reset and the `harnessColors` setting from 2026-11-24 and 2026-11-26.
+
+## 2026-11-27: Native MCP client for Atlassian and Linear
+
+- Decision: Atlassian Rovo and Linear are reached through Pecore's own MCP client (`@modelcontextprotocol/sdk`, Streamable HTTP) instead of the external `mcp-remote` bridge. The client owns the OAuth flow and stores its tokens under `PECORE_HOME/mcp/<server>/` with mode `0700`/`0600`; it never reads `~/.mcp-auth`. Only an explicit Log in opens a browser. Status checks and tracker calls use or refresh stored tokens without interactive authorization.
+- Why: the bridge needed a separate install, could open a browser during a status check, and left Pecore unable to report MCP state without parsing its output. A native client matches how Claude Code, Codex and OpenCode handle remote MCP.
+- Replaces: the `mcp-remote` bridge described on 2026-11-25. The bridge and its install requirement are removed. Existing `~/.mcp-auth` tokens are not read; users sign in once more after the switch.
