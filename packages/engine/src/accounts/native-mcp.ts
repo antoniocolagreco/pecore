@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -31,6 +31,15 @@ let root: string = join(process.env.PECORE_HOME ?? join(homedir(), ".pecore"), "
 
 export function setMcpHome(home: string): void {
   root = join(home, "mcp");
+}
+
+export async function hasTrackerTokens(server: TrackerBridge): Promise<boolean> {
+  try {
+    await access(join(root, server, "tokens.json"));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function siteHost(value: string): string | null {
@@ -327,8 +336,8 @@ export async function checkTrackerBridge(account: string, server: TrackerBridge,
   await trackerBridgeTool(account, server, server === "atlassian" ? "atlassianUserInfo" : "list_issues", server === "atlassian" ? {} : { limit: 1 }, options);
 }
 
-export async function trackerIdentity(account: string, server: TrackerBridge): Promise<string | null> {
-  const output = await trackerBridgeTool(account, server, server === "atlassian" ? "atlassianUserInfo" : "whoami", {});
+export async function trackerIdentity(account: string, server: TrackerBridge, options: BridgeOptions = {}): Promise<string | null> {
+  const output = await trackerBridgeTool(account, server, server === "atlassian" ? "atlassianUserInfo" : "whoami", {}, options);
   const data = output && typeof output === "object" && "data" in output ? (output as { data?: unknown }).data : output;
   if (!data || typeof data !== "object") return null;
   const record = data as Record<string, unknown>;
@@ -351,8 +360,8 @@ export function trackerResourceList(value: unknown): unknown {
   return data && typeof data === "object" && "resources" in data ? (data as { resources?: unknown }).resources : data;
 }
 
-export async function atlassianSite(account: string): Promise<string | null> {
-  const parsed = Resources.safeParse({ resources: trackerResourceList(await trackerBridgeTool(account, "atlassian", "getAccessibleAtlassianResources", {})) });
+export async function atlassianSite(account: string, options: BridgeOptions = {}): Promise<string | null> {
+  const parsed = Resources.safeParse({ resources: trackerResourceList(await trackerBridgeTool(account, "atlassian", "getAccessibleAtlassianResources", {}, options)) });
   if (!parsed.success) return null;
   for (const resource of parsed.data.resources) {
     if (resource.products && !resource.products.some(({ id }) => id.toLowerCase() === "jira")) continue;

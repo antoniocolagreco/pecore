@@ -40,8 +40,9 @@ const validateParams = new Ajv({ strict: false });
 export async function callProjectTracker(engine: Engine, project: string, name: string, input: Record<string, unknown>) {
   return withProjectLocation(engine.project(project).ctx, async () => {
     const { ctx } = engine.project(project);
-    const account = await trackerAccount(ctx, "project.account");
-    const call = await bindTrackerSite(account, trackerTool(name, input, "read-write"));
+    const parsed = trackerTool(name, input, "read-write");
+    const account = await trackerAccount(ctx, "project.account", parsed.args);
+    const call = await bindTrackerSite(account, parsed);
     if (!call.write) return { value: await callTracker(ctx, account, call), target: { project, state: "completed" } };
     const form: Form = ChatForm.parse({
       title: call.name === "comment_ticket" ? "Post a ticket comment" : call.name === "change_ticket_status" ? "Change ticket status" : "Update ticket fields",
@@ -188,7 +189,7 @@ export async function runApprovedNode(engine: Engine, proposal: z.infer<typeof N
   if ("trackerTool" in invocation) return withProjectLocation(engine.project(invocation.project).ctx, async () => {
     const { ctx } = engine.project(invocation.project);
     const call = trackerTool(invocation.trackerTool, invocation.args, "read-write");
-    const account = await trackerAccount(ctx, "project.account");
+    const account = await trackerAccount(ctx, "project.account", call.args);
     if (!call.write || fingerprint !== definitionHash({ account, repo: ctx.project.repo, call })) {
       throw new Error("The account or ticket target changed. Ask for a new confirmation.");
     }

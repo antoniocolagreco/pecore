@@ -485,7 +485,9 @@ export type BuiltInHarness = z.infer<typeof BuiltInHarness>;
 
 export const ForgeDiscovery = z.enum(["github", "gitlab", "codecommit"]);
 export type ForgeDiscovery = z.infer<typeof ForgeDiscovery>;
-export const AccountDiscovery = z.union([BuiltInHarness, ForgeDiscovery]);
+export const TrackerDiscovery = z.enum(["jira", "linear"]);
+export type TrackerDiscovery = z.infer<typeof TrackerDiscovery>;
+export const AccountDiscovery = z.union([BuiltInHarness, ForgeDiscovery, TrackerDiscovery]);
 export type AccountDiscovery = z.infer<typeof AccountDiscovery>;
 
 const SetupHarness = z.object({
@@ -636,6 +638,7 @@ export const routes = {
   checkPrerequisites: { method: "POST", path: "/prerequisites/check", response: z.array(PrerequisiteView) },
   getSetup: { method: "GET", path: "/setup", response: SetupView },
   getAccountDiscovery: { method: "GET", path: "/accounts/discovery", response: z.array(AccountDiscovery) },
+  discoverAccounts: { method: "POST", path: "/accounts/discovery", response: Ok },
   startSetupLogin: { method: "POST", path: "/setup/:connector/login", params: z.object({ connector: BuiltInHarness }), response: z.object({ loginId: z.string() }) },
   getLog: { method: "GET", path: "/logs/:id", params: IdParams, query: LogQuery, response: z.union([z.object({ view: z.literal("raw"), lines: z.array(z.unknown()) }), z.object({ view: z.literal("events"), events: z.array(LogEvent) })]) },
 } as const satisfies Record<string, RouteDef>;

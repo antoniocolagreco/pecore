@@ -8,6 +8,8 @@ import { atlassianAccount } from "@pecore/schemas";
 import { apiProject } from "../../test/api-project";
 import { tempDir } from "../../test/tmp";
 import { checkTrackerBridge, setBrowserOpener, setMcpHome, trackerBridgeTool, trackerIdentity } from "./native-mcp";
+import * as forges from "./forges";
+import * as jira from "./jira";
 import { TrackerMcpAuthError, TrackerMcpUnavailableError, trackerServers } from "./tracker-mcp";
 
 const original = { ...trackerServers.atlassian };
@@ -16,6 +18,7 @@ let server: Server | undefined;
 
 afterEach(async () => {
   setBrowserOpener(null);
+  vi.restoreAllMocks();
   trackerServers.atlassian.url = original.url;
   trackerServers.atlassian.authHost = original.authHost;
   trackerServers.linear.url = originalLinear.url;
@@ -504,6 +507,79 @@ it("signs in again to an existing tracker account without changing its id", asyn
     const tracker = engine.global().accounts.accounts.filter((account) => account.id === "atlassian");
     expect(tracker).toHaveLength(1);
     expect(tracker[0]).toMatchObject({ id: "atlassian", user: "alice", site: "team.atlassian.net" });
+  } finally {
+    await close();
+  }
+});
+
+it("discovers and refreshes a stored Atlassian MCP session without a browser", async () => {
+  vi.spyOn(forges, "discoverForgeAccounts").mockResolvedValue([]);
+  vi.spyOn(jira, "activeJiraAccount").mockResolvedValue(null);
+  const mock = await mockMcp();
+  const { engine, close } = await apiProject();
+  try {
+    setBrowserOpener(() => undefined);
+    await login(mock, engine.opts.home);
+    const opened = vi.fn();
+    setBrowserOpener(opened);
+    await engine.discoverAccounts();
+    expect(opened).not.toHaveBeenCalled();
+    expect(engine.global().accounts.accounts.find((account) => account.id === "atlassian"))
+      .toMatchObject({ kind: "service", service: "Atlassian", tool: "atlassian", user: "alice", site: "team.atlassian.net" });
+    const accounts = engine.global().accounts.accounts;
+    engine.configuration.write({ accounts: { accounts: accounts.map((account) =>
+      account.id === "atlassian" && account.kind === "service" ? { ...account, user: "Old identity", site: "old.atlassian.net" } : account) } });
+    await engine.reloadGlobal();
+    await engine.discoverAccounts();
+    expect(engine.global().accounts.accounts.find((account) => account.id === "atlassian"))
+      .toMatchObject({ user: "alice", site: "team.atlassian.net" });
+  } finally {
+    await close();
+  }
+});
+
+it("discovers a stored Linear MCP session without a browser", async () => {
+  vi.spyOn(forges, "discoverForgeAccounts").mockResolvedValue([]);
+  vi.spyOn(jira, "activeJiraAccount").mockResolvedValue(null);
+  const mock = await mockMcp();
+  const { engine, close } = await apiProject();
+  try {
+    setBrowserOpener(() => undefined);
+    trackerServers.linear.url = `${mock.base}/mcp`;
+    trackerServers.linear.authHost = new URL(mock.base).hostname;
+    setMcpHome(engine.opts.home);
+    await checkTrackerBridge("linear", "linear", {
+      interactive: true,
+      onAuthorize: (url) => { if (url) void fetch(url); },
+    });
+    const opened = vi.fn();
+    setBrowserOpener(opened);
+    await engine.discoverAccounts();
+    expect(engine.global().accounts.accounts.find((account) => account.id === "linear"))
+      .toMatchObject({ kind: "service", service: "Linear", tool: "linear", user: "alice@example.test @ workspace-one" });
+    expect(opened).not.toHaveBeenCalled();
+  } finally {
+    await close();
+  }
+});
+
+it("creates no tracker account when credentials are missing or revoked", async () => {
+  vi.spyOn(forges, "discoverForgeAccounts").mockResolvedValue([]);
+  vi.spyOn(jira, "activeJiraAccount").mockResolvedValue(null);
+  const mock = await mockMcp();
+  const { engine, close } = await apiProject();
+  try {
+    const opened = vi.fn();
+    setBrowserOpener(opened);
+    await engine.discoverAccounts();
+    expect(engine.global().accounts.accounts.some((account) => account.kind === "service")).toBe(false);
+    setBrowserOpener(() => undefined);
+    await login(mock, engine.opts.home);
+    mock.control.unauthorized = true;
+    setBrowserOpener(opened);
+    await engine.discoverAccounts();
+    expect(engine.global().accounts.accounts.some((account) => account.kind === "service")).toBe(false);
+    expect(opened).not.toHaveBeenCalled();
   } finally {
     await close();
   }

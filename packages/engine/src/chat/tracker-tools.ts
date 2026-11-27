@@ -18,8 +18,8 @@ const tools = {
 };
 type ToolName = keyof typeof tools;
 type ToolArgs = { ticketId?: string; site?: string; query?: string; text?: string; status?: string; fields?: Record<string, unknown>; includeComments?: boolean };
-type Account = { id: string; forge: ForgeAccount } | { id: string; bridge: "atlassian" | "linear"; user?: string } | { id: string; jira: string; user?: string };
-type TrackerContext = Pick<ProjectContext, "project" | "forgeAccount" | "serviceAccount">;
+type Account = { id: string; forge: ForgeAccount } | { id: string; bridge: "atlassian" | "linear"; user?: string; site?: string } | { id: string; jira: string; user?: string };
+type TrackerContext = Pick<ProjectContext, "project" | "forgeAccount" | "serviceAccount" | "serviceAccounts">;
 
 export function trackerToolNames(access: AgentTracker["access"]): ToolName[] {
   return (Object.keys(tools) as ToolName[]).filter((name) => access === "read-write" || !tools[name].write);
@@ -35,7 +35,54 @@ export function trackerTool(name: string, input: unknown, access: AgentTracker["
   return { name: selected, args: tools[selected].schema.parse(input ?? {}), write: tools[selected].write };
 }
 
-export async function trackerAccount(ctx: TrackerContext, permission: string): Promise<Account> {
+const JiraSites = z.array(z.object({ id: text.optional(), cloudId: text.optional(), url: text }))
+  .transform((resources) => resources.flatMap((resource) => {
+    const id: string | undefined = resource.cloudId ?? resource.id;
+    return id ? [{ id, url: resource.url }] : [];
+  }));
+const trackerProbeTimeoutMs = 10_000;
+
+function jiraHost(value: string): string | null {
+  try {
+    return new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `https://${value}`).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function jiraTarget(args: ToolArgs): string | null {
+  const link: URL | null = args.ticketId ? URL.parse(args.ticketId) : null;
+  return link?.host.toLowerCase() ?? args.site ?? null;
+}
+
+function jiraSiteMatches(site: { id: string; url: string }, target: string): boolean {
+  return site.id === target || jiraHost(site.url) === jiraHost(target);
+}
+
+async function automaticJira(ctx: TrackerContext, args: ToolArgs): Promise<Account> {
+  const active = await activeJiraAccount();
+  const mcp = ctx.serviceAccounts?.().find((account) => account.tool === "atlassian") ?? ctx.serviceAccount?.("atlassian");
+  if (!mcp) {
+    if (active) return { id: active.account.id, jira: active.site, user: active.account.user };
+    throw new Error("Choose an available tracker account in Settings → Accounts.");
+  }
+  const target: string | null = jiraTarget(args) ?? active?.site ?? null;
+  const sites = JiraSites.safeParse(trackerResourceList(await trackerBridgeTool(mcp.id, "atlassian", "getAccessibleAtlassianResources", {}, { timeoutMs: trackerProbeTimeoutMs }).catch(() => null))).data;
+  if (sites) {
+    const match = target ? sites.find((site) => jiraSiteMatches(site, target)) : sites.length === 1 ? sites[0] : undefined;
+    if (match) return { id: mcp.id, bridge: "atlassian", user: mcp.user, site: match.id };
+    if (target && !match && active && jiraHost(active.site) === jiraHost(target)) {
+      return { id: active.account.id, jira: active.site, user: active.account.user };
+    }
+    if (target && !match) throw new Error("The Atlassian MCP account cannot reach this Jira site. Choose another tracker account in Settings → Accounts.");
+  }
+  if (active && (!target || jiraHost(active.site) === jiraHost(target))) {
+    return { id: active.account.id, jira: active.site, user: active.account.user };
+  }
+  return { id: mcp.id, bridge: "atlassian", user: mcp.user };
+}
+
+export async function trackerAccount(ctx: TrackerContext, permission: string, args: ToolArgs = {}): Promise<Account> {
   const choice: string | undefined = permission === "project.account"
     ? ctx.project.tracker?.account ?? (ctx.project.tracker?.provider === "jira" ? "active-jira" : ctx.project.repo?.account)
     : permission;
@@ -44,9 +91,10 @@ export async function trackerAccount(ctx: TrackerContext, permission: string): P
   if ((forge?.forge === "github" && forge.tool === "gh") || (forge?.forge === "gitlab" && forge.tool === "glab")) return { id: forge.id, forge };
   const service = id ? ctx.serviceAccount?.(id) : undefined;
   if (service?.tool === "atlassian" || service?.tool === "linear") return { id: service.id, bridge: service.tool, user: service.user };
-  if (id === "active-jira" || id?.startsWith("jira-")) {
+  if (id === "active-jira") return automaticJira(ctx, args);
+  if (id?.startsWith("jira-")) {
     const active = await activeJiraAccount();
-    if (active && (id === "active-jira" || id === active.account.id)) return { id: active.account.id, jira: active.site, user: active.account.user };
+    if (active && id === active.account.id) return { id: active.account.id, jira: active.site, user: active.account.user };
   }
   throw new Error("Choose an available tracker account in Settings → Accounts.");
 }
@@ -152,8 +200,9 @@ export async function bindTrackerSite(account: Account, call: ReturnType<typeof 
   if (!("bridge" in account) || account.bridge !== "atlassian") return call;
   const { args } = call;
   if (args.site) return call;
+  if (account.site) return { ...call, args: { ...args, site: account.site } };
   const resources: unknown = await trackerBridgeTool(account.id, account.bridge, "getAccessibleAtlassianResources", {});
-  const sites = z.array(z.object({ id: text, url: text })).safeParse(trackerResourceList(resources)).data ?? [];
+  const sites = JiraSites.safeParse(trackerResourceList(resources)).data ?? [];
   const ticketHost: string | undefined = args.ticketId ? URL.parse(args.ticketId)?.host : undefined;
   const site: string | undefined = ticketHost ? sites.find((site) => URL.parse(site.url)?.host === ticketHost)?.id : sites.length === 1 ? sites[0]?.id : undefined;
   if (!site) throw new Error("Choose a Jira site for this action.");
