@@ -190,7 +190,7 @@ export async function loadProject(projectDir: string, templatesDir?: string, sto
       }
     }
     if (project.id !== basename(projectDir)) errors.push({ file, path: "id", message: `id must match the directory name ${basename(projectDir)}` });
-    if (project.createRepo !== null && !defs.nodes.has(project.createRepo)) errors.push({ file, path: "createRepo", message: `node ${project.createRepo} not found in the project` });
+    if (project.createRepo !== null && project.createRepo !== "create-repo" && !defs.nodes.has(project.createRepo)) errors.push({ file, path: "createRepo", message: `node ${project.createRepo} not found in the project` });
   }
   return { ...defs, project, errors };
 }

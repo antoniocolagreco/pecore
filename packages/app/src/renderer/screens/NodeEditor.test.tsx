@@ -14,9 +14,9 @@ vi.mock("../api/live", () => ({ useConnected: () => true, onLive: () => () => un
 
 afterEach(cleanup);
 
-it.each(["open-pr", "create-repo"])("shows %s without provider script or edit actions", async (name) => {
+it("shows where to configure Open PR instead of a disabled editor", async () => {
   const node: Node = Node.parse({
-    name, kind: "repository", description: "Uses the configured provider", account: "project.account",
+    name: "open-pr", kind: "repository", description: "Uses the configured provider", account: "project.account",
     outcomes: ["success", "failure"], outcomeRules: [{ exitCode: 0, outcome: "success" }, { exitCode: "other", outcome: "failure" }],
   });
   api.call.mockImplementation(async (route: string) => {
@@ -25,12 +25,19 @@ it.each(["open-pr", "create-repo"])("shows %s without provider script or edit ac
     if (route === "validateDefinition") return { errors: [], warnings: [] };
     throw new Error("Unexpected route " + route);
   });
-  const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: [`/edit/node/templates/nodes/${name}.json`] });
+  const router = createMemoryRouter([
+    { path: "/edit/node/*", element: <NodeEditor /> },
+    { path: "/projects", element: <h1>Projects</h1> },
+  ], { initialEntries: ["/edit/node/templates/nodes/open-pr.json"] });
   render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
-  expect(await screen.findByText("Uses the Git hosting account selected in Project Settings.")).toBeTruthy();
+  expect(await screen.findByText(/Connect a repository and select a Git hosting account/)).toBeTruthy();
+  expect(screen.getByRole<HTMLAnchorElement>("link", { name: "Git hosting settings" }).getAttribute("href")).toBe("/settings?section=accounts");
+  expect(screen.queryByRole("textbox", { name: "Description" })).toBeNull();
   expect(screen.queryByRole("group", { name: "Repository script" })).toBeNull();
   expect(screen.queryByRole("combobox", { name: "Account" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+  await userEvent.setup().click(screen.getByRole("link", { name: "Projects" }));
+  expect(await screen.findByRole("heading", { name: "Projects" })).toBeTruthy();
 });
 
 it("offers only the four editable node kinds", async () => {

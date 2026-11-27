@@ -1,7 +1,7 @@
 import { cloneElement, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { ReactElement, ReactNode, Ref } from "react";
 import { Link, useBlocker, useNavigate, useParams } from "react-router";
-import { AgentSession, ApiError, ArtifactType, HumanInterface, humanInterfaces, isForgeOperation, isNodeKindTag, Name, NodeOutputType } from "@pecore/schemas";
+import { AgentSession, ApiError, ArtifactType, HumanInterface, humanInterfaces, isNodeKindTag, Name, NodeOutputType } from "@pecore/schemas";
 import type { DefinitionFile, Node, RouteResult } from "@pecore/schemas";
 import { basicSetup, EditorView, minimalSetup } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
@@ -531,7 +531,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   const human: boolean = kind === "human";
   const agent: boolean = kind === "agent";
   const repository: boolean = kind === "repository";
-  const builtin: boolean = !creation && repository && isForgeOperation(string(draft?.name)) && !draft?.script;
+  const builtin: boolean = !creation && repository && draft?.name === "open-pr" && !draft.script;
   const remote: boolean = repository && !builtin;
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [approvedHash, setApprovedHash] = useState<string>();
@@ -640,7 +640,17 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
       {Array.isArray(draft?.mergedCheck) && <div><strong>Merge check</strong><pre>{JSON.stringify(draft.mergedCheck)}</pre></div>}
       <ErrorText error={approve.error} />
     </Dialog>}
-    {file.ready && <Card padded>
+    {file.ready && builtin && <Card padded>
+      <div className={ui.stack}>
+        <p>Opens or updates a pull request on GitHub or a merge request on GitLab. On private Git and CodeCommit, it verifies the pushed branch.</p>
+        <p>Connect a repository and select a Git hosting account in Project Settings, then add a delivery recipe in Recipes.</p>
+        <div className={ui.row}>
+          <Link to="/settings?section=accounts">Git hosting settings</Link>
+          <Link to="/projects">Projects</Link>
+        </div>
+      </div>
+    </Card>}
+    {file.ready && !builtin && <Card padded>
       {draft ? (
         <fieldset className={s.fields} disabled={!editable}>
           {creation ? <>
@@ -718,7 +728,6 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
             {!draft.script && <>{commandField("Command", draft.command, (command) => update("command", command))}{fieldErrors("command")}</>}
             {!draft.command && textField("script", "Script name", "Enter the name of the saved .sh script. Choose either a command or a script.")}
           </>}
-          {builtin && <p className={ui.muted}>Uses the Git hosting account selected in Project Settings.</p>}
           {remote && <>
             {check("readOnly", "Reads only", "Run this node from chat without asking for confirmation. Protected mode still requires script approval.",
               draft.readOnly === true, (checked) => update("readOnly", checked ? true : undefined))}

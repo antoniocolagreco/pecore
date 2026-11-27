@@ -71,7 +71,7 @@ What none of them offers together:
 
 *   **G1. Order to delivered result.** An order (chat text, a link, an image, or a ticket reference) becomes one or more jobs. Each job ends with the outcome of its last node (for example an open PR, a pushed branch, a local commit), with a failure reason from a fixed list (4.3) shown to the user, or because the user stopped it.
 *   **G2. No built-in language.** Support for a new language or toolchain needs only new node templates, with no change to engine code. Verified by running the same recipe shape on a TypeScript project and on a Rust project, with different check nodes.
-*   **G3. Portable delivery.** Open PR and Create Repo select their implementation from forge definitions. The same recipe delivers to GitHub, GitLab, private Git and CodeCommit. A local-only recipe can end with a commit.
+*   **G3. Portable delivery.** Open PR and project setup select their implementation from forge definitions. The same recipe delivers to GitHub, GitLab, private Git and CodeCommit. A local-only recipe can end with a commit.
 *   **G4. Every operation is a node.** Agents, checks, human reviews, commit, rebase, push and PR/MR are nodes. A recipe can put a human review before the commit node. The engine handles only workdirs, job branches, and clone and fetch of the project's remote with the project's account: it creates workdirs and branches when a job needs them, removes workdirs when the job ends `succeeded` or `not_delivered` (or, for a failed or stopped job, when it is archived or deleted) and branches when the job is deleted.
 *   **G5. Shared templates.** Templates holds node and recipe definitions. A project saves its chosen recipe names, variables and account bindings. A job saves the recipe, node definitions, prompt and script contents, and their hashes at creation. Saving a template affects jobs created after the save.
 *   **G6. Several providers at once.** One job can run agents from at least three different harnesses (for example Claude Code builder, Codex reviewer, opencode with a DeepSeek model for tests). Verified by an end-to-end test of the `feature` recipe with three harnesses.
@@ -339,7 +339,7 @@ Fields by kind:
 
 Placeholders in executable argument arrays and prompts use plain substitution. They include `{params.<name>}`, `{job.id}`, `{job.title}`, `{job.branch}`, `{job.base}` (the required base commit), `{job.oldBase}` (the previous base commit), `{job.target}` (the delivery branch, see 4.6), `{job.commit}` (the latest `sha`), `{ticket.id}` (the ticket ID at its source, if present), `{workdir}`, `{project.repoDir}`, `{project.repo.url}`, `{project.repo.owner}` and `{project.repo.name}`.
 
-Open PR (`open-pr`) and Create Repo (`create-repo`) are read-only templates. The project account selects their implementation from `templates/forges/<forge>.json` at execution preparation. Jobs record the selected implementation and its repeat and merge checks in the snapshot, so retries use the same scripts. GitHub and GitLab Open PR publish the draft from Write PR and return it with its URL. For private Git and CodeCommit, the job connects Push directly to Open PR, skips Write PR and records branch delivery without an artifact. Those providers require an existing repository.
+Open PR (`open-pr`) is a read-only recipe template. Project setup uses its own repository creation action. The project account selects both implementations from `templates/forges/<forge>.json`. The job snapshot records the scripts and checks for retries. GitHub and GitLab Open PR publish the draft from Write PR and return it with its URL. For private Git and CodeCommit, the job connects Push directly to Open PR, skips Write PR and records branch delivery without an artifact. Those providers require an existing repository.
 
 #### 3.2 Recipe templates
 
@@ -1357,7 +1357,7 @@ Stored in the repository under `packages/app/resources/` and bundled with the ap
 | `templates/nodes/git-commit.json` | commit; `success` also when there is nothing to commit |
 | `templates/nodes/git-rebase.json` + `.sh` | `git stash push --include-untracked`, `git rebase --onto {job.base} {job.oldBase}`, `git stash pop` |
 | `templates/nodes/git-push.json` | push of Fixed choices; probe script: `h=$(git --git-dir="$PECORE_PROJECT_REPODIR" ls-remote origin "refs/heads/$PECORE_JOB_BRANCH" \| cut -f1); [ "$h" = "$PECORE_JOB_COMMIT" ] && echo "$h"; exit 0` |
-| `templates/nodes/open-pr.json`, `create-repo.json` | portable Repository templates available in the recipe editor |
+| `templates/nodes/open-pr.json` | portable Repository template available in the recipe editor |
 | `templates/forges/nodes/` | internal GitHub, GitLab and branch implementations with retry and merge checks |
 | `templates/nodes/typecheck.json`, `eslint.json`, `vitest.json`, `tests-fail-check.json` | TypeScript project checks in the job's workdir |
 | `templates/nodes/cargo-check.json`, `cargo-clippy.json`, `cargo-test.json` | Rust project checks in the job's workdir (G2) |

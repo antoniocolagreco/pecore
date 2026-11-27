@@ -4,7 +4,7 @@ import type { Catalog } from "../store/catalog";
 import { validIcon } from "./icon";
 import { loadTemplates } from "./load";
 
-export const templatesFormat: string = "16";
+export const templatesFormat: string = "17";
 
 export async function seedTemplates(catalog: Catalog, shipped: string): Promise<void> {
   const db: Catalog["db"] = catalog.db;
@@ -29,7 +29,10 @@ export async function seedTemplates(catalog: Catalog, shipped: string): Promise<
     icons.set(name, svg);
   }
   db.transaction(() => {
-    db.exec(`DELETE FROM catalog_nodes WHERE shipped = 1; DELETE FROM catalog_recipes WHERE shipped = 1;
+    db.exec(`DELETE FROM catalog_nodes WHERE shipped = 1 AND (name <> 'create-repo' OR NOT EXISTS (
+        SELECT 1 FROM catalog_recipe_steps JOIN catalog_recipes ON catalog_recipes.name = catalog_recipe_steps.recipe
+        WHERE catalog_recipe_steps.node = catalog_nodes.name AND catalog_recipes.shipped = 0
+      )); DELETE FROM catalog_recipes WHERE shipped = 1;
       DELETE FROM catalog_node_content WHERE shipped = 1; DELETE FROM catalog_icons WHERE shipped = 1`);
     for (const node of definitions.nodes.values()) if (!catalog.node(node.name)) catalog.saveNode(node, true);
     for (const recipe of definitions.recipes.values()) if (!catalog.recipe(recipe.name)) catalog.saveRecipe(recipe, true);

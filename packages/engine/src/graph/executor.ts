@@ -27,7 +27,7 @@ import { appUser, killJobProcesses, signalGroup, stopGroup } from "../runners/pr
 import { enoughDisk } from "../scheduler/disk";
 import type { Pools } from "../scheduler/pools";
 import type { NewEvent, ProjectDb } from "../store/project-db";
-import { repositoryAccount, repositoryDefinition, repositoryEnv } from "../runners/repository";
+import { repositoryAccount, repositoryDefinition, repositoryEnv, repositorySetupDefinition } from "../runners/repository";
 import { filesHash, deleteScratch, recordGit, restoreState, undoInterrupted } from "../workdir/files-hash";
 import type { GitRecord } from "../workdir/files-hash";
 import { gitAppResult, gitWork } from "../workdir/git-as";
@@ -442,8 +442,14 @@ export class JobExecutor {
 
   async createSetupJob(createRepo: string): Promise<void> {
     if (this.ctx.db.db.prepare("SELECT 1 FROM jobs WHERE id = ?").get(setupJobId)) return;
-    const node = this.ctx.defs.nodes.get(createRepo);
-    if (!node || node.kind !== "repository") throw new Error(`repo creation node ${createRepo} not found`);
+    let definition: Awaited<ReturnType<typeof repositoryDefinition>>;
+    if (createRepo === "create-repo") definition = await repositorySetupDefinition(this.ctx);
+    else {
+      const custom = this.ctx.defs.nodes.get(createRepo);
+      if (custom?.kind !== "repository") throw new Error(`repo creation node ${createRepo} not found`);
+      definition = await repositoryDefinition(this.ctx, custom, repositoryAccount(this.ctx, custom), this.ctx.defs.sidecars);
+    }
+    const node = definition.definition;
     const recipe = Recipe.parse({
       name: setupJobId,
       description: "Create the remote repository",
@@ -454,7 +460,6 @@ export class JobExecutor {
     const baseBranch = this.ctx.project.baseBranch;
     const base = await branchHead(join(this.ctx.dir, "repo.git"), baseBranch);
     if (!base) throw new Error(`branch ${baseBranch} not found`);
-    const definition = await repositoryDefinition(this.ctx, node, repositoryAccount(this.ctx, node), this.ctx.defs.sidecars);
     const definitions: JobDefinitions = { recipeHash: definitionHash(recipe), nodes: { [createRepo]: definition } };
     this.ctx.db.append([{ jobId: setupJobId, type: "job.created", payload: { title: "Create the remote repository", recipe, definitions, request: "Create the remote repository.", parentJobId: null, baseBranch, base, target: baseBranch, branch: jobBranch(setupJobId) } }]);
     this.ctx.changed(setupJobId);

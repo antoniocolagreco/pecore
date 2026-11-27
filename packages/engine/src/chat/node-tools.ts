@@ -70,6 +70,7 @@ export async function listNodeTools(engine: Engine, project: string): Promise<No
   const { ctx } = engine.project(project);
   const protectedMode: boolean = engine.global().settings.protectedMode;
   const tools = await Promise.all(catalog.names("nodes").map(async (name): Promise<NodeTool[]> => {
+    if (name === "create-repo") return [];
     const entry = catalog.chatNode(name);
     if (!entry || (protectedMode && !entry.approved)) return [];
     let { node } = entry;
@@ -108,6 +109,7 @@ export async function listNodeTools(engine: Engine, project: string): Promise<No
 }
 
 async function prepare(engine: Engine, invocation: Invocation) {
+  if (invocation.name === "create-repo") throw new Error("Create the repository from project setup.");
   const { ctx, executor } = engine.project(invocation.project);
   const { input } = invocation;
   const catalog = invocation.template ? engine.catalog : catalogFor(engine, invocation.project);
