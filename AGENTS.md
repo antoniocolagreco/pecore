@@ -9,8 +9,6 @@ Before planning, changing code or reviewing a change, read the design documents 
 - `docs/decisions.md` — decisions and their rationale.
 - `docs/repository-workflow.md` — branches, commits, issues and pull requests.
 
-Read only files at the first level of `docs/`. Do not read documents in `docs/` subdirectories unless the task explicitly points to one.
-
 ## Review agents
 
 Review agents must read the required documents above, then check the change against every point in this list:
