@@ -56,6 +56,21 @@ describe("project creation with a remote (section Project creation, decision 13)
     await engine.shutdown();
   });
 
+  it("does not report repository setup success when the remote branch has a different commit", async () => {
+    const { forge, home, templates } = await forgeHome();
+    const remote: string = await forge.createRepo("acme/existing");
+    const engine = await Engine.start({ home, templates });
+    try {
+      await engine.createProject({ id: "existing", name: "Existing", repo: { url: "https://github.com/acme/existing.git", account: "gh-test" }, createRepo: "create-repo" });
+      const { ctx, executor } = engine.project("existing");
+      await until(() => executor.job("project-setup").state === "failed");
+      expect(await readCreation(ctx.dir)).toMatchObject({ step: 3 });
+      expect(forge.remoteHead("acme/existing", "main")).toBe(remote);
+    } finally {
+      await engine.shutdown();
+    }
+  });
+
   it("runs a customized repository setup script without approval", async () => {
     const { forge, home, templates } = await forgeHome();
     const engine = await Engine.start({ home, templates });

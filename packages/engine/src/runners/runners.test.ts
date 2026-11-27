@@ -180,5 +180,46 @@ describe("command nodes", () => {
     expect(await runCommandNode(ctx(n(["true"])))).toMatchObject({ kind: "completed", fromProbe: false });
     expect(await readFile(marker, "utf8")).toBe("");
   });
+
+  it("distinguishes missing tools, expired login, network loss and permanent repository errors", async () => {
+    const { ctx } = await setup();
+    const template: CommandNode = node({ command: ["true"] });
+    const missing: CommandRun = ctx({ ...template, probe: ["pecore-no-such-command"] }, { remote: true });
+    await expect(runCommandNode(missing)).resolves.toMatchObject({ kind: "failed", reason: "COMMAND_NOT_FOUND" });
+    const denied: CommandRun = ctx({ ...template, probe: ["/bin/sh", "-c", "echo 'HTTP 403: Forbidden' >&2; exit 1"] }, { remote: true });
+    await expect(runCommandNode(denied)).resolves.toMatchObject({ kind: "failed", reason: "HARNESS_ERROR" });
+
+    const action: CommandRun = ctx({ ...template, probe: ["true"] }, { remote: true, inlineScript: "echo 'Could not resolve host: example.com' >&2; exit 128" });
+    await expect(runCommandNode(action)).resolves.toMatchObject({ kind: "waiting", reason: "network" });
+    await expect(runCommandNode({ ...action, inlineScript: "echo 'HTTP 401: Unauthorized' >&2; exit 1" })).resolves.toMatchObject({ kind: "waiting", reason: "auth" });
+    await expect(runCommandNode({ ...action, inlineScript: "exit 1" })).resolves.toMatchObject({ kind: "completed", outcome: "failed" });
+  });
+
+  it("redacts repository credentials from probe and action output before recording it", async () => {
+    const { ctx } = await setup();
+    const token: string = "fixture-github-token";
+    const effects: unknown[] = [];
+    const template: CommandNode = node({ command: ["true"], outputs: { passed: "log" }, outputRules: { passed: { stdoutLastLine: "log" } } });
+    const run: CommandRun = ctx({ ...template, probe: ["/bin/sh", "-c", 'printf "%s\\n" "$GH_TOKEN" >&2'] }, {
+      remote: true, extraEnv: { GH_TOKEN: token }, inlineScript: 'printf "%s\\n" "$GH_TOKEN"',
+      effect: { requested: (hash) => effects.push(hash), done: (_ok, result) => effects.push(result) },
+    });
+    const result = await runCommandNode(run);
+    expect(result).toMatchObject({ kind: "completed", outputs: [{ type: "log", content: "[redacted]" }] });
+    expect(result.log).toContain("[redacted]");
+    expect(result.log).not.toContain(token);
+    expect(effects).toEqual([expect.stringMatching(/^[a-f0-9]{64}$/), { code: 0 }]);
+  });
+
+  it("registers the repository probe for cancellation and skips the action after Stop", async () => {
+    const { ctx } = await setup();
+    const processes: number[] = [];
+    const template: CommandNode = node({ command: ["true"] });
+    const run: CommandRun = ctx({ ...template, probe: ["true"] }, {
+      remote: true, inlineScript: "exit 91", onStart: (pid) => processes.push(pid), stopping: () => processes.length > 0,
+    });
+    await expect(runCommandNode(run)).resolves.toMatchObject({ kind: "failed", reason: "PROCESS_KILLED" });
+    expect(processes).toHaveLength(1);
+  });
 });
 

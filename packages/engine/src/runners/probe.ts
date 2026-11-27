@@ -1,6 +1,6 @@
 import type { RepositoryNode } from "@pecore/schemas";
-import { run } from "./process";
-import type { RunResult } from "./process";
+import { run, SpawnError } from "./process";
+import type { RunParams, RunResult } from "./process";
 
 export type ProbeResult = "done" | "not_done" | "unknown";
 
@@ -31,9 +31,13 @@ export function readProbe(r: Pick<RunResult, "code" | "stdout" | "timedOut">, ru
   return rule.notDone.length === 0 ? "not_done" : "unknown";
 }
 
-export type ProbeRun = { argv: string[]; user: string; cwd: string; env: Record<string, string>; input: string; timeoutMs: number };
-
-export async function runProbe(p: ProbeRun, rule: JsonRule | undefined): Promise<{ result: ProbeResult; stdout: string; stderr: string }> {
-  const r = await run(p).catch(() => ({ code: null, signal: null, stdout: "", stderr: "", timedOut: false }));
-  return { result: readProbe(r, rule), stdout: r.stdout, stderr: r.stderr };
+export async function runProbe(p: RunParams, rule: JsonRule | undefined): Promise<RunResult & { result: ProbeResult }> {
+  const r = await run(p).catch((error: unknown) => ({
+    code: error instanceof SpawnError && error.code === "not_found" ? 127 : null,
+    signal: null,
+    stdout: "",
+    stderr: error instanceof Error ? error.message : String(error),
+    timedOut: false,
+  }));
+  return { ...r, result: readProbe(r, rule) };
 }

@@ -7,8 +7,7 @@
   "outcomes": ["success", "failure"],
   "failOutcomes": ["failure"],
   "changesFiles": false,
-  "script": "set -eu\nprintf '%s\\n' \"$PECORE_JOB_BRANCH\"",
-  "probe": { "script": "git-delivery.sh" },
+  "script": "set -eu\nref=\"refs/heads/$PECORE_JOB_BRANCH\"\nremote=$(git --git-dir=\"$PECORE_PROJECT_REPODIR\" ls-remote --refs origin \"$ref\")\nif [ -z \"$PECORE_JOB_COMMIT\" ] || [ \"${remote%%[[:space:]]*}\" != \"$PECORE_JOB_COMMIT\" ]; then\n  printf '%s\\n' \"Remote branch $PECORE_JOB_BRANCH does not point to the job commit.\" >&2\n  exit 1\nfi\nprintf '%s\\n' \"$PECORE_JOB_BRANCH\"",
   "mergedCheck": { "script": "git-delivery-merged.sh" },
   "mergedCheckRules": { "stdoutJson": "state", "done": ["merged"], "notDone": ["unmerged"] },
   "outcomeRules": [

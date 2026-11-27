@@ -352,6 +352,22 @@ describe("project import (share/, CUJ 7)", () => {
     await p.close();
   }, 60000);
 
+  it("scans legacy repository effect output even when exporting without attempt logs", async () => {
+    const p = await apiProject();
+    try {
+      const id: string = await finishedJob(p);
+      const db = p.engine.project("demo").ctx.db;
+      db.append([{ jobId: id, type: "effect.completed", payload: { nodeRunId: "legacy", node: "open-pr", commandHash: "legacy", result: { code: 0, stdout: secret } } }]);
+      const out: string = join(await tempDir(), "demo.tar.zst");
+      await expect(p.call("exportProject", { params: { id: "demo" }, body: { path: out, history: true } })).resolves.toMatchObject({
+        state: "findings", findings: [{ file: expect.stringMatching(/^effects\//), rule: "github-pat" }],
+      });
+      expect(lstatSync(out, { throwIfNoEntry: false })).toBeUndefined();
+    } finally {
+      await p.close();
+    }
+  });
+
   it("a child job in an imported project still waits for its parent", async () => {
     const p = await apiProject();
     const out = join(await tempDir(), "demo.tar.zst");

@@ -79,7 +79,7 @@ export function NewProjectWizard() {
   const forgeAccounts: ForgeAccount[] = (accounts.data?.value.accounts ?? []).filter((account) => account.kind === "forge");
   const available: ForgeAccount[] = forgeAccounts.filter((account) => inputs.mode !== "new" || account.forge === "github" || account.forge === "gitlab");
   const account: ForgeAccount | undefined = available.find((entry) => entry.id === inputs.account);
-  const privateGit: boolean = account?.forge === "git";
+  const branchDelivery: boolean = account?.forge === "git" || account?.forge === "codecommit";
   const newRepoUnavailable: boolean = forgeAccounts.length > 0 && !forgeAccounts.some((entry) => entry.forge === "github" || entry.forge === "gitlab");
   const createRepo: string | null = inputs.mode === "new" && account ? "create-repo" : null;
   const suggestedUrl: string = createRepo && account && inputs.name.trim()
@@ -192,7 +192,7 @@ export function NewProjectWizard() {
             onValueChange={(mode) => update({ mode: mode as RepoMode, url: null })}
             options={[
               { value: "local", label: "Local only", detail: `${appName} keeps the repository on this computer.` },
-              { value: "existing", label: "Existing repository", detail: privateGit ? "Jobs push branches to your Git server." : "Jobs push branches and open pull requests there." },
+              { value: "existing", label: "Existing repository", detail: branchDelivery ? "Jobs push branches to this repository." : "Jobs push branches and open pull requests there." },
               { value: "new", label: "New repository", disabled: newRepoUnavailable, detail: `${appName} creates a private repository on GitHub or GitLab.` },
             ]}
           />
