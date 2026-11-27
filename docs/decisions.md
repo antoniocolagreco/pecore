@@ -599,3 +599,9 @@
 - Decision: automatic Jira calls prefer verified Atlassian MCP access to the requested site. When MCP cannot reach that site, the active `acli` login is used if it reaches the same site and can express the operation. Jira remains one row with its active transport, and Connect MCP starts native OAuth from the CLI row. Explicit account selections are unchanged.
 - Why: users should not have to add a tracker before logging in, and the row should name the transport that tracker calls actually use. The native client makes a browser-free status probe possible.
 - Replaces: Add account, the tracker picker, the saved-before-login row and the `mcp-remote`-era rule that background MCP checks were unsafe.
+
+## 2026-11-27: Unblock child jobs from a recipe step
+
+- Decision: An optional flag on a recipe step lets the engine use that step's successful `node_run.completed` event and its SHA artifact to unblock child jobs. Shipped recipes set the flag. The editor shows it in advanced settings for steps that produce a SHA on success.
+- Why: A child can start from the parent's commit while the parent waits for review and merge. New users can run the shipped recipes without configuring the flag.
+- Replaces: Waiting for the parent job to reach `succeeded` before starting a child. See issue #66.
