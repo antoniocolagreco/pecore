@@ -160,6 +160,11 @@ export class NodeTestManager {
     return this.view(this.test(id));
   }
 
+  activeView(): NodeTestView | null {
+    const test = this.active === null ? undefined : this.tests.get(this.active);
+    return test ? this.view(test) : null;
+  }
+
   logs(id: string): LogLine[] | null {
     return this.tests.get(id)?.logs ?? null;
   }
@@ -411,6 +416,8 @@ export class NodeTestManager {
       } catch (error) {
         test.failureReason = "HARNESS_ERROR";
         test.error = `The node's files could not be checked: ${errorMessage(error)}`;
+        test.outcome = null;
+        test.outputs = [];
         finalState = "failed";
       }
     }
@@ -519,16 +526,22 @@ export class NodeTestManager {
   private async removeFolder(): Promise<void> {
     const folder = homePaths(this.opts.home).test;
     const info = await lstat(folder).catch(() => null);
-    if (info?.isSymbolicLink()) {
+    if (!info) return;
+    if (info.isSymbolicLink()) {
       await unlink(folder);
       return;
     }
-    await rm(folder, { recursive: true, force: true }).catch(async (error: unknown) => {
-      const user = this.opts.user();
-      if (user === appUser) throw error;
-      const result = await run({ user, argv: ["rm", "-rf", "--", folder], env: await baseEnv(user), cwd: "/" });
-      if (result.code !== 0) throw new Error(`the test folder could not be removed: ${result.stderr.trim()}`);
-    });
+    const user = this.opts.user();
+    if (user !== appUser) {
+      const result = await run({
+        user,
+        argv: ["/bin/sh", "-c", 'chmod -R u+rwX -- "$1" 2>/dev/null; find "$1" -mindepth 1 -delete', "sh", folder],
+        env: await baseEnv(user),
+        cwd: "/",
+      });
+      if (result.code !== 0) throw new Error(`the test folder's contents could not be removed: ${result.stderr.trim()}`);
+    }
+    await rm(folder, { recursive: true, force: true });
   }
 
   private async makeAccessible(folder: string, recursive: boolean): Promise<void> {
@@ -542,7 +555,7 @@ export class NodeTestManager {
     }
     const dirs = await run({
       user: appUser,
-      argv: ["find", folder, "-maxdepth", "0", "-type", "d", "-exec", "setfacl", "-m", `d:u:${user}:rwx,d:u:${appUser}:rwx`, "--", "{}", "+"],
+      argv: ["find", folder, ...(recursive ? [] : ["-maxdepth", "0"]), "-type", "d", "-exec", "setfacl", "-m", `d:u:${user}:rwx,d:u:${appUser}:rwx`, "--", "{}", "+"],
       env,
       cwd: "/",
     });

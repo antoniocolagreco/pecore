@@ -1050,7 +1050,7 @@ Recorded ACP traffic for tests lives in `packages/agents/fixtures/<connector>/<c
 | `GET /jobs`, `GET /jobs/:id`, `GET /jobs/:id/why` | list and read |
 | `POST /jobs` | create (Job creation below) |
 | `POST /jobs/:id/{stop,pause,play,resume,archive,delete,realign,check-merge}` | job controls. `check-merge` runs merge detection for the job immediately. |
-| `POST /node-tests`, `GET /node-tests/:id` | run one node in the shared test folder with hand-written inputs, and read its state, outcome, outputs and file changes |
+| `POST /node-tests`, `GET /node-tests/:id`, `GET /node-tests/active` | run one node in the shared test folder with hand-written inputs, read its state, outcome, outputs and file changes, and find the test that is running now |
 | `POST /node-tests/:id/{stop,answer}`, `POST /node-tests/reset` | stop a test, answer an Agent or Human question, or restore the sample project |
 | `POST /pause`, `POST /play`, `POST /play-interrupted` | global controls; `play-interrupted` plays every job paused by the app quit |
 | `GET /projects/:id/creation`, `POST /projects/:id/creation/{retry,cancel}` | creation progress, errors and recovery actions |
@@ -1137,8 +1137,8 @@ V8 measures statements, branches, functions and lines under `packages/*/src` wit
 | `workdir/fs-as.test.ts` | symlinks at every engine file path | CI (Linux, with a test user) |
 | `workdir/git-as.test.ts` | hooks, `core.fsmonitor`, `core.sshCommand` and a forged `commondir` do not run as the app user | CI (Linux, test user) |
 | `workdir/files-hash.test.ts` | `READ_ONLY_VIOLATION` restore; `requires` gives `stale`; interrupted rebase is undone | CI |
-| `node-tests/node-tests.test.ts` | run, stop and reset a node test; input type check; Human question; Agent with an unsaved prompt; Repository and tracker refusal; symlinked sample; read-only and scratch rules; detached processes; one test at a time | CI |
-| `e2e/protected-mode.test.ts` | node tests run as `pecore-agent`, keep their Git metadata away from the app user and survive `closeHome` | CI (Linux, test user) |
+| `node-tests/node-tests.test.ts` | run, stop and reset a node test; input and output type checks; Human question and inputs; Agent with an unsaved prompt; Repository and tracker refusal; symlinked sample; read-only and scratch rules; detached processes; two concurrent runs; active test lookup; errors during the file check | CI |
+| `e2e/protected-mode.test.ts` | node tests run as `pecore-agent`, keep their Git metadata away from the app user, survive `closeHome`, and reset after creating nested folders | CI (Linux, test user) |
 | `definitions/engine-node.test.ts` | Repository nodes run with the current scripts without approval | CI |
 | `agents: src/connectors.test.ts` | for each built-in connector, the incoming messages of each fixture go through the reader and the classifier, and the result must equal `<case>.expected.json`: auth, quota and rate limit errors (synthetic until recorded, 5.4), usage, account (G7) | CI |
 | `agents: src/session.test.ts` | ACP session with the fake agent: options applied in order and checked, a mismatching `currentValue`, permission answered, resume and fallback to a new session, a request past 30 seconds, connector exit without answer | CI |

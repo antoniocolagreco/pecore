@@ -24,6 +24,7 @@ export function nodeTestHandlers(engine: Engine) {
         return httpError(error);
       }
     },
+    getActiveNodeTest: async () => engine.nodeTests.activeView(),
     stopNodeTest: async ({ params }) => {
       try {
         await engine.nodeTests.stop(params.id);

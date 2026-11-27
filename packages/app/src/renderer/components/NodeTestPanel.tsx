@@ -49,10 +49,18 @@ export function NodeTestPanel({ node, sidecars, sidecarReady, disabled }: {
   const [values, setValues] = useState<Partial<Record<ArtifactType, string>>>({});
   const [testId, setTestId] = useState<string>();
   const [note, setNote] = useState("");
+  const active = useData<NodeTestView | null>(() => call("getActiveNodeTest"), [],
+    (message) => message.type === "node_test.updated");
+  useEffect(() => {
+    if (active.data) setTestId(active.data.id);
+  }, [active.data]);
   const view = useData<NodeTestView | null>(() => testId ? call("getNodeTest", { params: { id: testId } }) : Promise.resolve(null), [testId],
     (message) => message.type === "node_test.updated" && message.testId === testId);
   useEffect(() => {
-    if (view.error instanceof ApiError && view.error.status === 404) setTestId(undefined);
+    if (view.error instanceof ApiError && view.error.status === 404) {
+      setTestId(undefined);
+      active.reload();
+    }
   }, [view.error]);
   const repository: boolean = node?.kind === "repository";
   const types: ArtifactType[] = node && !repository ? inputTypes(node) : [];
@@ -64,6 +72,7 @@ export function NodeTestPanel({ node, sidecars, sidecarReady, disabled }: {
   });
   const missing: ArtifactType[] = [...required].filter((type) => !values[type]?.trim());
   const running: boolean = view.data?.state === "running" || view.data?.state === "waiting";
+  const anotherTest: boolean = !!active.data && active.data.id !== testId;
   const start = useAction(async () => {
     if (!node) return;
     const inputs: Partial<Record<ArtifactType, string>> = {};
@@ -74,6 +83,7 @@ export function NodeTestPanel({ node, sidecars, sidecarReady, disabled }: {
     const result = await call("runNodeTest", { body: { node, inputs, sidecars } });
     setTestId(result.id);
     setNote("");
+    active.reload();
   });
   const stop = useAction(async () => {
     if (!testId) return;
@@ -90,8 +100,9 @@ export function NodeTestPanel({ node, sidecars, sidecarReady, disabled }: {
     await call("resetNodeTests");
     setTestId(undefined);
     setNote("");
+    active.reload();
   });
-  const canRun: boolean = connected && !disabled && !!node && !repository && sidecarReady && !running && !missing.length && !problems.length;
+  const canRun: boolean = connected && !disabled && !!node && !repository && sidecarReady && !running && !anotherTest && !missing.length && !problems.length;
   return <Card title="Test" actions={<Button disabled={!connected || reset.busy} loading={reset.busy} onClick={() => void reset.run()}>Reset test folder</Button>}>
     <div className={ui.stack}>
       <p className={ui.muted}>Runs the node with the editor's current content, saved or not. All tests share one folder and keep their changes until you reset it.</p>
@@ -114,7 +125,7 @@ export function NodeTestPanel({ node, sidecars, sidecarReady, disabled }: {
           <Button variant="primary" disabled={!canRun || start.busy} loading={start.busy} onClick={() => void start.run()}>Run</Button>
           {running && <Button disabled={!connected || stop.busy} loading={stop.busy} onClick={() => void stop.run()}>Stop</Button>}
         </div>
-        <ErrorText error={start.error ?? stop.error ?? answer.error ?? reset.error} />
+        <ErrorText error={start.error ?? stop.error ?? answer.error ?? reset.error ?? active.error} />
       </>}
       {!repository && !node && <ErrorText error="The node definition is not valid. Fix it before testing." />}
       <ErrorText error={view.error} />

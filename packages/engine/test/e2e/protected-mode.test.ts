@@ -73,6 +73,8 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
     await mkdir(sampleProject);
     await writeFile(join(sampleProject, "README.md"), "Sample project\n");
     await writeFile(join(sampleProject, "hello.txt"), "hello\n");
+    await mkdir(join(sampleProject, "src"));
+    await writeFile(join(sampleProject, "src", "sample.txt"), "sample\n");
     const engine: Engine = await Engine.start({ home, templates, sampleProject, admin });
     try {
       await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["whoami-commit"]);
@@ -106,6 +108,19 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
       const secondId: string = await engine.nodeTests.run({ node: testNode, inputs: {}, sidecars: {} });
       await until(() => engine.nodeTests.get(secondId).state === "completed");
       expect((await execFileP("stat", ["-c", "%U", marker])).stdout.trim()).toBe(protectedUser);
+
+      const nestedNode = Node.parse({
+        name: "nested-test", description: "creates nested files", kind: "command",
+        command: ["/bin/sh", "-c", "mkdir -p src/generated && printf 'nested\\n' > src/generated/file"],
+        outcomes: ["success"], changesFiles: true,
+        outcomeRules: [{ exitCode: 0, outcome: "success" }], timeoutSec: 60,
+      });
+      const nestedId: string = await engine.nodeTests.run({ node: nestedNode, inputs: {}, sidecars: {} });
+      await until(() => engine.nodeTests.get(nestedId).state === "completed");
+      expect((await as(protectedUser, 'test -f "$1"', join(testFolder, "src", "generated", "file"))).ok).toBe(true);
+      await engine.nodeTests.reset();
+      expect(await readFile(join(testFolder, "README.md"), "utf8")).toBe("Sample project\n");
+      expect((await as(protectedUser, 'test ! -e "$1"', join(testFolder, "src", "generated"))).ok).toBe(true);
 
       const project = engine.project("demo");
       const job: string = await engine.createJob("demo", { title: "Who runs jobs", request: "write who.txt" });

@@ -608,6 +608,7 @@ export const routes = {
   checkMerge: { method: "POST", path: "/jobs/:id/check-merge", params: IdParams, response: z.object({ merged: z.boolean() }) },
   runNodeTest: { method: "POST", path: "/node-tests", body: NodeTestRunBody, bodyLimit: 12_000_000, response: z.object({ id: z.string() }) },
   getNodeTest: { method: "GET", path: "/node-tests/:id", params: IdParams, response: NodeTestView },
+  getActiveNodeTest: { method: "GET", path: "/node-tests/active", response: NodeTestView.nullable() },
   stopNodeTest: { method: "POST", path: "/node-tests/:id/stop", params: IdParams, response: Ok },
   answerNodeTest: { method: "POST", path: "/node-tests/:id/answer", params: IdParams, body: NodeTestAnswerBody, response: Ok },
   resetNodeTests: { method: "POST", path: "/node-tests/reset", response: Ok },

@@ -242,10 +242,20 @@ describe("node tests", () => {
     const { call, close } = await setup();
     try {
       const node = command({ name: "slow", command: ["/bin/sh", "-c", "sleep 30"] });
-      const { id } = await call("runNodeTest", { body: { node, inputs: {}, sidecars: {} } });
-      await expect(call("runNodeTest", { body: { node, inputs: {}, sidecars: {} } })).rejects.toMatchObject({ status: 409 });
+      const results = await Promise.allSettled([
+        call("runNodeTest", { body: { node, inputs: {}, sidecars: {} } }),
+        call("runNodeTest", { body: { node, inputs: {}, sidecars: {} } }),
+      ]);
+      const started = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+      const rejected = results.flatMap((result) => result.status === "rejected" ? [result.reason] : []);
+      expect(started).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0]).toMatchObject({ status: 409 });
+      const id: string = started[0]!.id;
+      expect((await call("getActiveNodeTest"))?.id).toBe(id);
       await call("stopNodeTest", { params: { id } });
       expect((await finished(call, id)).state).toBe("stopped");
+      expect(await call("getActiveNodeTest")).toBeNull();
     } finally {
       await close();
     }
@@ -254,10 +264,66 @@ describe("node tests", () => {
   it("restores a read-only node that changed files and fails it", async () => {
     const { call, close, home } = await setup();
     try {
-      const node = command({ name: "read-only", changesFiles: false, command: ["/bin/sh", "-c", "printf 'x' > new.txt"] });
+      const node = command({
+        name: "read-only", changesFiles: false,
+        command: ["/bin/sh", "-c", "printf 'not-a-sha'; printf 'x' > new.txt"],
+        outputs: { success: "sha" }, outputRules: { success: { stdoutLastLine: "sha" } },
+      });
       const { id } = await call("runNodeTest", { body: { node, inputs: {}, sidecars: {} } });
-      expect(await finished(call, id)).toMatchObject({ state: "failed", failureReason: "READ_ONLY_VIOLATION", diff: "", files: [] });
+      expect(await finished(call, id)).toMatchObject({
+        state: "failed", failureReason: "READ_ONLY_VIOLATION", outcome: null, outputs: [], diff: "", files: [],
+      });
       await expect(lstat(join(home, "test", "new.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await close();
+    }
+  });
+
+  it("fails a Command whose output does not match its artifact type", async () => {
+    const { call, close } = await setup();
+    try {
+      const node = command({
+        name: "invalid-output", changesFiles: false, command: ["/bin/sh", "-c", "printf 'not-a-sha'"],
+        outputs: { success: "sha" }, outputRules: { success: { stdoutLastLine: "sha" } },
+      });
+      const { id } = await call("runNodeTest", { body: { node, inputs: {}, sidecars: {} } });
+      expect(await finished(call, id)).toMatchObject({
+        state: "failed", failureReason: "INVALID_OUTPUT", outcome: null, outputs: [],
+        error: expect.stringContaining("sha output is not valid"),
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  it("clears a completed result when scratch files cannot be deleted", async () => {
+    const { call, close } = await setup();
+    try {
+      const node = command({
+        name: "break-scratch", changesFiles: true, scratchPaths: ["tmp/**"],
+        command: ["/bin/sh", "-c", "rm -rf .git; printf 'note'"],
+        outputs: { success: "feedback" }, outputRules: { success: { stdoutLastLine: "note" } },
+      });
+      const { id } = await call("runNodeTest", { body: { node, inputs: {}, sidecars: {} } });
+      expect(await finished(call, id)).toMatchObject({
+        state: "failed", failureReason: "HARNESS_ERROR", outcome: null, outputs: [],
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  it("clears a completed result when the file rules cannot be checked", async () => {
+    const { call, close } = await setup();
+    try {
+      const node = command({
+        name: "break-git", changesFiles: false, command: ["/bin/sh", "-c", "rm -rf .git; printf 'note'"],
+        outputs: { success: "feedback" }, outputRules: { success: { stdoutLastLine: "note" } },
+      });
+      const { id } = await call("runNodeTest", { body: { node, inputs: {}, sidecars: {} } });
+      expect(await finished(call, id)).toMatchObject({
+        state: "failed", failureReason: "HARNESS_ERROR", outcome: null, outputs: [],
+      });
     } finally {
       await close();
     }

@@ -10,7 +10,7 @@ import { NodeEditor } from "./NodeEditor";
 const api = vi.hoisted(() => ({ call: vi.fn() }));
 
 vi.mock("../api/client", () => ({ call: api.call }));
-vi.mock("../api/live", () => ({ useConnected: () => true, onLive: () => () => undefined, useLive: () => undefined }));
+vi.mock("../api/live", () => ({ useConnected: () => true, onLive: () => () => undefined, useLive: () => undefined, subscribeLog: () => () => undefined }));
 
 afterEach(cleanup);
 
@@ -23,6 +23,7 @@ it("shows where to configure Open PR instead of a disabled editor", async () => 
     if (route === "getDefinition") return { content: JSON.stringify(node), sha256: "node-v1" };
     if (route === "listDefinitions") return [];
     if (route === "validateDefinition") return { errors: [], warnings: [] };
+    if (route === "getActiveNodeTest") return null;
     throw new Error("Unexpected route " + route);
   });
   const router = createMemoryRouter([
@@ -46,6 +47,7 @@ it("offers only the four editable node kinds", async () => {
   api.call.mockImplementation(async (route: string) => {
     if (route === "listDefinitions") return [];
     if (route === "validateDefinition") return { errors: [], warnings: [] };
+    if (route === "getActiveNodeTest") return null;
     throw new Error("Unexpected route " + route);
   });
   const router = createMemoryRouter([{ path: "/new", element: <NodeEditor newTemplate /> }], { initialEntries: ["/new"] });
@@ -71,6 +73,7 @@ it("sets Tracker access and account on an Agent", async () => {
     if (route === "validateDefinition") return { errors: [], warnings: [] };
     if (route === "getNodeTemplateUsage" || route === "listDefinitions") return [];
     if (route === "saveDefinition") return { sha256: "node-v2" };
+    if (route === "getActiveNodeTest") return null;
     throw new Error("Unexpected route " + route);
   });
   const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: ["/edit/node/" + path] });
@@ -104,6 +107,7 @@ it("shows the saved script before approving it for chat in protected mode", asyn
     if (route === "getAccounts") return { value: { accounts: [] } };
     if (route === "getNodeTemplateUsage" || route === "listDefinitions") return [];
     if (route === "approveChatNode") return { ok: true };
+    if (route === "getActiveNodeTest") return null;
     throw new Error("Unexpected route " + route);
   });
   const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: ["/edit/node/" + path] });
@@ -132,6 +136,7 @@ it("edits a Command without showing account or check controls", async () => {
       return { errors: parsed.success ? [] : parsed.error.issues.map(({ path, message }) => ({ path: path.join("."), message })), warnings: [] };
     }
     if (route === "saveDefinition") return { sha256: "node-v2" };
+    if (route === "getActiveNodeTest") return null;
     throw new Error(`Unexpected route ${route}`);
   });
   const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: [`/edit/node/${path}`] });
@@ -161,6 +166,7 @@ it("creates a Repository node with a shell script and requires its account", asy
     }
     if (route === "getAccounts") return { value: { accounts: [{ id: "gh-alice", kind: "forge", forge: "github", host: "github.com", user: "alice" }] } };
     if (route === "saveDefinition") return { sha256: "tracker-v1" };
+    if (route === "getActiveNodeTest") return null;
     throw new Error(`Unexpected route ${route}`);
   });
   const router = createMemoryRouter([
@@ -207,6 +213,7 @@ it("checks a test input against its artifact type", async () => {
       const parsed = Node.safeParse(JSON.parse(input?.body.content ?? ""));
       return { errors: parsed.success ? [] : parsed.error.issues.map(({ path, message }) => ({ path: path.join("."), message })), warnings: [] };
     }
+    if (route === "getActiveNodeTest") return null;
     throw new Error(`Unexpected route ${route}`);
   });
   const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: [`/edit/node/${path}`] });
@@ -233,7 +240,10 @@ it("hides a Human test question after the answer", async () => {
   let answered: boolean = false;
   const waiting = {
     id: "node-test-1", state: "waiting", outcome: null, failureReason: null, outputs: [], diff: "", files: [],
-    question: { kind: "human", text: "Continue?", choices: ["yes", "no"], notes: [], inputs: [] },
+    question: {
+      kind: "human", text: "Continue?", choices: ["yes", "no"], notes: [],
+      inputs: [{ type: "diff", content: "diff --git a/a b/a\n" }],
+    },
     error: null, startedAt: 1, endedAt: null,
   };
   const completed = {
@@ -248,6 +258,7 @@ it("hides a Human test question after the answer", async () => {
     if (route === "answerNodeTest") { answered = true; return { ok: true }; }
     if (route === "getLog") return { view: "events", events: [] };
     if (route === "getNodeTemplateUsage") return [];
+    if (route === "getActiveNodeTest") return null;
     throw new Error(`Unexpected route ${route}`);
   });
   const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: [`/edit/node/${path}`] });
@@ -255,9 +266,37 @@ it("hides a Human test question after the answer", async () => {
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Run" }));
   expect(await screen.findByText("Continue?")).toBeTruthy();
+  expect(await screen.findByText(/diff --git a\/a b\/a/)).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "yes" }));
   await waitFor(() => expect(screen.queryByText("Continue?")).toBeNull());
+  expect(screen.queryByText(/diff --git a\/a b\/a/)).toBeNull();
   expect(screen.getByText("Completed")).toBeTruthy();
+});
+
+it("shows a test that is running when the editor opens", async () => {
+  const node: Node = Node.parse({
+    name: "read", description: "Read a file", kind: "command", command: ["/bin/cat", "hello.txt"],
+    changesFiles: false, timeoutSec: 30, outcomes: ["success"], outcomeRules: [{ exitCode: 0, outcome: "success" }],
+  });
+  const running = {
+    id: "node-test-active", state: "running", outcome: null, failureReason: null, outputs: [], diff: "", files: [],
+    question: null, error: null, startedAt: 1, endedAt: null,
+  };
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "listDefinitions") return [];
+    if (route === "getDefinition") return { content: JSON.stringify(node), sha256: "node-v1" };
+    if (route === "validateDefinition") return { errors: [], warnings: [] };
+    if (route === "getActiveNodeTest" || route === "getNodeTest") return running;
+    if (route === "getLog") return { view: "events", events: [] };
+    if (route === "getNodeTemplateUsage") return [];
+    throw new Error(`Unexpected route ${route}`);
+  });
+  const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: ["/edit/node/templates/nodes/read.json"] });
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
+  expect(await screen.findByText("Running")).toBeTruthy();
+  const run: HTMLButtonElement = screen.getByRole<HTMLButtonElement>("button", { name: "Run" });
+  expect(run.disabled).toBe(true);
+  expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
 });
 
 it("edits the template's agent session and keeps the changesFiles field", async () => {
@@ -270,6 +309,7 @@ it("edits the template's agent session and keeps the changesFiles field", async 
     if (route === "getDefinition") return { content: input?.params.path.endsWith(".md") ? "Build the change" : JSON.stringify(node), sha256: "node-v1" };
     if (route === "validateDefinition") return { errors: [], warnings: [] };
     if (route === "saveDefinition") return { sha256: "node-v2" };
+    if (route === "getActiveNodeTest") return null;
     throw new Error(`Unexpected route ${route}`);
   });
   const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: ["/edit/node/templates/nodes/builder.json"] });
