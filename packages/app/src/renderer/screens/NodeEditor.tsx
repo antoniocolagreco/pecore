@@ -1,8 +1,8 @@
 import { cloneElement, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { ReactElement, ReactNode, Ref } from "react";
 import { Link, useBlocker, useNavigate, useParams } from "react-router";
-import { AgentSession, ApiError, ArtifactType, HumanInterface, humanInterfaces, isNodeKindTag, Name, NodeOutputType } from "@pecore/schemas";
-import type { DefinitionFile, Node, RouteResult } from "@pecore/schemas";
+import { AgentSession, ApiError, ArtifactType, HumanInterface, humanInterfaces, isNodeKindTag, Name, Node, NodeOutputType } from "@pecore/schemas";
+import type { DefinitionFile, RouteResult } from "@pecore/schemas";
 import { basicSetup, EditorView, minimalSetup } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
 import { lineNumbers } from "@codemirror/view";
@@ -10,6 +10,8 @@ import { setDiagnostics } from "@codemirror/lint";
 import type { Diagnostic } from "@codemirror/lint";
 import { highlight } from "../components/CodeSnapshot";
 import { AgentSessionField } from "../components/AgentFields";
+import { artifactTypeExamples as typeExamples, artifactTypeLabels as typeLabels } from "../components/artifactLabels";
+import { NodeTestPanel } from "../components/NodeTestPanel";
 import { templateTitle } from "../components/templateTitle";
 import { markdown } from "@codemirror/lang-markdown";
 import { StreamLanguage } from "@codemirror/language";
@@ -345,7 +347,7 @@ export function Sidecar({ content, disabled, change, isMarkdown, errors = noIssu
   return <div ref={parent} className={[paper && s.paperEditor, className].filter(Boolean).join(" ")} />;
 }
 
-type SidecarStatus = { path: string; ready: boolean; dirty: boolean; missing: boolean; canCommit: boolean };
+type SidecarStatus = { path: string; ready: boolean; dirty: boolean; missing: boolean; canCommit: boolean; content: string };
 type SidecarHandle = { commit(): Promise<boolean> };
 
 function SidecarFile({ path, name, isMarkdown, disabled, onStatus, ref }: {
@@ -354,8 +356,8 @@ function SidecarFile({ path, name, isMarkdown, disabled, onStatus, ref }: {
 }) {
   const file = useDefinitionDraft(path, true);
   useImperativeHandle(ref, () => ({ commit: file.commit }), [file.commit]);
-  useEffect(() => onStatus({ path, ready: file.ready, dirty: file.dirty, missing: file.sha256 === null, canCommit: file.canWrite }),
-    [path, file.ready, file.dirty, file.sha256, file.canWrite, onStatus]);
+  useEffect(() => onStatus({ path, ready: file.ready, dirty: file.dirty, missing: file.sha256 === null, canCommit: file.canWrite, content: file.content }),
+    [path, file.ready, file.dirty, file.sha256, file.canWrite, file.content, onStatus]);
   return <section className={s.sidecar}>
     <h2>{isMarkdown ? "Node Context" : <>Script <code>{name}</code></>}</h2>
     {file.feedback}
@@ -399,20 +401,6 @@ const humanFields: Record<HumanInterface, Record<string, unknown>> = {
   decision: { interface: "decision", outcomes: ["yes", "no"], outputs: undefined },
   "code-review": { interface: "code-review", outcomes: ["approved", "changes_requested", "rejected"], outputs: { changes_requested: "code_review" } },
   "report-review": { interface: "report-review", outcomes: ["approved", "changes_requested", "rejected"], outputs: { changes_requested: "feedback" } },
-};
-const typeLabels: Record<ArtifactType, string> = {
-  diff: "Diff", spec: "Spec", code_review: "Code review", code_analysis: "Code analysis", sha: "Commit SHA",
-  pull_request: "Pull request", feedback: "Feedback", log: "Log",
-};
-const typeExamples: Record<ArtifactType, string> = {
-  diff: "Changes to the code, generated from Git.",
-  spec: "A feature and the scenarios that describe how it works.",
-  code_review: "A general review with comments on specific lines or hunks.",
-  code_analysis: "A summary and a risk classification for each hunk.",
-  sha: "The SHA of a Git commit.",
-  pull_request: "The title and body of a pull request, plus its URL after delivery.",
-  feedback: "What needs to change before the work can continue.",
-  log: "Output from running a node, such as errors from TypeScript.",
 };
 const inputTypes: ArtifactType[] = [...NodeOutputType.options, "diff"];
 const typesHelp: ReactNode = <>
@@ -578,6 +566,11 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   const editable: boolean = file.editable && !save.busy && !builtin;
   const canSave: boolean = editable && (saveDefinition || sidecarDirty) && (!saveDefinition || file.canCommit) &&
     (!needsContext || (sidecarStatus?.path === sidecarPath && sidecarStatus.ready)) && (!saveSidecar || sidecarStatus?.canCommit === true);
+  const parsedNode = Node.safeParse(draft);
+  const testNode: Node | null = parsedNode.success ? parsedNode.data : null;
+  const testSidecars: Record<string, string> = sidecarStatus?.path === sidecarPath && sidecarName ? { [sidecarName]: sidecarStatus.content } : {};
+  const testNeedsSidecar: boolean = testNode?.kind === "agent" || (testNode?.kind === "command" && Boolean(testNode.script));
+  const testSidecarReady: boolean = !testNeedsSidecar || (sidecarStatus?.path === sidecarPath && sidecarStatus.ready && sidecarStatus.content.trim() !== "");
   const update = (key: string, value: unknown): void => file.update(JSON.stringify({
     ...draft, ...(descriptiveTags.length !== tags.length ? { tags: descriptiveTags } : {}), [key]: value,
   }, null, 2) + "\n");
@@ -746,6 +739,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
       {sidecarPath && <SidecarFile key={sidecarPath} ref={sidecar} path={sidecarPath} name={sidecarName} isMarkdown={sidecarName.endsWith(".md")}
         disabled={!editable} onStatus={setSidecarStatus} />}
     </Card>}
+    {file.ready && <NodeTestPanel node={testNode} sidecars={testSidecars} sidecarReady={testSidecarReady} disabled={!file.editable} />}
     {warn}
   </Page>;
 }

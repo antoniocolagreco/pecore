@@ -1,12 +1,12 @@
 import { execFile } from "node:child_process";
-import { chmod, cp, mkdir, readdir, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { Accounts, Settings } from "@pecore/schemas";
+import { Accounts, Node, Settings } from "@pecore/schemas";
 import { AgentServices, protectedUser } from "../../src/accounts/agents";
 import { homePaths } from "../../src/home/layout";
-import { moveLegacyFolders } from "../../src/home/legacy";
+import { closeHome, moveLegacyFolders } from "../../src/home/legacy";
 import { Engine } from "../../src/main";
 import { appUser } from "../../src/runners/process";
 import { gitApp } from "../../src/workdir/git-as";
@@ -66,10 +66,16 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
     await mkdir(process.env.HOME, { mode: 0o700 });
     const home: string = join(process.env.HOME, ".pecore");
     const templates: string = join(root, "templates");
+    const sampleProject: string = join(root, "sample-project");
     await cp(shippedTemplates, templates, { recursive: true });
     await writeFile(join(templates, "nodes", "whoami.json"), JSON.stringify(whoami));
     await writeFile(join(templates, "recipes", "whoami-commit.json"), JSON.stringify(recipe));
-    const engine: Engine = await Engine.start({ home, templates, admin });
+    await mkdir(sampleProject);
+    await writeFile(join(sampleProject, "README.md"), "Sample project\n");
+    await writeFile(join(sampleProject, "hello.txt"), "hello\n");
+    await mkdir(join(sampleProject, "src"));
+    await writeFile(join(sampleProject, "src", "sample.txt"), "sample\n");
+    const engine: Engine = await Engine.start({ home, templates, sampleProject, admin });
     try {
       await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["whoami-commit"]);
       const p = homePaths(home);
@@ -81,8 +87,54 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
       await mkdir(p.adapters, { recursive: true, mode: 0o755 });
       await writeFile(join(p.adapters, "version"), "0.0.0-test\n", { mode: 0o644 });
 
+      const testNode = Node.parse({
+        name: "whoami-test", description: "writes the test user", kind: "command",
+        command: ["/bin/sh", "-c", "id -un > who.txt"], outcomes: ["success"], changesFiles: true,
+        outcomeRules: [{ exitCode: 0, outcome: "success" }], timeoutSec: 60,
+      });
+      const testFolder: string = homePaths(home).test;
+      const normalId: string = await engine.nodeTests.run({ node: testNode, inputs: {}, sidecars: {} });
+      await until(() => engine.nodeTests.get(normalId).state === "completed");
+      expect(await readFile(join(testFolder, "who.txt"), "utf8")).toBe(`${appUser}\n`);
+      const slow = Node.parse({
+        name: "slow-test", description: "waits", kind: "command", command: ["/bin/sh", "-c", "sleep 30"],
+        outcomes: ["success"], changesFiles: false, outcomeRules: [{ exitCode: 0, outcome: "success" }], timeoutSec: 60,
+      });
+      const slowId: string = await engine.nodeTests.run({ node: slow, inputs: {}, sidecars: {} });
+      await until(() => engine.nodeTests.get(slowId).state === "running");
+
       await engine.setProtectedMode(true);
       expect((await as(protectedUser, "id -un")).out).toBe(protectedUser);
+      expect(await engine.nodeTests.activeView()).toBeNull();
+      expect(() => engine.nodeTests.get(slowId)).toThrow();
+      expect(await readFile(join(testFolder, "README.md"), "utf8")).toBe("Sample project\n");
+      await expect(readFile(join(testFolder, "who.txt"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+      const testId: string = await engine.nodeTests.run({ node: testNode, inputs: {}, sidecars: {} });
+      await until(() => engine.nodeTests.get(testId).state === "completed");
+      expect(await readFile(join(testFolder, "who.txt"), "utf8")).toBe(`${protectedUser}\n`);
+      expect((await execFileP("stat", ["-c", "%U", join(testFolder, ".git", "config")])).stdout.trim()).toBe(protectedUser);
+
+      await closeHome(home);
+      const marker: string = join(testFolder, "filter-ran");
+      expect((await as(protectedUser, 'printf "%s" "$1" >> "$2"', `[filter "pecore-test"]\n\tclean = touch ${marker}\n`, join(testFolder, ".git", "config"))).ok).toBe(true);
+      expect((await as(protectedUser, 'printf "%s" "$1" > "$2"', "* filter=pecore-test\n", join(testFolder, ".gitattributes"))).ok).toBe(true);
+      const secondId: string = await engine.nodeTests.run({ node: testNode, inputs: {}, sidecars: {} });
+      await until(() => engine.nodeTests.get(secondId).state === "completed");
+      expect((await execFileP("stat", ["-c", "%U", marker])).stdout.trim()).toBe(protectedUser);
+
+      const nestedNode = Node.parse({
+        name: "nested-test", description: "creates nested files", kind: "command",
+        command: ["/bin/sh", "-c", "mkdir -p src/generated && printf 'nested\\n' > src/generated/file"],
+        outcomes: ["success"], changesFiles: true,
+        outcomeRules: [{ exitCode: 0, outcome: "success" }], timeoutSec: 60,
+      });
+      const nestedId: string = await engine.nodeTests.run({ node: nestedNode, inputs: {}, sidecars: {} });
+      await until(() => engine.nodeTests.get(nestedId).state === "completed");
+      expect((await as(protectedUser, 'test -f "$1"', join(testFolder, "src", "generated", "file"))).ok).toBe(true);
+      await engine.nodeTests.reset();
+      expect(await readFile(join(testFolder, "README.md"), "utf8")).toBe("Sample project\n");
+      expect((await as(protectedUser, 'test ! -e "$1"', join(testFolder, "src", "generated"))).ok).toBe(true);
 
       const project = engine.project("demo");
       const job: string = await engine.createJob("demo", { title: "Who runs jobs", request: "write who.txt" });

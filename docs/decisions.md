@@ -600,6 +600,12 @@
 - Why: users should not have to add a tracker before logging in, and the row should name the transport that tracker calls actually use. The native client makes a browser-free status probe possible.
 - Replaces: Add account, the tracker picker, the saved-before-login row and the `mcp-remote`-era rule that background MCP checks were unsafe.
 
+## 2026-11-27: Node tests use one shared sample folder
+
+- Decision: the node editor's Test panel runs one Agent, Command or Human node with the current draft in `PECORE_HOME/test/`, a Git repository the app creates from a shipped sample project and resets on request. Inputs are checked against their artifact types. Repository nodes are not testable. The folder keeps changes between runs and never touches a project's repository, workdir or database. Git operations on the test folder run as the project user, so its metadata is never executed by the app user.
+- Why: trying a prompt or a check should not require saving the node and running a full job.
+- Replaces: nothing.
+
 ## 2026-11-27: Unblock child jobs from a recipe step
 
 - Decision: An optional flag on a recipe step lets the engine use that step's successful `node_run.completed` event and its SHA artifact to unblock child jobs. Shipped recipes set the flag. The editor shows it in advanced settings for steps that produce a SHA on success.

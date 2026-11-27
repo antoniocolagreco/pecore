@@ -91,7 +91,7 @@ describe.skipIf(!linux)("PECORE_HOME permissions", () => {
 });
 
 describe.skipIf(!linux)("closing PECORE_HOME at start", () => {
-  it("makes every file private and stops others listing folders, but leaves adapters, chats, logins, work folders and repositories as they are", async () => {
+  it("makes every file private and stops others listing folders, but leaves adapters, chats, logins, work folders, test folders and repositories as they are", async () => {
     const home: string = await newHome();
     const p = homePaths(home);
     await writeFile(p.chatsDb, "", { mode: 0o644 });
@@ -101,6 +101,8 @@ describe.skipIf(!linux)("closing PECORE_HOME at start", () => {
     await writeFile(join(p.projects, "demo", "pecore.db"), "", { mode: 0o664 });
     await writeFile(join(p.projects, "demo", "work", "keep.txt"), "", { mode: 0o664 });
     await writeFile(join(p.projects, "demo", "repo.git", "HEAD"), "", { mode: 0o644 });
+    await mkdir(p.test, { recursive: true, mode: 0o755 });
+    await writeFile(join(p.test, "hello.txt"), "", { mode: 0o664 });
     await mkdir(join(p.adapters, "node"), { recursive: true, mode: 0o755 });
     await writeFile(join(p.adapters, "node", "node"), "", { mode: 0o755 });
     await privateDirectory(join(p.harness, otherUser), otherUser, home);
@@ -108,6 +110,7 @@ describe.skipIf(!linux)("closing PECORE_HOME at start", () => {
     const templateNode: string = join(p.templateNodes, "git-commit.json");
     await chmod(join(p.projects, "demo", "work", "keep.txt"), 0o664);
     await chmod(join(p.projects, "demo", "work"), 0o755);
+    await chmod(join(p.test, "hello.txt"), 0o664);
     await chmod(templateNode, 0o644);
 
     await closeHome(home);
@@ -118,6 +121,8 @@ describe.skipIf(!linux)("closing PECORE_HOME at start", () => {
     expect(await mode(join(p.projects, "demo", "work"))).toBe(0o755);
     expect(await mode(join(p.projects, "demo", "work", "keep.txt"))).toBe(0o664);
     expect(await mode(join(p.projects, "demo", "repo.git", "HEAD"))).toBe(0o644);
+    expect(await mode(p.test)).toBe(0o755);
+    expect(await mode(join(p.test, "hello.txt"))).toBe(0o664);
     expect(await mode(join(p.adapters, "node", "node"))).toBe(0o755);
     expect(acl(join(p.harness, otherUser))).toEqual([`user:${otherUser}:rwx`, `default:user:${otherUser}:rwx`]);
     expect(acl(p.harness)).toEqual([`user:${otherUser}:--x`]);

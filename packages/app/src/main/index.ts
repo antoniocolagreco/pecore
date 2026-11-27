@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { extname, join, normalize, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -74,6 +74,11 @@ async function resourcesDir(): Promise<string> {
 	await symlink(
 		join(repo, "packages/app/resources/connectors"),
 		join(dir, "connectors"),
+	);
+	await cp(
+		join(repo, "packages/app/resources/test-project"),
+		join(dir, "test-project"),
+		{ recursive: true },
 	);
 	await symlink(
 		join(repo, "packages/agents/out/adapters"),

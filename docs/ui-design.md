@@ -108,6 +108,7 @@
 | IE3 | Node editor: fields by kind, prompt (Markdown), script (shell) | 3.1 |
 | IE4 | Templates, the shared catalog of nodes and recipes | G5 |
 | IE5 | "Ask the AI" from an editor | G5 |
+| IE6 | Test panel: inputs by artifact type, Run and Stop, Reset test folder, outcome, outputs, log and file changes; a Human node asks its question here | 3.1 |
 
 ### F. Projects
 
@@ -145,7 +146,7 @@
 | Notifications | centre | ID1-ID9 |
 | Assistant chat | right panel, on every screen; inside a project and on a job's page it shows the project's Project Manager | IB2-IB8 |
 | Projects, project page, wizards | centre, detail page, full page | IF1-IF7 |
-| Recipe editor, node editor | detail page | IE1-IE3, IE5 |
+| Recipe editor, node editor | detail page | IE1-IE3, IE5, IE6 |
 | Templates | centre | IE4 |
 | Settings | centre | IG1, IG3, IG6-IG9 |
 | Setup banner | above page content when no account works | IG5 |
@@ -345,6 +346,11 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   Node cards and the node kind menu use Agent, Command, Human and Repository.
 *   Save in the page header writes the changed node fields and prompt or script.
 *   Saved changes affect new jobs. Existing jobs keep their saved definitions.
+*   A Test panel sits under the node fields for new and existing nodes. It runs the current editor content, saved or not, and notes that all tests share one folder and keep their changes until Reset. When a test is already running, the panel shows it, so it stays visible and stoppable after moving to another node.
+*   The panel lists the node's inputs with their artifact types. A Command shows its required and optional inputs; Agent and Human nodes offer all artifact types. Each input accepts only a value of its type and a JSON type shows its error under the field. A Command's required inputs block Run until filled.
+*   Run and Stop sit together. Run is disabled while a test runs or waits, when an input is invalid, or when the prompt or script is empty. Reset test folder sits in the panel header and needs no confirmation: it stops the test, restores the sample project and drops the shown result.
+*   The panel shows the outcome and failure reason, the output artifacts, the file changes with their diff, and the attempt log. A waiting Human node shows its inputs, its question and one button per outcome, plus a note field when that outcome takes a note. A waiting Agent shows its question and a free-text answer. Agent nodes with tracker access fail with a message instead of running without their tracker tools.
+*   Repository nodes show no Run button. The panel says they change real remotes and are not tested here.
 
 ### Templates
 

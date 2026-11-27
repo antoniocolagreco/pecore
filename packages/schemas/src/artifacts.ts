@@ -69,3 +69,17 @@ export const artifactTypes: Readonly<Record<ArtifactType, { readonly description
   feedback: { description: "feedback for whoever needs to revise the work", schema: description, plain: true },
   log: { description: "execution output", schema: z.string(), plain: true },
 };
+
+export function artifactContentProblem(type: ArtifactType, content: string): string | null {
+  const entry = artifactTypes[type];
+  let value: unknown = content;
+  if (!entry.plain) {
+    try {
+      value = JSON.parse(content);
+    } catch (error) {
+      return `Invalid JSON: ${(error as Error).message}`;
+    }
+  }
+  const checked = entry.schema.safeParse(value);
+  return checked.success ? null : checked.error.issues.map((issue) => `${issue.path.join(".") || "/"} ${issue.message}`).join("; ");
+}

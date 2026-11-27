@@ -1,13 +1,14 @@
 import { z } from "zod";
 import { Accounts, CommitAuthor, ServiceAccount } from "./accounts";
-import { Artifact } from "./artifacts";
+import { Artifact, ArtifactType } from "./artifacts";
 import { Profiles } from "./profiles";
 import { ChatAgent, NodeAgentCatalog, ProjectManagerAgent } from "./agent";
 import { Settings } from "./settings";
 import { Tiers } from "./tiers";
 import { KnowledgeFileName, Name } from "./common";
-import { AuthKind, JobState, NodeRunState } from "./errors";
+import { AuthKind, FailureReason, JobState, NodeRunState } from "./errors";
 import { QueueKind } from "./events";
+import { Node } from "./node";
 import { Project, ProjectId } from "./project";
 
 export const CreateProjectBody = z
@@ -149,6 +150,7 @@ export const LiveMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("queue.updated"), itemId: z.string(), projectId: ProjectId }),
   z.object({ type: z.literal("project.updated"), projectId: ProjectId }),
   z.object({ type: z.literal("definition.changed"), path: z.string(), sha256: z.string().nullable() }),
+  z.object({ type: z.literal("node_test.updated"), testId: z.string() }),
   z.object({ type: z.literal("configuration.changed"), kind: z.enum(["settings", "agents", "accounts", "profiles", "tiers"]) }),
   z.object({ type: z.literal("accounts.discovery_changed") }),
   z.object({ type: z.literal("log.line"), attemptId: z.string(), event: LogEvent }),
@@ -363,6 +365,62 @@ export const JobDetail = z.object({
 });
 export type JobDetail = z.infer<typeof JobDetail>;
 
+const NodeTestInputValue = z.string().max(4_000_000);
+export const NodeTestInputs = z.object({
+  spec: NodeTestInputValue.optional(),
+  diff: NodeTestInputValue.optional(),
+  code_review: NodeTestInputValue.optional(),
+  code_analysis: NodeTestInputValue.optional(),
+  sha: NodeTestInputValue.optional(),
+  pull_request: NodeTestInputValue.optional(),
+  feedback: NodeTestInputValue.optional(),
+  log: NodeTestInputValue.optional(),
+}).strict();
+export type NodeTestInputs = z.infer<typeof NodeTestInputs>;
+
+export const NodeTestRunBody = z.object({
+  node: Node,
+  inputs: NodeTestInputs.default({}),
+  sidecars: z.record(z.string(), z.string().max(1_000_000)).default({}),
+}).strict();
+export type NodeTestRunBody = z.infer<typeof NodeTestRunBody>;
+
+export const NodeTestAnswerBody = z.object({
+  choice: z.string().min(1).optional(),
+  note: z.string().max(100_000).default(""),
+}).strict();
+export type NodeTestAnswerBody = z.infer<typeof NodeTestAnswerBody>;
+
+export const NodeTestOutput = z.object({ type: ArtifactType, content: z.string() });
+export type NodeTestOutput = z.infer<typeof NodeTestOutput>;
+
+export const NodeTestFile = z.object({ path: z.string(), status: z.string() });
+export type NodeTestFile = z.infer<typeof NodeTestFile>;
+
+export const NodeTestQuestion = z.object({
+  kind: z.enum(["agent", "human"]),
+  text: z.string(),
+  choices: z.array(z.string()),
+  notes: z.array(z.string()),
+  inputs: z.array(NodeTestOutput),
+});
+export type NodeTestQuestion = z.infer<typeof NodeTestQuestion>;
+
+export const NodeTestView = z.object({
+  id: z.string(),
+  state: z.enum(["running", "waiting", "completed", "failed", "stopped"]),
+  outcome: z.string().nullable(),
+  failureReason: FailureReason.nullable(),
+  outputs: z.array(NodeTestOutput),
+  diff: z.string(),
+  files: z.array(NodeTestFile),
+  question: NodeTestQuestion.nullable(),
+  error: z.string().nullable(),
+  startedAt: z.number(),
+  endedAt: z.number().nullable(),
+});
+export type NodeTestView = z.infer<typeof NodeTestView>;
+
 export const WhyReason = z.object({
   reason: z.string(),
   text: z.string(),
@@ -548,6 +606,12 @@ export const routes = {
   deleteJob: control("delete"),
   realignJob: { method: "POST", path: "/jobs/:id/realign", params: IdParams, body: RealignBody, response: Ok },
   checkMerge: { method: "POST", path: "/jobs/:id/check-merge", params: IdParams, response: z.object({ merged: z.boolean() }) },
+  runNodeTest: { method: "POST", path: "/node-tests", body: NodeTestRunBody, bodyLimit: 12_000_000, response: z.object({ id: z.string() }) },
+  getNodeTest: { method: "GET", path: "/node-tests/:id", params: IdParams, response: NodeTestView },
+  getActiveNodeTest: { method: "GET", path: "/node-tests/active", response: NodeTestView.nullable() },
+  stopNodeTest: { method: "POST", path: "/node-tests/:id/stop", params: IdParams, response: Ok },
+  answerNodeTest: { method: "POST", path: "/node-tests/:id/answer", params: IdParams, body: NodeTestAnswerBody, response: Ok },
+  resetNodeTests: { method: "POST", path: "/node-tests/reset", response: Ok },
   pauseAll: { method: "POST", path: "/pause", response: Ok },
   playAll: { method: "POST", path: "/play", response: Ok },
   playInterrupted: { method: "POST", path: "/play-interrupted", response: Ok },

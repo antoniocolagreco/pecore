@@ -27,6 +27,7 @@ import type { DefinitionError, Global } from "./definitions/load";
 import { seedTemplates } from "./definitions/seed";
 import { JobExecutor } from "./graph/executor";
 import type { JobRow, ProjectContext } from "./graph/executor";
+import { NodeTestManager } from "./node-tests/manager";
 import { logEvents } from "./observability/log-events";
 import { whyJob } from "./observability/why";
 import type { Notification } from "./store/chats-db";
@@ -55,7 +56,7 @@ import { InvalidArchive } from "./share/archive";
 import { beginImport, previewImport } from "./share/import";
 import { reviewProjectContents } from "./share/review";
 
-export type EngineOptions = { home: string; templates: string; downloads?: string; development?: boolean; agents?: AgentPaths; checkLogins?: boolean; discoverForges?: boolean; discoverTrackers?: boolean; detectRuntime?: () => Promise<Settings["servicesRuntime"]>; admin?: (script: string) => Promise<void>; notify?: (notification: Pick<Notification, "kind" | "title" | "body">) => void };
+export type EngineOptions = { home: string; templates: string; sampleProject?: string; downloads?: string; development?: boolean; agents?: AgentPaths; checkLogins?: boolean; discoverForges?: boolean; discoverTrackers?: boolean; detectRuntime?: () => Promise<Settings["servicesRuntime"]>; admin?: (script: string) => Promise<void>; notify?: (notification: Pick<Notification, "kind" | "title" | "body">) => void };
 
 export class EngineStartError extends Error {
   constructor(readonly errors: DefinitionError[]) {
@@ -79,6 +80,7 @@ export class Engine extends EventEmitter {
   private tiers!: Tiers;
   agents: AgentServices | null = null;
   agentChats!: AgentChats;
+  nodeTests!: NodeTestManager;
   private chats!: ChatsDb;
   configuration!: Configuration;
   catalog!: Catalog;
@@ -147,6 +149,17 @@ export class Engine extends EventEmitter {
       return null;
     });
     this.agentChats = new AgentChats(this, this.chats, (message) => this.live(message));
+    this.nodeTests = new NodeTestManager({
+      home: this.opts.home,
+      sampleProject: this.opts.sampleProject ?? join(this.opts.templates, "..", "test-project"),
+      nodeDir: join(this.opts.templates, "nodes"),
+      agents: () => this.agents,
+      agentCard: (id) => this.catalogAgent(id),
+      agentContext: (id) => this.agentContext(id),
+      user: () => this.settings.protectedMode ? protectedUser : appUser,
+      development: this.opts.development ?? false,
+      live: (message) => this.live(message),
+    });
     this.modelSetupDone = this.setupModels(BuiltInHarness.options).catch((error: unknown) => console.error("model setup:", error));
     const forgeSetup: Promise<void> = this.opts.discoverForges
       ? this.setupForges().catch((error: unknown) => console.error("forge setup:", error)) : Promise.resolve();
@@ -1024,6 +1037,7 @@ export class Engine extends EventEmitter {
         ctx.user = on ? protectedUser : appUser;
       }
     });
+    await this.nodeTests.reset();
   }
 
   private async protectedTraverse(remove = false): Promise<void> {
@@ -1060,6 +1074,7 @@ export class Engine extends EventEmitter {
     this.shuttingDown = true;
     this.stopMergeWatch();
     this.stopCiWatch();
+    await this.nodeTests.close();
     const chats: Promise<void> = this.stopAgentChats();
     await chats;
     await this.loginRunner.stopAll();

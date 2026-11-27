@@ -3,7 +3,7 @@ import { basename, join } from "node:path";
 import { monotonicFactory } from "ulid";
 import type { Usage } from "@pecore/agents";
 import type { AgentSession, AgentNode, Artifact, ArtifactType, CodeReviewArtifact, FailureReason, ForgeAccount, JobDefinitions, JobState, Node, NodeAgent, Project, ServiceAccount, Settings, WaitingReason } from "@pecore/schemas";
-import { artifactTypes, defaultAgentId, isHumanNode, Recipe } from "@pecore/schemas";
+import { artifactContentProblem, artifactTypes, defaultAgentId, isHumanNode, Recipe } from "@pecore/schemas";
 import { spawnFor } from "../accounts/agents";
 import type { AgentServices } from "../accounts/agents";
 import { knowledgeClosure } from "../definitions/knowledge";
@@ -138,13 +138,7 @@ function sha256(data: string | Buffer): string {
 }
 
 export function outputProblem(type: ArtifactType, content: string): string | null {
-  const schema = artifactTypes[type].schema;
-  try {
-    const checked = schema.safeParse(artifactTypes[type].plain ? content : JSON.parse(content));
-    return checked.success ? null : checked.error.issues.map((issue) => `${issue.path.join(".") || "/"} ${issue.message}`).join("; ");
-  } catch (e) {
-    return (e as Error).message;
-  }
+  return artifactContentProblem(type, content);
 }
 
 function runDirName(nodeRunId: string): string {

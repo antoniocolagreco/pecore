@@ -63,6 +63,7 @@ export async function host(port: HostPort, env: HostEnv): Promise<{ engine: Engi
     engine = await Engine.start({
       home: env.home,
       templates: join(env.resources, "templates"),
+      sampleProject: join(env.resources, "test-project"),
       agents: { connectorsDir: join(env.resources, "connectors"), adaptersDir: homePaths(env.home).adapters, adapters: pinned.adapters },
       admin,
       discoverForges: true,

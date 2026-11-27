@@ -11,6 +11,7 @@ export function homePaths(home: string) {
     templateNodes: join(home, "templates", "nodes"),
     templateRecipes: join(home, "templates", "recipes"),
     projects: join(home, "projects"),
+    test: join(home, "test"),
     adapters: join(home, "adapters"),
     run: join(home, "run"),
     lock: join(home, "run", "lock"),
