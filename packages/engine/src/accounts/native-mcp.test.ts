@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, afterEach, expect, it, vi } from "vitest";
+import { atlassianAccount } from "@pecore/schemas";
 import { apiProject } from "../../test/api-project";
 import { tempDir } from "../../test/tmp";
 import { checkTrackerBridge, setBrowserOpener, setMcpHome, trackerBridgeTool, trackerIdentity } from "./native-mcp";
@@ -19,11 +20,12 @@ afterEach(async () => {
   trackerServers.atlassian.authHost = original.authHost;
   trackerServers.linear.url = originalLinear.url;
   trackerServers.linear.authHost = originalLinear.authHost;
+  server?.closeAllConnections();
   await new Promise<void>((resolve) => server ? server.close(() => resolve()) : resolve());
   server = undefined;
 });
 
-afterAll(async () => { await new Promise<void>((resolve) => server ? server.close(() => resolve()) : resolve()); });
+afterAll(async () => { server?.closeAllConnections(); await new Promise<void>((resolve) => server ? server.close(() => resolve()) : resolve()); });
 
 function json(response: ServerResponse, body: unknown, status = 200): void {
   response.writeHead(status, { "Content-Type": "application/json" });
@@ -34,11 +36,21 @@ function rpc(id: unknown, result: unknown): string {
   return JSON.stringify({ jsonrpc: "2.0", id, result });
 }
 
-type TokenMode = "ok" | "503" | "invalid_grant" | "network";
+type TokenMode = "ok" | "503" | "invalid_grant" | "network" | "hang";
 type StateMode = "ok" | "wrong";
 
-async function mockMcp(): Promise<{ base: string; control: { tokenMode: TokenMode; stateMode: StateMode; hang: boolean; tokenRequests: number; unauthorized: boolean; workspace: string } }> {
-  const control: { tokenMode: TokenMode; stateMode: StateMode; hang: boolean; tokenRequests: number; unauthorized: boolean; workspace: string } = { tokenMode: "ok", stateMode: "ok", hang: false, tokenRequests: 0, unauthorized: false, workspace: "workspace-one" };
+type MockControl = {
+  tokenMode: TokenMode;
+  stateMode: StateMode;
+  hang: boolean;
+  tokenRequests: number;
+  unauthorized: boolean;
+  workspace: string;
+  echoRefreshToken: boolean;
+};
+
+async function mockMcp(): Promise<{ base: string; control: MockControl }> {
+  const control: MockControl = { tokenMode: "ok", stateMode: "ok", hang: false, tokenRequests: 0, unauthorized: false, workspace: "workspace-one", echoRefreshToken: false };
   const http = createServer((request, response) => {
     const base = `http://127.0.0.1:${(http.address() as AddressInfo).port}`;
     const url = new URL(request.url ?? "/", base);
@@ -137,21 +149,26 @@ async function mockMcp(): Promise<{ base: string; control: { tokenMode: TokenMod
         request.socket.destroy();
         return;
       }
+      if (control.tokenMode === "hang") return;
       let body = "";
       request.setEncoding("utf8");
       request.on("data", (part) => { body += part; });
       request.on("end", () => {
+        const form = new URLSearchParams(body);
         if (control.tokenMode === "503") {
           response.writeHead(503, { "Content-Type": "application/json" });
           response.end(JSON.stringify({ error: "temporarily_unavailable" }));
           return;
         }
         if (control.tokenMode === "invalid_grant") {
+          const refresh = form.get("refresh_token");
           response.writeHead(400, { "Content-Type": "application/json" });
-          response.end(JSON.stringify({ error: "invalid_grant" }));
+          response.end(JSON.stringify({
+            error: "invalid_grant",
+            ...(control.echoRefreshToken && refresh ? { error_description: `Refresh token ${refresh} was rejected.` } : {}),
+          }));
           return;
         }
-        const form = new URLSearchParams(body);
         const refreshed = form.get("grant_type") === "refresh_token";
         json(response, { access_token: refreshed ? "refreshed-access" : "test-access", token_type: "bearer", expires_in: 3600, refresh_token: "test-refresh", scope: "read write" });
       });
@@ -197,6 +214,7 @@ it("logs in through native OAuth, stores secure files and reconnects without a b
   const mock = await mockMcp();
   const home = await tempDir();
   await login(mock, home);
+  expect(opened).toHaveBeenCalled();
   const tokenFile = join(home, "mcp", "atlassian", "tokens.json");
   const clientFile = join(home, "mcp", "atlassian", "client.json");
   const tokens = JSON.parse(await readFile(tokenFile, "utf8")) as { access_token: string; refresh_token: string };
@@ -288,6 +306,43 @@ it("reports a revoked refresh token as authentication required", async () => {
   await expect(trackerBridgeTool("atlassian", "atlassian", "atlassianUserInfo", {})).rejects.toBeInstanceOf(TrackerMcpAuthError);
 });
 
+it("keeps tokens out of refresh error messages", async () => {
+  const mock = await mockMcp();
+  const home = await tempDir();
+  await login(mock, home);
+  const tokenFile = join(home, "mcp", "atlassian", "tokens.json");
+  const tokens = JSON.parse(await readFile(tokenFile, "utf8")) as { access_token: string; refresh_token: string };
+  await writeFile(tokenFile, JSON.stringify({ ...tokens, access_token: "invalid-access" }, null, 2) + "\n", { mode: 0o600 });
+  mock.control.tokenMode = "invalid_grant";
+  mock.control.echoRefreshToken = true;
+  const raw: Response = await fetch(`${mock.base}/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: "test-refresh" }),
+  });
+  expect(await raw.text()).toContain("test-refresh");
+  const error: unknown = await trackerBridgeTool("atlassian", "atlassian", "atlassianUserInfo", {}).catch((value: unknown) => value);
+  expect(error).toBeInstanceOf(TrackerMcpAuthError);
+  const text: string = error instanceof Error ? `${error.message} ${String(error.cause ?? "")}` : String(error);
+  expect(text).not.toContain("test-access");
+  expect(text).not.toContain("test-refresh");
+});
+
+it("leaves credentials in place when a refresh times out", async () => {
+  const mock = await mockMcp();
+  const home = await tempDir();
+  await login(mock, home);
+  const tokenFile = join(home, "mcp", "atlassian", "tokens.json");
+  const tokens = JSON.parse(await readFile(tokenFile, "utf8")) as { access_token: string; refresh_token: string };
+  const expired: string = JSON.stringify({ ...tokens, access_token: "invalid-access" }, null, 2) + "\n";
+  await writeFile(tokenFile, expired, { mode: 0o600 });
+  mock.control.tokenRequests = 0;
+  mock.control.tokenMode = "hang";
+  await expect(trackerBridgeTool("atlassian", "atlassian", "atlassianUserInfo", {}, { timeoutMs: 500 })).rejects.toBeInstanceOf(TrackerMcpUnavailableError);
+  expect(mock.control.tokenRequests).toBe(1);
+  expect(await readFile(tokenFile, "utf8")).toBe(expired);
+});
+
 it("treats a 401 after successful authentication as a login requirement", async () => {
   const mock = await mockMcp();
   const home = await tempDir();
@@ -342,6 +397,22 @@ it("keeps a sign-in timeout distinct", async () => {
   })).rejects.toThrow("Sign-in to Atlassian timed out.");
 });
 
+it("times out a token exchange that stops responding", async () => {
+  const mock = await mockMcp();
+  mock.control.tokenMode = "hang";
+  const home = await tempDir();
+  trackerServers.atlassian.url = `${mock.base}/mcp`;
+  trackerServers.atlassian.authHost = new URL(mock.base).hostname;
+  setMcpHome(home);
+  await expect(checkTrackerBridge("atlassian", "atlassian", {
+    interactive: true,
+    timeoutMs: 500,
+    onAuthorize: (url) => { if (url) void fetch(url); },
+  })).rejects.toBeInstanceOf(TrackerMcpUnavailableError);
+  expect(mock.control.tokenRequests).toBe(1);
+  expect(await fileExists(join(home, "mcp", "atlassian", "tokens.json"))).toBe(false);
+});
+
 it("creates a tracker account only after sign-in and reports a transient refresh as unknown", async () => {
   const mock = await mockMcp();
   trackerServers.atlassian.url = `${mock.base}/mcp`;
@@ -384,6 +455,55 @@ it("does not create a tracker account when sign-in fails", async () => {
     await engine.startTrackerLogin("atlassian");
     await finished;
     expect(engine.global().accounts.accounts.some((account) => account.id === "atlassian")).toBe(false);
+  } finally {
+    await close();
+  }
+});
+
+it("does not create a tracker account when sign-in is cancelled", async () => {
+  const mock = await mockMcp();
+  trackerServers.atlassian.url = `${mock.base}/mcp`;
+  const { engine, close } = await apiProject();
+  try {
+    let done: () => void = () => undefined;
+    const finished = new Promise<void>((resolve) => { done = resolve; });
+    const texts: string[] = [];
+    engine.on("live", (message) => {
+      if (message.type !== "login.progress") return;
+      texts.push(message.text);
+      if (message.done) done();
+    });
+    await engine.startTrackerLogin("atlassian");
+    const runner = (engine as unknown as { loginRunner: { stopAll(): Promise<void> } }).loginRunner;
+    await runner.stopAll();
+    await finished;
+    expect(texts.join("\n")).toMatch(/cancelled/i);
+    expect(engine.global().accounts.accounts.some((account) => account.id === "atlassian")).toBe(false);
+  } finally {
+    await close();
+  }
+});
+
+it("signs in again to an existing tracker account without changing its id", async () => {
+  const mock = await mockMcp();
+  trackerServers.atlassian.url = `${mock.base}/mcp`;
+  const { engine, close } = await apiProject();
+  try {
+    const accounts = engine.global().accounts.accounts;
+    engine.configuration.write({ accounts: { accounts: [...accounts, { ...atlassianAccount, user: "Old identity" }] } });
+    await engine.reloadGlobal();
+    let done: () => void = () => undefined;
+    const finished = new Promise<void>((resolve) => { done = resolve; });
+    engine.on("live", (message) => {
+      if (message.type !== "login.progress") return;
+      if (message.url) void fetch(message.url);
+      if (message.done) done();
+    });
+    expect(await engine.startAccountLogin("atlassian")).toBe("tool:atlassian");
+    await finished;
+    const tracker = engine.global().accounts.accounts.filter((account) => account.id === "atlassian");
+    expect(tracker).toHaveLength(1);
+    expect(tracker[0]).toMatchObject({ id: "atlassian", user: "alice", site: "team.atlassian.net" });
   } finally {
     await close();
   }

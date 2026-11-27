@@ -302,7 +302,7 @@ async function withNative<T>(account: string, server: TrackerBridge, options: Br
       const value = await timeout(callback.code, timeoutMs, `Sign-in to ${name} timed out.`);
       if (provider.stateValue && value.state !== provider.stateValue) throw new Error(`The ${name} sign-in state did not match.`);
       try {
-        await transport!.finishAuth(value.code);
+        await timeout(transport!.finishAuth(value.code), timeoutMs, `Sign-in to ${name} timed out.`);
       } catch (error) {
         if (isTransientError(error) || fetchState.transient) throw new TrackerMcpUnavailableError(server, error);
         if (isAuthError(error)) throw new TrackerMcpAuthError(account, server);
