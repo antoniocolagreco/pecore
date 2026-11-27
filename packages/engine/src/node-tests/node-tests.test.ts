@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { cp, lstat, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { describe, expect, it, vi } from "vitest";
 import { apiClient, Node } from "@pecore/schemas";
 import type { NodeTestView } from "@pecore/schemas";
@@ -11,6 +13,7 @@ import { startApi } from "../api/server";
 import { Engine } from "../main";
 import * as acl from "../osuser/acl";
 
+const execFileP = promisify(execFile);
 const fakeAgent = fileURLToPath(new URL("../../../agents/test/fake-agent/agent.mjs", import.meta.url));
 
 const init = [{ expect: "initialize" }, { send: { jsonrpc: "2.0", id: "$id", result: { protocolVersion: 1, agentCapabilities: { loadSession: false, sessionCapabilities: { resume: {} } } } } }];
@@ -21,18 +24,29 @@ const answer = (value: object) => ({
 });
 const usageAnswer = { send: { jsonrpc: "2.0", id: "$id", result: { stopReason: "end_turn", usage: { inputTokens: 10, outputTokens: 20, cachedReadTokens: 0, cachedWriteTokens: 0 } } } };
 
-async function setup(agent = false, opts: { sampleLink?: boolean; existingLink?: boolean; missingSample?: boolean } = {}) {
+async function setup(agent = false, opts: { sampleLink?: boolean; existingLink?: boolean; missingSample?: boolean; upstream?: boolean; dependencies?: boolean } = {}) {
   const root = await tempDir();
   const home = join(root, "home");
   const templates = join(root, "templates");
-  const source = join(root, "sample-source");
-  const sampleProject = opts.sampleLink ? join(root, "test-project") : source;
+  const project = join(root, "sample-source");
+  const source = join(project, "sample");
+  const sampleProject = opts.sampleLink ? join(root, "test-project") : project;
   await cp(shippedTemplates, templates, { recursive: true });
   if (!opts.missingSample) {
     await mkdir(source, { recursive: true });
     await writeFile(join(source, "README.md"), "Sample project\n");
     await writeFile(join(source, "hello.txt"), "hello\n");
-    if (opts.sampleLink) await symlink(source, sampleProject);
+    if (opts.upstream) {
+      await writeFile(join(source, "greeting.txt"), "Hello\n");
+      await mkdir(join(project, "upstream"), { recursive: true });
+      await writeFile(join(project, "upstream", "greeting.txt"), "Hi\n");
+    }
+    if (opts.dependencies) {
+      await writeFile(join(source, ".gitignore"), "node_modules/\n");
+      await writeFile(join(source, "package.json"), "{\"name\":\"sample\",\"private\":true}\n");
+      await writeFile(join(source, "package-lock.json"), "{\"name\":\"sample\",\"lockfileVersion\":3}\n");
+    }
+    if (opts.sampleLink) await symlink(project, sampleProject);
     if (opts.existingLink) {
       await mkdir(home, { recursive: true });
       await symlink(source, join(home, "test"));
@@ -91,6 +105,17 @@ async function finished(call: ReturnType<typeof apiClient>, id: string): Promise
   });
 }
 
+async function shippedNode(name: string): Promise<Node> {
+  return Node.parse(JSON.parse(await readFile(join(shippedTemplates, "nodes", `${name}.json`), "utf8")));
+}
+
+async function fakeNpm(root: string, body: string): Promise<void> {
+  const bin: string = join(root, "bin");
+  await mkdir(bin, { recursive: true });
+  await writeFile(join(bin, "npm"), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  vi.stubEnv("PATH", `${bin}:${process.env.PATH ?? ""}`);
+}
+
 const command = (extra: object = {}) => Node.parse({
   name: "write", description: "Write a file", kind: "command",
   command: ["/bin/sh", "-c", "printf 'changed\n' > hello.txt"],
@@ -113,7 +138,7 @@ const review = Node.parse({
 
 describe("node tests", () => {
   it("runs a command, keeps its changes between runs and resets the folder", async () => {
-    const { call, close, sampleProject } = await setup();
+    const { call, close, source } = await setup();
     try {
       const { id } = await call("runNodeTest", { body: { node: command(), inputs: {}, sidecars: {} } });
       const first = await finished(call, id);
@@ -131,7 +156,7 @@ describe("node tests", () => {
       expect(log).toMatchObject({ view: "events", events: [{ type: "output", text: expect.stringContaining("changed") }] });
 
       await call("resetNodeTests");
-      expect(await readFile(join(sampleProject, "hello.txt"), "utf8")).toBe("hello\n");
+      expect(await readFile(join(source, "hello.txt"), "utf8")).toBe("hello\n");
       await expect(call("getNodeTest", { params: { id } })).rejects.toMatchObject({ status: 404 });
       const restored = await call("runNodeTest", { body: { node: command({ name: "read", command: ["/bin/cat", "hello.txt"] }), inputs: {}, sidecars: {} } });
       await finished(call, restored.id);
@@ -465,6 +490,96 @@ describe("node tests", () => {
       const { id } = await call("runNodeTest", { body: { node, inputs: {}, sidecars: { "tracker.md": "Read the ticket." } } });
       expect(await finished(call, id)).toMatchObject({ state: "failed", failureReason: "AGENT_UNAVAILABLE", error: expect.stringContaining("Tracker access") });
     } finally {
+      await close();
+    }
+  });
+
+  it("gives Git Rebase a newer base that it reaches or conflicts with", async () => {
+    const { call, close, home } = await setup(false, { upstream: true });
+    try {
+      const rebase: Node = await shippedNode("git-rebase");
+      const clean = await call("runNodeTest", { body: { node: rebase, inputs: {}, sidecars: {} } });
+      expect(await finished(call, clean.id)).toMatchObject({ state: "completed", outcome: "success", files: [{ status: "M", path: "greeting.txt" }] });
+      expect(await readFile(join(home, "test", "greeting.txt"), "utf8")).toBe("Hi\n");
+
+      await call("resetNodeTests");
+      expect(await readFile(join(home, "test", "greeting.txt"), "utf8")).toBe("Hello\n");
+      const edit = await call("runNodeTest", { body: { node: command({ name: "edit", command: ["/bin/sh", "-c", "printf 'Howdy\\n' > greeting.txt"] }), inputs: {}, sidecars: {} } });
+      expect((await finished(call, edit.id)).state).toBe("completed");
+      const conflict = await call("runNodeTest", { body: { node: rebase, inputs: {}, sidecars: {} } });
+      expect(await finished(call, conflict.id)).toMatchObject({ state: "completed", outcome: "rebase_conflict", files: [] });
+      expect(await readFile(join(home, "test", "greeting.txt"), "utf8")).toBe("Howdy\n");
+    } finally {
+      await close();
+    }
+  });
+
+  it("commits with Git Commit and returns the new SHA", async () => {
+    const { call, close } = await setup();
+    try {
+      const edit = await call("runNodeTest", { body: { node: command(), inputs: {}, sidecars: {} } });
+      expect((await finished(call, edit.id)).state).toBe("completed");
+      const commit = await call("runNodeTest", { body: { node: await shippedNode("git-commit"), inputs: {}, sidecars: {} } });
+      const view = await finished(call, commit.id);
+      expect(view).toMatchObject({ state: "completed", outcome: "success", outputs: [{ type: "sha", content: expect.stringMatching(/^[0-9a-f]{40}$/) }] });
+      const head = await call("runNodeTest", { body: { node: command({ name: "head", changesFiles: false, command: ["git", "rev-parse", "HEAD"] }), inputs: {}, sidecars: {} } });
+      await finished(call, head.id);
+      const log = await call("getLog", { params: { id: head.id }, query: { view: "events" } });
+      expect(log).toMatchObject({ view: "events", events: [{ type: "output", text: expect.stringContaining(view.outputs[0]!.content) }] });
+    } finally {
+      await close();
+    }
+  });
+
+  it("replaces a test folder made from an older sample", async () => {
+    const { call, close, home } = await setup();
+    try {
+      const old: string = join(home, "test");
+      await mkdir(old, { recursive: true });
+      await writeFile(join(old, "old.txt"), "old\n");
+      await execFileP("git", ["init", "-q"], { cwd: old });
+      const { id } = await call("runNodeTest", { body: { node: command(), inputs: {}, sidecars: {} } });
+      expect(await finished(call, id)).toMatchObject({ state: "completed", files: [{ status: "M", path: "hello.txt" }] });
+      await expect(lstat(join(old, "old.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await close();
+    }
+  });
+
+  it("installs the sample's dependencies once and keeps them on reset", async () => {
+    const { root, call, close, home } = await setup(false, { dependencies: true });
+    const count: string = join(root, "npm-calls");
+    await fakeNpm(root, `echo "$*" >> '${count}'; mkdir -p node_modules`);
+    try {
+      const first = await call("runNodeTest", { body: { node: command(), inputs: {}, sidecars: {} } });
+      expect(await finished(call, first.id)).toMatchObject({ state: "completed", notice: null, files: [{ status: "M", path: "hello.txt" }] });
+      expect(await readFile(count, "utf8")).toBe("ci --ignore-scripts --no-audit --no-fund\n");
+      await writeFile(join(home, "test", "node_modules", "kept.txt"), "kept\n");
+      await call("resetNodeTests");
+      expect(await readFile(join(home, "test", "node_modules", "kept.txt"), "utf8")).toBe("kept\n");
+      expect(await readFile(join(home, "test", "hello.txt"), "utf8")).toBe("hello\n");
+      expect(await readFile(count, "utf8")).toBe("ci --ignore-scripts --no-audit --no-fund\n");
+    } finally {
+      vi.unstubAllEnvs();
+      await close();
+    }
+  });
+
+  it("reports a failed install in the panel and retries it on reset", async () => {
+    const { root, call, close } = await setup(false, { dependencies: true });
+    await fakeNpm(root, "echo 'npm error network unreachable' >&2; exit 1");
+    try {
+      const first = await call("runNodeTest", { body: { node: command(), inputs: {}, sidecars: {} } });
+      expect(await finished(call, first.id)).toMatchObject({
+        state: "completed", notice: expect.stringMatching(/could not be installed[\s\S]*network unreachable/),
+      });
+      await expect(call("resetNodeTests")).rejects.toMatchObject({ status: 400, message: expect.stringContaining("network unreachable") });
+      await fakeNpm(root, "mkdir -p node_modules");
+      await call("resetNodeTests");
+      const second = await call("runNodeTest", { body: { node: command(), inputs: {}, sidecars: {} } });
+      expect(await finished(call, second.id)).toMatchObject({ state: "completed", notice: null });
+    } finally {
+      vi.unstubAllEnvs();
       await close();
     }
   });

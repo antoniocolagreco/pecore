@@ -1,4 +1,5 @@
-import { chmod, cp, lstat, readFile, rm, stat, unlink } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { chmod, cp, lstat, readdir, readFile, rm, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { monotonicFactory } from "ulid";
 import { artifactContentProblem, defaultAgentId } from "@pecore/schemas";
@@ -18,9 +19,14 @@ import { humanItem, humanResult } from "../runners/human";
 import { paramsWithDefaults } from "../runners/placeholders";
 import { appUser, baseEnv, killJobProcesses, run, stopGroup } from "../runners/process";
 import { deleteScratch, restoreState } from "../workdir/files-hash";
+import { readFileAs, writeFileAs } from "../workdir/fs-as";
 import { gitWork, gitWorkResult } from "../workdir/git-as";
 
 const ulid = monotonicFactory();
+const dependencies = "node_modules";
+const installStamp = `${dependencies}/.pecore-sample`;
+const installTimeoutMs = 10 * 60_000;
+const sampleRef = "refs/pecore/sample";
 
 export class NodeTestError extends Error {
   constructor(
@@ -52,6 +58,8 @@ type TestState = {
   user: string;
   folder: string;
   head: string;
+  base: string;
+  oldBase: string;
   beforeTree: string;
   state: NodeTestView["state"];
   outcome: string | null;
@@ -84,6 +92,7 @@ function errorMessage(error: unknown): string {
 export class NodeTestManager {
   private readonly tests = new Map<string, TestState>();
   private active: string | null = null;
+  private installProblem: string | null = null;
   private lock: Promise<void> = Promise.resolve();
 
   constructor(private readonly opts: NodeTestManagerOptions) {}
@@ -112,10 +121,14 @@ export class NodeTestManager {
       const user = this.opts.user();
       let folder: string;
       let head: string;
+      let base: string;
+      let oldBase: string;
       let beforeTree: string;
       try {
         folder = await this.ensureFolder();
         head = (await gitWork(user, folder, ["rev-parse", "HEAD"])).trim();
+        base = await this.commitOf(folder, user, "refs/heads/upstream") ?? head;
+        oldBase = await this.commitOf(folder, user, sampleRef) ?? head;
         beforeTree = await this.treeOf(folder, user);
       } catch (error) {
         this.active = null;
@@ -130,6 +143,8 @@ export class NodeTestManager {
         user,
         folder,
         head,
+        base,
+        oldBase,
         beforeTree,
         state: "running",
         outcome: null,
@@ -186,6 +201,7 @@ export class NodeTestManager {
       this.active = null;
       await this.removeFolder();
       await this.ensureFolder();
+      if (this.installProblem) throw new NodeTestError("bad_request", this.installProblem);
     });
   }
 
@@ -261,6 +277,7 @@ export class NodeTestManager {
       files: test.files,
       question: test.question,
       error: test.error,
+      notice: this.installProblem,
       startedAt: test.startedAt,
       endedAt: test.endedAt,
     };
@@ -477,7 +494,7 @@ export class NodeTestManager {
     project: { repoDir: string; repoUrl: null; baseBranch: string };
   } {
     return {
-      job: { id: test.id, title: test.node.name, request: test.node.description, branch: "test", base: test.head, oldBase: test.head, target: "main", commit: test.head },
+      job: { id: test.id, title: test.node.name, request: test.node.description, branch: "test", base: test.base, oldBase: test.oldBase, target: "main", commit: test.head },
       ticketId: null,
       project: { repoDir: join(test.folder, ".git"), repoUrl: null, baseBranch: "main" },
     };
@@ -513,49 +530,91 @@ export class NodeTestManager {
 
   private async ensureFolder(): Promise<string> {
     const folder = homePaths(this.opts.home).test;
+    const user = this.opts.user();
     if (await asyncExists(join(folder, ".git"))) {
       const link = await lstat(folder);
-      if (!link.isSymbolicLink()) return folder;
+      if (!link.isSymbolicLink() && await this.commitOf(folder, user, sampleRef)) return folder;
     }
     await this.removeFolder();
     try {
-      await cp(this.opts.sampleProject, folder, { recursive: true, dereference: true });
+      await cp(join(this.opts.sampleProject, "sample"), folder, { recursive: true, dereference: true });
     } catch (error) {
       throw new NodeTestError("bad_request", `The sample project could not be copied: ${errorMessage(error)}`);
     }
     await rm(join(folder, ".git"), { recursive: true, force: true });
     await chmod(folder, 0o700);
-    const user = this.opts.user();
     await this.makeAccessible(folder);
     await gitWork(user, folder, ["init", "-q", "-b", "main"]);
     await gitWork(user, folder, ["add", "-A"]);
     await gitWork(user, folder, ["commit", "-q", "-m", "Sample project"]);
+    await gitWork(user, folder, ["update-ref", sampleRef, "HEAD"]);
+    await this.commitUpstream(folder, user);
+    await this.install(folder, user);
     return folder;
+  }
+
+  private async commitUpstream(folder: string, user: string): Promise<void> {
+    const upstream: string = join(this.opts.sampleProject, "upstream");
+    if (!await asyncExists(upstream)) return;
+    await gitWork(user, folder, ["checkout", "-q", "-b", "upstream"]);
+    await cp(upstream, folder, { recursive: true, dereference: true });
+    await gitWork(user, folder, ["add", "-A"]);
+    await gitWork(user, folder, ["commit", "-q", "-m", "Newer base"]);
+    await gitWork(user, folder, ["checkout", "-q", "main"]);
+  }
+
+  private async install(folder: string, user: string): Promise<void> {
+    this.installProblem = null;
+    if (!await asyncExists(join(folder, "package-lock.json"))) return;
+    const stamp: string = createHash("sha256").update(await readFileAs(user, folder, "package-lock.json")).digest("hex");
+    if (await readFileAs(user, folder, installStamp).catch(() => null) === stamp) return;
+    const problem = (detail: string): string => `The sample's TypeScript tools could not be installed, so Typecheck, ESLint and Vitest cannot run. Reset the test folder to try again. ${detail}`.trim();
+    try {
+      const result = await run({
+        user,
+        argv: ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"],
+        env: await baseEnv(user),
+        cwd: folder,
+        timeoutMs: installTimeoutMs,
+      });
+      if (result.timedOut) this.installProblem = problem("npm ci did not finish within 10 minutes.");
+      else if (result.code !== 0) this.installProblem = problem(result.stderr.trim().split("\n").slice(-5).join("\n"));
+    } catch (error) {
+      this.installProblem = problem(`npm could not start: ${errorMessage(error)}`);
+    }
+    if (!this.installProblem) await writeFileAs(user, folder, installStamp, stamp);
+  }
+
+  private async commitOf(folder: string, user: string, ref: string): Promise<string | null> {
+    const result = await gitWorkResult(user, folder, ["rev-parse", "--verify", "-q", `${ref}^{commit}`]);
+    return result.code === 0 ? result.stdout.trim() : null;
   }
 
   private async removeFolder(): Promise<void> {
     const folder = homePaths(this.opts.home).test;
     const info = await lstat(folder).catch(() => null);
     if (!info) return;
-    if (info.isSymbolicLink()) {
+    if (info.isSymbolicLink() || !info.isDirectory()) {
       await unlink(folder);
       return;
     }
     const user = this.opts.user();
     try {
-      await rm(folder, { recursive: true, force: true });
+      for (const name of await readdir(folder)) {
+        const entry = await lstat(join(folder, name));
+        if (name !== dependencies || !entry.isDirectory()) await rm(join(folder, name), { recursive: true, force: true });
+      }
       return;
     } catch (error) {
       if (user === appUser) throw error;
     }
     const result = await run({
       user,
-      argv: ["/bin/sh", "-c", 'chmod -R u+rwX -- "$1" 2>/dev/null; find "$1" -mindepth 1 -delete', "sh", folder],
+      argv: ["/bin/sh", "-c", 'chmod -R u+rwX -- "$1" 2>/dev/null; find "$1" -mindepth 1 -maxdepth 1 \\( ! -name "$2" -o ! -type d \\) -exec rm -rf -- {} +', "sh", folder, dependencies],
       env: await baseEnv(user),
       cwd: "/",
     });
     if (result.code !== 0) throw new Error(`the test folder's contents could not be removed: ${result.stderr.trim()}`);
-    await rm(folder, { recursive: true, force: true });
   }
 
   private async makeAccessible(folder: string): Promise<void> {
