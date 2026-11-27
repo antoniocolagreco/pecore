@@ -4,7 +4,7 @@ export type TrackerBridge = "atlassian" | "linear";
 
 export const trackerServers: Record<TrackerBridge, { name: string; url: string; authHost: string }> = {
   atlassian: { name: "Atlassian", url: "https://mcp.atlassian.com/v2/mcp", authHost: "auth.atlassian.com" },
-  linear: { name: "Linear", url: "https://mcp.linear.app/mcp", authHost: "linear.app" },
+  linear: { name: "Linear", url: "https://mcp.linear.app/mcp", authHost: "mcp.linear.app" },
 };
 
 export const authRequired = /\b(?:unauthorized|unauthenticated|invalid[_ ](?:grant|token)|authentication required|sign.in required|login required|401)\b/i;

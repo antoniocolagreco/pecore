@@ -68,8 +68,10 @@ function errorCode(error: unknown): string | undefined {
 
 function isAuthError(error: unknown): boolean {
   if (error instanceof UnauthorizedError) return true;
+  if (error && typeof error === "object" && "code" in error && (error as { code?: unknown }).code === 401) return true;
   const code = errorCode(error);
-  return code !== undefined && authCodes.has(code);
+  if (code !== undefined && authCodes.has(code)) return true;
+  return error instanceof Error && authRequired.test(error.message);
 }
 
 function isTransientError(error: unknown): boolean {
@@ -175,7 +177,8 @@ class FileOAuthProvider implements OAuthClientProvider {
     if (!this.interactive) throw new TrackerMcpAuthError(this.account, this.server);
     const target = url.toString();
     this.onAuthorize?.(target);
-    if (url.protocol === "https:" && url.hostname === trackerServers[this.server].authHost) browserOpener(target);
+    const loopback = url.protocol === "http:" && (url.hostname === "127.0.0.1" || url.hostname === "localhost");
+    if ((url.protocol === "https:" || loopback) && url.hostname === trackerServers[this.server].authHost) browserOpener(target);
   }
 
   async invalidateCredentials(scope: "all" | "client" | "tokens" | "verifier" | "discovery"): Promise<void> {
@@ -329,11 +332,18 @@ export async function trackerIdentity(account: string, server: TrackerBridge): P
   const data = output && typeof output === "object" && "data" in output ? (output as { data?: unknown }).data : output;
   if (!data || typeof data !== "object") return null;
   const record = data as Record<string, unknown>;
-  const identity = server === "atlassian"
-    ? record.accountId ?? record.email ?? record.displayName
-    : (record.user && typeof record.user === "object" ? (record.user as Record<string, unknown>).email ?? (record.user as Record<string, unknown>).name : undefined)
-      ?? (record.workspace && typeof record.workspace === "object" ? (record.workspace as Record<string, unknown>).name : undefined);
-  return typeof identity === "string" && identity.trim() ? identity.trim() : null;
+  if (server === "atlassian") {
+    const identity = record.accountId ?? record.email ?? record.displayName;
+    return typeof identity === "string" && identity.trim() ? identity.trim() : null;
+  }
+  const user = record.user && typeof record.user === "object"
+    ? (record.user as Record<string, unknown>).email ?? (record.user as Record<string, unknown>).name
+    : undefined;
+  const workspace = record.workspace && typeof record.workspace === "object"
+    ? (record.workspace as Record<string, unknown>).name ?? (record.workspace as Record<string, unknown>).url
+    : undefined;
+  const parts: string[] = [user, workspace].filter((value): value is string => typeof value === "string" && value.trim().length > 0).map((value) => value.trim());
+  return parts.length ? parts.join(" @ ") : null;
 }
 
 export async function atlassianSite(account: string): Promise<string | null> {
