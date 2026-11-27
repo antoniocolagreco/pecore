@@ -122,7 +122,7 @@ function ProjectSettings({ id, onSaved, projectActions, deleteNotice }: { id: st
       trackerAccounts.push({ value: account.id, label: account.service, provider: account.tool === "linear" ? "linear" : "jira" });
     }
   }
-  trackerAccounts.push({ value: "active-jira", label: "Active Jira CLI account", provider: "jira" });
+  trackerAccounts.push({ value: "active-jira", label: "Jira (automatic)", provider: "jira" });
   const [draft, setDraft] = useViewState<{ values: SettingsForm; sha256: string } | null>("project.settings.draft", null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);

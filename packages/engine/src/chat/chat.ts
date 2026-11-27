@@ -295,7 +295,7 @@ export class AgentChats {
         log({ dir: "cmd", text: "Tracker tool requested: " + label, at: Date.now() });
         const requested: Promise<unknown> = (async () => {
           const call = trackerTool(name, args, permission.access);
-          return callTracker(ctx, await trackerAccount(ctx, permission.account), call);
+          return callTracker(ctx, await trackerAccount(ctx, permission.account, call.args), call);
         })();
         pending.add(requested);
         try {

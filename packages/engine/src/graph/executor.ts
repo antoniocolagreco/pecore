@@ -96,6 +96,7 @@ export type ProjectContext = {
   agents: AgentServices | null;
   forgeAccount(id: string): ForgeAccount | undefined;
   serviceAccount?(id: string): ServiceAccount | undefined;
+  serviceAccounts?(): ServiceAccount[];
   setupEnded?: (state: JobState) => void;
   held?: () => boolean;
   agentCard(id: string): NodeAgent | undefined;

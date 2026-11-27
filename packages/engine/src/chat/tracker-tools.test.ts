@@ -19,6 +19,7 @@ const ctx = {
   project: Project.parse({ id: "example", name: "Example", repo: { url: "git@github.com:team/repo.git", account: github.id } }),
   forgeAccount: (id: string): ForgeAccount | undefined => [github, gitlab].find((account) => account.id === id),
   serviceAccount: (id: string) => [atlassianAccount, linearAccount].find((account) => account.id === id),
+  serviceAccounts: () => [atlassianAccount, linearAccount],
 };
 
 const success = (value: unknown): process.RunResult => ({ stdout: JSON.stringify(value), stderr: "", code: 0, signal: null, timedOut: false });
@@ -68,7 +69,7 @@ it("updates a custom GitLab field by the selected work item's global ID", async 
 
 it("binds Jira writes to the site's Cloud ID and forwards custom fields", async () => {
   const tool = vi.spyOn(bridge, "trackerBridgeTool")
-    .mockResolvedValueOnce([{ id: "first", url: "https://one.atlassian.net" }, { id: "second", url: "https://two.atlassian.net" }])
+    .mockResolvedValueOnce([{ cloudId: "first", url: "https://one.atlassian.net" }, { cloudId: "second", url: "https://two.atlassian.net" }])
     .mockResolvedValueOnce({ ok: true });
   const account = await trackerAccount(ctx, atlassianAccount.id);
   const update = trackerTool("update_ticket_fields", {
@@ -95,13 +96,93 @@ it("maps Linear links and passes the intended status and fields to the bridge", 
   ]);
 });
 
+it("prefers verified Jira MCP access for automatic calls to the requested site", async () => {
+  vi.spyOn(jira, "activeJiraAccount").mockResolvedValue({
+    account: { id: "jira-alice", kind: "service", service: "Jira", tool: "acli", user: "alice@example.test" }, site: "one.atlassian.net",
+  });
+  vi.spyOn(bridge, "trackerBridgeTool").mockResolvedValue({
+    data: { resources: [
+      { cloudId: "first", url: "https://one.atlassian.net" },
+      { cloudId: "second", url: "https://two.atlassian.net" },
+    ] },
+  });
+  const account = await trackerAccount(ctx, "active-jira", { ticketId: "https://two.atlassian.net/browse/TST-7" });
+  expect(account).toMatchObject({ id: atlassianAccount.id, bridge: "atlassian", site: "second" });
+});
+
+it("falls back to the active Jira CLI login when MCP cannot reach the same site", async () => {
+  vi.spyOn(jira, "activeJiraAccount").mockResolvedValue({
+    account: { id: "jira-alice", kind: "service", service: "Jira", tool: "acli", user: "alice@example.test" }, site: "two.atlassian.net",
+  });
+  vi.spyOn(bridge, "trackerBridgeTool").mockResolvedValue({
+    data: { resources: [{ cloudId: "first", url: "https://one.atlassian.net" }] },
+  });
+  const account = await trackerAccount(ctx, "active-jira", { ticketId: "https://two.atlassian.net/browse/TST-7" });
+  expect(account).toMatchObject({ id: "jira-alice", jira: "two.atlassian.net" });
+});
+
+it("refuses an automatic Jira call when neither transport reaches the requested site", async () => {
+  vi.spyOn(jira, "activeJiraAccount").mockResolvedValue({
+    account: { id: "jira-alice", kind: "service", service: "Jira", tool: "acli", user: "alice@example.test" }, site: "one.atlassian.net",
+  });
+  vi.spyOn(bridge, "trackerBridgeTool").mockResolvedValue({
+    data: { resources: [{ cloudId: "first", url: "https://one.atlassian.net" }] },
+  });
+  await expect(trackerAccount(ctx, "active-jira", { ticketId: "https://three.atlassian.net/browse/TST-7" }))
+    .rejects.toThrow("cannot reach this Jira site");
+});
+
+it("refuses an automatic Jira CLI fallback for a different site", async () => {
+  vi.spyOn(jira, "activeJiraAccount").mockResolvedValue({
+    account: { id: "jira-alice", kind: "service", service: "Jira", tool: "acli", user: "alice@example.test" }, site: "one.atlassian.net",
+  });
+  const cliOnly = {
+    ...ctx,
+    serviceAccount: (id: string) => id === linearAccount.id ? linearAccount : undefined,
+    serviceAccounts: () => [linearAccount],
+  };
+  await expect(trackerAccount(cliOnly, "active-jira", { site: "https://two.atlassian.net" }))
+    .rejects.toThrow("cannot reach this Jira site");
+});
+
+it("keeps an explicit Jira CLI account selection on the CLI", async () => {
+  const active = vi.spyOn(jira, "activeJiraAccount").mockResolvedValue({
+    account: { id: "jira-alice", kind: "service", service: "Jira", tool: "acli", user: "alice@example.test" }, site: "one.atlassian.net",
+  });
+  const bridgeTool = vi.spyOn(bridge, "trackerBridgeTool");
+  const account = await trackerAccount(ctx, "jira-alice", { ticketId: "https://one.atlassian.net/browse/TST-7" });
+  expect(account).toMatchObject({ id: "jira-alice", jira: "one.atlassian.net" });
+  expect(active).toHaveBeenCalled();
+  expect(bridgeTool).not.toHaveBeenCalled();
+});
+
+it("refuses a Jira CLI search on a different site", async () => {
+  vi.spyOn(process, "baseEnv").mockResolvedValue({ HOME: "/private" });
+  const run = vi.spyOn(process, "run").mockResolvedValue(success({ issues: [] }));
+  const account = { id: "jira-alice", jira: "one.atlassian.net", user: "alice@example.test" };
+  await expect(callTracker(ctx, account, trackerTool("search_tickets", { query: "login", site: "https://two.atlassian.net" }, "read")))
+    .rejects.toThrow("active Jira site");
+  expect(run).not.toHaveBeenCalled();
+});
+
+it("reports the Jira CLI transition-ID limitation", async () => {
+  vi.spyOn(process, "baseEnv").mockResolvedValue({ HOME: "/private" });
+  const run = vi.spyOn(process, "run").mockResolvedValue(success({ updated: true }));
+  const account = { id: "jira-alice", jira: "one.atlassian.net", user: "alice@example.test" };
+  await expect(callTracker(ctx, account, trackerTool("change_ticket_status", {
+    ticketId: "https://one.atlassian.net/browse/TST-7", status: "31",
+  }, "read-write"))).rejects.toThrow("status name");
+  expect(run).not.toHaveBeenCalled();
+});
+
 it("edits ordinary Jira CLI fields on the active site and sends custom fields to MCP", async () => {
   vi.spyOn(jira, "activeJiraAccount").mockResolvedValue({
     account: { id: "jira-alice", kind: "service", service: "Jira", tool: "acli", user: "alice@example.test" }, site: "team.atlassian.net",
   });
+  vi.spyOn(bridge, "trackerBridgeTool").mockRejectedValue(new bridge.TrackerMcpAuthError(atlassianAccount.id, "atlassian"));
   vi.spyOn(process, "baseEnv").mockResolvedValue({ HOME: "/private" });
   const run = vi.spyOn(process, "run").mockResolvedValue(success({ updated: true }));
-  const account = await trackerAccount(ctx, "active-jira");
+  const account = await trackerAccount(ctx, "active-jira", { ticketId: "https://team.atlassian.net/browse/ENG-3" });
   const ticketId: string = "https://team.atlassian.net/browse/ENG-3";
   await callTracker(ctx, account, trackerTool("update_ticket_fields", { ticketId, fields: { labels: ["bug", "web"], summary: "Login" } }, "read-write"));
   expect(run.mock.lastCall?.[0].argv).toEqual([

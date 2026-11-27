@@ -7,7 +7,7 @@ import { join, relative } from "node:path";
 import { removeAs } from "./workdir/fs-as";
 import { definitionOperations } from "./api/routes/definitions";
 import { globalFileHandlers } from "./api/routes/settings";
-import { appName, assistantAgentId, BuiltInHarness, defaultAgentId, defaultJobLimit, ForgeDiscovery, freeProjectManager, modelOnlyHarness, projectManagerClash, projectManagers, withForgeHosts } from "@pecore/schemas";
+import { appName, assistantAgentId, BuiltInHarness, defaultAgentId, defaultJobLimit, ForgeDiscovery, freeProjectManager, modelOnlyHarness, projectManagerClash, projectManagers, TrackerDiscovery, withForgeHosts } from "@pecore/schemas";
 import { listOptions, satisfies } from "@pecore/agents";
 import type { LoginState } from "@pecore/agents";
 import type { Account, AccountOptions, Accounts, AgentDefinitions, ChatAgent, ForgeAccount, JobState, LiveMessage, LoginView, NodeAgent, NodeAgentCatalog, NotificationTarget, ProjectManagerAgent, Profiles, ProjectInput, ProjectManagerIdentity, ServiceAccount, Settings, SetupView, Tiers, WhyView } from "@pecore/schemas";
@@ -16,9 +16,10 @@ import { HttpError } from "./api/server";
 import type { CompleteProjectImportBody, ExportProjectBody, ExportProjectResult, ImportProjectBody, ImportProjectPreview, ImportProjectResult } from "@pecore/schemas";
 import { AgentServices, protectedUser, spawnFor } from "./accounts/agents";
 import type { AgentPaths, LoginInfo } from "./accounts/agents";
-import { atlassianSite, checkTrackerBridge, setMcpHome, TrackerMcpAuthError, TrackerMcpUnavailableError, trackerIdentity } from "./accounts/atlassian";
+import { atlassianSite, checkTrackerBridge, hasTrackerTokens, setMcpHome, TrackerMcpAuthError, TrackerMcpUnavailableError, trackerIdentity } from "./accounts/atlassian";
 import { LoginRunner } from "./accounts/login";
 import type { TrackerBridge } from "./accounts/tracker-mcp";
+import { trackerTimeoutMs } from "./accounts/tracker-mcp";
 import { discoverForgeAccounts, forgeLoginUser, newForgeAccounts } from "./accounts/forges";
 import { identityOk } from "./runners/forge-env";
 import { loadProject, validateGlobal } from "./definitions/load";
@@ -54,7 +55,7 @@ import { InvalidArchive } from "./share/archive";
 import { beginImport, previewImport } from "./share/import";
 import { reviewProjectContents } from "./share/review";
 
-export type EngineOptions = { home: string; templates: string; downloads?: string; development?: boolean; agents?: AgentPaths; checkLogins?: boolean; discoverForges?: boolean; detectRuntime?: () => Promise<Settings["servicesRuntime"]>; admin?: (script: string) => Promise<void>; notify?: (notification: Pick<Notification, "kind" | "title" | "body">) => void };
+export type EngineOptions = { home: string; templates: string; downloads?: string; development?: boolean; agents?: AgentPaths; checkLogins?: boolean; discoverForges?: boolean; discoverTrackers?: boolean; detectRuntime?: () => Promise<Settings["servicesRuntime"]>; admin?: (script: string) => Promise<void>; notify?: (notification: Pick<Notification, "kind" | "title" | "body">) => void };
 
 export class EngineStartError extends Error {
   constructor(readonly errors: DefinitionError[]) {
@@ -95,6 +96,7 @@ export class Engine extends EventEmitter {
   setupDone: Promise<void> = Promise.resolve();
   private modelSetupDone: Promise<void> = Promise.resolve();
   private readonly discovering = new Set<AccountDiscovery>();
+  private readonly discoveries = new Map<AccountDiscovery, Promise<unknown>>();
   private setupHarnesses: SetupView["harnesses"] = BuiltInHarness.options.map((connector) => ({ connector, installed: false, version: null, loggedIn: false }));
   globalPause = false;
   private readonly loginRunner = new LoginRunner((p) => this.live({ type: "login.progress", ...p }));
@@ -148,7 +150,9 @@ export class Engine extends EventEmitter {
     this.modelSetupDone = this.setupModels(BuiltInHarness.options).catch((error: unknown) => console.error("model setup:", error));
     const forgeSetup: Promise<void> = this.opts.discoverForges
       ? this.setupForges().catch((error: unknown) => console.error("forge setup:", error)) : Promise.resolve();
-    this.setupDone = Promise.all([this.modelSetupDone, forgeSetup]).then(() => undefined);
+    const trackerSetup: Promise<void> = this.opts.discoverTrackers
+      ? this.setupTrackers().catch((error: unknown) => console.error("tracker setup:", error)) : Promise.resolve();
+    this.setupDone = Promise.all([this.modelSetupDone, forgeSetup, trackerSetup]).then(() => undefined);
     if (this.opts.detectRuntime && this.settings.servicesRuntime === null) {
       this.runtimeDetection = this.detectServicesRuntime(this.opts.detectRuntime).catch((error: unknown) => console.error("services runtime detection:", error));
     }
@@ -247,17 +251,32 @@ export class Engine extends EventEmitter {
     return [...this.discovering];
   }
 
+  async discoverAccounts(): Promise<void> {
+    if (this.shuttingDown) return;
+    await Promise.all([this.setupForges(false), this.setupTrackers(false)]);
+  }
+
   private async discoverAccount<T>(provider: AccountDiscovery, work: () => Promise<T>): Promise<T | undefined> {
-    this.discovering.add(provider);
-    this.live({ type: "accounts.discovery_changed" });
-    try {
-      return await work();
-    } catch (error) {
-      console.error(`Discovering ${provider} accounts:`, error);
-      return undefined;
-    } finally {
-      this.discovering.delete(provider);
+    const running = this.discoveries.get(provider);
+    if (running) return running.then((value) => value as T | undefined);
+    const run: Promise<T | undefined> = (async () => {
+      this.discovering.add(provider);
       this.live({ type: "accounts.discovery_changed" });
+      try {
+        return await work();
+      } catch (error) {
+        console.error(`Discovering ${provider} accounts:`, error);
+        return undefined;
+      } finally {
+        this.discovering.delete(provider);
+        this.live({ type: "accounts.discovery_changed" });
+      }
+    })();
+    this.discoveries.set(provider, run);
+    try {
+      return await run;
+    } finally {
+      if (this.discoveries.get(provider) === run) this.discoveries.delete(provider);
     }
   }
 
@@ -290,7 +309,7 @@ export class Engine extends EventEmitter {
     });
   }
 
-  private async setupForges(): Promise<void> {
+  private async setupForges(notify: boolean = true): Promise<void> {
     const counts: (number | undefined)[] = await Promise.all(ForgeDiscovery.options.map((forge) => this.discoverAccount(forge, async () => {
       const logins = await discoverForgeAccounts(forge);
       if (!logins.length || this.shuttingDown) return 0;
@@ -305,7 +324,31 @@ export class Engine extends EventEmitter {
       });
     })));
     const added: number = counts.reduce<number>((sum, count) => sum + (count ?? 0), 0);
-    if (added) this.notify({ kind: "auto-setup", title: `${appName} setup`, body: `Added ${added} Git hosting ${added === 1 ? "account" : "accounts"}.` });
+    if (notify && added) this.notify({ kind: "auto-setup", title: `${appName} setup`, body: `Added ${added} Git hosting ${added === 1 ? "account" : "accounts"}.` });
+  }
+
+  private async setupTrackers(notify: boolean = true): Promise<void> {
+    const counts: (number | undefined)[] = await Promise.all(TrackerDiscovery.options.map((tracker) => this.discoverAccount(tracker, async () => {
+      const server: TrackerBridge = tracker === "jira" ? "atlassian" : "linear";
+      const existing = this.accounts.accounts.find((account): account is ServiceAccount => account.kind === "service" && account.tool === server);
+      if (this.shuttingDown) return 0;
+      if (!await hasTrackerTokens(server)) return 0;
+      try {
+        const id: string = existing?.id ?? this.trackerAccountId(server);
+        const options = { timeoutMs: trackerTimeoutMs };
+        const site: string | null = server === "atlassian" ? await atlassianSite(id, options) : null;
+        if (server === "atlassian" && !site) return 0;
+        await checkTrackerBridge(id, server, options);
+        const user: string | null = await trackerIdentity(id, server, options).catch(() => null);
+        await this.saveService(id, server, site, user);
+        return existing ? 0 : 1;
+      } catch (error) {
+        if (error instanceof TrackerMcpAuthError || error instanceof TrackerMcpUnavailableError) return 0;
+        throw error;
+      }
+    })));
+    const added: number = counts.reduce<number>((sum, count) => sum + (count ?? 0), 0);
+    if (notify && added) this.notify({ kind: "auto-setup", title: `${appName} setup`, body: `Added ${added} tracker ${added === 1 ? "account" : "accounts"}.` });
   }
 
   private async detectServicesRuntime(detect: () => Promise<Settings["servicesRuntime"]>): Promise<void> {
@@ -486,9 +529,11 @@ export class Engine extends EventEmitter {
     if (a.kind === "service") {
       if ((a.tool !== "atlassian" && a.tool !== "linear") || this.loginRunner.isActive(`tool:${id}`)) return "unknown";
       try {
-        const site: string | null = a.tool === "atlassian" ? await atlassianSite(id) : null;
-        if (a.tool !== "atlassian") await checkTrackerBridge(id, a.tool);
-        const user: string | null = await trackerIdentity(id, a.tool).catch(() => null);
+        const options = { timeoutMs: trackerTimeoutMs };
+        const site: string | null = a.tool === "atlassian" ? await atlassianSite(id, options) : null;
+        if (a.tool === "atlassian" && !site) return "logged_out";
+        if (a.tool !== "atlassian") await checkTrackerBridge(id, a.tool, options);
+        const user: string | null = await trackerIdentity(id, a.tool, options).catch(() => null);
         await this.saveService(id, a.tool, site, user);
         await this.releaseAuth(id, null);
         return "logged_in";
@@ -528,19 +573,28 @@ export class Engine extends EventEmitter {
     await this.reloadGlobal();
   }
 
-  async startTrackerLogin(server: TrackerBridge): Promise<string> {
+  private trackerAccountId(server: TrackerBridge): string {
     const existing = this.accounts.accounts.find((account): account is ServiceAccount => account.kind === "service" && account.tool === server);
-    let id: string = existing?.id ?? server;
-    if (!existing) {
-      const taken = new Set(this.accounts.accounts.map((account) => account.id));
-      for (let suffix = 2; taken.has(id); suffix++) id = `${server}-${suffix}`;
-    }
+    if (existing) return existing.id;
+    let id: string = server;
+    const taken = new Set(this.accounts.accounts.map((account) => account.id));
+    for (let suffix = 2; taken.has(id); suffix++) id = `${server}-${suffix}`;
+    return id;
+  }
+
+  private async finishTrackerLogin(id: string, server: TrackerBridge): Promise<void> {
+    const site: string | null = server === "atlassian" ? await atlassianSite(id) : null;
+    if (server === "atlassian" && !site) throw new Error("The Atlassian account cannot access a Jira site.");
+    const user: string | null = await trackerIdentity(id, server).catch(() => null);
+    await this.saveService(id, server, site, user);
+    await this.releaseAuth(id, null);
+  }
+
+  async startTrackerLogin(server: TrackerBridge): Promise<string> {
+    const id: string = this.trackerAccountId(server);
     const loginId: string = `tool:${id}`;
     await this.loginRunner.trackerBridge(loginId, id, server, async () => {
-      const site: string | null = server === "atlassian" ? await atlassianSite(id) : null;
-      const user: string | null = await trackerIdentity(id, server).catch(() => null);
-      await this.saveService(id, server, site, user);
-      await this.releaseAuth(id, null);
+      await this.finishTrackerLogin(id, server);
     });
     return loginId;
   }
@@ -551,10 +605,7 @@ export class Engine extends EventEmitter {
       const loginId: string = `tool:${id}`;
       const server: TrackerBridge = a.tool;
       await this.loginRunner.trackerBridge(loginId, id, server, async () => {
-        const site: string | null = server === "atlassian" ? await atlassianSite(id) : null;
-        const user: string | null = await trackerIdentity(id, server).catch(() => null);
-        await this.saveService(id, server, site, user);
-        await this.releaseAuth(id, null);
+        await this.finishTrackerLogin(id, server);
       });
       return loginId;
     }
@@ -674,6 +725,7 @@ export class Engine extends EventEmitter {
       setupEnded: (state) => this.setupEnded(id, state),
       forgeAccount: (accountId) => this.accounts.accounts.find((a): a is ForgeAccount => a.kind === "forge" && a.id === accountId),
       serviceAccount: (accountId) => this.accounts.accounts.find((a): a is Extract<Account, { kind: "service" }> => a.kind === "service" && a.id === accountId),
+      serviceAccounts: () => this.accounts.accounts.filter((a): a is Extract<Account, { kind: "service" }> => a.kind === "service"),
       agentCard: (agentId) => this.catalogAgent(agentId),
       agentContext: (agentId) => this.agentContext(agentId),
       openTrackerRun: (...args) => this.agentChats.openTrackerRun(...args),

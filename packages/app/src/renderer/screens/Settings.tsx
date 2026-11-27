@@ -28,7 +28,7 @@ type Snapshot<T> = { value: T; sha256: string };
 type LoginProgress = Extract<LiveMessage, { type: "login.progress" }>;
 type Progress = { lines: string[]; url: string | null; done: boolean };
 type ExtraAccountRow = { key: string; name: string; detail?: ReactNode; state: string; checking?: boolean; actions?: ReactNode; children?: ReactNode };
-type RowOverride = { detail?: ReactNode; state?: string };
+type RowOverride = { detail?: ReactNode; state?: string; badge?: ReactNode };
 
 const sections: { id: string; title: string }[] = [
   { id: "you", title: "You" },
@@ -105,7 +105,7 @@ function ComingSoonTools() {
   </ul>;
 }
 
-function AccountRow({ name, detail, state, checking, actions, color, muted, children }: { name: string; detail?: ReactNode; state: string; checking: boolean; actions: ReactNode; color?: string; muted?: boolean; children?: ReactNode }) {
+function AccountRow({ name, detail, state, checking, badge, actions, color, muted, children }: { name: string; detail?: ReactNode; state: string; checking: boolean; badge?: ReactNode; actions: ReactNode; color?: string; muted?: boolean; children?: ReactNode }) {
   return <li className={[s.row, muted ? s.rowMuted : ""].join(" ")}>
     <div className={s.rowMain}>
       <span className={[s.avatar, color ? s.harnessAvatar : ""].join(" ")} style={color ? { "--harness": color } as CSSProperties : undefined} aria-hidden>{initials(name)}</span>
@@ -113,7 +113,7 @@ function AccountRow({ name, detail, state, checking, actions, color, muted, chil
         <span className={s.rowTitle}>{name}</span>
         {detail && <span className={s.rowDetail}>{detail}</span>}
       </div>
-      <div className={s.rowActions}>{actions}{stateBadge(state, checking)}</div>
+      <div className={s.rowActions}>{actions}{badge}{stateBadge(state, checking)}</div>
     </div>
     {children && <div className={s.rowExtra}>{children}</div>}
   </li>;
@@ -126,11 +126,11 @@ function DiscoveringProviders({ providers }: { providers: { id: string; name: st
   </ul>;
 }
 
-function LoginControls({ title, actions, children, accounts, protectedOnly = false, kind = "model", hideMissing = false, pendingLogin, onLoginStarted, onEdit, extra, rowOverrides, refresh, pendingTracker, onPendingDismiss }: {
+function LoginControls({ title, actions, children, accounts, protectedOnly = false, kind = "model", hideMissing = false, pendingLogin, onLoginStarted, onEdit, extra, rowOverrides, refresh, onStateChange, onLoginComplete, checkIds, autoCheckKinds = ["forge", "service"], pendingTracker, onPendingDismiss }: {
   title?: string; actions?: ReactNode; children?: ReactNode;
   accounts: Account[]; protectedOnly?: boolean; kind?: "model" | "tool"; hideMissing?: boolean;
   pendingLogin?: string; onLoginStarted?(): void; onEdit?(account: ForgeAccount): void; extra?: ExtraAccountRow[];
-  rowOverrides?: Record<string, RowOverride>; refresh?(): Promise<unknown> | void;
+  rowOverrides?: Record<string, RowOverride>; refresh?(): Promise<unknown> | void; onStateChange?(id: string, state: string): void; onLoginComplete?(id: string): void; checkIds?: string[]; autoCheckKinds?: ("forge" | "service")[];
   pendingTracker?: { account: ServiceAccount; loginId: string }; onPendingDismiss?(): void;
 }) {
   const connected: boolean = useConnected();
@@ -151,7 +151,10 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
     for (const [account, loginId] of Object.entries(toolRuns)) {
       if (!progress[loginId]?.done || checkedRuns.current.has(loginId)) continue;
       checkedRuns.current.add(loginId);
-      void call("recheckAccount", { params: { id: account } }).then(({ state }) => setToolStates((old) => ({ ...old, [account]: state })), () => undefined);
+      void call("recheckAccount", { params: { id: account } }).then(({ state }) => {
+        setToolStates((old) => ({ ...old, [account]: state }));
+        onStateChange?.(account, state);
+      }, () => undefined).finally(() => onLoginComplete?.(account));
     }
   }, [progress, toolRuns]);
   useLive((message): void => {
@@ -201,6 +204,7 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
       } else {
         const { state } = await call("recheckAccount", { params: { id } });
         setToolStates((old) => ({ ...old, [id]: state }));
+        onStateChange?.(id, state);
       }
     } finally {
       setChecking((old) => { const next = new Set(old); next.delete(id); return next; });
@@ -217,7 +221,7 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
   useEffect(() => {
     if (!connected) return;
     const due: [string, boolean][] = [];
-    for (const account of visible) if (account.kind === "forge") due.push([account.id, false]);
+    for (const account of visible) if ((account.kind === "forge" && autoCheckKinds.includes("forge")) || (account.kind === "service" && autoCheckKinds.includes("service"))) due.push([account.id, false]);
     for (const login of modelLogins) if (login.state === "unchecked" && !loginRunning(login.id, login.running)) due.push([login.id, true]);
     for (const [id, isModel] of due) {
       if (autoChecked.current.has(id)) continue;
@@ -228,7 +232,10 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
   const locked: boolean = !connected || start.busy || startSetup.busy;
   const targets: [id: string, isModel: boolean][] = kind === "model"
     ? modelLogins.filter((login) => !loginRunning(login.id, login.running)).map((login) => [login.id, true])
-    : visible.filter(({ id }) => !loginRunning(toolRuns[id] ?? `tool:${id}`)).map(({ id }) => [id, false]);
+    : [
+      ...visible.filter(({ id }) => !loginRunning(toolRuns[id] ?? `tool:${id}`)).map(({ id }): [string, boolean] => [id, false]),
+      ...(checkIds ?? []).filter((id) => !visible.some((account) => account.id === id) && !loginRunning(toolRuns[id] ?? `tool:${id}`)).map((id): [string, boolean] => [id, false]),
+    ];
   const available: [string, boolean][] = targets.filter(([id]) => !checking.has(id));
   const checkPanel = useAction(async () => {
     await Promise.all([...available.map(([id, isModel]) => recheck.run(id, isModel)), ...(refresh ? [refresh()] : [])]);
@@ -241,7 +248,7 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
     {!!(visible.length || extra?.length || shownMissing.length || pendingTracker) && <ul className={s.rows}>
       {pendingTracker && (() => {
         const pendingProgress: Progress | undefined = progress[pendingTracker.loginId];
-        return <AccountRow key={`pending:${pendingTracker.loginId}`} name={pendingTracker.account.service} detail={pendingProgress?.done ? "Sign-in finished." : "Signing in…"}
+        return <AccountRow key={`pending:${pendingTracker.loginId}`} name={pendingTracker.account.tool === "atlassian" ? "Jira" : pendingTracker.account.service} detail={pendingProgress?.done ? "Sign-in finished." : "Signing in…"}
           state={pendingProgress?.done ? "logged_out" : "unchecked"} checking={!pendingProgress?.done}
           actions={pendingProgress?.done ? <Button size="sm" variant="ghost" onClick={onPendingDismiss}>Dismiss</Button> : null}>
           {pendingProgress && <LoginOutput id={pendingTracker.loginId} progress={pendingProgress} running={false} />}
@@ -280,7 +287,7 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
           detail={override?.detail ?? (account.kind === "forge"
             ? account.forge === "codecommit" ? `${account.host} · ${codeCommitProfile(account)}` : account.host
             : account.tool === "atlassian" ? account.site ?? "" : account.user)}
-          state={state} checking={checking.has(account.id)}
+          state={state} checking={checking.has(account.id)} badge={override?.badge}
           actions={<>
             {(account.tool === "gh" || account.tool === "glab" || account.tool === "atlassian" || account.tool === "linear") && state !== "logged_in" &&
               <Button size="sm" variant="primary" disabled={locked || busy} onClick={() => void start.run(account)}>Log in</Button>}
@@ -369,25 +376,6 @@ function ForgeAccountDialog({ account, onClose, onSave, taken }: { account?: For
   );
 }
 
-function TrackerAccountDialog({ accounts, busy, error, onClose, onAdd }: {
-  accounts: ServiceAccount[]; busy: boolean; error: string | null; onClose(): void; onAdd(account: ServiceAccount): void;
-}) {
-  const [selected, setSelected] = useState(accounts[0]?.id ?? "");
-  const account: ServiceAccount | undefined = accounts.find(({ id }) => id === selected) ?? accounts[0];
-  return <Dialog open onOpenChange={(open) => !open && !busy && onClose()} title="Add a tracker account"
-    description="Sign in through your browser. The account is added after a successful sign-in." width={420}
-    footer={<>
-      <Button disabled={busy} onClick={onClose}>Cancel</Button>
-      <Button variant="primary" loading={busy} disabled={busy || !account} onClick={() => account && onAdd(account)}>Add account</Button>
-    </>}>
-    {accounts.length
-      ? <Select label="Tracker" value={account?.id ?? ""} disabled={busy} onValueChange={(value) => value && setSelected(value)}
-          options={accounts.map((entry) => ({ value: entry.id, label: entry.tool === "atlassian" ? "Jira" : entry.service }))} />
-      : <p className={s.groupText}>All trackers are already added.</p>}
-    <ErrorText error={error} />
-  </Dialog>;
-}
-
 export function Settings() {
   const connected: boolean = useConnected();
   const { search } = useLocation();
@@ -399,24 +387,87 @@ export function Settings() {
   const [checks, setChecks] = useViewState<RouteResult<"checkPrerequisites"> | undefined>("settings.checks", undefined);
   const [disableDialog, setDisableDialog] = useState(false);
   const [forgeDialog, setForgeDialog] = useState<ForgeAccount | "new">();
-  const [trackerDialog, setTrackerDialog] = useState(false);
   const [pendingLogin, setPendingLogin] = useState<string>();
   const [trackerLogin, setTrackerLogin] = useState<{ account: ServiceAccount; loginId: string }>();
-  const trackerAccounts: ServiceAccount[] = (accounts.current?.accounts ?? []).filter((account): account is ServiceAccount => account.kind === "service");
+  const [trackerDone, setTrackerDone] = useState<string | null>(null);
+  const trackerChecked = useRef<string | null>(null);
+  const [accountStates, setAccountStates] = useState<Record<string, string>>({});
+  const [trackerShowUnavailable, setTrackerShowUnavailable] = useViewState("settings.trackersShowUnavailable", false);
+  const trackerAccounts: ServiceAccount[] = (accounts.current?.accounts ?? []).filter((account): account is ServiceAccount =>
+    account.kind === "service" && (account.tool === "atlassian" || account.tool === "linear"));
   const jiraAccount: ServiceAccount | undefined = trackerAccounts.find(({ tool }) => tool === "atlassian");
-  const trackerChoices: ServiceAccount[] = [atlassianAccount, linearAccount].filter((account) => !trackerAccounts.some(({ tool }) => tool === account.tool));
-  const trackerRows: Record<string, RowOverride> | undefined = jiraAccount && jira.data
-    ? { [jiraAccount.id]: { detail: jiraAccount.site ?? jira.data.site, state: "logged_in" } }
-    : undefined;
-  const addTracker = useAction(async (account: ServiceAccount) => {
-    const server: "atlassian" | "linear" = account.tool === "linear" ? "linear" : "atlassian";
+  const linearTracker: ServiceAccount | undefined = trackerAccounts.find(({ tool }) => tool === "linear");
+  const trackerForges: ForgeAccount[] = (accounts.current?.accounts ?? []).filter((account): account is ForgeAccount =>
+    account.kind === "forge" && (account.forge === "github" || account.forge === "gitlab"));
+  const jiraState: string | undefined = jiraAccount ? accountStates[jiraAccount.id] : undefined;
+  const jiraFallback: boolean = !!jiraAccount && !!jira.data && (jiraState === "logged_out" || jiraState === "unknown");
+  const visibleTrackers: Account[] = [...trackerForges, ...trackerAccounts.filter((account) => !(jiraFallback && account.id === jiraAccount?.id))];
+  const startTracker = useAction(async (server: "atlassian" | "linear") => {
+    const account: ServiceAccount = server === "atlassian" ? atlassianAccount : linearAccount;
     const result = await call("startTrackerLogin", { params: { server } });
+    trackerChecked.current = null;
+    setTrackerDone(null);
     setTrackerLogin({ account, loginId: result.loginId });
   });
+  useLive((message): void => {
+    if (message.type === "login.progress" && trackerLogin && message.loginId === trackerLogin.loginId && message.done) setTrackerDone(message.loginId);
+  }, [trackerLogin]);
   useEffect(() => {
-    if (!trackerLogin) return;
-    if (accounts.current?.accounts.some((account) => account.kind === "service" && account.tool === trackerLogin.account.tool)) setTrackerLogin(undefined);
-  }, [accounts.current, trackerLogin]);
+    if (!trackerLogin || trackerDone !== trackerLogin.loginId || trackerChecked.current === trackerLogin.loginId) return;
+    const account = accounts.current?.accounts.find((entry) => entry.kind === "service" && entry.tool === trackerLogin.account.tool);
+    if (!account) return;
+    trackerChecked.current = trackerLogin.loginId;
+    const id: string = account.id;
+    void call("recheckAccount", { params: { id } }).then(({ state }) => {
+      setAccountStates((old) => ({ ...old, [id]: state }));
+      if (state === "logged_in") {
+        trackerChecked.current = null;
+        setTrackerLogin(undefined);
+        setTrackerDone(null);
+        void call("discoverAccounts").catch(() => undefined);
+      }
+    }, () => undefined);
+  }, [accounts.current, trackerDone, trackerLogin]);
+  useEffect(() => {
+    if (!connected) return;
+    void call("discoverAccounts").catch(() => undefined);
+  }, [connected]);
+  const trackerRows: Record<string, RowOverride> = Object.fromEntries([
+    ...trackerForges.map((account) => [account.id, { detail: `${account.host} · From Git hosting`, ...(accountStates[account.id] ? { state: accountStates[account.id] } : {}) }]),
+    ...trackerAccounts.map((account) => [account.id, {
+      detail: account.tool === "atlassian" ? account.site ?? "" : account.user,
+      ...(accountStates[account.id] ? { state: accountStates[account.id] } : {}),
+      ...(accountStates[account.id] === "logged_in" ? { badge: <Badge tone="accent">MCP</Badge> } : {}),
+    }]),
+  ]);
+  const forgeRows: Record<string, RowOverride> = Object.fromEntries(trackerForges.flatMap((account) => accountStates[account.id] ? [[account.id, { state: accountStates[account.id] }]] : []));
+  const jiraCli = jira.data
+    ? { key: "jira-cli", name: "Jira", detail: `${jira.data.account.user} · ${jira.data.site}`, state: "logged_in",
+      actions: <Button size="sm" variant="primary" disabled={!connected || startTracker.busy || !!trackerLogin} onClick={() => void startTracker.run("atlassian")}>Connect MCP</Button> }
+    : undefined;
+  const extras: ExtraAccountRow[] = [
+    ...(jiraFallback || (!jiraAccount && jira.data) ? (jiraCli ? [jiraCli] : []) : []),
+    ...(!jiraAccount && !jira.data && trackerShowUnavailable ? [{
+      key: "jira-unavailable", name: "Jira", detail: "Log in with Jira or connect Atlassian MCP.", state: "logged_out",
+      actions: <Button size="sm" variant="primary" disabled={!connected || startTracker.busy || !!trackerLogin} onClick={() => void startTracker.run("atlassian")}>Log in</Button>,
+    }] : []),
+    ...(!linearTracker && trackerShowUnavailable ? [{
+      key: "linear-unavailable", name: "Linear", detail: "Log in with Linear to search and read issues.", state: "logged_out",
+      actions: <Button size="sm" variant="primary" disabled={!connected || startTracker.busy || !!trackerLogin} onClick={() => void startTracker.run("linear")}>Log in</Button>,
+    }] : []),
+    ...(!trackerForges.some(({ forge }) => forge === "github") && trackerShowUnavailable ? [{
+      key: "github-unavailable", name: "GitHub", detail: "Add or log in to GitHub in Git hosting.", state: "logged_out",
+    }] : []),
+    ...(!trackerForges.some(({ forge }) => forge === "gitlab") && trackerShowUnavailable ? [{
+      key: "gitlab-unavailable", name: "GitLab", detail: "Add or log in to GitLab in Git hosting.", state: "logged_out",
+    }] : []),
+  ];
+  const pendingTrackers = [
+    ...(discovery.data?.includes("jira") && !jiraAccount && !jira.data ? [{ id: "jira", name: "Jira" }] : []),
+    ...(discovery.data?.includes("linear") && !linearTracker ? [{ id: "linear", name: "Linear" }] : []),
+    ...(discovery.data?.includes("github") && !trackerForges.some(({ forge }) => forge === "github") ? [{ id: "github", name: "GitHub" }] : []),
+    ...(discovery.data?.includes("gitlab") && !trackerForges.some(({ forge }) => forge === "gitlab") ? [{ id: "gitlab", name: "GitLab" }] : []),
+  ];
   const sectionId = new URLSearchParams(search).get("section");
   const [showUnavailable, setShowUnavailable] = useViewState("settings.showUnavailable", false);
   const [active, setActive] = useViewState("settings.active", sections.find(({ id }) => id === sectionId)?.id ?? sections[0]!.id);
@@ -451,7 +502,7 @@ export function Settings() {
         {value && <Section id="you" title="You" description="How the Assistant and the Project Managers call you.">
           <TextField label="Your name" value={value.user.name ?? ""} disabled={!connected}            onValueChange={(name) => update({ ...value, user: { name: name.trim() ? name : null } })} />
         </Section>}
-        <Section id="accounts" title="Accounts" description={`The AI tools and the code hosting accounts ${appName} works with.`} plain>
+        <Section id="accounts" title="Accounts" description={`The AI tools, code hosting and tracker accounts ${appName} works with.`} plain>
           <ErrorText error={accounts.error ?? accounts.loadError ?? discovery.error} />
           <div className={s.groups}>
             <LoginControls title="AI tools" accounts={accounts.current?.accounts ?? []} hideMissing={!showUnavailable}
@@ -463,22 +514,28 @@ export function Settings() {
               {showUnavailable && <ComingSoonTools />}
             </LoginControls>
             <LoginControls title="Git hosting" accounts={accounts.current?.accounts.filter(({ kind }) => kind === "forge") ?? []} kind="tool" pendingLogin={pendingLogin}
-              onLoginStarted={() => setPendingLogin(undefined)} onEdit={setForgeDialog}
+              onLoginStarted={() => setPendingLogin(undefined)} onEdit={setForgeDialog} rowOverrides={forgeRows}
+              onStateChange={(id, state) => setAccountStates((old) => ({ ...old, [id]: state }))}
+              onLoginComplete={() => void call("discoverAccounts").catch(() => undefined)}
               actions={<Button size="sm" icon={<PlusIcon />} disabled={!connected || !accounts.value || accounts.saving} onClick={() => setForgeDialog("new")}>Add account</Button>}>
               {!accounts.current?.accounts.some(({ kind }) => kind === "forge") && !pendingForges.length && accounts.current && discovery.data &&
                 <p className={s.groupText}>Add an account, on a public service or on your own server, to push branches and open pull requests.</p>}
               <DiscoveringProviders providers={pendingForges} />
             </LoginControls>
-            <LoginControls title="Trackers" accounts={trackerAccounts} kind="tool" pendingTracker={trackerLogin}
-              onPendingDismiss={() => setTrackerLogin(undefined)} refresh={() => jira.reload()} rowOverrides={trackerRows}
-              extra={!jiraAccount && jira.data ? [{
-                key: "active-jira", name: "Jira", detail: `${jira.data.account.user} · ${jira.data.site}`, state: "logged_in",
-              }] : []}
-              actions={<Button size="sm" icon={<PlusIcon />} disabled={!connected || !accounts.value || accounts.saving || !trackerChoices.length}
-                onClick={() => setTrackerDialog(true)}>Add account</Button>}>
-              <ErrorText error={jira.error} />
-              {!trackerAccounts.length && !jira.data && accounts.current && !jira.loading &&
-                <p className={s.groupText}>Add an account to search and read tickets in Jira or Linear.</p>}
+            <LoginControls title="Trackers" accounts={visibleTrackers} kind="tool" pendingTracker={trackerLogin}
+              onPendingDismiss={() => { trackerChecked.current = null; setTrackerLogin(undefined); setTrackerDone(null); startTracker.clear(); }}
+              refresh={async () => { await call("discoverAccounts"); await jira.reload(); }}
+              onStateChange={(id, state) => setAccountStates((old) => ({ ...old, [id]: state }))}
+              onLoginComplete={() => void call("discoverAccounts").catch(() => undefined)}
+              autoCheckKinds={["service"]}
+              checkIds={jiraFallback && jiraAccount ? [jiraAccount.id] : []}
+              rowOverrides={trackerRows} extra={extras}
+              actions={<Button size="sm" icon={trackerShowUnavailable ? <EyeOffIcon /> : <EyeIcon />} aria-pressed={trackerShowUnavailable}
+                onClick={() => setTrackerShowUnavailable(!trackerShowUnavailable)}>{trackerShowUnavailable ? "Hide unavailable" : "Show unavailable"}</Button>}>
+              <ErrorText error={jira.error ?? startTracker.error} />
+              {!visibleTrackers.length && !extras.length && !pendingTrackers.length && accounts.current && discovery.data && !jira.loading &&
+                <p className={s.groupText}>No tracker accounts yet. Log in to GitHub, GitLab, Jira or Linear on this computer; they show up here on their own. Use Show unavailable to see every provider.</p>}
+              <DiscoveringProviders providers={pendingTrackers} />
             </LoginControls>
           </div>
         </Section>
@@ -491,9 +548,6 @@ export function Settings() {
             accounts.reload();
             return true;
           }} />}
-        {trackerDialog && <TrackerAccountDialog accounts={trackerChoices} busy={addTracker.busy} error={addTracker.error}
-          onClose={() => { setTrackerDialog(false); addTracker.clear(); }}
-          onAdd={(account) => { void addTracker.run(account).then((ok) => ok && setTrackerDialog(false)); }} />}
 
         <ErrorText error={settings.loadError} />
         {value && <>

@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { apiClient } from "@pecore/schemas";
 import type { LiveMessage } from "@pecore/schemas";
 import { apiProject } from "../../test/api-project";
@@ -45,6 +45,17 @@ describe("system routes", () => {
     await expect(call("accountOptions", { params: { id: "nope" }, query: {} })).rejects.toMatchObject({ status: 404 });
     expect(await call("listLogins")).toEqual([]);
     await close();
+  });
+
+  it("starts account discovery from the API", async () => {
+    const { engine, call, close } = await apiProject();
+    try {
+      const discover = vi.spyOn(engine, "discoverAccounts").mockResolvedValue();
+      expect(await call("discoverAccounts")).toEqual({ ok: true });
+      expect(discover).toHaveBeenCalledOnce();
+    } finally {
+      await close();
+    }
   });
 
   it("recheck of a forge account releases the job waiting with auth; a tool login streams progress", async () => {

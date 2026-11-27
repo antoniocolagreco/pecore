@@ -67,6 +67,179 @@ it("shows one Jira row with its site when the CLI login and the Jira account mat
   expect(within(trackers).queryByText("alice@example.test · first.atlassian.net")).toBeNull();
 });
 
+it("lists Git hosting and MCP tracker accounts once, with the MCP badge before the state badge", async () => {
+  const fallback = api.call.getMockImplementation()!;
+  const accounts: Accounts = Accounts.parse({ accounts: [
+    { id: "gh-ada", kind: "forge", forge: "github", tool: "gh", host: "github.com", user: "ada", author: { name: "", email: "" } },
+    { id: "glab-lin", kind: "forge", forge: "gitlab", tool: "glab", host: "gitlab.com", user: "lin", author: { name: "", email: "" } },
+    { id: "atlassian", kind: "service", service: "Atlassian", tool: "atlassian", user: "Atlassian account", site: "team.atlassian.net" },
+    { id: "linear", kind: "service", service: "Linear", tool: "linear", user: "alice@example.test @ workspace" },
+  ] });
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "getAccounts") return { value: accounts, sha256: "accounts-v1" };
+    if (route === "getActiveJira") return null;
+    if (route === "recheckAccount") return { state: "logged_in" };
+    return fallback(route);
+  });
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
+  const trackers = (await screen.findByRole("heading", { name: "Trackers" })).closest("section")!;
+  await within(trackers).findByText("GitHub · ada");
+  await waitFor(() => expect(api.call).toHaveBeenCalledWith("discoverAccounts"));
+  expect(within(trackers).getByText("GitLab · lin")).toBeTruthy();
+  expect(within(trackers).getByText("github.com · From Git hosting")).toBeTruthy();
+  expect(within(trackers).getByText("gitlab.com · From Git hosting")).toBeTruthy();
+  expect(within(trackers).queryByRole("button", { name: "Add account" })).toBeNull();
+  const jira: HTMLElement = within(trackers).getByText("Jira").closest("li")!;
+  await waitFor(() => expect(within(jira).getByText("Logged in")).toBeTruthy());
+  const mcp: HTMLElement = within(jira).getByText("MCP");
+  const state: HTMLElement = within(jira).getByText("Logged in");
+  expect(mcp.nextElementSibling).toBe(state);
+  expect(state.parentElement!.lastElementChild).toBe(state);
+  expect(within(within(trackers).getByText("Linear").closest("li")!).getByText("MCP")).toBeTruthy();
+  expect(within(jira).getByText("team.atlassian.net")).toBeTruthy();
+});
+
+it("persists Show unavailable in Trackers across visits", async () => {
+  const user = userEvent.setup();
+  const router = createMemoryRouter([
+    { path: "/settings", element: <Settings /> },
+    { path: "/elsewhere", element: <p>Elsewhere</p> },
+  ], { initialEntries: ["/settings?section=accounts"] });
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
+  const trackers = (await screen.findByRole("heading", { name: "Trackers" })).closest("section")!;
+  await user.click(within(trackers).getByRole("button", { name: "Show unavailable" }));
+  expect(await within(trackers).findByText("Log in with Jira or connect Atlassian MCP.")).toBeTruthy();
+  expect(within(trackers).getByText("Log in with Linear to search and read issues.")).toBeTruthy();
+  expect(within(trackers).getByText("Add or log in to GitHub in Git hosting.")).toBeTruthy();
+  expect(within(trackers).getByText("Add or log in to GitLab in Git hosting.")).toBeTruthy();
+
+  await act(() => router.navigate("/elsewhere"));
+  await act(() => router.navigate(-1));
+  const restored = (await screen.findByRole("heading", { name: "Trackers" })).closest("section")!;
+  expect(within(restored).getByRole("button", { name: "Hide unavailable" }).getAttribute("aria-pressed")).toBe("true");
+  expect(within(restored).getByText("Log in with Jira or connect Atlassian MCP.")).toBeTruthy();
+});
+
+it("replaces a pending provider row with the verified MCP account", async () => {
+  const fallback = api.call.getMockImplementation()!;
+  let accounts: Accounts = Accounts.parse({ accounts: [] });
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "getAccounts") return { value: accounts, sha256: String(accounts.accounts.length + 1) };
+    if (route === "getActiveJira") return null;
+    if (route === "startTrackerLogin") return { loginId: "tool:atlassian" };
+    if (route === "recheckAccount") return { state: "logged_in" };
+    if (route === "discoverAccounts") return { ok: true };
+    return fallback(route);
+  });
+  const user = userEvent.setup();
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
+  const trackers = (await screen.findByRole("heading", { name: "Trackers" })).closest("section")!;
+  await user.click(within(trackers).getByRole("button", { name: "Show unavailable" }));
+  const row: HTMLElement = (await within(trackers).findByText("Jira")).closest("li")!;
+  await user.click(within(row).getByRole("button", { name: "Log in" }));
+  await screen.findByText("Signing in…");
+
+  accounts = Accounts.parse({ accounts: [{
+    id: "atlassian", kind: "service", service: "Atlassian", tool: "atlassian", user: "alice", site: "team.atlassian.net",
+  }] });
+  act(() => {
+    for (const listener of [...api.listeners]) {
+      listener({ type: "login.progress", loginId: "tool:atlassian", text: "Connected to Atlassian.", url: null, done: true });
+      listener({ type: "configuration.changed", kind: "accounts" });
+    }
+  });
+  await waitFor(() => expect(screen.queryByText("Signing in…")).toBeNull());
+  await waitFor(() => expect(within(trackers).getByText("team.atlassian.net")).toBeTruthy());
+  await waitFor(() => expect(within(trackers).getByText("MCP")).toBeTruthy());
+});
+
+it("offers Connect MCP on the CLI Jira row and shows no MCP badge until MCP is active", async () => {
+  const fallback = api.call.getMockImplementation()!;
+  const accounts: Accounts = Accounts.parse({ accounts: [{
+    id: "atlassian", kind: "service", service: "Atlassian", tool: "atlassian", user: "Atlassian account", site: "first.atlassian.net",
+  }] });
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "getAccounts") return { value: accounts, sha256: "accounts-v1" };
+    if (route === "getActiveJira") return {
+      site: "first.atlassian.net", account: { id: "jira-login", kind: "service", service: "Jira", tool: "acli", user: "alice@example.test" },
+    };
+    if (route === "recheckAccount") return { state: "logged_out" };
+    if (route === "startTrackerLogin") return { loginId: "tool:atlassian" };
+    return fallback(route);
+  });
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
+  const user = userEvent.setup();
+  const trackers = (await screen.findByRole("heading", { name: "Trackers" })).closest("section")!;
+  await within(trackers).findByText("alice@example.test · first.atlassian.net");
+  expect(within(trackers).queryByText("MCP")).toBeNull();
+  api.call.mockClear();
+  await user.click(within(trackers).getByRole("button", { name: "Check" }));
+  await waitFor(() => expect(api.call).toHaveBeenCalledWith("recheckAccount", { params: { id: "atlassian" } }));
+  const checkedRow: HTMLElement = within(trackers).getByText("alice@example.test · first.atlassian.net").closest("li")!;
+  await user.click(within(checkedRow).getByRole("button", { name: "Connect MCP" }));
+  await waitFor(() => expect(api.call).toHaveBeenCalledWith("startTrackerLogin", { params: { server: "atlassian" } }));
+  expect(await screen.findByText("Signing in…")).toBeTruthy();
+  expect(within(trackers).queryByText("MCP")).toBeNull();
+});
+
+it("refreshes Trackers when a Git hosting login completes", async () => {
+  const fallback = api.call.getMockImplementation()!;
+  const accounts: Accounts = Accounts.parse({ accounts: [
+    { id: "gh-ada", kind: "forge", forge: "github", tool: "gh", host: "github.com", user: "ada", author: { name: "", email: "" } },
+  ] });
+  let loggedIn: boolean = false;
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "getAccounts") return { value: accounts, sha256: "accounts-v1" };
+    if (route === "getActiveJira") return null;
+    if (route === "recheckAccount") return { state: loggedIn ? "logged_in" : "logged_out" };
+    if (route === "startAccountLogin") return { loginId: "tool:gh-ada" };
+    return fallback(route);
+  });
+  const user = userEvent.setup();
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
+  const trackers = (await screen.findByRole("heading", { name: "Trackers" })).closest("section")!;
+  const forge = (await screen.findByRole("heading", { name: "Git hosting" })).closest("section")!;
+  await waitFor(() => expect(within(trackers).getByText("Logged out")).toBeTruthy());
+  await user.click(await within(forge).findByRole("button", { name: "Log in" }));
+  await waitFor(() => expect(api.call).toHaveBeenCalledWith("startAccountLogin", { params: { id: "gh-ada" } }));
+  loggedIn = true;
+  act(() => {
+    for (const listener of [...api.listeners]) {
+      listener({ type: "login.progress", loginId: "tool:gh-ada", text: "Login ended", url: null, done: true });
+    }
+  });
+  await waitFor(() => expect(within(trackers).getByText("Logged in")).toBeTruthy());
+});
+
+it("refreshes Git hosting when a Trackers login completes", async () => {
+  const fallback = api.call.getMockImplementation()!;
+  const accounts: Accounts = Accounts.parse({ accounts: [
+    { id: "gh-ada", kind: "forge", forge: "github", tool: "gh", host: "github.com", user: "ada", author: { name: "", email: "" } },
+  ] });
+  let loggedIn: boolean = false;
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "getAccounts") return { value: accounts, sha256: "accounts-v1" };
+    if (route === "getActiveJira") return null;
+    if (route === "recheckAccount") return { state: loggedIn ? "logged_in" : "logged_out" };
+    if (route === "startAccountLogin") return { loginId: "tool:gh-ada" };
+    return fallback(route);
+  });
+  const user = userEvent.setup();
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
+  const trackers = (await screen.findByRole("heading", { name: "Trackers" })).closest("section")!;
+  const forge = (await screen.findByRole("heading", { name: "Git hosting" })).closest("section")!;
+  await waitFor(() => expect(within(trackers).getByText("Logged out")).toBeTruthy());
+  await user.click(within(trackers).getByRole("button", { name: "Log in" }));
+  await waitFor(() => expect(api.call).toHaveBeenCalledWith("startAccountLogin", { params: { id: "gh-ada" } }));
+  loggedIn = true;
+  act(() => {
+    for (const listener of [...api.listeners]) {
+      listener({ type: "login.progress", loginId: "tool:gh-ada", text: "Login ended", url: null, done: true });
+    }
+  });
+  await waitFor(() => expect(within(forge).getByText("Logged in")).toBeTruthy());
+});
+
 it("finds a Jira CLI login with Trackers Check without reopening Settings", async () => {
   const fallback = api.call.getMockImplementation()!;
   let active: RouteResult<"getActiveJira"> = null;
@@ -99,6 +272,7 @@ beforeEach(() => {
     if (route === "getSettings") return { value: SettingsSchema.parse({}), sha256: "settings-v1" };
     if (route === "getAccounts") return { value: Accounts.parse({}), sha256: "accounts-v1" };
     if (route === "getAccountDiscovery") return [];
+    if (route === "discoverAccounts") return { ok: true };
     if (route === "getSetup") return { modelAccountWorks: false, harnesses: [
       { connector: "claude-code", installed: false, version: null, loggedIn: false },
       { connector: "codex", installed: false, version: null, loggedIn: false },
@@ -124,21 +298,22 @@ it("restores the Settings filter and scroll without jumping to the original sect
   render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   const viewport = () => screen.getByRole("heading", { name: "Settings", level: 1 }).closest<HTMLElement>(`.${ui.page}`)!;
   await screen.findByRole("heading", { name: "Appearance" });
-  await user.click(screen.getByRole("button", { name: "Show unavailable" }));
+  const aiTools: HTMLElement = screen.getByRole("heading", { name: "AI tools" }).closest("header")!;
+  await user.click(within(aiTools).getByRole("button", { name: "Show unavailable" }));
   viewport().scrollTop = 760;
   fireEvent.scroll(viewport());
 
   await act(() => router.navigate("/elsewhere"));
   await act(() => router.navigate(-1));
   await screen.findByRole("heading", { name: "Appearance" });
-  expect(screen.getByRole("button", { name: "Hide unavailable" }).getAttribute("aria-pressed")).toBe("true");
+  expect(within(screen.getByRole("heading", { name: "AI tools" }).closest("header")!).getByRole("button", { name: "Hide unavailable" }).getAttribute("aria-pressed")).toBe("true");
   expect(viewport().scrollTop).toBe(760);
 });
 
 it.each([
-  { id: "atlassian", name: "Jira", service: "Atlassian" },
-  { id: "linear", name: "Linear", service: "Linear" },
-])("starts a $name tracker sign-in from Add account without saving an account first", async ({ id, name, service }) => {
+  { id: "atlassian", name: "Jira" },
+  { id: "linear", name: "Linear" },
+])("starts a $name tracker sign-in from Show unavailable without saving an account first", async ({ id, name }) => {
   const fallback = api.call.getMockImplementation()!;
   api.call.mockImplementation(async (route: string) => {
     if (route === "startTrackerLogin") return { loginId: `tool:${id}` };
@@ -146,24 +321,17 @@ it.each([
   });
   render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
   const user = userEvent.setup();
-  const trackers: HTMLElement = (await screen.findByRole("heading", { name: "Trackers" })).closest("header")!;
-  const add: HTMLButtonElement = within(trackers).getByRole("button", { name: "Add account" });
-  await waitFor(() => expect(add.disabled).toBe(false));
-  await user.click(add);
-  const dialog = within(await screen.findByRole("dialog", { name: "Add a tracker account" }));
-  if (name !== "Jira") {
-    dialog.getByRole("combobox", { name: "Tracker" }).focus();
-    await user.keyboard("{ArrowDown}");
-    await user.click(await screen.findByRole("option", { name }));
-  }
-  await user.click(dialog.getByRole("button", { name: "Add account" }));
+  const trackers: HTMLElement = (await screen.findByRole("heading", { name: "Trackers" })).closest("section")!;
+  await user.click(within(trackers).getByRole("button", { name: "Show unavailable" }));
+  const row: HTMLElement = (await within(trackers).findByText(name)).closest("li")!;
+  await user.click(within(row).getByRole("button", { name: "Log in" }));
   await waitFor(() => expect(api.call).toHaveBeenCalledWith("startTrackerLogin", { params: { server: id } }));
   expect(api.call).not.toHaveBeenCalledWith("putAccounts", expect.anything());
-  expect(await screen.findByText(service)).toBeTruthy();
+  expect(await screen.findByText("Signing in…")).toBeTruthy();
   expect(screen.queryByLabelText("Login code")).toBeNull();
 });
 
-it("keeps the tracker dialog open when sign-in cannot start", async () => {
+it("shows a tracker sign-in error on the unavailable row", async () => {
   const fallback = api.call.getMockImplementation()!;
   api.call.mockImplementation(async (route: string) => {
     if (route === "startTrackerLogin") throw new Error("The tracker sign-in could not start.");
@@ -171,14 +339,12 @@ it("keeps the tracker dialog open when sign-in cannot start", async () => {
   });
   render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
   const user = userEvent.setup();
-  const trackers: HTMLElement = (await screen.findByRole("heading", { name: "Trackers" })).closest("header")!;
-  const add: HTMLButtonElement = within(trackers).getByRole("button", { name: "Add account" });
-  await waitFor(() => expect(add.disabled).toBe(false));
-  await user.click(add);
-  const dialog = within(await screen.findByRole("dialog", { name: "Add a tracker account" }));
-  await user.click(dialog.getByRole("button", { name: "Add account" }));
+  const trackers: HTMLElement = (await screen.findByRole("heading", { name: "Trackers" })).closest("section")!;
+  await user.click(within(trackers).getByRole("button", { name: "Show unavailable" }));
+  const row: HTMLElement = (await within(trackers).findByText("Jira")).closest("li")!;
+  await user.click(within(row).getByRole("button", { name: "Log in" }));
   await screen.findByText("The tracker sign-in could not start.");
-  expect(screen.getByRole("dialog", { name: "Add a tracker account" })).toBeTruthy();
+  expect(screen.queryByRole("dialog", { name: "Add a tracker account" })).toBeNull();
 });
 
 it("shows every supported AI tool without an account and logs in from its row", async () => {
@@ -200,10 +366,10 @@ it("shows every supported AI tool without an account and logs in from its row", 
   });
   const user = userEvent.setup();
   render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
-  await screen.findByRole("heading", { name: "AI tools" });
+  const aiTools: HTMLElement = (await screen.findByRole("heading", { name: "AI tools" })).closest("header")!;
   expect(screen.queryByText("Pi")).toBeNull();
 
-  await user.click(screen.getByRole("button", { name: "Show unavailable" }));
+  await user.click(within(aiTools).getByRole("button", { name: "Show unavailable" }));
   const claude: HTMLElement = (await screen.findByText("Claude Code")).closest("li")!;
   expect(within(claude).getByText("Not installed")).toBeTruthy();
   expect(within(claude).queryByRole("button", { name: "Log in" })).toBeNull();
@@ -215,9 +381,9 @@ it("shows every supported AI tool without an account and logs in from its row", 
   expect(within(opencode).queryByText("Logged in")).toBeNull();
   const pi: HTMLElement = screen.getByText("Pi").closest("li")!;
   expect(within(pi).getByText("No models")).toBeTruthy();
-  await user.click(screen.getByRole("button", { name: "Hide unavailable" }));
+  await user.click(within(aiTools).getByRole("button", { name: "Hide unavailable" }));
   expect(screen.queryByText("Pi")).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Show unavailable" }));
+  await user.click(within(aiTools).getByRole("button", { name: "Show unavailable" }));
 
   await user.click(within(screen.getByText("Pi").closest("li")!).getByRole("button", { name: "Log in" }));
   await waitFor(() => expect(api.call).toHaveBeenCalledWith("startSetupLogin", { params: { connector: "pi" } }));
@@ -252,7 +418,8 @@ it("keeps AI tool colours fixed and puts the state badge last", async () => {
   });
   const user = userEvent.setup();
   render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
-  await user.click(await screen.findByRole("button", { name: "Show unavailable" }));
+  const aiTools: HTMLElement = (await screen.findByRole("heading", { name: "AI tools" })).closest("header")!;
+  await user.click(within(aiTools).getByRole("button", { name: "Show unavailable" }));
   const codex: HTMLElement = (await screen.findByText("Codex")).closest("li")!;
   expect(within(codex).queryByRole("button", { name: "Colour" })).toBeNull();
   expect((codex.querySelector("span[aria-hidden]") as HTMLElement).style.getPropertyValue("--harness")).toBe("#EEF1F2");
@@ -348,8 +515,11 @@ it("checks only the accounts in the selected panel and keeps Check out of accoun
   api.call.mockClear();
   await user.click(trackerCheck);
   expect(api.call.mock.calls.filter(([route]) => route.startsWith("recheck"))).toEqual([
+    ["recheckAccount", { params: { id: "github" } }],
+    ["recheckAccount", { params: { id: "gitlab" } }],
     ["recheckAccount", { params: { id: "atlassian" } }],
   ]);
+  expect(api.call.mock.calls.some(([route]) => route === "discoverAccounts")).toBe(true);
 });
 
 it("shows checking only in the pending provider rows and keeps other settings usable", async () => {
@@ -365,12 +535,13 @@ it("shows checking only in the pending provider rows and keeps other settings us
   });
   render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
   expect(await screen.findByRole("textbox", { name: "Your name" })).toBeTruthy();
-  const pendingRows = await screen.findAllByRole("list", { name: "Checking for accounts" });
-  expect(within(pendingRows[0]!).getByText("Claude Code")).toBeTruthy();
-  expect(within(pendingRows[1]!).getByText("GitHub")).toBeTruthy();
-  expect(within(pendingRows[1]!).getByText("AWS CodeCommit")).toBeTruthy();
-  const forgeHeader: HTMLElement = screen.getByRole("heading", { name: "Git hosting" }).closest("header")!;
-  expect(within(forgeHeader).getByRole<HTMLButtonElement>("button", { name: "Add account" }).disabled).toBe(false);
+  const aiSection: HTMLElement = (await screen.findByRole("heading", { name: "AI tools" })).closest("section")!;
+  expect(within(aiSection).getByText("Claude Code")).toBeTruthy();
+  const forgeSection: HTMLElement = (await screen.findByRole("heading", { name: "Git hosting" })).closest("section")!;
+  const pendingForge = within(forgeSection).getByRole("list", { name: "Checking for accounts" });
+  expect(within(pendingForge).getByText("GitHub")).toBeTruthy();
+  expect(within(pendingForge).getByText("AWS CodeCommit")).toBeTruthy();
+  expect(within(forgeSection).getByRole<HTMLButtonElement>("button", { name: "Add account" }).disabled).toBe(false);
   expect(screen.queryByText(/No AI tools yet/)).toBeNull();
 
   pending = ["claude-code", "codecommit"];
@@ -381,9 +552,9 @@ it("shows checking only in the pending provider rows and keeps other settings us
       listener({ type: "accounts.discovery_changed" });
     }
   });
-  expect(await screen.findByText("GitHub · ada")).toBeTruthy();
-  await waitFor(() => expect(screen.queryByText("GitHub")).toBeNull());
-  expect(within(pendingRows[1]!).getByText("AWS CodeCommit")).toBeTruthy();
+  expect(await within(forgeSection).findByText("GitHub · ada")).toBeTruthy();
+  await waitFor(() => expect(within(forgeSection).queryByText("GitHub")).toBeNull());
+  expect(within(pendingForge).getByText("AWS CodeCommit")).toBeTruthy();
 });
 
 it("loads preferences and saves the updated name with its current revision", async () => {
@@ -460,6 +631,7 @@ it.each([
     if (route === "getSettings") return { value: SettingsSchema.parse({}), sha256: "settings-v1" };
     if (route === "getAccounts") return { value: accounts, sha256: hash };
     if (route === "getAccountDiscovery") return [];
+    if (route === "discoverAccounts") return { ok: true };
     if (route === "getStatus") return { homeFindings: [], globalPause: false, notifications: 0, interrupted: 0, version: "test" };
     if (route === "getForgeAccountDefaults") return {
       author: { name: "", email: "" },

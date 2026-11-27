@@ -2,6 +2,8 @@ import { ToolAuthError } from "../runners/forge-env";
 
 export type TrackerBridge = "atlassian" | "linear";
 
+export const trackerTimeoutMs = 10_000;
+
 export const trackerServers: Record<TrackerBridge, { name: string; url: string; authHost: string }> = {
   atlassian: { name: "Atlassian", url: "https://mcp.atlassian.com/v2/mcp", authHost: "auth.atlassian.com" },
   linear: { name: "Linear", url: "https://mcp.linear.app/mcp", authHost: "mcp.linear.app" },
