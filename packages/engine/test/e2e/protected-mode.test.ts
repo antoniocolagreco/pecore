@@ -87,17 +87,31 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
       await mkdir(p.adapters, { recursive: true, mode: 0o755 });
       await writeFile(join(p.adapters, "version"), "0.0.0-test\n", { mode: 0o644 });
 
-      await engine.setProtectedMode(true);
-      expect((await as(protectedUser, "id -un")).out).toBe(protectedUser);
-
       const testNode = Node.parse({
         name: "whoami-test", description: "writes the test user", kind: "command",
         command: ["/bin/sh", "-c", "id -un > who.txt"], outcomes: ["success"], changesFiles: true,
         outcomeRules: [{ exitCode: 0, outcome: "success" }], timeoutSec: 60,
       });
+      const testFolder: string = homePaths(home).test;
+      const normalId: string = await engine.nodeTests.run({ node: testNode, inputs: {}, sidecars: {} });
+      await until(() => engine.nodeTests.get(normalId).state === "completed");
+      expect(await readFile(join(testFolder, "who.txt"), "utf8")).toBe(`${appUser}\n`);
+      const slow = Node.parse({
+        name: "slow-test", description: "waits", kind: "command", command: ["/bin/sh", "-c", "sleep 30"],
+        outcomes: ["success"], changesFiles: false, outcomeRules: [{ exitCode: 0, outcome: "success" }], timeoutSec: 60,
+      });
+      const slowId: string = await engine.nodeTests.run({ node: slow, inputs: {}, sidecars: {} });
+      await until(() => engine.nodeTests.get(slowId).state === "running");
+
+      await engine.setProtectedMode(true);
+      expect((await as(protectedUser, "id -un")).out).toBe(protectedUser);
+      expect(await engine.nodeTests.activeView()).toBeNull();
+      expect(() => engine.nodeTests.get(slowId)).toThrow();
+      expect(await readFile(join(testFolder, "README.md"), "utf8")).toBe("Sample project\n");
+      await expect(readFile(join(testFolder, "who.txt"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
       const testId: string = await engine.nodeTests.run({ node: testNode, inputs: {}, sidecars: {} });
       await until(() => engine.nodeTests.get(testId).state === "completed");
-      const testFolder: string = homePaths(home).test;
       expect(await readFile(join(testFolder, "who.txt"), "utf8")).toBe(`${protectedUser}\n`);
       expect((await execFileP("stat", ["-c", "%U", join(testFolder, ".git", "config")])).stdout.trim()).toBe(protectedUser);
 

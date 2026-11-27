@@ -1037,6 +1037,7 @@ export class Engine extends EventEmitter {
         ctx.user = on ? protectedUser : appUser;
       }
     });
+    await this.nodeTests.reset();
   }
 
   private async protectedTraverse(remove = false): Promise<void> {

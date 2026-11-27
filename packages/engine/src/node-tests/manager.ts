@@ -542,15 +542,19 @@ export class NodeTestManager {
       return;
     }
     const user = this.opts.user();
-    if (user !== appUser) {
-      const result = await run({
-        user,
-        argv: ["/bin/sh", "-c", 'chmod -R u+rwX -- "$1" 2>/dev/null; find "$1" -mindepth 1 -delete', "sh", folder],
-        env: await baseEnv(user),
-        cwd: "/",
-      });
-      if (result.code !== 0) throw new Error(`the test folder's contents could not be removed: ${result.stderr.trim()}`);
+    try {
+      await rm(folder, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (user === appUser) throw error;
     }
+    const result = await run({
+      user,
+      argv: ["/bin/sh", "-c", 'chmod -R u+rwX -- "$1" 2>/dev/null; find "$1" -mindepth 1 -delete', "sh", folder],
+      env: await baseEnv(user),
+      cwd: "/",
+    });
+    if (result.code !== 0) throw new Error(`the test folder's contents could not be removed: ${result.stderr.trim()}`);
     await rm(folder, { recursive: true, force: true });
   }
 
