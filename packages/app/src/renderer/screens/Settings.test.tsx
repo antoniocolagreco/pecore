@@ -506,6 +506,8 @@ it("shows checking only in the pending provider rows and keeps other settings us
   });
   render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
   expect(await screen.findByRole("textbox", { name: "Your name" })).toBeTruthy();
+  const aiSection: HTMLElement = (await screen.findByRole("heading", { name: "AI tools" })).closest("section")!;
+  expect(within(aiSection).getByText("Claude Code")).toBeTruthy();
   const forgeSection: HTMLElement = (await screen.findByRole("heading", { name: "Git hosting" })).closest("section")!;
   const pendingForge = within(forgeSection).getByRole("list", { name: "Checking for accounts" });
   expect(within(pendingForge).getByText("GitHub")).toBeTruthy();

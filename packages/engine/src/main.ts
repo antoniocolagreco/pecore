@@ -254,6 +254,7 @@ export class Engine extends EventEmitter {
   }
 
   async discoverAccounts(): Promise<void> {
+    if (this.shuttingDown) return;
     await Promise.all([this.setupForges(false), this.setupTrackers(false)]);
   }
 
@@ -332,6 +333,7 @@ export class Engine extends EventEmitter {
     const counts: (number | undefined)[] = await Promise.all(TrackerDiscovery.options.map((tracker) => this.discoverAccount(tracker, async () => {
       const server: TrackerBridge = tracker === "jira" ? "atlassian" : "linear";
       const existing = this.accounts.accounts.find((account): account is ServiceAccount => account.kind === "service" && account.tool === server);
+      if (this.shuttingDown) return 0;
       if (tracker === "jira") await activeJiraAccount().catch(() => null);
       if (this.shuttingDown || !await hasTrackerTokens(server)) return 0;
       try {
@@ -532,6 +534,7 @@ export class Engine extends EventEmitter {
       try {
         const options = { timeoutMs: trackerCheckTimeoutMs };
         const site: string | null = a.tool === "atlassian" ? await atlassianSite(id, options) : null;
+        if (a.tool === "atlassian" && !site) return "logged_out";
         if (a.tool !== "atlassian") await checkTrackerBridge(id, a.tool, options);
         const user: string | null = await trackerIdentity(id, a.tool, options).catch(() => null);
         await this.saveService(id, a.tool, site, user);
@@ -582,14 +585,19 @@ export class Engine extends EventEmitter {
     return id;
   }
 
+  private async finishTrackerLogin(id: string, server: TrackerBridge): Promise<void> {
+    const site: string | null = server === "atlassian" ? await atlassianSite(id) : null;
+    if (server === "atlassian" && !site) throw new Error("The Atlassian account cannot access a Jira site.");
+    const user: string | null = await trackerIdentity(id, server).catch(() => null);
+    await this.saveService(id, server, site, user);
+    await this.releaseAuth(id, null);
+  }
+
   async startTrackerLogin(server: TrackerBridge): Promise<string> {
     const id: string = this.trackerAccountId(server);
     const loginId: string = `tool:${id}`;
     await this.loginRunner.trackerBridge(loginId, id, server, async () => {
-      const site: string | null = server === "atlassian" ? await atlassianSite(id) : null;
-      const user: string | null = await trackerIdentity(id, server).catch(() => null);
-      await this.saveService(id, server, site, user);
-      await this.releaseAuth(id, null);
+      await this.finishTrackerLogin(id, server);
     });
     return loginId;
   }
@@ -600,10 +608,7 @@ export class Engine extends EventEmitter {
       const loginId: string = `tool:${id}`;
       const server: TrackerBridge = a.tool;
       await this.loginRunner.trackerBridge(loginId, id, server, async () => {
-        const site: string | null = server === "atlassian" ? await atlassianSite(id) : null;
-        const user: string | null = await trackerIdentity(id, server).catch(() => null);
-        await this.saveService(id, server, site, user);
-        await this.releaseAuth(id, null);
+        await this.finishTrackerLogin(id, server);
       });
       return loginId;
     }

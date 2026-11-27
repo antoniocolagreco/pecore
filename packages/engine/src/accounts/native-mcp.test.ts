@@ -8,6 +8,7 @@ import { atlassianAccount } from "@pecore/schemas";
 import { apiProject } from "../../test/api-project";
 import { tempDir } from "../../test/tmp";
 import { checkTrackerBridge, setBrowserOpener, setMcpHome, trackerBridgeTool, trackerIdentity } from "./native-mcp";
+import * as atlassian from "./atlassian";
 import * as forges from "./forges";
 import * as jira from "./jira";
 import { TrackerMcpAuthError, TrackerMcpUnavailableError, trackerServers } from "./tracker-mcp";
@@ -457,6 +458,31 @@ it("does not create a tracker account when sign-in fails", async () => {
     });
     await engine.startTrackerLogin("atlassian");
     await finished;
+    expect(engine.global().accounts.accounts.some((account) => account.id === "atlassian")).toBe(false);
+  } finally {
+    await close();
+  }
+});
+
+it("does not create a Jira account when the login cannot reach a Jira site", async () => {
+  const mock = await mockMcp();
+  trackerServers.atlassian.url = `${mock.base}/mcp`;
+  const { engine, close } = await apiProject();
+  try {
+    setBrowserOpener(() => undefined);
+    vi.spyOn(atlassian, "atlassianSite").mockResolvedValue(null);
+    const texts: string[] = [];
+    let done: () => void = () => undefined;
+    const finished = new Promise<void>((resolve) => { done = resolve; });
+    engine.on("live", (message) => {
+      if (message.type !== "login.progress") return;
+      if (message.url) void fetch(message.url);
+      texts.push(message.text);
+      if (message.done) done();
+    });
+    await engine.startTrackerLogin("atlassian");
+    await finished;
+    expect(texts.join("\n")).toContain("cannot access a Jira site");
     expect(engine.global().accounts.accounts.some((account) => account.id === "atlassian")).toBe(false);
   } finally {
     await close();

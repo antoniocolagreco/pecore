@@ -556,7 +556,7 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
       options.push({ value: account.id, label: `${account.service} · ${account.user}` });
     }
   }
-  if (agent && jira.data) options.push({ value: "active-jira", label: `Active Jira login · ${jira.data.site}` }, { value: jira.data.account.id, label: jira.data.account.user });
+  if (agent && jira.data) options.push({ value: "active-jira", label: `Jira (automatic) · ${jira.data.site}` }, { value: jira.data.account.id, label: jira.data.account.user });
   const selectedAccount: string = string(agent ? tracker.account : draft?.account);
   if (selectedAccount && !options.some(({ value }) => value === selectedAccount)) options.push({ value: selectedAccount, label: "Account unavailable" });
   const iface: HumanInterface | undefined = HumanInterface.safeParse(draft?.interface).data;

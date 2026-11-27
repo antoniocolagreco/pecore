@@ -414,9 +414,10 @@ export function Settings() {
   }, [trackerLogin]);
   useEffect(() => {
     if (!trackerLogin || trackerDone !== trackerLogin.loginId || trackerChecked.current === trackerLogin.loginId) return;
-    trackerChecked.current = trackerLogin.loginId;
     const account = accounts.current?.accounts.find((entry) => entry.kind === "service" && entry.tool === trackerLogin.account.tool);
-    const id: string = account?.id ?? trackerLogin.account.id;
+    if (!account) return;
+    trackerChecked.current = trackerLogin.loginId;
+    const id: string = account.id;
     void call("recheckAccount", { params: { id } }).then(({ state }) => {
       setAccountStates((old) => ({ ...old, [id]: state }));
       if (state === "logged_in") {
