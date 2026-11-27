@@ -48,13 +48,14 @@ async function copyEntry(from: string, to: string, name: string, directory: bool
 
 async function copyTemplates(ctx: Pick<ProjectContext, "project" | "defs">, dir: string): Promise<void> {
   const nodes: Set<string> = new Set(ctx.project.recipes === undefined ? ctx.defs.nodes.keys() : []);
+  nodes.delete("create-repo");
   for (const name of ctx.project.recipes ?? ctx.defs.recipes.keys()) {
     const recipe = ctx.defs.recipes.get(name);
     if (!recipe) throw new ShareConflict(`recipe template ${name} not found`);
     await writeFile(join(dir, "recipes", `${name}.json`), JSON.stringify(recipe, null, 2) + "\n");
     for (const { use } of Object.values(recipe.nodes)) nodes.add(use);
   }
-  if (ctx.project.createRepo) nodes.add(ctx.project.createRepo);
+  if (ctx.project.createRepo && ctx.project.createRepo !== "create-repo") nodes.add(ctx.project.createRepo);
   const bodies: Set<string> = new Set();
   for (const name of nodes) {
     const node = ctx.defs.nodes.get(name);

@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { ForgeAccount, JobDefinitions, RepositoryNode } from "@pecore/schemas";
+import type { ForgeAccount, ForgeOperation, JobDefinitions, RepositoryNode } from "@pecore/schemas";
 import { isForgeOperation } from "@pecore/schemas";
 import { loadNodeFile } from "../definitions/load";
 import { snapshotNode } from "../definitions/snapshot";
@@ -7,7 +7,7 @@ import type { ProjectContext } from "../graph/executor";
 import { loadForgeDefaults } from "../projects/defaults";
 import { credentialSettings, forgeEnv } from "./forge-env";
 
-export function repositoryAccount(ctx: ProjectContext, node: RepositoryNode): ForgeAccount {
+export function repositoryAccount(ctx: ProjectContext, node: Pick<RepositoryNode, "name" | "account" | "script">): ForgeAccount {
   const id: string | undefined = node.account === "project.account" || (!node.script && isForgeOperation(node.name))
     ? ctx.project.repo?.account
     : ctx.project.credentials?.[node.account] ?? node.account;
@@ -22,13 +22,24 @@ export async function repositoryDefinition(
   if (!isForgeOperation(node.name) || node.script) {
     return snapshotNode({ ...node, account: account.id }, ctx.defs.nodeDir, contents);
   }
+  return forgeOperationDefinition(ctx, node.name, account, node.description);
+}
+
+export function repositorySetupDefinition(ctx: ProjectContext): ReturnType<typeof forgeOperationDefinition> {
+  const account: ForgeAccount = repositoryAccount(ctx, { name: "create-repo", account: "project.account", script: "" });
+  return forgeOperationDefinition(ctx, "create-repo", account);
+}
+
+async function forgeOperationDefinition(
+  ctx: ProjectContext, name: ForgeOperation, account: ForgeAccount, description?: string,
+): Promise<JobDefinitions["nodes"][string] & { definition: RepositoryNode }> {
   const forge = await loadForgeDefaults(ctx.templates, account.forge);
-  const implementation: string | null = node.name === "open-pr" ? forge.delivery : forge.createRepo;
+  const implementation: string | null = name === "open-pr" ? forge.delivery : forge.createRepo;
   if (!implementation) throw new Error("This Git hosting provider requires an existing repository.");
   const dir: string = join(ctx.templates, "forges", "nodes");
   const { value } = await loadNodeFile(join(dir, implementation + ".json"));
   if (value?.kind !== "repository" || !value.script) throw new Error("This operation is unavailable for the project's Git hosting provider.");
-  return snapshotNode({ ...value, name: node.name, description: node.description, account: account.id }, dir);
+  return snapshotNode({ ...value, name, description: description ?? value.description, account: account.id }, dir);
 }
 
 export async function repositoryEnv(ctx: ProjectContext, account: ForgeAccount): Promise<Record<string, string>> {

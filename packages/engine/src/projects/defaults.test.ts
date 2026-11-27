@@ -6,7 +6,7 @@ import { shippedTemplates } from "../../test/tmp";
 import { listNodeTools } from "../chat/node-tools";
 import { loadTemplates } from "../definitions/load";
 import { prepareJob } from "../jobs/create";
-import { repositoryDefinition } from "../runners/repository";
+import { repositorySetupDefinition } from "../runners/repository";
 import { loadForgeDefaults } from "./defaults";
 
 const cases = [
@@ -39,15 +39,13 @@ describe("forge operations", () => {
         });
         expect(Object.keys(definitions.nodes["open-pr"]!.sidecars)).not.toHaveLength(0);
       }
-      const node = ctx.defs.nodes.get("create-repo");
-      if (node?.kind !== "repository") throw new Error("Expected Create Repo");
-      const setup = repositoryDefinition(ctx, node, account);
+      const setup = repositorySetupDefinition(ctx);
       if (create) await expect(setup).resolves.toMatchObject({ definition: { name: "create-repo", script: expect.stringContaining(create) } });
       else await expect(setup).rejects.toThrow("requires an existing repository");
       const tools = await listNodeTools(engine, "demo");
       const delivery = tools.find(({ name }) => name === "node_open-pr");
       expect(delivery?.inputSchema.required).toEqual(pullRequest ? ["inputs"] : []);
-      expect(tools.some(({ name }) => name === "node_create-repo")).toBe(Boolean(create));
+      expect(tools.some(({ name }) => name === "node_create-repo")).toBe(false);
       expect(tools.some(({ name }) => ["node_github-pr", "node_gitlab-mr", "node_git-delivery"].includes(name))).toBe(false);
     } finally {
       await close();
@@ -59,7 +57,7 @@ describe("forge operations", () => {
     expect(errors).toEqual([]);
     expect([...nodes.keys()].filter((name) => /^(?:github|gitlab)-|^git-delivery$/.test(name))).toEqual([]);
     expect(nodes.get("open-pr")).toMatchObject({ kind: "repository", script: "", account: "project.account" });
-    expect(nodes.get("create-repo")).toMatchObject({ kind: "repository", script: "", account: "project.account" });
+    expect(nodes.has("create-repo")).toBe(false);
     await expect(loadForgeDefaults(shippedTemplates, "bitbucket")).rejects.toThrow();
     expect((await loadForgeDefaults(shippedTemplates, "github")).credentialHelper).toBe("!gh auth git-credential");
   });

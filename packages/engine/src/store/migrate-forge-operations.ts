@@ -38,10 +38,7 @@ export function migrateForgeOperations(db: Database.Database, sql: string, proje
     if (project) db.prepare("UPDATE project_definition SET create_repo = ? WHERE create_repo = ?").run(replacement, name);
     catalog.delete("nodes", name);
   }
-  if (project) {
-    db.exec(sql);
-    if (db.prepare("SELECT 1 FROM project_definition WHERE create_repo = 'create-repo'").get()) builtins.add("create-repo");
-  }
+  if (project) db.exec(sql);
   for (const { name, shipped } of db.prepare<[], { name: string; shipped: number }>("SELECT name, shipped FROM catalog_recipes").all()) {
     const recipe: Recipe = catalog.recipe(name)!;
     if (!migrateForgeRecipe(recipe)) continue;

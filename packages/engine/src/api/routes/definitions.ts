@@ -150,6 +150,7 @@ export function definitionOperations(engine: Engine) {
   }
 
   async function definitionBytes(target: ReturnType<typeof location>): Promise<Buffer | null> {
+    if (target.kind === "node" && target.file === "create-repo.json") return null;
     if (target.kind === "project" && target.id) {
       const stored: Project | null = projectContext(engine, target.id).db.definition.read();
       return stored === null ? null : Buffer.from(JSON.stringify(stored, null, 2) + "\n");
@@ -478,6 +479,7 @@ export function definitionOperations(engine: Engine) {
 
   async function instantiate({ kind, name, project: id }: InstantiateBody): Promise<RouteOutput<"instantiate"> & { errors: DefinitionError[] }> {
     const { project, db } = projectContext(engine, id);
+    if (kind === "node" && name === "create-repo") throw new NotFoundError(`node template ${name} not found`);
     if (project.recipes !== undefined) {
       const path: string = `templates/recipes/${name}.json`;
       if (kind === "node") return { created: [], kept: [], errors: [{ file: `templates/nodes/${name}.json`, path: "", message: "Add the node to a recipe in Templates." }] };

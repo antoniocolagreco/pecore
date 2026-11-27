@@ -13,7 +13,14 @@ describe("definition routes", () => {
     const { engine, call, close } = await apiProject();
     const live: LiveMessage[] = [];
     engine.on("live", (m: LiveMessage) => live.push(m));
+    engine.catalog.saveNode(Node.parse({
+      kind: "repository", name: "create-repo", description: "Legacy setup template", account: "project.account",
+      outcomes: ["success"], outcomeRules: [{ exitCode: 0, outcome: "success" }],
+    }), true);
     const nodes = await call("listDefinitions", { query: { dir: "templates/nodes" } });
+    expect(nodes.some(({ path }) => path === "templates/nodes/create-repo.json")).toBe(false);
+    await expect(call("getDefinition", { params: { path: "templates/nodes/create-repo.json" } })).rejects.toMatchObject({ status: 404 });
+    await expect(call("instantiate", { body: { kind: "node", name: "create-repo", project: "demo" } })).rejects.toMatchObject({ status: 404 });
     expect(nodes.find((n) => n.path === "templates/nodes/human-review.json")).toMatchObject({ value: { kind: "human", interface: "code-review" }, errors: [] });
     expect(nodes.some((n) => n.path === "templates/nodes/git-commit.sh")).toBe(true);
     expect((await call("listDefinitions", { query: { dir: "projects/demo/recipes" } })).map((r) => r.path)).toEqual(["templates/recipes/reviewed.json"]);
