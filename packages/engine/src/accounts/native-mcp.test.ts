@@ -229,6 +229,9 @@ it("opens the browser for a Linear sign-in and combines user and workspace in th
   expect(await trackerIdentity("linear", "linear")).toBe("alice@example.test @ workspace-one");
   mock.control.workspace = "workspace-two";
   expect(await trackerIdentity("linear", "linear")).toBe("alice@example.test @ workspace-two");
+  opened.mockClear();
+  await trackerBridgeTool("linear", "linear", "list_issues", { limit: 1 });
+  expect(opened).not.toHaveBeenCalled();
 });
 
 it("refreshes an expired access token and preserves the session", async () => {
