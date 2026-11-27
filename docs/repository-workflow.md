@@ -24,13 +24,30 @@ Use `<type>/<short-description>` with lowercase words separated by hyphens. Incl
 
 ## Issues
 
-Write each issue in English with three sections:
+Write each issue in English. Use the template that matches its kind.
+
+### Fixes and bugs
+
+Use the labels `bug` and `flaky`. Three sections:
 
 - **Problem**: what the user sees or cannot do, with a concrete example.
 - **Solution**: numbered points describing the expected behaviour, not the implementation.
 - **Done when**: checks anyone can verify, including tests and docs to update.
 
-Keep one fact per line and use short, common words. Leave out causes, code paths and proposed fixes unless the solution depends on them. Keep the issue as one clean text: to correct it, rewrite the body instead of adding a comment. Use the labels `bug`, `enhancement`, `ui`, `engine` and `idea` as they apply.
+### Features
+
+Use `new feature` for a new capability. Six sections:
+
+- **Context**: why the feature exists, what the user does today and what is missing. Include one concrete user flow.
+- **Goal**: what the user can do after the change, in one or two sentences.
+- **Scope**: what is included.
+- **Out of scope**: what is deliberately excluded.
+- **Dependencies**: linked issues, or "None."
+- **Acceptance criteria**: checks anyone can verify.
+
+For a multi-step feature, create one issue per independently shippable step and list its prerequisites with `Depends on #...` in the Dependencies section. Mark preparatory work with `refactor`. Use `planner` only on the issues that implement the planner itself; preparatory, execution and integration issues do not carry it.
+
+Keep one fact per line and use short, common words. Leave out causes, code paths and proposed fixes unless the scope depends on them. Keep the issue as one clean text: to correct it, rewrite the body instead of adding a comment. Use the labels `bug`, `flaky`, `new feature`, `planner`, `refactor`, `ui`, `engine`, `documentation` and `idea` as they apply.
 
 ## Commits and pull requests
 
