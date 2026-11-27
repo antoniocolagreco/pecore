@@ -27,7 +27,7 @@ import s from "./Settings.module.css";
 type Snapshot<T> = { value: T; sha256: string };
 type LoginProgress = Extract<LiveMessage, { type: "login.progress" }>;
 type Progress = { lines: string[]; url: string | null; done: boolean };
-type ExtraAccountRow = { key: string; name: string; detail?: ReactNode; state: string; checking?: boolean; badge?: ReactNode; actions?: ReactNode; children?: ReactNode };
+type ExtraAccountRow = { key: string; name: string; detail?: ReactNode; state: string; checking?: boolean; actions?: ReactNode; children?: ReactNode };
 type RowOverride = { detail?: ReactNode; state?: string; badge?: ReactNode };
 
 const sections: { id: string; title: string }[] = [
@@ -126,11 +126,11 @@ function DiscoveringProviders({ providers }: { providers: { id: string; name: st
   </ul>;
 }
 
-function LoginControls({ title, actions, children, accounts, protectedOnly = false, kind = "model", hideMissing = false, pendingLogin, onLoginStarted, onEdit, extra, rowOverrides, refresh, onStateChange, onLoginComplete, checkIds, pendingTracker, onPendingDismiss }: {
+function LoginControls({ title, actions, children, accounts, protectedOnly = false, kind = "model", hideMissing = false, pendingLogin, onLoginStarted, onEdit, extra, rowOverrides, refresh, onStateChange, onLoginComplete, checkIds, autoCheckKinds = ["forge", "service"], pendingTracker, onPendingDismiss }: {
   title?: string; actions?: ReactNode; children?: ReactNode;
   accounts: Account[]; protectedOnly?: boolean; kind?: "model" | "tool"; hideMissing?: boolean;
   pendingLogin?: string; onLoginStarted?(): void; onEdit?(account: ForgeAccount): void; extra?: ExtraAccountRow[];
-  rowOverrides?: Record<string, RowOverride>; refresh?(): Promise<unknown> | void; onStateChange?(id: string, state: string): void; onLoginComplete?(id: string): void; checkIds?: string[];
+  rowOverrides?: Record<string, RowOverride>; refresh?(): Promise<unknown> | void; onStateChange?(id: string, state: string): void; onLoginComplete?(id: string): void; checkIds?: string[]; autoCheckKinds?: ("forge" | "service")[];
   pendingTracker?: { account: ServiceAccount; loginId: string }; onPendingDismiss?(): void;
 }) {
   const connected: boolean = useConnected();
@@ -221,7 +221,7 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
   useEffect(() => {
     if (!connected) return;
     const due: [string, boolean][] = [];
-    for (const account of visible) if (account.kind === "forge" || account.kind === "service") due.push([account.id, false]);
+    for (const account of visible) if ((account.kind === "forge" && autoCheckKinds.includes("forge")) || (account.kind === "service" && autoCheckKinds.includes("service"))) due.push([account.id, false]);
     for (const login of modelLogins) if (login.state === "unchecked" && !loginRunning(login.id, login.running)) due.push([login.id, true]);
     for (const [id, isModel] of due) {
       if (autoChecked.current.has(id)) continue;
@@ -315,7 +315,7 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
           {id && <LoginOutput id={id} progress={current} running={running} />}
         </AccountRow>;
       })}
-      {extra?.map((row) => <AccountRow key={row.key} name={row.name} detail={row.detail} state={row.state} checking={row.checking ?? false} badge={row.badge} actions={row.actions}>
+      {extra?.map((row) => <AccountRow key={row.key} name={row.name} detail={row.detail} state={row.state} checking={row.checking ?? false} actions={row.actions}>
         {row.children}
       </AccountRow>)}
     </ul>}
@@ -436,6 +436,7 @@ export function Settings() {
     ...trackerForges.map((account) => [account.id, { detail: `${account.host} · From Git hosting`, ...(accountStates[account.id] ? { state: accountStates[account.id] } : {}) }]),
     ...trackerAccounts.map((account) => [account.id, {
       detail: account.tool === "atlassian" ? account.site ?? "" : account.user,
+      ...(accountStates[account.id] ? { state: accountStates[account.id] } : {}),
       ...(accountStates[account.id] === "logged_in" ? { badge: <Badge tone="accent">MCP</Badge> } : {}),
     }]),
   ]);
@@ -526,6 +527,7 @@ export function Settings() {
               refresh={async () => { await call("discoverAccounts"); await jira.reload(); }}
               onStateChange={(id, state) => setAccountStates((old) => ({ ...old, [id]: state }))}
               onLoginComplete={() => void call("discoverAccounts").catch(() => undefined)}
+              autoCheckKinds={["service"]}
               checkIds={jiraFallback && jiraAccount ? [jiraAccount.id] : []}
               rowOverrides={trackerRows} extra={extras}
               actions={<Button size="sm" icon={trackerShowUnavailable ? <EyeOffIcon /> : <EyeIcon />} aria-pressed={trackerShowUnavailable}

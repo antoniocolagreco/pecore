@@ -19,8 +19,8 @@ import type { AgentPaths, LoginInfo } from "./accounts/agents";
 import { atlassianSite, checkTrackerBridge, hasTrackerTokens, setMcpHome, TrackerMcpAuthError, TrackerMcpUnavailableError, trackerIdentity } from "./accounts/atlassian";
 import { LoginRunner } from "./accounts/login";
 import type { TrackerBridge } from "./accounts/tracker-mcp";
+import { trackerTimeoutMs } from "./accounts/tracker-mcp";
 import { discoverForgeAccounts, forgeLoginUser, newForgeAccounts } from "./accounts/forges";
-import { activeJiraAccount } from "./accounts/jira";
 import { identityOk } from "./runners/forge-env";
 import { loadProject, validateGlobal } from "./definitions/load";
 import type { DefinitionError, Global } from "./definitions/load";
@@ -64,8 +64,6 @@ export class EngineStartError extends Error {
 }
 
 export class NotFoundError extends Error {}
-
-const trackerCheckTimeoutMs = 10_000;
 
 type LoadedProject = { ctx: ProjectContext; executor: JobExecutor; deleting?: boolean };
 
@@ -334,11 +332,10 @@ export class Engine extends EventEmitter {
       const server: TrackerBridge = tracker === "jira" ? "atlassian" : "linear";
       const existing = this.accounts.accounts.find((account): account is ServiceAccount => account.kind === "service" && account.tool === server);
       if (this.shuttingDown) return 0;
-      if (tracker === "jira") await activeJiraAccount().catch(() => null);
-      if (this.shuttingDown || !await hasTrackerTokens(server)) return 0;
+      if (!await hasTrackerTokens(server)) return 0;
       try {
         const id: string = existing?.id ?? this.trackerAccountId(server);
-        const options = { timeoutMs: trackerCheckTimeoutMs };
+        const options = { timeoutMs: trackerTimeoutMs };
         const site: string | null = server === "atlassian" ? await atlassianSite(id, options) : null;
         if (server === "atlassian" && !site) return 0;
         await checkTrackerBridge(id, server, options);
@@ -532,7 +529,7 @@ export class Engine extends EventEmitter {
     if (a.kind === "service") {
       if ((a.tool !== "atlassian" && a.tool !== "linear") || this.loginRunner.isActive(`tool:${id}`)) return "unknown";
       try {
-        const options = { timeoutMs: trackerCheckTimeoutMs };
+        const options = { timeoutMs: trackerTimeoutMs };
         const site: string | null = a.tool === "atlassian" ? await atlassianSite(id, options) : null;
         if (a.tool === "atlassian" && !site) return "logged_out";
         if (a.tool !== "atlassian") await checkTrackerBridge(id, a.tool, options);

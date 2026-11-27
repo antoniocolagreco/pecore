@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { AgentTracker, ForgeAccount } from "@pecore/schemas";
-import { trackerBridgeTool, trackerResourceList } from "../accounts/atlassian";
+import { siteHost, trackerBridgeTool, trackerResourceList } from "../accounts/atlassian";
+import { trackerTimeoutMs } from "../accounts/tracker-mcp";
 import { activeJiraAccount } from "../accounts/jira";
 import type { ProjectContext } from "../graph/executor";
 import { forgeEnv, ToolAuthError } from "../runners/forge-env";
@@ -40,15 +41,6 @@ const JiraSites = z.array(z.object({ id: text.optional(), cloudId: text.optional
     const id: string | undefined = resource.cloudId ?? resource.id;
     return id ? [{ id, url: resource.url }] : [];
   }));
-const trackerProbeTimeoutMs = 10_000;
-
-function jiraHost(value: string): string | null {
-  try {
-    return new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `https://${value}`).hostname.toLowerCase();
-  } catch {
-    return null;
-  }
-}
 
 function jiraTarget(args: ToolArgs): string | null {
   const link: URL | null = args.ticketId ? URL.parse(args.ticketId) : null;
@@ -56,27 +48,28 @@ function jiraTarget(args: ToolArgs): string | null {
 }
 
 function jiraSiteMatches(site: { id: string; url: string }, target: string): boolean {
-  return site.id === target || jiraHost(site.url) === jiraHost(target);
+  return site.id === target || siteHost(site.url) === siteHost(target);
 }
 
 async function automaticJira(ctx: TrackerContext, args: ToolArgs): Promise<Account> {
   const active = await activeJiraAccount();
+  const target: string | null = jiraTarget(args) ?? active?.site ?? null;
   const mcp = ctx.serviceAccounts?.().find((account) => account.tool === "atlassian") ?? ctx.serviceAccount?.("atlassian");
   if (!mcp) {
-    if (active) return { id: active.account.id, jira: active.site, user: active.account.user };
-    throw new Error("Choose an available tracker account in Settings → Accounts.");
+    if (!active) throw new Error("Choose an available tracker account in Settings → Accounts.");
+    if (target && siteHost(active.site) !== siteHost(target)) throw new Error("The active Jira CLI login cannot reach this Jira site. Choose another tracker account in Settings → Accounts.");
+    return { id: active.account.id, jira: active.site, user: active.account.user };
   }
-  const target: string | null = jiraTarget(args) ?? active?.site ?? null;
-  const sites = JiraSites.safeParse(trackerResourceList(await trackerBridgeTool(mcp.id, "atlassian", "getAccessibleAtlassianResources", {}, { timeoutMs: trackerProbeTimeoutMs }).catch(() => null))).data;
+  const sites = JiraSites.safeParse(trackerResourceList(await trackerBridgeTool(mcp.id, "atlassian", "getAccessibleAtlassianResources", {}, { timeoutMs: trackerTimeoutMs }).catch(() => null))).data;
   if (sites) {
     const match = target ? sites.find((site) => jiraSiteMatches(site, target)) : sites.length === 1 ? sites[0] : undefined;
     if (match) return { id: mcp.id, bridge: "atlassian", user: mcp.user, site: match.id };
-    if (target && !match && active && jiraHost(active.site) === jiraHost(target)) {
+    if (target && !match && active && siteHost(active.site) === siteHost(target)) {
       return { id: active.account.id, jira: active.site, user: active.account.user };
     }
     if (target && !match) throw new Error("The Atlassian MCP account cannot reach this Jira site. Choose another tracker account in Settings → Accounts.");
   }
-  if (active && (!target || jiraHost(active.site) === jiraHost(target))) {
+  if (active && (!target || siteHost(active.site) === siteHost(target))) {
     return { id: active.account.id, jira: active.site, user: active.account.user };
   }
   return { id: mcp.id, bridge: "atlassian", user: mcp.user };
@@ -238,10 +231,12 @@ async function bridgeTool(account: Extract<Account, { bridge: string }>, name: T
 }
 
 async function jiraCli(site: string, name: ToolName, args: ToolArgs): Promise<unknown> {
+  if (args.site && siteHost(args.site) !== siteHost(site)) throw new Error("The Jira CLI can only use the active Jira site. Choose an Atlassian MCP account to use another site.");
   const link: URL | null = args.ticketId ? URL.parse(args.ticketId) : null;
   if (link && (link.protocol !== "https:" || link.host !== site || !link.pathname.startsWith("/browse/"))) throw new Error("Use a ticket on the active Jira site.");
   const key: string = link ? link.pathname.slice("/browse/".length) : args.ticketId ?? "";
   if (name !== "search_tickets" && !/^[A-Z][A-Z0-9_]*-[1-9]\d*$/.test(key)) throw new Error("Use a Jira ticket key or link.");
+  if (name === "change_ticket_status" && /^\d+$/.test(args.status ?? "")) throw new Error("The Jira CLI needs a status name. Choose an Atlassian MCP account to use a transition ID.");
   let command: string[];
   if (name === "update_ticket_fields") {
     const fields = z.strictObject({

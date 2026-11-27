@@ -42,7 +42,7 @@ export async function hasTrackerTokens(server: TrackerBridge): Promise<boolean> 
   }
 }
 
-function siteHost(value: string): string | null {
+export function siteHost(value: string): string | null {
   try {
     return new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `https://${value}`).hostname.toLowerCase();
   } catch {

@@ -10,7 +10,6 @@ import { tempDir } from "../../test/tmp";
 import { checkTrackerBridge, setBrowserOpener, setMcpHome, trackerBridgeTool, trackerIdentity } from "./native-mcp";
 import * as atlassian from "./atlassian";
 import * as forges from "./forges";
-import * as jira from "./jira";
 import { TrackerMcpAuthError, TrackerMcpUnavailableError, trackerServers } from "./tracker-mcp";
 
 const original = { ...trackerServers.atlassian };
@@ -540,7 +539,6 @@ it("signs in again to an existing tracker account without changing its id", asyn
 
 it("discovers and refreshes a stored Atlassian MCP session without a browser", async () => {
   vi.spyOn(forges, "discoverForgeAccounts").mockResolvedValue([]);
-  vi.spyOn(jira, "activeJiraAccount").mockResolvedValue(null);
   const mock = await mockMcp();
   const { engine, close } = await apiProject();
   try {
@@ -566,7 +564,6 @@ it("discovers and refreshes a stored Atlassian MCP session without a browser", a
 
 it("discovers a stored Linear MCP session without a browser", async () => {
   vi.spyOn(forges, "discoverForgeAccounts").mockResolvedValue([]);
-  vi.spyOn(jira, "activeJiraAccount").mockResolvedValue(null);
   const mock = await mockMcp();
   const { engine, close } = await apiProject();
   try {
@@ -589,9 +586,33 @@ it("discovers a stored Linear MCP session without a browser", async () => {
   }
 });
 
+it("keeps an existing tracker account when discovery hits a transient failure", async () => {
+  vi.spyOn(forges, "discoverForgeAccounts").mockResolvedValue([]);
+  const mock = await mockMcp();
+  const { engine, close } = await apiProject();
+  try {
+    setBrowserOpener(() => undefined);
+    await login(mock, engine.opts.home);
+    const accounts = engine.global().accounts.accounts;
+    engine.configuration.write({ accounts: { accounts: [...accounts, { ...atlassianAccount, user: "Old identity", site: "old.atlassian.net" }] } });
+    await engine.reloadGlobal();
+    const tokenFile = join(engine.opts.home, "mcp", "atlassian", "tokens.json");
+    const tokens = JSON.parse(await readFile(tokenFile, "utf8")) as { access_token: string; refresh_token: string };
+    await writeFile(tokenFile, JSON.stringify({ ...tokens, access_token: "invalid-access" }, null, 2) + "\n", { mode: 0o600 });
+    mock.control.tokenMode = "503";
+    const opened = vi.fn();
+    setBrowserOpener(opened);
+    await engine.discoverAccounts();
+    expect(engine.global().accounts.accounts.find((account) => account.id === "atlassian"))
+      .toMatchObject({ user: "Old identity", site: "old.atlassian.net" });
+    expect(opened).not.toHaveBeenCalled();
+  } finally {
+    await close();
+  }
+});
+
 it("creates no tracker account when credentials are missing or revoked", async () => {
   vi.spyOn(forges, "discoverForgeAccounts").mockResolvedValue([]);
-  vi.spyOn(jira, "activeJiraAccount").mockResolvedValue(null);
   const mock = await mockMcp();
   const { engine, close } = await apiProject();
   try {

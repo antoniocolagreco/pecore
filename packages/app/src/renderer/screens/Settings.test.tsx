@@ -211,6 +211,35 @@ it("refreshes Trackers when a Git hosting login completes", async () => {
   await waitFor(() => expect(within(trackers).getByText("Logged in")).toBeTruthy());
 });
 
+it("refreshes Git hosting when a Trackers login completes", async () => {
+  const fallback = api.call.getMockImplementation()!;
+  const accounts: Accounts = Accounts.parse({ accounts: [
+    { id: "gh-ada", kind: "forge", forge: "github", tool: "gh", host: "github.com", user: "ada", author: { name: "", email: "" } },
+  ] });
+  let loggedIn: boolean = false;
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "getAccounts") return { value: accounts, sha256: "accounts-v1" };
+    if (route === "getActiveJira") return null;
+    if (route === "recheckAccount") return { state: loggedIn ? "logged_in" : "logged_out" };
+    if (route === "startAccountLogin") return { loginId: "tool:gh-ada" };
+    return fallback(route);
+  });
+  const user = userEvent.setup();
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
+  const trackers = (await screen.findByRole("heading", { name: "Trackers" })).closest("section")!;
+  const forge = (await screen.findByRole("heading", { name: "Git hosting" })).closest("section")!;
+  await waitFor(() => expect(within(trackers).getByText("Logged out")).toBeTruthy());
+  await user.click(within(trackers).getByRole("button", { name: "Log in" }));
+  await waitFor(() => expect(api.call).toHaveBeenCalledWith("startAccountLogin", { params: { id: "gh-ada" } }));
+  loggedIn = true;
+  act(() => {
+    for (const listener of [...api.listeners]) {
+      listener({ type: "login.progress", loginId: "tool:gh-ada", text: "Login ended", url: null, done: true });
+    }
+  });
+  await waitFor(() => expect(within(forge).getByText("Logged in")).toBeTruthy());
+});
+
 it("finds a Jira CLI login with Trackers Check without reopening Settings", async () => {
   const fallback = api.call.getMockImplementation()!;
   let active: RouteResult<"getActiveJira"> = null;
