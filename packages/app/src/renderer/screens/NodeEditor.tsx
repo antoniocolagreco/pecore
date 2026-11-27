@@ -2,7 +2,7 @@ import { cloneElement, useEffect, useImperativeHandle, useRef, useState } from "
 import type { ReactElement, ReactNode, Ref } from "react";
 import { Link, useBlocker, useNavigate, useParams } from "react-router";
 import { AgentSession, ApiError, ArtifactType, HumanInterface, humanInterfaces, isNodeKindTag, Name, Node, NodeOutputType } from "@pecore/schemas";
-import type { DefinitionFile, RouteResult } from "@pecore/schemas";
+import type { DefinitionFile, NodeTestView, RouteResult } from "@pecore/schemas";
 import { basicSetup, EditorView, minimalSetup } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
 import { lineNumbers } from "@codemirror/view";
@@ -21,9 +21,11 @@ import { errorText, useAction, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
 import { defaultDefinitionIcon, DefinitionIconField, useDefinitionIcons } from "../components/DefinitionIcon";
 import { restorePageScroll } from "../components/usePageScroll";
+import { useViewState } from "../components/useViewState";
 import { ErrorText, Page, ui } from "../components/ui";
 import { Button } from "../ds/button";
-import { Alert, Card } from "../ds/feedback";
+import { Tabs } from "../ds/data";
+import { Alert, Badge, Card } from "../ds/feedback";
 import { Checkbox, Chip, Chips } from "../ds/choice";
 import { TextArea, TextField } from "../ds/field";
 import { NumberField } from "../ds/values";
@@ -507,6 +509,8 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
   const icons = useDefinitionIcons();
   const [sidecarStatus, setSidecarStatus] = useState<SidecarStatus>();
   const [sidecarName, setSidecarName] = useState("");
+  const [tab, setTab] = useViewState<"edit" | "test">("node.tab", "edit");
+  const [testState, setTestState] = useState<NodeTestView["state"] | null>(null);
   const [newContextFile] = useState(() => newTemplate ? `node-context-${crypto.randomUUID()}.md` : "");
   const sidecar = useRef<SidecarHandle>(null);
   const sidecarDirty: boolean = sidecarStatus?.dirty ?? false;
@@ -633,113 +637,133 @@ function NodeFile({ path, newTemplate }: { path: string; newTemplate: boolean })
       {Array.isArray(draft?.mergedCheck) && <div><strong>Merge check</strong><pre>{JSON.stringify(draft.mergedCheck)}</pre></div>}
       <ErrorText error={approve.error} />
     </Dialog>}
-    {file.ready && builtin && <Card padded>
-      <div className={ui.stack}>
-        <p>Opens or updates a pull request on GitHub or a merge request on GitLab. On private Git and CodeCommit, it verifies the pushed branch.</p>
-        <p>Connect a repository and select a Git hosting account in Project Settings, then add a delivery recipe in Recipes.</p>
-        <div className={ui.row}>
-          <Link to="/settings?section=accounts">Git hosting settings</Link>
-          <Link to="/projects">Projects</Link>
-        </div>
-      </div>
-    </Card>}
-    {file.ready && !builtin && <Card padded>
-      {draft ? (
-        <fieldset className={s.fields} disabled={!editable}>
-          {creation ? <>
-            <TextField label="Name" required value={string(draft.name)} disabled={sidecarDirty}
-              labelAction={help("Name", "Recipes use this name to refer to the node template.")}
-              description="Lowercase letters, digits and hyphens. Start with a letter." onValueChange={(name) => update("name", name)} />
-            <Select label="Kind" labelAction={help("Kind", "Agent gives a task to an AI model. Command runs a program or script. Human pauses the job for a person to respond. Repository works with branches, pull requests or CI.")}
-              options={nodeKinds} value={kind || null} disabled={sidecarDirty} onValueChange={(value) => {
-              const next: Node["kind"] | undefined = nodeKinds.find((option) => option.value === value)?.value;
-              if (!next) return;
-              const { name, description, icon, params } = draft;
-              file.update(JSON.stringify({
-                name, description, icon, tags: descriptiveTags, params, kind: next, ...initialNodeFields[next],
-                ...(next === "agent" ? { prompt: newContextFile } : {}),
-              }, null, 2) + "\n");
-            }} />
-          </> : <TextField label="Kind" readOnly description="Chosen when the node was created."
-            value={nodeKinds.find((option) => option.value === kind)?.label ?? kind} />}
-          {human && <>
-            <Select label="Interface" options={interfaceOptions} value={iface ?? null}
-              description={iface ? humanInterfaces[iface].description : undefined}
-              labelAction={help("Interface", "Choose what the person uses to respond. Decision asks a question in Notifications. Code review shows the job's code changes. Report review shows what the nodes it reads produced.")}
-              onValueChange={(value) => {
-                const next = HumanInterface.safeParse(value);
-                if (next.success) updateFields(humanFields[next.data]);
-              }} />
-            {fieldErrors("interface")}
-          </>}
-          <div>
-            <TextArea label="Description" value={string(draft.description)} onValueChange={(value) => update("description", value)} />
-            {fieldErrors("description")}
-          </div>
-          {field("tags", "Tags (comma separated)", <TextField label="Tags" value={(file.dirty ? tags : descriptiveTags).join(",")}
-            onValueChange={(value) => update("tags", value === "" ? undefined : value.split(","))} />,
-          "Add terms people can search for, such as lint or deployment. The kind is already searchable.")}
-          <DefinitionIconField icons={icons.data} type="node" name={string(draft.name)} value={string(draft.icon)} disabled={!file.editable}
-            onChange={(value) => update("icon", value)} />
-          {kind && !human && field("timeoutSec", "Timeout (seconds)", <NumberField label="Timeout" fullWidth min={1} value={typeof draft.timeoutSec === "number" ? draft.timeoutSec : null} onValueChange={(value) => update("timeoutSec", value ?? undefined)} />,
-            "Set how long one attempt can run before PeCore stops it.")}
-          {(kind === "command" || remote) && <>
-            <CommandInputs inputs={draft.inputs} optional={draft.optionalInputs} disabled={!file.editable}
-              onChange={(inputs, optionalInputs) => updateFields({ inputs: inputs.length ? inputs : undefined, optionalInputs: optionalInputs.length ? optionalInputs : undefined })} />
-            <p className={ui.muted}>The recipe chooses where each input comes from. The script receives a JSON object on stdin with one key per input type, for example <code>jq '.spec'</code>.</p>
-            {fieldErrors("inputs")}{fieldErrors("optionalInputs")}
-          </>}
-          {kind && <>
-            {field("outcomes", iface === "decision" ? "Choices (comma separated)" : "Outcomes (comma separated)", <TextField label="Outcomes" value={Array.isArray(draft.outcomes) ? draft.outcomes.join(",") : ""} onValueChange={(value) => update("outcomes", value ? value.split(",").map((outcome) => outcome.trim()) : [])} />,
-              iface === "decision" ? "Each choice is a button in Notifications and an outcome you can connect in the recipe. For example, yes can continue to the next node and no can go to End."
-                : human ? "Reviews use approved, changes_requested and rejected. Connect each result to the next node or End."
-                  : "Use success and failure for ordinary results. Add a named outcome for a separate path. The command or agent must return one of these names.")}
-            <div>
-              <div className={s.fieldHeading}><span>{human ? "Notes" : "Outputs"}</span>{help(human ? "Notes" : "Outputs", human
-                ? "Choose which answers include feedback. Code review can send comments on individual lines with the feedback."
-                : <>A job is a chain of nodes. Each node does its work and ends with one of its outcomes, for example success or rejected. With each outcome it can hand a result to the nodes that come later, which use it to do their own work.<br /><br />For each outcome, choose what this node hands on, or Nothing. For example, the Spec Writer hands on a Spec when it accepts a request, so the Builder knows what to build, and Feedback with the reason when it rejects it, so you know why.<br /><br />The later nodes receive it only if, in the recipe, they read this node (Reads from).{typesHelp}</>)}</div>
-              <OutcomeOutputs kind={kind} humanInterface={iface} outcomes={outcomes} outputs={object(draft.outputs)} rules={object(draft.outputRules)} disabled={!file.editable}
-                onChange={(outputs, outputRules) => updateFields({
-                  outputs: Object.keys(outputs).length ? outputs : undefined,
-                  ...(kind === "command" || remote ? { outputRules: Object.keys(outputRules).length ? outputRules : undefined } : {}),
-                })} />
-              {fieldErrors("outputs")}{fieldErrors("outputRules")}
-            </div>
-            {!human && !remote && flag("changesFiles", "Can edit files", "Allow this node to edit the job's files. PeCore records those edits as a diff for the nodes that read it. If this is off, edits fail the step.")}
-          </>}
-          {kind === "agent" && <>
-            <AgentSessionField value={AgentSession.safeParse(draft.agentSession).data ?? "job"} disabled={!editable}
-              onChange={(value) => update("agentSession", value)} />
-            {fieldErrors("agentSession")}
-            <Select label="Tracker" value={trackerAccess} options={[
-              { value: "none", label: "None" }, { value: "read", label: "Read" }, { value: "read-write", label: "Read and write" },
-            ]} onValueChange={(access) => update("tracker", access === "none" || !access ? undefined : { access, account: tracker.account ?? "project.account" })} />
-            {trackerAccess !== "none" && <Select label="Tracker account" value={selectedAccount || null} options={options}
-              onValueChange={(account) => update("tracker", { access: trackerAccess, account: account ?? "" })} />}
-          </>}
-          {kind === "command" && <>
-            {!draft.script && <>{commandField("Command", draft.command, (command) => update("command", command))}{fieldErrors("command")}</>}
-            {!draft.command && textField("script", "Script name", "Enter the name of the saved .sh script. Choose either a command or a script.")}
-          </>}
-          {remote && <>
-            {check("readOnly", "Reads only", "Run this node from chat without asking for confirmation. Protected mode still requires script approval.",
-              draft.readOnly === true, (checked) => update("readOnly", checked ? true : undefined))}
-            <Select label="Account" value={string(draft.account) || null} options={options} onValueChange={(value) => update("account", value ?? undefined)} />
-            {fieldErrors("account", "Account")}
-            <div role="group" aria-label="Repository script">
-              <div className={s.fieldHeading}><span>Script</span></div>
-              <Sidecar content={string(draft.script)} disabled={!editable} change={(value) => update("script", value)} isMarkdown={false} />
-              {fieldErrors("script", "Script")}
-            </div>
-          </>}
-        </fieldset>
-      ) : <ErrorText error="Unable to read the node definition." />}
-      <DefinitionErrors errors={draft ? file.errors?.filter(({ path }) => !inlineKeys.includes(path.split(".")[0] ?? "")) : file.errors} />
-      {sidecarDirty && sidecarName !== validSidecar && <Alert tone="warning">Save the open file before switching.</Alert>}
-      {sidecarPath && <SidecarFile key={sidecarPath} ref={sidecar} path={sidecarPath} name={sidecarName} isMarkdown={sidecarName.endsWith(".md")}
-        disabled={!editable} onStatus={setSidecarStatus} />}
-    </Card>}
-    {file.ready && <NodeTestPanel node={testNode} sidecars={testSidecars} sidecarReady={testSidecarReady} disabled={!file.editable} />}
+    {file.ready && <Tabs
+      value={tab}
+      onValueChange={(value) => setTab(value === "test" ? "test" : "edit")}
+      keepMounted
+      tabs={[
+        {
+          value: "edit",
+          label: "Edit",
+          content: <>
+            {builtin && <Card padded>
+              <div className={ui.stack}>
+                <p>Opens or updates a pull request on GitHub or a merge request on GitLab. On private Git and CodeCommit, it verifies the pushed branch.</p>
+                <p>Connect a repository and select a Git hosting account in Project Settings, then add a delivery recipe in Recipes.</p>
+                <div className={ui.row}>
+                  <Link to="/settings?section=accounts">Git hosting settings</Link>
+                  <Link to="/projects">Projects</Link>
+                </div>
+              </div>
+            </Card>}
+            {!builtin && <Card padded>
+              {draft ? (
+                <fieldset className={s.fields} disabled={!editable}>
+                  {creation ? <>
+                    <TextField label="Name" required value={string(draft.name)} disabled={sidecarDirty}
+                      labelAction={help("Name", "Recipes use this name to refer to the node template.")}
+                      description="Lowercase letters, digits and hyphens. Start with a letter." onValueChange={(name) => update("name", name)} />
+                    <Select label="Kind" labelAction={help("Kind", "Agent gives a task to an AI model. Command runs a program or script. Human pauses the job for a person to respond. Repository works with branches, pull requests or CI.")}
+                      options={nodeKinds} value={kind || null} disabled={sidecarDirty} onValueChange={(value) => {
+                      const next: Node["kind"] | undefined = nodeKinds.find((option) => option.value === value)?.value;
+                      if (!next) return;
+                      const { name, description, icon, params } = draft;
+                      file.update(JSON.stringify({
+                        name, description, icon, tags: descriptiveTags, params, kind: next, ...initialNodeFields[next],
+                        ...(next === "agent" ? { prompt: newContextFile } : {}),
+                      }, null, 2) + "\n");
+                    }} />
+                  </> : <TextField label="Kind" readOnly description="Chosen when the node was created."
+                    value={nodeKinds.find((option) => option.value === kind)?.label ?? kind} />}
+                  {human && <>
+                    <Select label="Interface" options={interfaceOptions} value={iface ?? null}
+                      description={iface ? humanInterfaces[iface].description : undefined}
+                      labelAction={help("Interface", "Choose what the person uses to respond. Decision asks a question in Notifications. Code review shows the job's code changes. Report review shows what the nodes it reads produced.")}
+                      onValueChange={(value) => {
+                        const next = HumanInterface.safeParse(value);
+                        if (next.success) updateFields(humanFields[next.data]);
+                      }} />
+                    {fieldErrors("interface")}
+                  </>}
+                  <div>
+                    <TextArea label="Description" value={string(draft.description)} onValueChange={(value) => update("description", value)} />
+                    {fieldErrors("description")}
+                  </div>
+                  {field("tags", "Tags (comma separated)", <TextField label="Tags" value={(file.dirty ? tags : descriptiveTags).join(",")}
+                    onValueChange={(value) => update("tags", value === "" ? undefined : value.split(","))} />,
+                  "Add terms people can search for, such as lint or deployment. The kind is already searchable.")}
+                  <DefinitionIconField icons={icons.data} type="node" name={string(draft.name)} value={string(draft.icon)} disabled={!file.editable}
+                    onChange={(value) => update("icon", value)} />
+                  {kind && !human && field("timeoutSec", "Timeout (seconds)", <NumberField label="Timeout" fullWidth min={1} value={typeof draft.timeoutSec === "number" ? draft.timeoutSec : null} onValueChange={(value) => update("timeoutSec", value ?? undefined)} />,
+                    "Set how long one attempt can run before PeCore stops it.")}
+                  {(kind === "command" || remote) && <>
+                    <CommandInputs inputs={draft.inputs} optional={draft.optionalInputs} disabled={!file.editable}
+                      onChange={(inputs, optionalInputs) => updateFields({ inputs: inputs.length ? inputs : undefined, optionalInputs: optionalInputs.length ? optionalInputs : undefined })} />
+                    <p className={ui.muted}>The recipe chooses where each input comes from. The script receives a JSON object on stdin with one key per input type, for example <code>jq '.spec'</code>.</p>
+                    {fieldErrors("inputs")}{fieldErrors("optionalInputs")}
+                  </>}
+                  {kind && <>
+                    {field("outcomes", iface === "decision" ? "Choices (comma separated)" : "Outcomes (comma separated)", <TextField label="Outcomes" value={Array.isArray(draft.outcomes) ? draft.outcomes.join(",") : ""} onValueChange={(value) => update("outcomes", value ? value.split(",").map((outcome) => outcome.trim()) : [])} />,
+                      iface === "decision" ? "Each choice is a button in Notifications and an outcome you can connect in the recipe. For example, yes can continue to the next node and no can go to End."
+                        : human ? "Reviews use approved, changes_requested and rejected. Connect each result to the next node or End."
+                          : "Use success and failure for ordinary results. Add a named outcome for a separate path. The command or agent must return one of these names.")}
+                    <div>
+                      <div className={s.fieldHeading}><span>{human ? "Notes" : "Outputs"}</span>{help(human ? "Notes" : "Outputs", human
+                        ? "Choose which answers include feedback. Code review can send comments on individual lines with the feedback."
+                        : <>A job is a chain of nodes. Each node does its work and ends with one of its outcomes, for example success or rejected. With each outcome it can hand a result to the nodes that come later, which use it to do their own work.<br /><br />For each outcome, choose what this node hands on, or Nothing. For example, the Spec Writer hands on a Spec when it accepts a request, so the Builder knows what to build, and Feedback with the reason when it rejects it, so you know why.<br /><br />The later nodes receive it only if, in the recipe, they read this node (Reads from).{typesHelp}</>)}</div>
+                      <OutcomeOutputs kind={kind} humanInterface={iface} outcomes={outcomes} outputs={object(draft.outputs)} rules={object(draft.outputRules)} disabled={!file.editable}
+                        onChange={(outputs, outputRules) => updateFields({
+                          outputs: Object.keys(outputs).length ? outputs : undefined,
+                          ...(kind === "command" || remote ? { outputRules: Object.keys(outputRules).length ? outputRules : undefined } : {}),
+                        })} />
+                      {fieldErrors("outputs")}{fieldErrors("outputRules")}
+                    </div>
+                    {!human && !remote && flag("changesFiles", "Can edit files", "Allow this node to edit the job's files. PeCore records those edits as a diff for the nodes that read it. If this is off, edits fail the step.")}
+                  </>}
+                  {kind === "agent" && <>
+                    <AgentSessionField value={AgentSession.safeParse(draft.agentSession).data ?? "job"} disabled={!editable}
+                      onChange={(value) => update("agentSession", value)} />
+                    {fieldErrors("agentSession")}
+                    <Select label="Tracker" value={trackerAccess} options={[
+                      { value: "none", label: "None" }, { value: "read", label: "Read" }, { value: "read-write", label: "Read and write" },
+                    ]} onValueChange={(access) => update("tracker", access === "none" || !access ? undefined : { access, account: tracker.account ?? "project.account" })} />
+                    {trackerAccess !== "none" && <Select label="Tracker account" value={selectedAccount || null} options={options}
+                      onValueChange={(account) => update("tracker", { access: trackerAccess, account: account ?? "" })} />}
+                  </>}
+                  {kind === "command" && <>
+                    {!draft.script && <>{commandField("Command", draft.command, (command) => update("command", command))}{fieldErrors("command")}</>}
+                    {!draft.command && textField("script", "Script name", "Enter the name of the saved .sh script. Choose either a command or a script.")}
+                  </>}
+                  {remote && <>
+                    {check("readOnly", "Reads only", "Run this node from chat without asking for confirmation. Protected mode still requires script approval.",
+                      draft.readOnly === true, (checked) => update("readOnly", checked ? true : undefined))}
+                    <Select label="Account" value={string(draft.account) || null} options={options} onValueChange={(value) => update("account", value ?? undefined)} />
+                    {fieldErrors("account", "Account")}
+                    <div role="group" aria-label="Repository script">
+                      <div className={s.fieldHeading}><span>Script</span></div>
+                      <Sidecar content={string(draft.script)} disabled={!editable} change={(value) => update("script", value)} isMarkdown={false} />
+                      {fieldErrors("script", "Script")}
+                    </div>
+                  </>}
+                </fieldset>
+              ) : <ErrorText error="Unable to read the node definition." />}
+              <DefinitionErrors errors={draft ? file.errors?.filter(({ path }) => !inlineKeys.includes(path.split(".")[0] ?? "")) : file.errors} />
+              {sidecarDirty && sidecarName !== validSidecar && <Alert tone="warning">Save the open file before switching.</Alert>}
+              {sidecarPath && <SidecarFile key={sidecarPath} ref={sidecar} path={sidecarPath} name={sidecarName} isMarkdown={sidecarName.endsWith(".md")}
+                disabled={!editable} onStatus={setSidecarStatus} />}
+            </Card>}
+          </>,
+        },
+        {
+          value: "test",
+          label: <>Test {(testState === "running" || testState === "waiting") &&
+            <Badge dot pulse={testState === "running"} tone={testState === "running" ? "accent" : "warning"}>
+              {testState === "running" ? "Running" : "Waiting"}
+            </Badge>}</>,
+          content: <NodeTestPanel node={testNode} sidecars={testSidecars} sidecarReady={testSidecarReady} disabled={!file.editable} onStateChange={setTestState} />,
+        },
+      ]}
+    />}
     {warn}
   </Page>;
 }

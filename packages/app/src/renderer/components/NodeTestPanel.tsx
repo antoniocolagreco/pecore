@@ -39,11 +39,12 @@ function requiredTypes(node: Node): Set<ArtifactType> {
   return new Set(node.kind === "command" ? node.inputs : []);
 }
 
-export function NodeTestPanel({ node, sidecars, sidecarReady, disabled }: {
+export function NodeTestPanel({ node, sidecars, sidecarReady, disabled, onStateChange }: {
   node: Node | null;
   sidecars: Record<string, string>;
   sidecarReady: boolean;
   disabled: boolean;
+  onStateChange?: (state: NodeTestView["state"] | null) => void;
 }) {
   const connected: boolean = useConnected();
   const [values, setValues] = useState<Partial<Record<ArtifactType, string>>>({});
@@ -56,6 +57,9 @@ export function NodeTestPanel({ node, sidecars, sidecarReady, disabled }: {
   }, [active.data]);
   const view = useData<NodeTestView | null>(() => testId ? call("getNodeTest", { params: { id: testId } }) : Promise.resolve(null), [testId],
     (message) => message.type === "node_test.updated" && message.testId === testId);
+  useEffect(() => {
+    onStateChange?.(view.data?.state ?? null);
+  }, [view.data?.state, onStateChange]);
   useEffect(() => {
     if (view.error instanceof ApiError && view.error.status === 404) {
       setTestId(undefined);

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Node } from "@pecore/schemas";
 import type { RouteInput } from "@pecore/schemas";
@@ -32,14 +32,19 @@ it("shows where to configure Open PR instead of a disabled editor", async () => 
   ], { initialEntries: ["/edit/node/templates/nodes/open-pr.json"] });
   render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   expect(await screen.findByText(/Connect a repository and select a Git hosting account/)).toBeTruthy();
+  expect(screen.getByRole("tab", { name: "Edit" }).getAttribute("aria-selected")).toBe("true");
   expect(screen.getByRole<HTMLAnchorElement>("link", { name: "Git hosting settings" }).getAttribute("href")).toBe("/settings?section=accounts");
   expect(screen.queryByRole("textbox", { name: "Description" })).toBeNull();
   expect(screen.queryByRole("group", { name: "Repository script" })).toBeNull();
   expect(screen.queryByRole("combobox", { name: "Account" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
-  expect(screen.getByText(/Repository nodes change real remotes/)).toBeTruthy();
-  await userEvent.setup().click(screen.getByRole("link", { name: "Projects" }));
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("tab", { name: "Test" }));
+  const testPanel: HTMLElement = await screen.findByRole("tabpanel", { name: "Test" });
+  expect(within(testPanel).getByText(/Repository nodes change real remotes/)).toBeTruthy();
+  expect(within(testPanel).queryByRole("button", { name: "Run" })).toBeNull();
+  await user.click(screen.getByRole("tab", { name: "Edit" }));
+  await user.click(screen.getByRole("link", { name: "Projects" }));
   expect(await screen.findByRole("heading", { name: "Projects" })).toBeTruthy();
 });
 
@@ -219,6 +224,7 @@ it("checks a test input against its artifact type", async () => {
   const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: [`/edit/node/${path}`] });
   render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   const user = userEvent.setup();
+  await user.click(await screen.findByRole("tab", { name: "Test" }));
   const input: HTMLElement = await screen.findByRole("textbox", { name: "Spec input (required)" });
   const run: HTMLButtonElement = screen.getByRole<HTMLButtonElement>("button", { name: "Run" });
   expect(run.disabled).toBe(true);
@@ -264,13 +270,16 @@ it("hides a Human test question after the answer", async () => {
   const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: [`/edit/node/${path}`] });
   render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
   const user = userEvent.setup();
+  await user.click(await screen.findByRole("tab", { name: "Test" }));
   await user.click(await screen.findByRole("button", { name: "Run" }));
   expect(await screen.findByText("Continue?")).toBeTruthy();
   expect(await screen.findByText(/diff --git a\/a b\/a/)).toBeTruthy();
+  expect(await screen.findByRole("tab", { name: /Test Waiting/ })).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "yes" }));
   await waitFor(() => expect(screen.queryByText("Continue?")).toBeNull());
   expect(screen.queryByText(/diff --git a\/a b\/a/)).toBeNull();
   expect(screen.getByText("Completed")).toBeTruthy();
+  expect(await screen.findByRole("tab", { name: "Test" })).toBeTruthy();
 });
 
 it("shows a test that is running when the editor opens", async () => {
@@ -293,10 +302,78 @@ it("shows a test that is running when the editor opens", async () => {
   });
   const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: ["/edit/node/templates/nodes/read.json"] });
   render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
-  expect(await screen.findByText("Running")).toBeTruthy();
+  expect((await screen.findByRole("tab", { name: "Edit" })).getAttribute("aria-selected")).toBe("true");
+  expect(await screen.findByRole("tab", { name: /Test Running/ })).toBeTruthy();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("tab", { name: /Test Running/ }));
   const run: HTMLButtonElement = screen.getByRole<HTMLButtonElement>("button", { name: "Run" });
   expect(run.disabled).toBe(true);
   expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
+});
+
+it("keeps an unsaved edit when switching tabs and tests the draft", async () => {
+  const node: Node = Node.parse({
+    name: "read", description: "Read a file", kind: "command", command: ["/bin/cat", "hello.txt"],
+    changesFiles: false, timeoutSec: 30, outcomes: ["success"], outcomeRules: [{ exitCode: 0, outcome: "success" }],
+  });
+  const completed = {
+    id: "node-test-draft", state: "completed", outcome: "success", failureReason: null, outputs: [], diff: "", files: [],
+    question: null, error: null, startedAt: 1, endedAt: 2,
+  };
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "listDefinitions") return [];
+    if (route === "getDefinition") return { content: JSON.stringify(node), sha256: "node-v1" };
+    if (route === "validateDefinition") return { errors: [], warnings: [] };
+    if (route === "getActiveNodeTest") return null;
+    if (route === "getNodeTemplateUsage") return [];
+    if (route === "runNodeTest") return { id: "node-test-draft" };
+    if (route === "getNodeTest") return completed;
+    if (route === "getLog") return { view: "events", events: [] };
+    throw new Error(`Unexpected route ${route}`);
+  });
+  const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: ["/edit/node/templates/nodes/read.json"] });
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
+  const user = userEvent.setup();
+  const description: HTMLElement = await screen.findByRole("textbox", { name: "Description" });
+  await user.clear(description);
+  await user.type(description, "Unsaved description");
+  expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
+  await user.click(screen.getByRole("tab", { name: "Test" }));
+  await user.click(await screen.findByRole("button", { name: "Run" }));
+  await waitFor(() => {
+    const run: RouteInput<"runNodeTest"> = api.call.mock.calls.findLast(([route]) => route === "runNodeTest")?.[1];
+    expect(run.body.node).toMatchObject({ description: "Unsaved description" });
+  });
+  await user.click(screen.getByRole("tab", { name: "Edit" }));
+  expect((screen.getByRole("textbox", { name: "Description" }) as HTMLTextAreaElement).value).toBe("Unsaved description");
+});
+
+it("restores the selected tab on Back and Forward", async () => {
+  const node: Node = Node.parse({
+    name: "read", description: "Read a file", kind: "command", command: ["/bin/cat", "hello.txt"],
+    changesFiles: false, timeoutSec: 30, outcomes: ["success"], outcomeRules: [{ exitCode: 0, outcome: "success" }],
+  });
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "listDefinitions") return [];
+    if (route === "getDefinition") return { content: JSON.stringify(node), sha256: "node-v1" };
+    if (route === "validateDefinition") return { errors: [], warnings: [] };
+    if (route === "getActiveNodeTest") return null;
+    if (route === "getNodeTemplateUsage") return [];
+    throw new Error(`Unexpected route ${route}`);
+  });
+  const router = createMemoryRouter([
+    { path: "/", element: <h1>Factory</h1> },
+    { path: "/edit/node/*", element: <NodeEditor /> },
+  ]);
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
+  await act(() => router.navigate("/edit/node/templates/nodes/read.json"));
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("tab", { name: "Test" }));
+  expect(screen.getByRole("tab", { name: "Test" }).getAttribute("aria-selected")).toBe("true");
+  await act(() => router.navigate(-1));
+  await act(() => router.navigate(1));
+  expect(await screen.findByRole("tab", { name: "Test" })).toBeTruthy();
+  expect(screen.getByRole("tab", { name: "Test" }).getAttribute("aria-selected")).toBe("true");
 });
 
 it("edits the template's agent session and keeps the changesFiles field", async () => {

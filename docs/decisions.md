@@ -611,3 +611,9 @@
 - Decision: An optional flag on a recipe step lets the engine use that step's successful `node_run.completed` event and its SHA artifact to unblock child jobs. Shipped recipes set the flag. The editor shows it in advanced settings for steps that produce a SHA on success.
 - Why: A child can start from the parent's commit while the parent waits for review and merge. New users can run the shipped recipes without configuring the flag.
 - Replaces: Waiting for the parent job to reach `succeeded` before starting a child. See issue #66.
+
+## 2026-11-28: Node editor uses Edit and Test tabs
+
+- Decision: the node editor has two tabs. Edit, the default, holds the node fields and its prompt or script. Test holds the Test panel, keeps its state when the user switches away, and shows a Badge dot with Running or Waiting on its label while a test runs or waits. The selected tab is restored on Back and Forward. Repository nodes keep the Test tab with their explanation.
+- Why: the test panel no longer takes space below the editor fields, and a running test stays visible while the user edits.
+- Replaces: the Test panel stacked under the node fields.

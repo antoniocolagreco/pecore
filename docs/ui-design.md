@@ -108,7 +108,7 @@
 | IE3 | Node editor: fields by kind, prompt (Markdown), script (shell) | 3.1 |
 | IE4 | Templates, the shared catalog of nodes and recipes | G5 |
 | IE5 | "Ask the AI" from an editor | G5 |
-| IE6 | Test panel: inputs by artifact type, Run and Stop, Reset test folder, outcome, outputs, log and file changes; a Human node asks its question here | 3.1 |
+| IE6 | Test tab: inputs by artifact type, Run and Stop, Reset test folder, outcome, outputs, log and file changes; a Human node asks its question here | 3.1 |
 
 ### F. Projects
 
@@ -335,7 +335,7 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   Under the outcomes, Outputs has one row per outcome: a select of the seven node output types (Nothing by default). The engine generates Diff. No text under the field. The info icon of Outputs explains, for a user who knows nothing of the app, that a job is a chain of nodes, that each outcome can hand a result to later nodes, and that they receive it only through Reads from, with the Spec Writer as example. It then explains each type in a short paragraph: what it is, an example, who writes it and who uses it. The menus show only the names. The info icons of Required inputs and Optional inputs explain inputs with an example and show the same paragraphs. For a command, a row with an output also asks where to read it: Last line of the output, Field of JSON output or File in the workdir, and the name, field or path. For a Human node the rows are checkboxes, "<outcome>: the person can write a note".
 *   Every select in the app opens its menu below the field, or above it when there is no room below, so the whole list is visible; it does not cover the field.
 *   A command shows Required inputs and Optional inputs as chip groups of the eight artifact contracts. Selecting a type in one group removes it from the other. The help says the recipe selects each source and the script reads a JSON object on stdin, for example `jq '.spec'`. Agents get labelled inputs inline in their prompts. Human review loads them from the project database.
-*   The node fields and its prompt or script are in one card. Node Context uses the Knowledge Markdown editor. The app manages the prompt name. Scripts use the code editor. Both save in the template catalog.
+*   The editor has two tabs: Edit, the default, holds the node fields and its prompt or script in one card; Test holds the test panel. Switching tabs keeps unsaved changes. The selected tab is restored on Back and Forward. Node Context uses the Knowledge Markdown editor. The app manages the prompt name. Scripts use the code editor. Both save in the template catalog.
 *   Agent templates use Default Agent and expose Agent session. Job is the default. Node gives the agent a session for repeated runs of the same step within the job. New starts a fresh session on each run. Both editors explain all three options in the info popover. Can edit files controls whether a node may change the job's files.
 *   Creating and editing show the same fields. Description and Icon have no info popover. A command is one line written as in a terminal (`npx --no-install eslint .`, quotes around an argument with spaces); a command node shows Command or Script file, whichever it uses. Commands receive no Git hosting or tracker credentials from the app.
 *   Validation errors next to the field. Save is disabled while the draft is invalid. The draft lives in memory until saved or discarded; leaving the page with an unsaved draft asks first.
@@ -346,11 +346,11 @@ Cancel on Inputs discards the inputs; Cancel during Create undoes the tasks done
 *   Node cards and the node kind menu use Agent, Command, Human and Repository.
 *   Save in the page header writes the changed node fields and prompt or script.
 *   Saved changes affect new jobs. Existing jobs keep their saved definitions.
-*   A Test panel sits under the node fields for new and existing nodes. It runs the current editor content, saved or not, and notes that all tests share one folder and keep their changes until Reset. When a test is already running, the panel shows it, so it stays visible and stoppable after moving to another node.
+*   The Test tab, for new and existing nodes, runs the current editor content, saved or not, and notes that all tests share one folder and keep their changes until Reset. A running or waiting test shows a Badge dot with Running or Waiting on the tab, so it stays visible from Edit. When a test is already running, the panel shows it, so it stays visible and stoppable after moving to another node.
 *   The panel lists the node's inputs with their artifact types. A Command shows its required and optional inputs; Agent and Human nodes offer all artifact types. Each input accepts only a value of its type and a JSON type shows its error under the field. A Command's required inputs block Run until filled.
 *   Run and Stop sit together. Run is disabled while a test runs or waits, when an input is invalid, or when the prompt or script is empty. Reset test folder sits in the panel header and needs no confirmation: it stops the test, restores the sample project and drops the shown result.
 *   The panel shows the outcome and failure reason, the output artifacts, the file changes with their diff, and the attempt log. A waiting Human node shows its inputs, its question and one button per outcome, plus a note field when that outcome takes a note. A waiting Agent shows its question and a free-text answer. Agent nodes with tracker access fail with a message instead of running without their tracker tools.
-*   Repository nodes show no Run button. The panel says they change real remotes and are not tested here.
+*   Repository nodes keep the Test tab but show no Run button. It says they change real remotes and are not tested here.
 
 ### Templates
 

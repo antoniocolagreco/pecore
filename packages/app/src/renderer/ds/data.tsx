@@ -3,13 +3,14 @@ import type { ReactNode } from "react";
 import s from "./data.module.css";
 
 export function Tabs({
-  tabs, value, defaultValue, onValueChange, fill,
+  tabs, value, defaultValue, onValueChange, fill, keepMounted,
 }: {
   tabs: { value: string; label: ReactNode; content: ReactNode }[];
   value?: string;
   defaultValue?: string;
   onValueChange?: (value: string) => void;
   fill?: boolean;
+  keepMounted?: boolean;
 }) {
   return (
     <BaseTabs.Root value={value} defaultValue={defaultValue ?? tabs[0]?.value} onValueChange={(v) => onValueChange?.(v as string)} className={fill ? s.tabsFill : undefined}>
@@ -20,7 +21,7 @@ export function Tabs({
         <BaseTabs.Indicator className={s.tabIndicator} />
       </BaseTabs.List>
       {tabs.map((t) => (
-        <BaseTabs.Panel key={t.value} value={t.value} className={s.tabPanel}>{t.content}</BaseTabs.Panel>
+        <BaseTabs.Panel key={t.value} value={t.value} className={s.tabPanel} keepMounted={keepMounted}>{t.content}</BaseTabs.Panel>
       ))}
     </BaseTabs.Root>
   );
