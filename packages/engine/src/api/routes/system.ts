@@ -40,6 +40,7 @@ export function systemHandlers(engine: Engine) {
       return { author: CommitAuthor.safeParse(git).data ?? { name: git.name, email: "" }, codeCommit };
     },
     startLogin: async ({ body }) => ({ loginId: await conflictOn(() => engine.startLogin(body.account, body.osUser)) }),
+    startTrackerLogin: async ({ params }) => ({ loginId: await conflictOn(() => engine.startTrackerLogin(params.server)) }),
     loginCode: async ({ params, body }) => {
       await conflictOn(async () => engine.sendLoginCode(params.id, body.code));
       return { ok: true };

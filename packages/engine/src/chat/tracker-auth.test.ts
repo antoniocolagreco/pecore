@@ -59,6 +59,11 @@ it("uses Jira from chat, confirms writes and rejects an approval after the accou
       ctx.serviceAccount = (id) => id === linearAccount.id ? linearAccount : undefined;
       ctx.project = { ...ctx.project, tracker: { provider: "linear", account: linearAccount.id } };
       await expect(runApprovedNode(engine, approval)).rejects.toThrow("account or ticket target changed");
+      ctx.serviceAccount = (id) => id === atlassianAccount.id ? { ...atlassianAccount, user: "other@example.test" } : undefined;
+      ctx.project = { ...ctx.project, tracker: { provider: "jira", account: atlassianAccount.id } };
+      await expect(runApprovedNode(engine, approval)).rejects.toThrow("account or ticket target changed");
+      ctx.serviceAccount = (id) => id === linearAccount.id ? linearAccount : undefined;
+      ctx.project = { ...ctx.project, tracker: { provider: "linear", account: linearAccount.id } };
       await callProjectTracker(engine, "demo", "search_tickets", { query: "login" });
       expect(state.calls.at(-1)).toMatchObject({ name: "list_issues", args: { query: "login", limit: 30 } });
     } finally {

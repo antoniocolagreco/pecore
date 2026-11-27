@@ -475,7 +475,7 @@ An upgrade removes job history in the old format. Catalog migration removes gene
 #### 3.4 Accounts, profiles and tiers
 
 *   Auto-setup creates internal profiles and tiers. The Assistant card configures its chat. Each Project Manager uses the card picked in its project's PM tab. Agent nodes and PMs without a card choice use Default Agent.
-*   <PE/CORE> keeps no harness or forge secrets of its own. Each tool stores its login. The `accounts` table holds references. The tracker MCP client is the exception: it owns the Atlassian and Linear OAuth tokens, stored under `PECORE_HOME/mcp/<server>/` with directories `0700` and files `0600`. It never reads `~/.mcp-auth` or a harness MCP token.
+*   <PE/CORE> keeps no harness or forge secrets of its own. Each tool stores its login. The `accounts` table holds references. The tracker MCP client is the exception: it owns the Atlassian and Linear OAuth tokens, stored under `PECORE_HOME/mcp/<server>/` with directories `0700` and files `0600`. It never reads `~/.mcp-auth` or a harness MCP token. Accounts saved by `mcp-remote` are not migrated; the user signs in once after the switch.
 *   The `accounts` table has three kinds of account.
     *   `model`: provider, connector, login type (`subscription` or `api-key`, both configured inside the harness), the account's `email` (compared with the logged-in account, below), `maxParallel`.
     *   `forge`: forge type, host, tool (`gh`, `glab`, `aws`, `git`), the tool's account name (for example the `gh` login, the AWS profile), commit author.

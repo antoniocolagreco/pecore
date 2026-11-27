@@ -21,3 +21,9 @@ export class TrackerMcpAuthError extends ToolAuthError {
     super(account, `Sign in to ${trackerServers[server].name} in Settings → Accounts.`);
   }
 }
+
+export class TrackerMcpUnavailableError extends Error {
+  constructor(server: TrackerBridge = "atlassian", cause?: unknown) {
+    super(`The ${trackerServers[server].name} MCP server is temporarily unavailable.`, { cause });
+  }
+}

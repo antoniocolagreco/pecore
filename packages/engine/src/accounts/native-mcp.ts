@@ -9,8 +9,9 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { OAuthClientInformationMixed, OAuthClientMetadata, OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js";
+import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { z } from "zod";
-import { authRequired, TrackerMcpAuthError, trackerServers } from "./tracker-mcp";
+import { authRequired, TrackerMcpAuthError, TrackerMcpUnavailableError, trackerServers } from "./tracker-mcp";
 import type { BridgeOptions, TrackerBridge } from "./tracker-mcp";
 
 const Result = z.object({ content: z.array(z.object({ type: z.string(), text: z.string().optional() })).default([]), structuredContent: z.unknown().optional(), isError: z.boolean().optional() });
@@ -20,6 +21,11 @@ const Resources = z.object({
     products: z.array(z.object({ id: z.string() }).passthrough()).optional(),
   }).passthrough()).default([]),
 }).passthrough();
+
+const authCodes = new Set(["invalid_grant", "invalid_token", "unauthorized_client", "access_denied", "invalid_client"]);
+const transientCodes = new Set(["server_error", "temporarily_unavailable", "too_many_requests"]);
+
+type FetchState = { transient?: Error };
 
 let root: string = join(process.env.PECORE_HOME ?? join(homedir(), ".pecore"), "mcp");
 
@@ -54,6 +60,61 @@ async function writeJson(path: string, value: unknown): Promise<void> {
   await chmod(path, 0o600).catch(() => undefined);
 }
 
+function errorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object" || !("errorCode" in error)) return undefined;
+  const value = (error as { errorCode?: unknown }).errorCode;
+  return typeof value === "string" ? value : undefined;
+}
+
+function isAuthError(error: unknown): boolean {
+  if (error instanceof UnauthorizedError) return true;
+  const code = errorCode(error);
+  return code !== undefined && authCodes.has(code);
+}
+
+function isTransientError(error: unknown): boolean {
+  const code = errorCode(error);
+  if (code !== undefined && transientCodes.has(code)) return true;
+  return error instanceof Error && /timed out|did not respond|fetch failed|econn|enotfound|etimedout|network/i.test(error.message);
+}
+
+function isTokenRequest(init?: RequestInit): boolean {
+  if (init?.method?.toUpperCase() !== "POST") return false;
+  const body = init.body;
+  const text = typeof body === "string" ? body : body instanceof URLSearchParams ? body.toString() : "";
+  return /(?:^|&)grant_type=(?:refresh_token|authorization_code)(?:&|$)/.test(text);
+}
+
+function trackedFetch(state: FetchState): FetchLike {
+  return async (input, init) => {
+    const token = isTokenRequest(init);
+    try {
+      const response = await fetch(input, init);
+      if (token && (response.status >= 500 || response.status === 408 || response.status === 429)) {
+        state.transient = new Error(`The token endpoint returned HTTP ${response.status}.`);
+      }
+      return response;
+    } catch (error) {
+      if (token) state.transient = error instanceof Error ? error : new Error(String(error));
+      throw error;
+    }
+  };
+}
+
+function openBrowser(url: string): void {
+  const command: string | null = process.platform === "darwin" ? "open" : process.platform === "linux" ? "xdg-open" : null;
+  if (!command) return;
+  const child = spawn(command, [url], { stdio: "ignore", detached: true });
+  child.on("error", () => undefined);
+  child.unref();
+}
+
+let browserOpener: (url: string) => void = openBrowser;
+
+export function setBrowserOpener(opener: ((url: string) => void) | null): void {
+  browserOpener = opener ?? openBrowser;
+}
+
 class FileOAuthProvider implements OAuthClientProvider {
   private verifier: string | undefined;
   stateValue: string | undefined;
@@ -63,6 +124,7 @@ class FileOAuthProvider implements OAuthClientProvider {
     private readonly server: TrackerBridge,
     private readonly redirect: string,
     private readonly interactive: boolean,
+    private readonly fetchState: FetchState,
     private readonly onAuthorize?: (url: string | null) => void,
   ) {}
 
@@ -109,14 +171,11 @@ class FileOAuthProvider implements OAuthClientProvider {
   }
 
   async redirectToAuthorization(url: URL): Promise<void> {
+    if (this.fetchState.transient) throw new TrackerMcpUnavailableError(this.server, this.fetchState.transient);
     if (!this.interactive) throw new TrackerMcpAuthError(this.account, this.server);
-    this.onAuthorize?.(url.toString());
-    try {
-      const child = spawn("xdg-open", [url.toString()], { stdio: "ignore", detached: true });
-      child.unref();
-    } catch {
-      // The URL is reported through onAuthorize; the user can open it manually.
-    }
+    const target = url.toString();
+    this.onAuthorize?.(target);
+    if (url.protocol === "https:" && url.hostname === trackerServers[this.server].authHost) browserOpener(target);
   }
 
   async invalidateCredentials(scope: "all" | "client" | "tokens" | "verifier" | "discovery"): Promise<void> {
@@ -134,6 +193,7 @@ function startCallback(): Promise<Callback> {
     resolveCode = resolve;
     rejectCode = reject;
   });
+  void code.catch(() => undefined);
   const server = createServer((request, response) => {
     const url: URL = new URL(request.url ?? "/", "http://127.0.0.1");
     if (url.pathname !== "/callback") {
@@ -198,7 +258,8 @@ async function withNative<T>(account: string, server: TrackerBridge, options: Br
   const name: string = trackerServers[server].name;
   const interactive: boolean = !!options.interactive;
   const callback: Callback | undefined = interactive ? await startCallback() : undefined;
-  const provider = new FileOAuthProvider(account, server, callback?.url ?? "http://127.0.0.1:0/callback", interactive, options.onAuthorize);
+  const fetchState: FetchState = {};
+  const provider = new FileOAuthProvider(account, server, callback?.url ?? "http://127.0.0.1:0/callback", interactive, fetchState, options.onAuthorize);
   const client = new Client({ name: "pecore", version: "1" }, { capabilities: {} });
   let transport: StreamableHTTPClientTransport | undefined;
   let stopped: boolean = false;
@@ -210,33 +271,49 @@ async function withNative<T>(account: string, server: TrackerBridge, options: Br
   };
   options.onStart?.(stop);
   const timeoutMs: number = options.timeoutMs ?? (interactive ? 195_000 : 20_000);
+
+  const connect = async (): Promise<void> => {
+    transport = new StreamableHTTPClientTransport(new URL(trackerServers[server].url), { authProvider: provider, fetch: trackedFetch(fetchState) });
+    await timeout(client.connect(transport), timeoutMs, `The ${name} MCP server did not respond.`);
+  };
+
+  const classifyConnect = (error: unknown): never => {
+    if (error instanceof TrackerMcpAuthError || error instanceof TrackerMcpUnavailableError) throw error;
+    if (isAuthError(error)) throw new TrackerMcpAuthError(account, server);
+    if (isTransientError(error) || fetchState.transient) throw new TrackerMcpUnavailableError(server, error);
+    throw new Error(`Could not connect to the ${name} MCP server. Check the connection and try again.`, { cause: error });
+  };
+
   try {
-    const connect = async (): Promise<StreamableHTTPClientTransport> => {
-      const next = new StreamableHTTPClientTransport(new URL(trackerServers[server].url), { authProvider: provider });
-      transport = next;
-      await timeout(client.connect(next), timeoutMs, `The ${name} MCP server did not respond.`);
-      return next;
-    };
+    let authorized: boolean = false;
+    if (!interactive && !await provider.tokens()) throw new TrackerMcpAuthError(account, server);
     try {
       await connect();
+      authorized = true;
     } catch (error) {
-      if (!(error instanceof UnauthorizedError) || !interactive || !callback) {
-        if (error instanceof UnauthorizedError || error instanceof TrackerMcpAuthError) throw new TrackerMcpAuthError(account, server);
-        throw error;
-      }
+      if (stopped) throw new Error(`Sign-in to ${name} was cancelled.`, { cause: error });
+      if (!(interactive && isAuthError(error))) classifyConnect(error);
+    }
+    if (!authorized) {
+      if (!callback) throw new TrackerMcpAuthError(account, server);
       const value = await timeout(callback.code, timeoutMs, `Sign-in to ${name} timed out.`);
-      if (provider.stateValue && value.state !== provider.stateValue) throw new Error(`The ${name} sign-in state did not match.`, { cause: error });
-      await transport!.finishAuth(value.code);
+      if (provider.stateValue && value.state !== provider.stateValue) throw new Error(`The ${name} sign-in state did not match.`);
+      try {
+        await transport!.finishAuth(value.code);
+      } catch (error) {
+        if (isTransientError(error) || fetchState.transient) throw new TrackerMcpUnavailableError(server, error);
+        if (isAuthError(error)) throw new TrackerMcpAuthError(account, server);
+        throw new Error(`Sign-in to ${name} failed.`, { cause: error });
+      }
       await transport!.close().catch(() => undefined);
-      await connect();
+      try {
+        await connect();
+      } catch (error) {
+        classifyConnect(error);
+      }
     }
     if (stopped) throw new Error(`Sign-in to ${name} was cancelled.`);
     return await run(client);
-  } catch (error) {
-    if (error instanceof TrackerMcpAuthError) throw error;
-    if (error instanceof UnauthorizedError) throw new TrackerMcpAuthError(account, server);
-    if (error instanceof Error && /unauthorized|401/i.test(error.message)) throw new TrackerMcpAuthError(account, server);
-    throw new Error(`Could not connect to the ${name} MCP server. Check the connection and try again.`, { cause: error });
   } finally {
     callback?.close();
     await transport?.close().catch(() => undefined);
@@ -245,6 +322,18 @@ async function withNative<T>(account: string, server: TrackerBridge, options: Br
 
 export async function checkTrackerBridge(account: string, server: TrackerBridge, options: BridgeOptions = {}): Promise<void> {
   await trackerBridgeTool(account, server, server === "atlassian" ? "atlassianUserInfo" : "list_issues", server === "atlassian" ? {} : { limit: 1 }, options);
+}
+
+export async function trackerIdentity(account: string, server: TrackerBridge): Promise<string | null> {
+  const output = await trackerBridgeTool(account, server, server === "atlassian" ? "atlassianUserInfo" : "whoami", {});
+  const data = output && typeof output === "object" && "data" in output ? (output as { data?: unknown }).data : output;
+  if (!data || typeof data !== "object") return null;
+  const record = data as Record<string, unknown>;
+  const identity = server === "atlassian"
+    ? record.accountId ?? record.email ?? record.displayName
+    : (record.user && typeof record.user === "object" ? (record.user as Record<string, unknown>).email ?? (record.user as Record<string, unknown>).name : undefined)
+      ?? (record.workspace && typeof record.workspace === "object" ? (record.workspace as Record<string, unknown>).name : undefined);
+  return typeof identity === "string" && identity.trim() ? identity.trim() : null;
 }
 
 export async function atlassianSite(account: string): Promise<string | null> {
@@ -264,7 +353,7 @@ export async function trackerBridgeTool(account: string, server: TrackerBridge, 
     try {
       result = await client.callTool({ name, arguments: args });
     } catch (error) {
-      if (error instanceof UnauthorizedError || authRequired.test(String(error))) throw new TrackerMcpAuthError(account, server);
+      if (isAuthError(error)) throw new TrackerMcpAuthError(account, server);
       throw error;
     }
     const parsed = Result.safeParse(result);

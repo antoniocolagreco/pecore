@@ -18,7 +18,7 @@ const tools = {
 };
 type ToolName = keyof typeof tools;
 type ToolArgs = { ticketId?: string; site?: string; query?: string; text?: string; status?: string; fields?: Record<string, unknown>; includeComments?: boolean };
-type Account = { id: string; forge: ForgeAccount } | { id: string; bridge: "atlassian" | "linear" } | { id: string; jira: string };
+type Account = { id: string; forge: ForgeAccount } | { id: string; bridge: "atlassian" | "linear"; user?: string } | { id: string; jira: string; user?: string };
 type TrackerContext = Pick<ProjectContext, "project" | "forgeAccount" | "serviceAccount">;
 
 export function trackerToolNames(access: AgentTracker["access"]): ToolName[] {
@@ -43,10 +43,10 @@ export async function trackerAccount(ctx: TrackerContext, permission: string): P
   const forge: ForgeAccount | undefined = id ? ctx.forgeAccount(id) : undefined;
   if ((forge?.forge === "github" && forge.tool === "gh") || (forge?.forge === "gitlab" && forge.tool === "glab")) return { id: forge.id, forge };
   const service = id ? ctx.serviceAccount?.(id) : undefined;
-  if (service?.tool === "atlassian" || service?.tool === "linear") return { id: service.id, bridge: service.tool };
+  if (service?.tool === "atlassian" || service?.tool === "linear") return { id: service.id, bridge: service.tool, user: service.user };
   if (id === "active-jira" || id?.startsWith("jira-")) {
     const active = await activeJiraAccount();
-    if (active && (id === "active-jira" || id === active.account.id)) return { id: active.account.id, jira: active.site };
+    if (active && (id === "active-jira" || id === active.account.id)) return { id: active.account.id, jira: active.site, user: active.account.user };
   }
   throw new Error("Choose an available tracker account in Settings → Accounts.");
 }
