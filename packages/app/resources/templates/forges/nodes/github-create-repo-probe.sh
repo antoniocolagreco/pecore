@@ -6,12 +6,9 @@ if ! url=$(gh repo view "$repo" --json url --jq .url 2>&1); then
     *) printf '%s\n' "$url" >&2; exit 1 ;;
   esac
 fi
-branch=$(jq -nr --arg branch "$PECORE_PROJECT_BASEBRANCH" '$branch | @uri')
-if result=$(gh api "repos/$repo/branches/$branch" --silent 2>&1); then
+ref="refs/heads/$PECORE_PROJECT_BASEBRANCH"
+expected=$(git --git-dir="$PECORE_PROJECT_REPODIR" rev-parse --verify "$ref")
+remote=$(git ls-remote --refs -- "$PECORE_PROJECT_REPO_URL" "$ref")
+if [ "${remote%%[[:space:]]*}" = "$expected" ]; then
   printf '%s\n' "$url"
-else
-  case "$result" in
-    *'HTTP 404'*) exit 0 ;;
-    *) printf '%s\n' "$result" >&2; exit 1 ;;
-  esac
 fi

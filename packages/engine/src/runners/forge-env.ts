@@ -35,10 +35,8 @@ export async function forgeEnv(a: Account): Promise<Record<string, string>> {
   const name: string = a.author.name || defaults.GIT_AUTHOR_NAME!;
   const email: string = a.author.email || defaults.GIT_AUTHOR_EMAIL!;
   const env: Record<string, string> = { GIT_AUTHOR_NAME: name, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: name, GIT_COMMITTER_EMAIL: email };
-  if (a.tool === "git") {
-    if (process.env.SSH_AUTH_SOCK) env.SSH_AUTH_SOCK = process.env.SSH_AUTH_SOCK;
-    if (process.env.XDG_CONFIG_HOME) env.XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME;
-  }
+  if (process.env.SSH_AUTH_SOCK) env.SSH_AUTH_SOCK = process.env.SSH_AUTH_SOCK;
+  if (process.env.XDG_CONFIG_HOME) env.XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME;
   try {
     if (a.tool === "gh") {
       env.GH_TOKEN = await token(a);
@@ -55,5 +53,11 @@ export async function forgeEnv(a: Account): Promise<Record<string, string>> {
 }
 
 export function credentialHelper(helper: string): string[] {
-  return ["-c", "credential.helper=", "-c", `credential.helper=${helper}`];
+  return credentialSettings(helper).flatMap(([key, value]) => ["-c", `${key}=${value}`]);
+}
+
+export function credentialSettings(helper: string): [string, string][] {
+  const settings: [string, string][] = [["credential.helper", ""], ["credential.helper", helper]];
+  if (helper === "!aws codecommit credential-helper $@") settings.push(["credential.useHttpPath", "true"]);
+  return settings;
 }

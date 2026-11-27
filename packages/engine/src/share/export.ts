@@ -12,7 +12,7 @@ import type { ProjectContext } from "../graph/executor";
 import { nodeSidecars } from "../definitions/load";
 import { activeJobCount, archivePath, definitionDirs, ShareConflict } from "./archive";
 import type { Manifest } from "./archive";
-import { historyArtifacts, historyLogs } from "./history";
+import { historyArtifacts, historyEffects, historyLogs } from "./history";
 import { scanSecrets } from "./secrets";
 
 type Finding = Extract<ExportProjectResult, { state: "findings" }>["findings"][number];
@@ -85,6 +85,7 @@ export async function exportProject(ctx: ProjectContext, input: ExportProjectBod
     if (history) {
       assertIdle(ctx);
       const findings: Finding[] = scanSecrets(historyArtifacts(ctx.db.db));
+      findings.push(...scanSecrets(historyEffects(ctx.db.db)));
       if (logs) findings.push(...scanSecrets(historyLogs(ctx.db.db)));
       const accepted: Set<string> = new Set(acceptFindings);
       if (findings.some((finding) => !accepted.has(finding.fingerprint))) return { state: "findings", findings };

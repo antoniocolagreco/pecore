@@ -25,6 +25,12 @@ export function historyLogs(db: ProjectDb["db"], maxBytes: number = Number.MAX_S
     FROM attempt_logs ORDER BY attempt_id, sequence`).iterate(maxBytes);
 }
 
+export function historyEffects(db: ProjectDb["db"]): IterableIterator<{ file: string; content: Buffer }> {
+  return db.prepare<[], { file: string; content: Buffer }>(`
+    SELECT 'effects/' || id AS file, CAST(payload AS BLOB) AS content
+    FROM events WHERE type IN ('effect.requested', 'effect.completed', 'effect.failed') ORDER BY id`).iterate();
+}
+
 function schema(db: ProjectDb["db"]): unknown[] {
   return db.prepare("SELECT type, name, tbl_name, sql FROM sqlite_schema ORDER BY name").raw().all();
 }

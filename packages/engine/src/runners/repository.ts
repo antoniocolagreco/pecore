@@ -5,7 +5,7 @@ import { loadNodeFile } from "../definitions/load";
 import { snapshotNode } from "../definitions/snapshot";
 import type { ProjectContext } from "../graph/executor";
 import { loadForgeDefaults } from "../projects/defaults";
-import { forgeEnv } from "./forge-env";
+import { credentialSettings, forgeEnv } from "./forge-env";
 
 export function repositoryAccount(ctx: ProjectContext, node: RepositoryNode): ForgeAccount {
   const id: string | undefined = node.account === "project.account" || (!node.script && isForgeOperation(node.name))
@@ -34,7 +34,7 @@ export async function repositoryDefinition(
 export async function repositoryEnv(ctx: ProjectContext, account: ForgeAccount): Promise<Record<string, string>> {
   const { credentialHelper } = await loadForgeDefaults(ctx.templates, account.forge);
   const settings: [string, string][] = [["core.hooksPath", "/dev/null"], ["core.fsmonitor", "false"]];
-  if (credentialHelper) settings.push(["credential.helper", ""], ["credential.helper", credentialHelper]);
+  if (credentialHelper) settings.push(...credentialSettings(credentialHelper));
   return {
     ...await forgeEnv(account),
     GIT_TERMINAL_PROMPT: "0",

@@ -134,7 +134,7 @@ async function prepare(engine: Engine, invocation: Invocation) {
   };
   if (input.ticketId) context.ticketId = input.ticketId;
   const options: Omit<CommandRun, "node" | "outputs"> = {
-    params, inputs, context, sidecars: checks, nodeDir: ctx.defs.nodeDir, user: ctx.user, workdir: ctx.dir, redactCredentials: true,
+    params, inputs, context, sidecars: checks, nodeDir: ctx.defs.nodeDir, user: ctx.user, workdir: ctx.dir,
   };
   return { node, forge, options, catalog, hash, direct: node.readOnly === true,
     fingerprint: definitionHash({ hash, resolvedHash, account: forge, params, inputs, context }) };

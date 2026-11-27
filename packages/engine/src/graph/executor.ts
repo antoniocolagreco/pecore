@@ -879,6 +879,7 @@ export class JobExecutor {
                 inputs: commandInputs,
                 extraEnv: { ...servicesEnv, ...toolEnv, ...(previousCi ? { PECORE_CI_EXPECTED_HEAD: previousCi.commit } : {}) },
                 onStart,
+                stopping: () => this.stopRequested.has(job.id) || this.closing,
                 effect: effectRecorder(this.ctx.db, job.id, run.id, run.node),
               })
             : await this.agentAttempt(job, run, node, recipeNode, profile!, attemptId, { id: agentId, session: agentSession! }, { wd, context, inputs: agentInputs, onStart, env: servicesEnv, continuation: resumed, sidecars, knowledge: definitions?.knowledgeByStep });
@@ -927,6 +928,8 @@ export class JobExecutor {
               this.setState(job.id, "waiting", "network");
               this.timers.set(job.id, setTimeout(() => void this.retryWait(job.id, run.id, "network"), delay));
             }
+          } else if (result.reason === "auth" && repository) {
+            this.waitAuth(job, run.id, repository.id);
           } else if (result.reason === "auth" && result.authAccount) {
             this.waitAuth(job, run.id, result.authAccount, false);
           } else if (result.reason === "auth") {

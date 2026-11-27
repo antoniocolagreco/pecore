@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,16 +28,16 @@ export type CommandRun<Output extends string = ArtifactType> = {
   inlineScript?: string;
   remote?: boolean;
   repeatCheck?: boolean;
-  redactCredentials?: boolean;
   extraEnv?: Record<string, string>;
   onStart?: (pgid: number, user: string) => void;
+  stopping?: () => boolean;
   effect?: { requested(hash: string): void; done(ok: boolean, result: unknown): void };
 };
 
 export type CommandOutcome<Output extends string = ArtifactType> =
   | { kind: "completed"; outcome: string; outputs: { type: Output; content: string }[]; log: string; fromProbe: boolean }
   | { kind: "failed"; reason: FailureReason; log: string }
-  | { kind: "waiting"; reason: "network"; log: string };
+  | { kind: "waiting"; reason: "network" | "auth"; log: string };
 
 export function outcomeOutputs(node: Pick<CommandNode, "outputs" | "outputRules">): (outcome: string) => [ArtifactType, OutputRule][] {
   return (outcome) => {
@@ -95,7 +96,13 @@ function commandInput(inputs: CommandInput[], job: CommandRun["context"]["job"])
 }
 
 export function commandHash(argv: string[]): string {
-  return JSON.stringify(argv);
+  return createHash("sha256").update(JSON.stringify(argv)).digest("hex");
+}
+
+function repositoryWait(stderr: string): "network" | "auth" | null {
+  if (/\bHTTP 401\b|authentication failed|invalid (?:username|token|credentials)|could not read (?:username|password)|permission denied \(publickey\)|expiredtoken/i.test(stderr)) return "auth";
+  if (/could not resolve (?:host|hostname|proxy)|failed to connect|error connecting|connection (?:refused|reset|timed out)|network is unreachable|operation timed out|\bHTTP (?:502|503|504)\b/i.test(stderr)) return "network";
+  return null;
 }
 
 export async function runMergedCheck(c: Pick<CommandRun, "node" | "nodeDir" | "sidecars" | "params" | "context" | "inputs" | "extraEnv">): Promise<ProbeResult> {
@@ -123,7 +130,7 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
     const input: string = commandInput(c.inputs, c.context.job);
     const values = placeholderValues({ ...c.context, params: c.params, workdir: cwd });
     const env = { ...(await baseEnv(user)), ...(await gitIdentityEnv()), ...placeholderEnv(values), ...c.extraEnv };
-    const secrets: string[] = c.redactCredentials
+    const secrets: string[] = remote
       ? Object.entries(c.extraEnv ?? {}).flatMap(([key, value]) => value && /TOKEN|SECRET|PASSWORD|ACCESS_KEY/.test(key) ? [value] : [])
       : [];
     const redact = (content: string): string => secrets.reduce((text, secret) => text.replaceAll(secret, "[redacted]"), content);
@@ -133,11 +140,15 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
     if (c.node.probe || c.repeatCheck) {
       const label: string = `${c.node.name}-probe`;
       const argv: string[] = c.repeatCheck ? ["/bin/sh", "-c", c.inlineScript!, label] : await argvOf(c.node.probe, undefined, c, label, values);
-      const p = await runProbe({ argv, user, cwd, env, input, timeoutMs }, c.node.probeRules);
+      const p = await runProbe({ argv, user, cwd, env, input, timeoutMs, onStart: (pgid) => c.onStart?.(pgid, user) }, c.node.probeRules);
       env.PECORE_PROBE_STDOUT = p.stdout;
       const check: string = "Repeat check";
-      log += `$ ${check}\n${p.stdout}${p.stderr}${check}: ${p.result}\n`;
-      if (p.result === "unknown") return { kind: "waiting", reason: "network", log };
+      log += `$ ${check}\n${redact(p.stdout + p.stderr)}${check}: ${p.result}\n`;
+      if (p.result === "unknown") {
+        if (remote && p.code === 127) return { kind: "failed", reason: "COMMAND_NOT_FOUND", log };
+        if (remote && (/\bHTTP (?:403|404)\b|repository not found|access denied|not permitted/i.test(p.stderr) || p.code === 126)) return { kind: "failed", reason: "HARNESS_ERROR", log };
+        return { kind: "waiting", reason: remote ? repositoryWait(p.stderr) ?? "network" : "network", log };
+      }
       if (p.result === "done") {
         const outcome = pickOutcome(c.node.outcomeRules, { code: 0, stdout: p.stdout });
         if (outcome === null) return { kind: "failed", reason: "HARNESS_ERROR", log: log + `no outcome rule matched the ${check} output\n` };
@@ -150,6 +161,7 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
       }
     }
 
+    if (c.stopping?.()) return { kind: "failed", reason: "PROCESS_KILLED", log };
     const argv: string[] = c.inlineScript === undefined ? await argvOf(c.node.command, c.node.script, c, c.node.name, values) : ["/bin/sh", "-c", c.inlineScript, c.node.name];
     const hash = commandHash(argv);
     if (remote) c.effect?.requested(hash);
@@ -157,15 +169,17 @@ export async function runCommandNode<Output extends string = ArtifactType>(c: Co
     try {
       r = await run({ user, argv, cwd, env, input, timeoutMs, onStart: (pgid) => c.onStart?.(pgid, user) });
     } catch (e) {
-      if (remote) c.effect?.done(false, { error: String(e) });
+      if (remote) c.effect?.done(false, { error: redact(String(e)) });
       if (e instanceof SpawnError && e.code === "not_found") return { kind: "failed", reason: "COMMAND_NOT_FOUND", log: log + `${argv[0]}: not found\n` };
       throw e;
     }
-    log += `$ ${c.inlineScript === undefined ? c.node.script ?? argv.join(" ") : c.node.name}\n${r.stdout}${r.stderr}exit: ${r.code ?? r.signal}\n`;
-    if (remote) c.effect?.done(r.code === 0, { code: r.code, stdout: r.stdout.slice(-4096) });
+    log += redact(`$ ${c.inlineScript === undefined ? c.node.script ?? argv.join(" ") : c.node.name}\n${r.stdout}${r.stderr}exit: ${r.code ?? r.signal}\n`);
+    if (remote) c.effect?.done(r.code === 0, { code: r.code });
     if (r.timedOut) return { kind: "failed", reason: "TIMEOUT", log };
     if (r.code === null) return { kind: "failed", reason: "PROCESS_KILLED", log };
     if (r.code === 127) return { kind: "failed", reason: "COMMAND_NOT_FOUND", log };
+    const wait: "network" | "auth" | null = remote && r.code !== 0 ? repositoryWait(r.stderr) : null;
+    if (wait) return { kind: "waiting", reason: wait, log };
     const outcome = pickOutcome(c.node.outcomeRules, r);
     if (outcome === null && remote) return { kind: "waiting", reason: "network", log: log + "no outcome rule matched\n" };
     if (outcome === null) return { kind: "failed", reason: "HARNESS_ERROR", log: log + "no outcome rule matched\n" };
