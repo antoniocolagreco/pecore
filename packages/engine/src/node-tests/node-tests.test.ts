@@ -1,7 +1,7 @@
 import { cp, lstat, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { apiClient, Node } from "@pecore/schemas";
 import type { NodeTestView } from "@pecore/schemas";
 import { setTestConfiguration } from "../../test/configuration";
@@ -9,6 +9,7 @@ import { shippedTemplates, tempDir } from "../../test/tmp";
 import { handlers } from "../api/handlers";
 import { startApi } from "../api/server";
 import { Engine } from "../main";
+import * as acl from "../osuser/acl";
 
 const fakeAgent = fileURLToPath(new URL("../../../agents/test/fake-agent/agent.mjs", import.meta.url));
 
@@ -102,6 +103,12 @@ const human = Node.parse({
   name: "decide", description: "Ask the user", kind: "human", interface: "decision",
   outcomes: ["yes", "no"], outputs: { yes: "feedback" },
   params: { type: "object", properties: { question: { type: "string", minLength: 1, default: "Continue?" } }, required: ["question"] },
+});
+
+const review = Node.parse({
+  name: "review", description: "Review the change", kind: "human", interface: "code-review",
+  outcomes: ["approved", "changes_requested", "rejected"], outputs: { changes_requested: "code_review" },
+  params: { type: "object", properties: { question: { type: "string", default: "Not the review text" } } },
 });
 
 describe("node tests", () => {
@@ -200,6 +207,76 @@ describe("node tests", () => {
       expect(await finished(call, id)).toMatchObject({ state: "completed", outcome: "yes", outputs: [{ type: "feedback", content: "Go on." }], question: null });
       await expect(call("answerNodeTest", { params: { id }, body: { choice: "yes" } })).rejects.toMatchObject({ status: 400 });
     } finally {
+      await close();
+    }
+  });
+
+  it("uses the Human runner's review question and result", async () => {
+    const { call, close } = await setup();
+    try {
+      const diff: string = "diff --git a/a b/a\n";
+      const first = await call("runNodeTest", { body: { node: review, inputs: { diff }, sidecars: {} } });
+      const waiting = await until(async () => {
+        const view = await call("getNodeTest", { params: { id: first.id } });
+        return view.state === "waiting" ? view : undefined;
+      });
+      expect(waiting.question).toEqual({
+        kind: "human", text: "Review the change", choices: ["approved", "changes_requested", "rejected"],
+        notes: ["changes_requested"], inputs: [{ type: "diff", content: diff }],
+      });
+      await call("answerNodeTest", { params: { id: first.id }, body: { choice: "changes_requested", note: "Fix the typo." } });
+      expect(await finished(call, first.id)).toMatchObject({
+        state: "completed", outcome: "changes_requested",
+        outputs: [{ type: "code_review", content: JSON.stringify({ body: "Fix the typo.", comments: [] }) }],
+      });
+
+      const second = await call("runNodeTest", { body: { node: review, inputs: { diff }, sidecars: {} } });
+      await until(async () => {
+        const view = await call("getNodeTest", { params: { id: second.id } });
+        return view.state === "waiting" ? view : undefined;
+      });
+      await call("answerNodeTest", { params: { id: second.id }, body: { choice: "approved", note: "Looks good." } });
+      expect(await finished(call, second.id)).toMatchObject({ state: "completed", outcome: "approved", outputs: [] });
+    } finally {
+      await close();
+    }
+  });
+
+  it("keeps only the active test and the last finished one", async () => {
+    const { call, close } = await setup();
+    try {
+      const first = await call("runNodeTest", { body: { node: command(), inputs: {}, sidecars: {} } });
+      expect((await finished(call, first.id)).state).toBe("completed");
+      const firstLog = await call("getLog", { params: { id: first.id }, query: { view: "events" } });
+      expect(firstLog.view).toBe("events");
+
+      const second = await call("runNodeTest", { body: { node: command({ name: "slow", command: ["/bin/sh", "-c", "sleep 30"] }), inputs: {}, sidecars: {} } });
+      expect((await call("getNodeTest", { params: { id: first.id } })).state).toBe("completed");
+      await call("stopNodeTest", { params: { id: second.id } });
+      expect((await finished(call, second.id)).state).toBe("stopped");
+      await expect(call("getNodeTest", { params: { id: first.id } })).rejects.toMatchObject({ status: 404 });
+      await expect(call("getLog", { params: { id: first.id }, query: { view: "events" } })).rejects.toMatchObject({ status: 404 });
+      expect((await call("getNodeTest", { params: { id: second.id } })).state).toBe("stopped");
+      expect((await call("getLog", { params: { id: second.id }, query: { view: "events" } })).view).toBe("events");
+    } finally {
+      await close();
+    }
+  });
+
+  it("applies the test folder access only when it creates or resets the folder", async () => {
+    const { call, close } = await setup();
+    const accessible = vi.spyOn(acl, "privateDirectory");
+    try {
+      const first = await call("runNodeTest", { body: { node: command(), inputs: {}, sidecars: {} } });
+      await finished(call, first.id);
+      expect(accessible).toHaveBeenCalledTimes(1);
+      const second = await call("runNodeTest", { body: { node: command(), inputs: {}, sidecars: {} } });
+      await finished(call, second.id);
+      expect(accessible).toHaveBeenCalledTimes(1);
+      await call("resetNodeTests");
+      expect(accessible).toHaveBeenCalledTimes(2);
+    } finally {
+      accessible.mockRestore();
       await close();
     }
   });

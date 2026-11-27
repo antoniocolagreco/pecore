@@ -14,6 +14,7 @@ import { privateDirectory } from "../osuser/acl";
 import { runAgentNode } from "../runners/agent";
 import { outcomeOutputs, runCommandNode } from "../runners/command";
 import type { CommandInput } from "../runners/command";
+import { humanItem, humanResult } from "../runners/human";
 import { paramsWithDefaults } from "../runners/placeholders";
 import { appUser, baseEnv, killJobProcesses, run, stopGroup } from "../runners/process";
 import { deleteScratch, restoreState } from "../workdir/files-hash";
@@ -216,12 +217,16 @@ export class NodeTestManager {
     const test = this.test(id);
     if (test.state !== "waiting" || !test.question) throw new NodeTestError("bad_request", "This node test is not waiting for an answer.");
     if (test.question.kind === "human") {
+      const node = test.node;
+      if (node.kind !== "human") throw new NodeTestError("bad_request", "This node test is not a Human node.");
       const choice = body.choice;
-      if (!choice || !test.node.outcomes.includes(choice)) throw new NodeTestError("bad_request", "Choose one of the node's outcomes.");
-      test.outcome = choice;
-      const type = test.node.outputs[choice];
+      if (!choice || !node.outcomes.includes(choice)) throw new NodeTestError("bad_request", "Choose one of the node's outcomes.");
       const note = body.note.trim();
-      if (type && note) test.outputs.push({ type, content: type === "code_review" ? JSON.stringify({ body: note, comments: [] }) : note });
+      const result = humanResult(node, choice, note || null);
+      test.outcome = result.outcome;
+      const type = node.outputs[result.outcome];
+      const content = type === "code_review" ? JSON.stringify({ body: note, comments: [] }) : result.userNote;
+      if (type && content) test.outputs.push({ type, content });
       await this.finish(test, "completed");
       return;
     }
@@ -272,13 +277,14 @@ export class NodeTestManager {
 
   private async execute(test: TestState): Promise<void> {
     if (test.node.kind === "human") {
-      const question = typeof test.params.question === "string" && test.params.question.trim() ? test.params.question.trim() : test.node.description;
+      const item = humanItem(test.id, test.node.name, test.node, [], test.beforeTree, test.params.question,
+        { title: test.node.name, request: test.node.description });
       test.state = "waiting";
       test.question = {
         kind: "human",
-        text: question,
-        choices: [...test.node.outcomes],
-        notes: test.node.outcomes.filter((outcome) => ["feedback", "code_review"].includes(test.node.outputs[outcome] ?? "")),
+        text: item.subject.description,
+        choices: item.choices,
+        notes: item.subject.notes,
         inputs: test.inputs.map(({ type, content }) => ({ type, content })),
       };
       this.changed(test);
@@ -440,7 +446,14 @@ export class NodeTestManager {
     test.question = null;
     test.pending = null;
     if (this.active === test.id) this.active = null;
+    this.keepOnly(test);
     this.changed(test);
+  }
+
+  private keepOnly(test: TestState): void {
+    for (const id of this.tests.keys()) {
+      if (id !== test.id) this.tests.delete(id);
+    }
   }
 
   private async recordChanges(test: TestState): Promise<void> {
@@ -502,10 +515,7 @@ export class NodeTestManager {
     const folder = homePaths(this.opts.home).test;
     if (await asyncExists(join(folder, ".git"))) {
       const link = await lstat(folder);
-      if (!link.isSymbolicLink()) {
-        await this.makeAccessible(folder, true).catch(() => this.makeAccessible(folder, false));
-        return folder;
-      }
+      if (!link.isSymbolicLink()) return folder;
     }
     await this.removeFolder();
     try {
@@ -516,7 +526,7 @@ export class NodeTestManager {
     await rm(join(folder, ".git"), { recursive: true, force: true });
     await chmod(folder, 0o700);
     const user = this.opts.user();
-    await this.makeAccessible(folder, true);
+    await this.makeAccessible(folder);
     await gitWork(user, folder, ["init", "-q", "-b", "main"]);
     await gitWork(user, folder, ["add", "-A"]);
     await gitWork(user, folder, ["commit", "-q", "-m", "Sample project"]);
@@ -544,18 +554,16 @@ export class NodeTestManager {
     await rm(folder, { recursive: true, force: true });
   }
 
-  private async makeAccessible(folder: string, recursive: boolean): Promise<void> {
+  private async makeAccessible(folder: string): Promise<void> {
     const user = this.opts.user();
     await privateDirectory(folder, user, this.opts.home);
     if (user === appUser) return;
     const env = await baseEnv(appUser);
-    if (recursive) {
-      const files = await run({ user: appUser, argv: ["setfacl", "-R", "-m", `u:${user}:rwX`, "--", folder], env, cwd: "/" });
-      if (files.code !== 0) throw new Error(`setfacl failed for ${folder}: ${files.stderr.trim()}`);
-    }
+    const files = await run({ user: appUser, argv: ["setfacl", "-R", "-m", `u:${user}:rwX`, "--", folder], env, cwd: "/" });
+    if (files.code !== 0) throw new Error(`setfacl failed for ${folder}: ${files.stderr.trim()}`);
     const dirs = await run({
       user: appUser,
-      argv: ["find", folder, ...(recursive ? [] : ["-maxdepth", "0"]), "-type", "d", "-exec", "setfacl", "-m", `d:u:${user}:rwx,d:u:${appUser}:rwx`, "--", "{}", "+"],
+      argv: ["find", folder, "-type", "d", "-exec", "setfacl", "-m", `d:u:${user}:rwx,d:u:${appUser}:rwx`, "--", "{}", "+"],
       env,
       cwd: "/",
     });
