@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { AgentTracker, ForgeAccount } from "@pecore/schemas";
-import { trackerBridgeTool } from "../accounts/atlassian";
+import { trackerBridgeTool, trackerResourceList } from "../accounts/atlassian";
 import { activeJiraAccount } from "../accounts/jira";
 import type { ProjectContext } from "../graph/executor";
 import { forgeEnv, ToolAuthError } from "../runners/forge-env";
@@ -153,7 +153,7 @@ export async function bindTrackerSite(account: Account, call: ReturnType<typeof 
   const { args } = call;
   if (args.site) return call;
   const resources: unknown = await trackerBridgeTool(account.id, account.bridge, "getAccessibleAtlassianResources", {});
-  const sites = z.array(z.object({ id: text, url: text })).safeParse(resources).data ?? [];
+  const sites = z.array(z.object({ id: text, url: text })).safeParse(trackerResourceList(resources)).data ?? [];
   const ticketHost: string | undefined = args.ticketId ? URL.parse(args.ticketId)?.host : undefined;
   const site: string | undefined = ticketHost ? sites.find((site) => URL.parse(site.url)?.host === ticketHost)?.id : sites.length === 1 ? sites[0]?.id : undefined;
   if (!site) throw new Error("Choose a Jira site for this action.");

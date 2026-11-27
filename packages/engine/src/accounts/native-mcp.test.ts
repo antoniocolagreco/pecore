@@ -80,7 +80,7 @@ async function mockMcp(): Promise<{ base: string; control: { tokenMode: TokenMod
             return;
           }
           const value = name === "getAccessibleAtlassianResources"
-            ? { resources: [{ url: "https://team.atlassian.net", products: [{ id: "jira" }] }] }
+            ? { data: { resources: [{ url: "https://team.atlassian.net", products: [{ id: "jira" }] }] } }
             : name === "whoami"
               ? { data: { user: { email: "alice@example.test" }, workspace: { name: control.workspace } } }
               : { data: { accountId: "alice" } };
@@ -209,7 +209,7 @@ it("logs in through native OAuth, stores secure files and reconnects without a b
   expect((await stat(join(home, "mcp", "atlassian"))).mode & 0o777).toBe(0o700);
 
   const result = await trackerBridgeTool("atlassian", "atlassian", "getAccessibleAtlassianResources", {});
-  expect(result).toEqual({ resources: [{ url: "https://team.atlassian.net", products: [{ id: "jira" }] }] });
+  expect(result).toEqual({ data: { resources: [{ url: "https://team.atlassian.net", products: [{ id: "jira" }] }] } });
 });
 
 it("opens the browser for a Linear sign-in and combines user and workspace in the identity", async () => {

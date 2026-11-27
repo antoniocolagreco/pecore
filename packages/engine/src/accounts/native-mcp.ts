@@ -346,8 +346,13 @@ export async function trackerIdentity(account: string, server: TrackerBridge): P
   return parts.length ? parts.join(" @ ") : null;
 }
 
+export function trackerResourceList(value: unknown): unknown {
+  const data = value && typeof value === "object" && "data" in value ? (value as { data?: unknown }).data : value;
+  return data && typeof data === "object" && "resources" in data ? (data as { resources?: unknown }).resources : data;
+}
+
 export async function atlassianSite(account: string): Promise<string | null> {
-  const parsed = Resources.safeParse(await trackerBridgeTool(account, "atlassian", "getAccessibleAtlassianResources", {}));
+  const parsed = Resources.safeParse({ resources: trackerResourceList(await trackerBridgeTool(account, "atlassian", "getAccessibleAtlassianResources", {})) });
   if (!parsed.success) return null;
   for (const resource of parsed.data.resources) {
     if (resource.products && !resource.products.some(({ id }) => id.toLowerCase() === "jira")) continue;
