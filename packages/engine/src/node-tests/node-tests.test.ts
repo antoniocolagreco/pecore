@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -20,15 +20,23 @@ const answer = (value: object) => ({
 });
 const usageAnswer = { send: { jsonrpc: "2.0", id: "$id", result: { stopReason: "end_turn", usage: { inputTokens: 10, outputTokens: 20, cachedReadTokens: 0, cachedWriteTokens: 0 } } } };
 
-async function setup(agent = false) {
+async function setup(agent = false, opts: { sampleLink?: boolean; existingLink?: boolean; missingSample?: boolean } = {}) {
   const root = await tempDir();
   const home = join(root, "home");
   const templates = join(root, "templates");
-  const sampleProject = join(root, "test-project");
+  const source = join(root, "sample-source");
+  const sampleProject = opts.sampleLink ? join(root, "test-project") : source;
   await cp(shippedTemplates, templates, { recursive: true });
-  await mkdir(sampleProject, { recursive: true });
-  await writeFile(join(sampleProject, "README.md"), "Sample project\n");
-  await writeFile(join(sampleProject, "hello.txt"), "hello\n");
+  if (!opts.missingSample) {
+    await mkdir(source, { recursive: true });
+    await writeFile(join(source, "README.md"), "Sample project\n");
+    await writeFile(join(source, "hello.txt"), "hello\n");
+    if (opts.sampleLink) await symlink(source, sampleProject);
+    if (opts.existingLink) {
+      await mkdir(home, { recursive: true });
+      await symlink(source, join(home, "test"));
+    }
+  }
   let agents;
   if (agent) {
     const connectors = join(root, "connectors");
@@ -62,7 +70,7 @@ async function setup(agent = false) {
     await api.close();
     await engine.shutdown();
   };
-  return { root, home, sampleProject, engine, call, close };
+  return { root, home, source, sampleProject, engine, call, close };
 }
 
 async function until<T>(fn: () => Promise<T | undefined | false> | T | undefined | false, ms = 20_000): Promise<T> {
@@ -178,15 +186,19 @@ describe("node tests", () => {
   it("asks a Human node's question and completes its outcome", async () => {
     const { call, close } = await setup();
     try {
-      const { id } = await call("runNodeTest", { body: { node: human, inputs: {}, sidecars: {} } });
+      const { id } = await call("runNodeTest", { body: { node: human, inputs: { diff: "diff --git a/a b/a\n" }, sidecars: {} } });
       const waiting = await until(async () => {
         const view = await call("getNodeTest", { params: { id } });
         return view.state === "waiting" ? view : undefined;
       });
-      expect(waiting.question).toMatchObject({ kind: "human", text: "Continue?", choices: ["yes", "no"] });
+      expect(waiting.question).toMatchObject({
+        kind: "human", text: "Continue?", choices: ["yes", "no"],
+        inputs: [{ type: "diff", content: "diff --git a/a b/a\n" }],
+      });
       await expect(call("answerNodeTest", { params: { id }, body: { choice: "maybe" } })).rejects.toMatchObject({ status: 400 });
       await call("answerNodeTest", { params: { id }, body: { choice: "yes", note: "Go on." } });
-      expect(await finished(call, id)).toMatchObject({ state: "completed", outcome: "yes", outputs: [{ type: "feedback", content: "Go on." }] });
+      expect(await finished(call, id)).toMatchObject({ state: "completed", outcome: "yes", outputs: [{ type: "feedback", content: "Go on." }], question: null });
+      await expect(call("answerNodeTest", { params: { id }, body: { choice: "yes" } })).rejects.toMatchObject({ status: 400 });
     } finally {
       await close();
     }
@@ -206,6 +218,109 @@ describe("node tests", () => {
       expect(view.files).toEqual([{ status: "A", path: "agent.txt" }]);
       const raw = await call("getLog", { params: { id }, query: { view: "raw" } });
       expect(JSON.stringify(raw)).toContain("Unsaved prompt marker");
+    } finally {
+      await close();
+    }
+  });
+
+  it("copies a symlinked sample and replaces an old test folder symlink without touching the source", async () => {
+    const { call, close, source, home } = await setup(false, { sampleLink: true, existingLink: true });
+    try {
+      const { id } = await call("runNodeTest", { body: { node: command(), inputs: {}, sidecars: {} } });
+      expect((await finished(call, id)).state).toBe("completed");
+      expect(await readFile(join(source, "hello.txt"), "utf8")).toBe("hello\n");
+      expect((await lstat(join(home, "test"))).isSymbolicLink()).toBe(false);
+      await call("resetNodeTests");
+      expect(await readFile(join(source, "hello.txt"), "utf8")).toBe("hello\n");
+      expect(await readFile(join(home, "test", "hello.txt"), "utf8")).toBe("hello\n");
+    } finally {
+      await close();
+    }
+  });
+
+  it("runs one test at a time", async () => {
+    const { call, close } = await setup();
+    try {
+      const node = command({ name: "slow", command: ["/bin/sh", "-c", "sleep 30"] });
+      const { id } = await call("runNodeTest", { body: { node, inputs: {}, sidecars: {} } });
+      await expect(call("runNodeTest", { body: { node, inputs: {}, sidecars: {} } })).rejects.toMatchObject({ status: 409 });
+      await call("stopNodeTest", { params: { id } });
+      expect((await finished(call, id)).state).toBe("stopped");
+    } finally {
+      await close();
+    }
+  });
+
+  it("restores a read-only node that changed files and fails it", async () => {
+    const { call, close, home } = await setup();
+    try {
+      const node = command({ name: "read-only", changesFiles: false, command: ["/bin/sh", "-c", "printf 'x' > new.txt"] });
+      const { id } = await call("runNodeTest", { body: { node, inputs: {}, sidecars: {} } });
+      expect(await finished(call, id)).toMatchObject({ state: "failed", failureReason: "READ_ONLY_VIOLATION", diff: "", files: [] });
+      await expect(lstat(join(home, "test", "new.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await close();
+    }
+  });
+
+  it("deletes a completed node's scratch files before showing file changes", async () => {
+    const { call, close, home } = await setup();
+    try {
+      const node = command({
+        name: "scratch", changesFiles: false, scratchPaths: ["coverage/**"],
+        command: ["/bin/sh", "-c", "mkdir -p coverage && printf 'x' > coverage/report.txt && printf 'ok'"],
+      });
+      const { id } = await call("runNodeTest", { body: { node, inputs: {}, sidecars: {} } });
+      expect(await finished(call, id)).toMatchObject({ state: "completed", outcome: "success", diff: "", files: [] });
+      await expect(lstat(join(home, "test", "coverage", "report.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await close();
+    }
+  });
+
+  it.skipIf(process.platform !== "linux")("stops a detached process that carries the test id", async () => {
+    const { call, close, home } = await setup();
+    try {
+      const node = command({ name: "detached", command: ["/bin/sh", "-c", "setsid sleep 30 & echo $! > detached.pid; wait"] });
+      const { id } = await call("runNodeTest", { body: { node, inputs: {}, sidecars: {} } });
+      const pid = await until(async () => {
+        const text = await readFile(join(home, "test", "detached.pid"), "utf8").catch(() => "");
+        return text.trim() ? Number(text.trim()) : undefined;
+      });
+      await call("stopNodeTest", { params: { id } });
+      expect((await finished(call, id)).state).toBe("stopped");
+      await until(() => {
+        try {
+          process.kill(pid, 0);
+          return false;
+        } catch {
+          return true;
+        }
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  it("returns a bad request when the sample project cannot be restored", async () => {
+    const { call, close } = await setup(false, { missingSample: true });
+    try {
+      await expect(call("resetNodeTests")).rejects.toMatchObject({ status: 400 });
+    } finally {
+      await close();
+    }
+  });
+
+  it("refuses an Agent node with tracker access instead of running without its tools", async () => {
+    const { call, close } = await setup(true);
+    try {
+      const node = Node.parse({
+        name: "tracker", description: "Read a ticket", kind: "agent", prompt: "tracker.md",
+        outcomes: ["success"], changesFiles: false, timeoutSec: 30, agent: { tier: "standard" },
+        tracker: { access: "read", account: "project.account" },
+      });
+      const { id } = await call("runNodeTest", { body: { node, inputs: {}, sidecars: { "tracker.md": "Read the ticket." } } });
+      expect(await finished(call, id)).toMatchObject({ state: "failed", failureReason: "AGENT_UNAVAILABLE", error: expect.stringContaining("Tracker access") });
     } finally {
       await close();
     }

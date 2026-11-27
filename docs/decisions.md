@@ -602,7 +602,7 @@
 
 ## 2026-11-27: Node tests use one shared sample folder
 
-- Decision: the node editor's Test panel runs one Agent, Command or Human node with the current draft in `PECORE_HOME/test/`, a Git repository the app creates from a shipped sample project and resets on request. Inputs are checked against their artifact types. Repository nodes are not testable. The folder keeps changes between runs and never touches a project's repository, workdir or database.
+- Decision: the node editor's Test panel runs one Agent, Command or Human node with the current draft in `PECORE_HOME/test/`, a Git repository the app creates from a shipped sample project and resets on request. Inputs are checked against their artifact types. Repository nodes are not testable. The folder keeps changes between runs and never touches a project's repository, workdir or database. Git operations on the test folder run as the project user, so its metadata is never executed by the app user.
 - Why: trying a prompt or a check should not require saving the node and running a full job.
 - Replaces: nothing.
 

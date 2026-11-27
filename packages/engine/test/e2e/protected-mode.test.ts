@@ -1,12 +1,12 @@
 import { execFile } from "node:child_process";
-import { chmod, cp, mkdir, readdir, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { Accounts, Settings } from "@pecore/schemas";
+import { Accounts, Node, Settings } from "@pecore/schemas";
 import { AgentServices, protectedUser } from "../../src/accounts/agents";
 import { homePaths } from "../../src/home/layout";
-import { moveLegacyFolders } from "../../src/home/legacy";
+import { closeHome, moveLegacyFolders } from "../../src/home/legacy";
 import { Engine } from "../../src/main";
 import { appUser } from "../../src/runners/process";
 import { gitApp } from "../../src/workdir/git-as";
@@ -66,10 +66,14 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
     await mkdir(process.env.HOME, { mode: 0o700 });
     const home: string = join(process.env.HOME, ".pecore");
     const templates: string = join(root, "templates");
+    const sampleProject: string = join(root, "sample-project");
     await cp(shippedTemplates, templates, { recursive: true });
     await writeFile(join(templates, "nodes", "whoami.json"), JSON.stringify(whoami));
     await writeFile(join(templates, "recipes", "whoami-commit.json"), JSON.stringify(recipe));
-    const engine: Engine = await Engine.start({ home, templates, admin });
+    await mkdir(sampleProject);
+    await writeFile(join(sampleProject, "README.md"), "Sample project\n");
+    await writeFile(join(sampleProject, "hello.txt"), "hello\n");
+    const engine: Engine = await Engine.start({ home, templates, sampleProject, admin });
     try {
       await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["whoami-commit"]);
       const p = homePaths(home);
@@ -83,6 +87,25 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
 
       await engine.setProtectedMode(true);
       expect((await as(protectedUser, "id -un")).out).toBe(protectedUser);
+
+      const testNode = Node.parse({
+        name: "whoami-test", description: "writes the test user", kind: "command",
+        command: ["/bin/sh", "-c", "id -un > who.txt"], outcomes: ["success"], changesFiles: true,
+        outcomeRules: [{ exitCode: 0, outcome: "success" }], timeoutSec: 60,
+      });
+      const testId: string = await engine.nodeTests.run({ node: testNode, inputs: {}, sidecars: {} });
+      await until(() => engine.nodeTests.get(testId).state === "completed");
+      const testFolder: string = homePaths(home).test;
+      expect(await readFile(join(testFolder, "who.txt"), "utf8")).toBe(`${protectedUser}\n`);
+      expect((await execFileP("stat", ["-c", "%U", join(testFolder, ".git", "config")])).stdout.trim()).toBe(protectedUser);
+
+      await closeHome(home);
+      const marker: string = join(testFolder, "filter-ran");
+      expect((await as(protectedUser, 'printf "%s" "$1" >> "$2"', `[filter "pecore-test"]\n\tclean = touch ${marker}\n`, join(testFolder, ".git", "config"))).ok).toBe(true);
+      expect((await as(protectedUser, 'printf "%s" "$1" > "$2"', "* filter=pecore-test\n", join(testFolder, ".gitattributes"))).ok).toBe(true);
+      const secondId: string = await engine.nodeTests.run({ node: testNode, inputs: {}, sidecars: {} });
+      await until(() => engine.nodeTests.get(secondId).state === "completed");
+      expect((await execFileP("stat", ["-c", "%U", marker])).stdout.trim()).toBe(protectedUser);
 
       const project = engine.project("demo");
       const job: string = await engine.createJob("demo", { title: "Who runs jobs", request: "write who.txt" });

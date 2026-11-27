@@ -12,7 +12,7 @@ async function exists(path: string): Promise<boolean> {
   return lstat(path).then(() => true, () => false);
 }
 
-const opened: RegExp[] = [/^adapters$/, /^chats$/, /^harness\/(?!.*\/)/, /^projects\/[^/]+\/(work|repo\.git)$/];
+const opened: RegExp[] = [/^adapters$/, /^chats$/, /^harness\/(?!.*\/)/, /^test$/, /^projects\/[^/]+\/(work|repo\.git)$/];
 
 export async function closeHome(home: string): Promise<void> {
   const walk = async (dir: string): Promise<void> => {

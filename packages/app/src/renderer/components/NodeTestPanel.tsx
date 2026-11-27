@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ApiError, artifactContentProblem } from "@pecore/schemas";
+import { ApiError, artifactContentProblem, NodeOutputType } from "@pecore/schemas";
 import type { ArtifactType, Node, NodeTestView } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
@@ -12,7 +12,7 @@ import { ErrorText, ui } from "./ui";
 import { artifactTypeExamples, artifactTypeLabels } from "./artifactLabels";
 import s from "./NodeTestPanel.module.css";
 
-const allInputTypes: ArtifactType[] = ["spec", "diff", "code_review", "code_analysis", "sha", "pull_request", "feedback", "log"];
+const allInputTypes: ArtifactType[] = [...NodeOutputType.options, "diff"];
 
 const stateLabels: Record<NodeTestView["state"], string> = {
   running: "Running",
@@ -25,7 +25,8 @@ const stateLabels: Record<NodeTestView["state"], string> = {
 function tone(state: NodeTestView["state"]): "accent" | "success" | "danger" | "warning" | "neutral" {
   if (state === "completed") return "success";
   if (state === "failed") return "danger";
-  if (state === "stopped" || state === "waiting") return "warning";
+  if (state === "waiting") return "warning";
+  if (state === "stopped") return "neutral";
   return "accent";
 }
 
@@ -124,9 +125,16 @@ export function NodeTestPanel({ node, sidecars, sidecarReady, disabled }: {
           {view.data.failureReason && <span>Failure: <code>{view.data.failureReason}</code></span>}
         </div>
         <ErrorText error={view.data.error} />
-        {view.data.question && <section className={s.question} aria-label="Node question">
+        {view.data.state === "waiting" && view.data.question && <section className={s.question} aria-label="Node question">
           <strong>{view.data.question.kind === "human" ? "Your answer" : "The node asks"}</strong>
           <p>{view.data.question.text}</p>
+          {view.data.question.inputs.length > 0 && <div>
+            <strong>Inputs</strong>
+            {view.data.question.inputs.map((input, index) => <div key={`${input.type}-${index}`}>
+              <strong>{artifactTypeLabels[input.type]}</strong>
+              <pre className={s.pre}>{input.content}</pre>
+            </div>)}
+          </div>}
           {(view.data.question.kind === "agent" || view.data.question.notes.length > 0) && <TextArea label="Note" value={note} rows={3} onValueChange={setNote} />}
           <div className={ui.row}>
             {view.data.question.choices.length > 0

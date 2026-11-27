@@ -1,5 +1,4 @@
-import { cp, mkdtemp, readFile, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, cp, lstat, readFile, rm, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { monotonicFactory } from "ulid";
 import { artifactContentProblem, defaultAgentId } from "@pecore/schemas";
@@ -11,13 +10,14 @@ import { nodeSidecars } from "../definitions/load";
 import { homePaths } from "../home/layout";
 import { logEvents } from "../observability/log-events";
 import type { LogLine } from "../observability/logs";
+import { privateDirectory } from "../osuser/acl";
 import { runAgentNode } from "../runners/agent";
 import { outcomeOutputs, runCommandNode } from "../runners/command";
 import type { CommandInput } from "../runners/command";
-import { appUser, baseEnv, run, stopGroup } from "../runners/process";
-import { privateDirectory } from "../osuser/acl";
 import { paramsWithDefaults } from "../runners/placeholders";
-import { gitAppIn } from "../workdir/git-as";
+import { appUser, baseEnv, killJobProcesses, run, stopGroup } from "../runners/process";
+import { deleteScratch, restoreState } from "../workdir/files-hash";
+import { gitWork, gitWorkResult } from "../workdir/git-as";
 
 const ulid = monotonicFactory();
 
@@ -83,61 +83,77 @@ function errorMessage(error: unknown): string {
 export class NodeTestManager {
   private readonly tests = new Map<string, TestState>();
   private active: string | null = null;
+  private lock: Promise<void> = Promise.resolve();
 
   constructor(private readonly opts: NodeTestManagerOptions) {}
 
-  async run(body: NodeTestRunBody): Promise<string> {
-    if (this.active !== null) throw new NodeTestError("conflict", "A node test is already running.");
-    const node = body.node;
-    if (node.kind === "repository") throw new NodeTestError("bad_request", "Repository nodes change real remotes and cannot be tested.");
-    const inputs = this.checkedInputs(node, body.inputs);
-    const sidecars = await this.sidecars(node, body.sidecars);
-    const id = `node-test-${ulid()}`;
-    this.active = id;
-    let folder: string;
-    let head: string;
-    let beforeTree: string;
+  private async exclusive<T>(work: () => Promise<T>): Promise<T> {
+    const previous: Promise<void> = this.lock;
+    let release!: () => void;
+    this.lock = new Promise((resolve) => { release = resolve; });
+    await previous;
     try {
-      folder = await this.ensureFolder();
-      head = (await gitAppIn(folder, ["rev-parse", "HEAD"])).trim();
-      beforeTree = await this.treeOf(folder);
-    } catch (error) {
-      this.active = null;
-      throw error;
+      return await work();
+    } finally {
+      release();
     }
-    const test: TestState = {
-      id,
-      node,
-      sidecars,
-      inputs,
-      params: paramsWithDefaults(node.params, undefined),
-      user: this.opts.user(),
-      folder,
-      head,
-      beforeTree,
-      state: "running",
-      outcome: null,
-      failureReason: null,
-      outputs: [],
-      diff: "",
-      files: [],
-      question: null,
-      error: null,
-      logs: [],
-      startedAt: Date.now(),
-      endedAt: null,
-      stopRequested: false,
-      pgid: null,
-      pending: null,
-      done: null,
-    };
-    this.tests.set(id, test);
-    this.changed(test);
-    test.done = this.execute(test).catch(async (error: unknown) => {
-      if (test.stopRequested) await this.finish(test, "stopped");
-      else await this.fail(test, "HARNESS_ERROR", errorMessage(error));
+  }
+
+  run(body: NodeTestRunBody): Promise<string> {
+    return this.exclusive(async () => {
+      if (this.active !== null) throw new NodeTestError("conflict", "A node test is already running.");
+      const node = body.node;
+      if (node.kind === "repository") throw new NodeTestError("bad_request", "Repository nodes change real remotes and cannot be tested.");
+      const inputs = this.checkedInputs(node, body.inputs);
+      const sidecars = await this.sidecars(node, body.sidecars);
+      const id = `node-test-${ulid()}`;
+      this.active = id;
+      const user = this.opts.user();
+      let folder: string;
+      let head: string;
+      let beforeTree: string;
+      try {
+        folder = await this.ensureFolder();
+        head = (await gitWork(user, folder, ["rev-parse", "HEAD"])).trim();
+        beforeTree = await this.treeOf(folder, user);
+      } catch (error) {
+        this.active = null;
+        throw error;
+      }
+      const test: TestState = {
+        id,
+        node,
+        sidecars,
+        inputs,
+        params: paramsWithDefaults(node.params, undefined),
+        user,
+        folder,
+        head,
+        beforeTree,
+        state: "running",
+        outcome: null,
+        failureReason: null,
+        outputs: [],
+        diff: "",
+        files: [],
+        question: null,
+        error: null,
+        logs: [],
+        startedAt: Date.now(),
+        endedAt: null,
+        stopRequested: false,
+        pgid: null,
+        pending: null,
+        done: null,
+      };
+      this.tests.set(id, test);
+      this.changed(test);
+      test.done = this.execute(test).catch(async (error: unknown) => {
+        if (test.stopRequested) await this.finish(test, "stopped");
+        else await this.fail(test, "HARNESS_ERROR", errorMessage(error));
+      });
+      return id;
     });
-    return id;
   }
 
   get(id: string): NodeTestView {
@@ -148,11 +164,42 @@ export class NodeTestManager {
     return this.tests.get(id)?.logs ?? null;
   }
 
-  async stop(id: string): Promise<void> {
+  stop(id: string): Promise<void> {
+    return this.exclusive(() => this.stopTest(id));
+  }
+
+  answer(id: string, body: NodeTestAnswerBody): Promise<void> {
+    return this.exclusive(() => this.answerTest(id, body));
+  }
+
+  reset(): Promise<void> {
+    return this.exclusive(async () => {
+      if (this.active !== null) await this.stopTest(this.active);
+      await this.killAllProcesses();
+      this.tests.clear();
+      this.active = null;
+      await this.removeFolder();
+      await this.ensureFolder();
+    });
+  }
+
+  close(): Promise<void> {
+    return this.exclusive(async () => {
+      if (this.active !== null) await this.stopTest(this.active).catch(() => undefined);
+      await this.killAllProcesses();
+    });
+  }
+
+  private async killAllProcesses(): Promise<void> {
+    for (const test of this.tests.values()) await killJobProcesses(test.user, test.id).catch(() => undefined);
+  }
+
+  private async stopTest(id: string): Promise<void> {
     const test = this.test(id);
     if (test.state === "completed" || test.state === "failed" || test.state === "stopped") return;
     test.stopRequested = true;
     if (test.pgid !== null) await stopGroup(test.user, test.pgid);
+    await killJobProcesses(test.user, test.id).catch(() => undefined);
     if (test.state === "waiting") {
       await this.finish(test, "stopped");
       return;
@@ -160,7 +207,7 @@ export class NodeTestManager {
     await test.done;
   }
 
-  async answer(id: string, body: NodeTestAnswerBody): Promise<void> {
+  private async answerTest(id: string, body: NodeTestAnswerBody): Promise<void> {
     const test = this.test(id);
     if (test.state !== "waiting" || !test.question) throw new NodeTestError("bad_request", "This node test is not waiting for an answer.");
     if (test.question.kind === "human") {
@@ -185,18 +232,6 @@ export class NodeTestManager {
       if (test.stopRequested) await this.finish(test, "stopped");
       else await this.fail(test, "HARNESS_ERROR", errorMessage(error));
     });
-  }
-
-  async reset(): Promise<void> {
-    if (this.active !== null) await this.stop(this.active);
-    this.tests.clear();
-    this.active = null;
-    await this.removeFolder();
-    await this.ensureFolder();
-  }
-
-  async close(): Promise<void> {
-    if (this.active !== null) await this.stop(this.active).catch(() => undefined);
   }
 
   private test(id: string): TestState {
@@ -239,6 +274,7 @@ export class NodeTestManager {
         text: question,
         choices: [...test.node.outcomes],
         notes: test.node.outcomes.filter((outcome) => ["feedback", "code_review"].includes(test.node.outputs[outcome] ?? "")),
+        inputs: test.inputs.map(({ type, content }) => ({ type, content })),
       };
       this.changed(test);
       return;
@@ -262,6 +298,7 @@ export class NodeTestManager {
       workdir: test.folder,
       context: this.context(test),
       inputs: test.inputs,
+      extraEnv: { PECORE_JOB_ID: test.id },
       onStart: (pgid) => {
         test.pgid = pgid;
         if (test.stopRequested) void stopGroup(test.user, pgid);
@@ -287,6 +324,7 @@ export class NodeTestManager {
 
   private async runAgent(test: TestState, continuation: (AgentQuestion & { answer: string }) | null): Promise<void> {
     const node = test.node as AgentNode;
+    if (node.tracker) return this.fail(test, "AGENT_UNAVAILABLE", "Tracker access is not available in a node test.");
     const agents = this.opts.agents();
     if (!agents) return this.fail(test, "AGENT_UNAVAILABLE", "No harness service is available.");
     const card = this.opts.agentCard(defaultAgentId);
@@ -342,7 +380,7 @@ export class NodeTestManager {
     }
     if (result.kind === "question") {
       test.pending = result.pending;
-      test.question = { kind: "agent", text: result.pending.question, choices: [], notes: [] };
+      test.question = { kind: "agent", text: result.pending.question, choices: [], notes: [], inputs: [] };
       test.state = "waiting";
       this.changed(test);
       return;
@@ -358,19 +396,43 @@ export class NodeTestManager {
   }
 
   private async finish(test: TestState, state: "completed" | "failed" | "stopped"): Promise<void> {
+    let finalState = state;
+    if (state === "completed" && test.node.kind !== "human") {
+      try {
+        await deleteScratch(test.user, test.folder, test.node.scratchPaths, test.beforeTree);
+        if (!test.node.changesFiles) {
+          const after: string = await this.treeOf(test.folder, test.user);
+          if (after !== test.beforeTree) {
+            await gitWorkResult(test.user, test.folder, ["reset", "--hard", test.head]);
+            await restoreState(test.user, test.folder, test.beforeTree);
+            test.failureReason = "READ_ONLY_VIOLATION";
+            test.error = "The node changed files but is marked read-only.";
+            test.outcome = null;
+            test.outputs = [];
+            finalState = "failed";
+          }
+        }
+      } catch (error) {
+        test.failureReason = "HARNESS_ERROR";
+        test.error = `The node's files could not be checked: ${errorMessage(error)}`;
+        finalState = "failed";
+      }
+    }
     test.endedAt = Date.now();
     await this.recordChanges(test);
-    test.state = state;
+    test.state = finalState;
+    test.question = null;
+    test.pending = null;
     if (this.active === test.id) this.active = null;
     this.changed(test);
   }
 
   private async recordChanges(test: TestState): Promise<void> {
     try {
-      const after = await this.treeOf(test.folder);
+      const after = await this.treeOf(test.folder, test.user);
       if (after === test.beforeTree) return;
-      test.diff = await gitAppIn(test.folder, ["diff", "--binary", "--no-color", test.beforeTree, after]);
-      const names = await gitAppIn(test.folder, ["diff", "--name-status", "--no-renames", test.beforeTree, after]);
+      test.diff = await gitWork(test.user, test.folder, ["diff", "--binary", "--no-color", test.beforeTree, after]);
+      const names = await gitWork(test.user, test.folder, ["diff", "--name-status", "--no-renames", test.beforeTree, after]);
       test.files = names.split("\n").flatMap((line) => {
         const [status, ...path] = line.split("\t");
         return status && path.length ? [{ status, path: path.join("\t") }] : [];
@@ -423,24 +485,35 @@ export class NodeTestManager {
   private async ensureFolder(): Promise<string> {
     const folder = homePaths(this.opts.home).test;
     if (await asyncExists(join(folder, ".git"))) {
-      await privateDirectory(folder, this.opts.user(), this.opts.home);
-      return folder;
+      const link = await lstat(folder);
+      if (!link.isSymbolicLink()) {
+        await this.makeAccessible(folder, true).catch(() => this.makeAccessible(folder, false));
+        return folder;
+      }
     }
     await this.removeFolder();
     try {
-      await cp(this.opts.sampleProject, folder, { recursive: true });
+      await cp(this.opts.sampleProject, folder, { recursive: true, dereference: true });
     } catch (error) {
       throw new NodeTestError("bad_request", `The sample project could not be copied: ${errorMessage(error)}`);
     }
-    await gitAppIn(folder, ["init", "-q", "-b", "main"]);
-    await gitAppIn(folder, ["add", "-A"]);
-    await gitAppIn(folder, ["commit", "-q", "-m", "Sample project"]);
-    await this.makeAccessible(folder);
+    await rm(join(folder, ".git"), { recursive: true, force: true });
+    await chmod(folder, 0o700);
+    const user = this.opts.user();
+    await this.makeAccessible(folder, true);
+    await gitWork(user, folder, ["init", "-q", "-b", "main"]);
+    await gitWork(user, folder, ["add", "-A"]);
+    await gitWork(user, folder, ["commit", "-q", "-m", "Sample project"]);
     return folder;
   }
 
   private async removeFolder(): Promise<void> {
     const folder = homePaths(this.opts.home).test;
+    const info = await lstat(folder).catch(() => null);
+    if (info?.isSymbolicLink()) {
+      await unlink(folder);
+      return;
+    }
     await rm(folder, { recursive: true, force: true }).catch(async (error: unknown) => {
       const user = this.opts.user();
       if (user === appUser) throw error;
@@ -449,31 +522,33 @@ export class NodeTestManager {
     });
   }
 
-  private async makeAccessible(folder: string): Promise<void> {
+  private async makeAccessible(folder: string, recursive: boolean): Promise<void> {
     const user = this.opts.user();
     await privateDirectory(folder, user, this.opts.home);
     if (user === appUser) return;
     const env = await baseEnv(appUser);
-    const files = await run({ user: appUser, argv: ["setfacl", "-R", "-m", `u:${user}:rwX`, "--", folder], env, cwd: "/" });
-    if (files.code !== 0) throw new Error(`setfacl failed for ${folder}: ${files.stderr.trim()}`);
+    if (recursive) {
+      const files = await run({ user: appUser, argv: ["setfacl", "-R", "-m", `u:${user}:rwX`, "--", folder], env, cwd: "/" });
+      if (files.code !== 0) throw new Error(`setfacl failed for ${folder}: ${files.stderr.trim()}`);
+    }
     const dirs = await run({
       user: appUser,
-      argv: ["find", folder, "-type", "d", "-exec", "setfacl", "-m", `d:u:${user}:rwx,d:u:${appUser}:rwx`, "--", "{}", "+"],
+      argv: ["find", folder, "-maxdepth", "0", "-type", "d", "-exec", "setfacl", "-m", `d:u:${user}:rwx,d:u:${appUser}:rwx`, "--", "{}", "+"],
       env,
       cwd: "/",
     });
-    if (dirs.code !== 0) throw new Error(`setfacl failed for the folders in ${folder}: ${dirs.stderr.trim()}`);
+    if (dirs.code !== 0) throw new Error(`setfacl failed for ${folder}: ${dirs.stderr.trim()}`);
   }
 
-  private async treeOf(folder: string): Promise<string> {
-    const temp = await mkdtemp(join(tmpdir(), "pecore-node-test-"));
-    const env = { GIT_INDEX_FILE: join(temp, "index") };
+  private async treeOf(folder: string, user: string): Promise<string> {
+    const path = (await gitWork(user, folder, ["rev-parse", "--path-format=absolute", "--git-path", "pecore-node-test.index"])).trim();
+    const env = { GIT_INDEX_FILE: path };
     try {
-      await gitAppIn(folder, ["read-tree", "HEAD"], { env });
-      await gitAppIn(folder, ["add", "-A"], { env });
-      return (await gitAppIn(folder, ["write-tree"], { env })).trim();
+      await gitWork(user, folder, ["read-tree", "HEAD"], { env });
+      await gitWork(user, folder, ["add", "-A"], { env });
+      return (await gitWork(user, folder, ["write-tree"], { env })).trim();
     } finally {
-      await rm(temp, { recursive: true, force: true });
+      await run({ user, argv: ["rm", "-f", "--", path], env: await baseEnv(user), cwd: "/" }).catch(() => undefined);
     }
   }
 }

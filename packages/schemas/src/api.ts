@@ -402,6 +402,7 @@ export const NodeTestQuestion = z.object({
   text: z.string(),
   choices: z.array(z.string()),
   notes: z.array(z.string()),
+  inputs: z.array(NodeTestOutput),
 });
 export type NodeTestQuestion = z.infer<typeof NodeTestQuestion>;
 

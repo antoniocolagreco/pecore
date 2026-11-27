@@ -224,6 +224,42 @@ it("checks a test input against its artifact type", async () => {
   await waitFor(() => expect(run.disabled).toBe(false));
 });
 
+it("hides a Human test question after the answer", async () => {
+  const node: Node = Node.parse({
+    name: "decide", description: "Ask the user", kind: "human", interface: "decision", outcomes: ["yes", "no"],
+    params: { type: "object", properties: { question: { type: "string", default: "Continue?" } } },
+  });
+  const path: string = "templates/nodes/decide.json";
+  let answered: boolean = false;
+  const waiting = {
+    id: "node-test-1", state: "waiting", outcome: null, failureReason: null, outputs: [], diff: "", files: [],
+    question: { kind: "human", text: "Continue?", choices: ["yes", "no"], notes: [], inputs: [] },
+    error: null, startedAt: 1, endedAt: null,
+  };
+  const completed = {
+    ...waiting, state: "completed", outcome: "yes", question: null, endedAt: 2,
+  };
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "listDefinitions") return [];
+    if (route === "getDefinition") return { content: JSON.stringify(node), sha256: "node-v1" };
+    if (route === "validateDefinition") return { errors: [], warnings: [] };
+    if (route === "runNodeTest") return { id: "node-test-1" };
+    if (route === "getNodeTest") return answered ? completed : waiting;
+    if (route === "answerNodeTest") { answered = true; return { ok: true }; }
+    if (route === "getLog") return { view: "events", events: [] };
+    if (route === "getNodeTemplateUsage") return [];
+    throw new Error(`Unexpected route ${route}`);
+  });
+  const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: [`/edit/node/${path}`] });
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Run" }));
+  expect(await screen.findByText("Continue?")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "yes" }));
+  await waitFor(() => expect(screen.queryByText("Continue?")).toBeNull());
+  expect(screen.getByText("Completed")).toBeTruthy();
+});
+
 it("edits the template's agent session and keeps the changesFiles field", async () => {
   const node: Node = Node.parse({
     name: "builder", description: "Build the change", kind: "agent", prompt: "builder.md", outcomes: ["done"],

@@ -41,7 +41,11 @@ export function nodeTestHandlers(engine: Engine) {
       return { ok: true as const };
     },
     resetNodeTests: async () => {
-      await engine.nodeTests.reset();
+      try {
+        await engine.nodeTests.reset();
+      } catch (error) {
+        httpError(error);
+      }
       return { ok: true as const };
     },
   } satisfies Partial<Handlers>;
