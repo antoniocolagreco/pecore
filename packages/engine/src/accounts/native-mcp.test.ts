@@ -17,7 +17,7 @@ const originalLinear = { ...trackerServers.linear };
 let server: Server | undefined;
 
 afterEach(async () => {
-  setBrowserOpener(null);
+  setBrowserOpener(() => undefined);
   vi.restoreAllMocks();
   trackerServers.atlassian.url = original.url;
   trackerServers.atlassian.authHost = original.authHost;

@@ -113,6 +113,7 @@ function trackedFetch(state: FetchState): FetchLike {
 }
 
 function openBrowser(url: string): void {
+  if (process.env.VITEST) return;
   const command: string | null = process.platform === "darwin" ? "open" : process.platform === "linux" ? "xdg-open" : null;
   if (!command) return;
   const child = spawn(command, [url], { stdio: "ignore", detached: true });
