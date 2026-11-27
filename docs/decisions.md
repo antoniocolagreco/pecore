@@ -611,3 +611,9 @@
 - Decision: An optional flag on a recipe step lets the engine use that step's successful `node_run.completed` event and its SHA artifact to unblock child jobs. Shipped recipes set the flag. The editor shows it in advanced settings for steps that produce a SHA on success.
 - Why: A child can start from the parent's commit while the parent waits for review and merge. New users can run the shipped recipes without configuring the flag.
 - Replaces: Waiting for the parent job to reach `succeeded` before starting a child. See issue #66.
+
+## 2026-11-28: The node test sample covers every shipped node
+
+- Decision: the node test sample is a small TypeScript and Rust project with a newer base on an `upstream` branch. The app installs its npm dependencies once, keeps them across Reset, and replaces folders made from the older sample.
+- Why: the old sample had no code to check, so Typecheck, ESLint, Vitest and the Cargo nodes always failed and Git Rebase could never conflict.
+- Replaces: the three-file sample of 2026-11-27. See issue #81.

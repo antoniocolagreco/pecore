@@ -70,11 +70,13 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
     await cp(shippedTemplates, templates, { recursive: true });
     await writeFile(join(templates, "nodes", "whoami.json"), JSON.stringify(whoami));
     await writeFile(join(templates, "recipes", "whoami-commit.json"), JSON.stringify(recipe));
-    await mkdir(sampleProject);
-    await writeFile(join(sampleProject, "README.md"), "Sample project\n");
-    await writeFile(join(sampleProject, "hello.txt"), "hello\n");
-    await mkdir(join(sampleProject, "src"));
-    await writeFile(join(sampleProject, "src", "sample.txt"), "sample\n");
+    const sample: string = join(sampleProject, "sample");
+    await mkdir(join(sample, "src"), { recursive: true });
+    await writeFile(join(sample, "README.md"), "Sample project\n");
+    await writeFile(join(sample, "hello.txt"), "hello\n");
+    await writeFile(join(sample, "src", "sample.txt"), "sample\n");
+    await mkdir(join(sampleProject, "upstream", "src"), { recursive: true });
+    await writeFile(join(sampleProject, "upstream", "src", "sample.txt"), "newer sample\n");
     const engine: Engine = await Engine.start({ home, templates, sampleProject, admin });
     try {
       await createProjectWithRecipes(engine, { id: "demo", name: "Demo", repo: null }, ["whoami-commit"]);
@@ -114,6 +116,14 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
       await until(() => engine.nodeTests.get(testId).state === "completed");
       expect(await readFile(join(testFolder, "who.txt"), "utf8")).toBe(`${protectedUser}\n`);
       expect((await execFileP("stat", ["-c", "%U", join(testFolder, ".git", "config")])).stdout.trim()).toBe(protectedUser);
+      const shipped = async (name: string): Promise<Node> => Node.parse(JSON.parse(await readFile(join(templates, "nodes", `${name}.json`), "utf8")));
+      const commitId: string = await engine.nodeTests.run({ node: await shipped("git-commit"), inputs: {}, sidecars: {} });
+      await until(() => engine.nodeTests.get(commitId).state !== "running");
+      expect(engine.nodeTests.get(commitId)).toMatchObject({ state: "completed", outcome: "success", outputs: [{ type: "sha" }] });
+      const rebaseId: string = await engine.nodeTests.run({ node: await shipped("git-rebase"), inputs: {}, sidecars: {} });
+      await until(() => engine.nodeTests.get(rebaseId).state !== "running");
+      expect(engine.nodeTests.get(rebaseId)).toMatchObject({ state: "completed", outcome: "success" });
+      expect(await readFile(join(testFolder, "src", "sample.txt"), "utf8")).toBe("newer sample\n");
 
       await closeHome(home);
       const marker: string = join(testFolder, "filter-ran");

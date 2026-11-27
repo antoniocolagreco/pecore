@@ -416,6 +416,7 @@ export const NodeTestView = z.object({
   files: z.array(NodeTestFile),
   question: NodeTestQuestion.nullable(),
   error: z.string().nullable(),
+  notice: z.string().nullable(),
   startedAt: z.number(),
   endedAt: z.number().nullable(),
 });
