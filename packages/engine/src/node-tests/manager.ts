@@ -309,10 +309,6 @@ export class NodeTestManager {
     if (result.log) this.log(test, { dir: "cmd", text: result.log, at: Date.now() });
     if (test.stopRequested) return this.finish(test, "stopped");
     if (result.kind === "completed") {
-      for (const output of result.outputs) {
-        const problem = artifactContentProblem(output.type, output.content);
-        if (problem) return this.fail(test, "INVALID_OUTPUT", `The ${output.type} output is not valid: ${problem}`);
-      }
       test.outputs = result.outputs;
       test.outcome = result.outcome;
       await this.finish(test, "completed");
@@ -416,6 +412,19 @@ export class NodeTestManager {
         test.failureReason = "HARNESS_ERROR";
         test.error = `The node's files could not be checked: ${errorMessage(error)}`;
         finalState = "failed";
+      }
+    }
+    if (finalState === "completed" && test.node.kind === "command") {
+      for (const output of test.outputs) {
+        const problem = artifactContentProblem(output.type, output.content);
+        if (problem) {
+          test.failureReason = "INVALID_OUTPUT";
+          test.error = `The ${output.type} output is not valid: ${problem}`;
+          test.outcome = null;
+          test.outputs = [];
+          finalState = "failed";
+          break;
+        }
       }
     }
     test.endedAt = Date.now();
