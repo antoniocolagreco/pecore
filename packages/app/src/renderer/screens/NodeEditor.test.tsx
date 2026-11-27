@@ -36,6 +36,8 @@ it("shows where to configure Open PR instead of a disabled editor", async () => 
   expect(screen.queryByRole("group", { name: "Repository script" })).toBeNull();
   expect(screen.queryByRole("combobox", { name: "Account" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
+  expect(screen.getByText(/Repository nodes change real remotes/)).toBeTruthy();
   await userEvent.setup().click(screen.getByRole("link", { name: "Projects" }));
   expect(await screen.findByRole("heading", { name: "Projects" })).toBeTruthy();
 });
@@ -190,6 +192,36 @@ it("creates a Repository node with a shell script and requires its account", asy
   expect(Node.parse(JSON.parse(saved.body.content))).toMatchObject({
     kind: "repository", account: "gh-alice", script: "echo checked",
   });
+});
+
+it("checks a test input against its artifact type", async () => {
+  const node: Node = Node.parse({
+    name: "read-spec", description: "Read a spec", kind: "command", command: ["/bin/cat"], inputs: ["spec"],
+    changesFiles: false, timeoutSec: 60, outcomes: ["success"], outcomeRules: [{ exitCode: 0, outcome: "success" }],
+  });
+  const path: string = "templates/nodes/read-spec.json";
+  api.call.mockImplementation(async (route: string, input?: RouteInput<"validateDefinition">) => {
+    if (route === "listDefinitions") return [];
+    if (route === "getDefinition") return { content: JSON.stringify(node), sha256: "node-v1" };
+    if (route === "validateDefinition") {
+      const parsed = Node.safeParse(JSON.parse(input?.body.content ?? ""));
+      return { errors: parsed.success ? [] : parsed.error.issues.map(({ path, message }) => ({ path: path.join("."), message })), warnings: [] };
+    }
+    throw new Error(`Unexpected route ${route}`);
+  });
+  const router = createMemoryRouter([{ path: "/edit/node/*", element: <NodeEditor /> }], { initialEntries: [`/edit/node/${path}`] });
+  render(<RouterProvider router={router} />, { wrapper: ViewHistoryProvider });
+  const user = userEvent.setup();
+  const input: HTMLElement = await screen.findByRole("textbox", { name: "Spec input (required)" });
+  const run: HTMLButtonElement = screen.getByRole<HTMLButtonElement>("button", { name: "Run" });
+  expect(run.disabled).toBe(true);
+  await user.type(input, "not json");
+  expect(await screen.findByText(/Invalid JSON/)).toBeTruthy();
+  expect(run.disabled).toBe(true);
+  await user.clear(input);
+  await user.click(input);
+  await user.paste('{"feature":"Demo","scenarios":[{"name":"One","given":["a"],"when":"b","then":["c"]}]}');
+  await waitFor(() => expect(run.disabled).toBe(false));
 });
 
 it("edits the template's agent session and keeps the changesFiles field", async () => {

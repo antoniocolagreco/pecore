@@ -76,6 +76,10 @@ async function resourcesDir(): Promise<string> {
 		join(dir, "connectors"),
 	);
 	await symlink(
+		join(repo, "packages/app/resources/test-project"),
+		join(dir, "test-project"),
+	);
+	await symlink(
 		join(repo, "packages/agents/out/adapters"),
 		join(dir, "adapters"),
 	);

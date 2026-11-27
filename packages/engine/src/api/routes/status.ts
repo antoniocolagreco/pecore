@@ -27,6 +27,8 @@ export function statusHandlers(engine: Engine, version: string) {
       return { ok: true as const };
     },
     getLog: async ({ params, query }) => {
+      const testLines: LogLine[] | null = engine.nodeTests.logs(params.id);
+      if (testLines !== null) return query.view === "events" ? { view: "events" as const, events: testLines.flatMap(logEvents) } : { view: "raw" as const, lines: testLines };
       for (const { ctx } of engine.projects.values()) {
         const status: ReturnType<typeof ctx.db.logs.status> = ctx.db.logs.status(params.id);
         if (status === "missing") continue;

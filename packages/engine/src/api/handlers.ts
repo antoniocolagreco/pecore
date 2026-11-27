@@ -2,6 +2,7 @@ import type { Engine } from "../main";
 import { chatHandlers } from "./routes/chats";
 import { definitionHandlers } from "./routes/definitions";
 import { jobHandlers } from "./routes/jobs";
+import { nodeTestHandlers } from "./routes/node-tests";
 import { globalFileHandlers } from "./routes/settings";
 import { projectHandlers } from "./routes/projects";
 import { queueHandlers } from "./routes/queue";
@@ -14,6 +15,7 @@ export function handlers(version: string) {
     ...projectHandlers(engine),
     ...chatHandlers(engine),
     ...jobHandlers(engine),
+    ...nodeTestHandlers(engine),
     ...queueHandlers(engine),
     ...statusHandlers(engine, version),
     ...systemHandlers(engine),
