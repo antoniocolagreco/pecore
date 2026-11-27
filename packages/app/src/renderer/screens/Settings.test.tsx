@@ -150,7 +150,7 @@ it("replaces a pending provider row with the verified MCP account", async () => 
   });
   await waitFor(() => expect(screen.queryByText("Signing in…")).toBeNull());
   await waitFor(() => expect(within(trackers).getByText("team.atlassian.net")).toBeTruthy());
-  expect(within(trackers).getByText("MCP")).toBeTruthy();
+  await waitFor(() => expect(within(trackers).getByText("MCP")).toBeTruthy());
 });
 
 it("offers Connect MCP on the CLI Jira row and shows no MCP badge until MCP is active", async () => {
