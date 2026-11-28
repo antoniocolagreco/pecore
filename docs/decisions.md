@@ -635,3 +635,9 @@
 - Decision: before a chat starts in protected mode, the engine grants `pecore-agent` access to the files and folders of that chat that the app user still owns, skipping symbolic links. The node test folder uses the same helper.
 - Why: after turning protected mode on, the Assistant failed with "Permission denied" because `chats/assistant/` was created in normal mode without access for `pecore-agent`.
 - Replaces: access only for chat folders created after the switch.
+
+## 2026-11-28: Open the AI tool login page automatically
+
+- Decision: when an AI tool login reports its `https://` page, the app opens it once in the default browser, from Settings and from the setup banner. Open login URL stays visible. Git hosting and tracker logins are unchanged.
+- Why: in protected mode the login runs as `pecore-agent`, which cannot open the browser, so the user had to click the link.
+- Replaces: opening the login page only from the Open login URL link. See issue #87.

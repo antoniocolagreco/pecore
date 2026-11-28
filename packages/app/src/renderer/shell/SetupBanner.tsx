@@ -5,6 +5,7 @@ import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
 import { ErrorText, ui } from "../components/ui";
+import { useOpenLoginUrl } from "../components/useOpenLoginUrl";
 import { Button } from "../ds/button";
 import { PasswordField } from "../ds/field";
 import { Alert } from "../ds/feedback";
@@ -39,10 +40,11 @@ export function SetupBanner() {
     await call("loginCode", { params: { id }, body: { code: code.trim() } });
     setCode("");
   });
-  if (!setup.data || setup.data.harnesses.some((harness) => harness.installed && harness.loggedIn)) return null;
   const current: Progress | undefined = loginId ? progress[loginId] : undefined;
   const running: boolean = loginId !== null && !current?.done;
   const url: string | undefined = current?.url?.startsWith("https://") ? current.url : undefined;
+  useOpenLoginUrl(loginId, running ? url : undefined);
+  if (!setup.data || setup.data.harnesses.some((harness) => harness.installed && harness.loggedIn)) return null;
   return <aside aria-label="Harness setup">
     <Alert tone="accent" title="Connect an AI coding tool to start">
       <span className={ui.stack}>

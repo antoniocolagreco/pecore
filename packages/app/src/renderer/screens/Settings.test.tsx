@@ -387,6 +387,16 @@ it("shows every supported AI tool without an account and logs in from its row", 
 
   await user.click(within(screen.getByText("Pi").closest("li")!).getByRole("button", { name: "Log in" }));
   await waitFor(() => expect(api.call).toHaveBeenCalledWith("startSetupLogin", { params: { connector: "pi" } }));
+  const open = vi.spyOn(window, "open").mockReturnValue(null);
+  act(() => {
+    for (const listener of [...api.listeners]) listener({ type: "login.progress", loginId: "pi:local", text: "Open the page", url: "https://pi.example.test/login?state=one", done: false });
+  });
+  await waitFor(() => expect(open).toHaveBeenCalledWith("https://pi.example.test/login?state=one", "_blank", "noreferrer"));
+  act(() => {
+    for (const listener of [...api.listeners]) listener({ type: "login.progress", loginId: "pi:local", text: "Waiting", url: "https://pi.example.test/login?state=one", done: false });
+  });
+  expect(open).toHaveBeenCalledTimes(1);
+  open.mockRestore();
 
   accounts = Accounts.parse({ accounts: [{ id: "pi", kind: "model", provider: "pi", connector: "pi", login: "subscription" }] });
   logins = [{ id: "pi:local", account: "pi", osUser: "local", connector: "pi", defaultDir: true, state: "logged_in", email: null, plan: null, running: false }];
