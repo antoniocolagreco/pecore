@@ -629,3 +629,9 @@
 - Decision: the node test repository is `PECORE_HOME/test/repo/`, created by the project user inside `test/`, which the app user owns. A repository owned by the other user is created again after a protected mode switch.
 - Why: in protected mode Git, run as `pecore-agent`, refused the test folder owned by the app user ("detected dubious ownership"), so every test and Reset failed.
 - Replaces: `PECORE_HOME/test/` as the repository itself.
+
+## 2026-11-28: AI tools stay in Accounts in protected mode
+
+- Decision: Settings > Accounts > AI tools lists the AI tools in normal and protected mode. In protected mode every row says it runs as `pecore-agent`, and Log in and Check act for that user. Protected mode keeps only its switch, description and errors.
+- Why: with protected mode on, the AI tools appeared only in Protected mode while Accounts > AI tools was empty, so the user looked in the wrong place.
+- Replaces: the AI tool list with its Log in buttons inside the Protected mode section.

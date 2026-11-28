@@ -126,17 +126,17 @@ function DiscoveringProviders({ providers }: { providers: { id: string; name: st
   </ul>;
 }
 
-function LoginControls({ title, actions, children, accounts, protectedOnly = false, kind = "model", hideMissing = false, pendingLogin, onLoginStarted, onEdit, extra, rowOverrides, refresh, onStateChange, onLoginComplete, checkIds, autoCheckKinds = ["forge", "service"], pendingTracker, onPendingDismiss }: {
+function LoginControls({ title, actions, children, accounts, protectedMode = false, kind = "model", hideMissing = false, pendingLogin, onLoginStarted, onEdit, extra, rowOverrides, refresh, onStateChange, onLoginComplete, checkIds, autoCheckKinds = ["forge", "service"], pendingTracker, onPendingDismiss }: {
   title?: string; actions?: ReactNode; children?: ReactNode;
-  accounts: Account[]; protectedOnly?: boolean; kind?: "model" | "tool"; hideMissing?: boolean;
+  accounts: Account[]; protectedMode?: boolean; kind?: "model" | "tool"; hideMissing?: boolean;
   pendingLogin?: string; onLoginStarted?(): void; onEdit?(account: ForgeAccount): void; extra?: ExtraAccountRow[];
   rowOverrides?: Record<string, RowOverride>; refresh?(): Promise<unknown> | void; onStateChange?(id: string, state: string): void; onLoginComplete?(id: string): void; checkIds?: string[]; autoCheckKinds?: ("forge" | "service")[];
   pendingTracker?: { account: ServiceAccount; loginId: string }; onPendingDismiss?(): void;
 }) {
   const connected: boolean = useConnected();
-  const logins = useData(() => kind === "model" ? call("listLogins") : Promise.resolve([]), [kind],
+  const logins = useData(() => kind === "model" ? call("listLogins") : Promise.resolve([]), [kind, protectedMode],
     (message) => kind === "model" && ((message.type === "login.progress" && message.done) || (message.type === "configuration.changed" && ["settings", "accounts"].includes(message.kind))));
-  const setup = useData(() => kind === "model" ? call("getSetup") : Promise.resolve(null), [kind],
+  const setup = useData(() => kind === "model" ? call("getSetup") : Promise.resolve(null), [kind, protectedMode],
     (message) => kind === "model" && ((message.type === "login.progress" && message.done)
       || (message.type === "configuration.changed" && message.kind === "accounts")
       || message.type === "accounts.discovery_changed"));
@@ -210,12 +210,12 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
       setChecking((old) => { const next = new Set(old); next.delete(id); return next; });
     }
   });
-  const visible = accounts.filter((account) => kind === "model" ? account.kind === "model" : account.kind !== "model" && !protectedOnly);
-  const missingHarnesses: HarnessInfo[] = kind === "model" && !protectedOnly
+  const visible = accounts.filter((account) => kind === "model" ? account.kind === "model" : account.kind !== "model");
+  const missingHarnesses: HarnessInfo[] = kind === "model"
     ? harnesses.filter((harness) => harness.supported && !visible.some((account) => account.kind === "model" && account.connector === harness.id))
     : [];
   const shownMissing: HarnessInfo[] = hideMissing ? [] : missingHarnesses;
-  const modelLogins = (logins.data ?? []).filter((login) => (login.osUser === "pecore-agent") === protectedOnly
+  const modelLogins = (logins.data ?? []).filter((login) => (login.osUser === "pecore-agent") === protectedMode
     && visible.some((account) => account.kind === "model" && account.id === login.account));
   const loginRunning = (id: string, running: boolean = false): boolean => progress[id] ? !progress[id].done : running;
   useEffect(() => {
@@ -244,7 +244,6 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
     disabled={locked || checkPanel.busy || (!available.length && !refresh)} onClick={() => void checkPanel.run()}>Check</Button>;
   const rows: ReactNode = <>
     <ErrorText error={start.error ?? startSetup.error ?? recheck.error ?? logins.error ?? setup.error} />
-    {protectedOnly && !visible.length && <p className={s.groupText}>No AI tools yet.</p>}
     {!!(visible.length || extra?.length || shownMissing.length || pendingTracker) && <ul className={s.rows}>
       {pendingTracker && (() => {
         const pendingProgress: Progress | undefined = progress[pendingTracker.loginId];
@@ -266,10 +265,13 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
             const current: Progress | undefined = progress[login.id];
             const running: boolean = loginRunning(login.id, login.running);
             const state: string = modelOnlyHarness(login.connector) && login.state === "unknown" ? "no_models" : login.state;
-            const detail: string = login.email
-              ? login.email + (login.plan ? " · " + login.plan : "")
-              : state === "no_models" ? `Open ${name} and set up a model provider, then check again.`
-              : state === "logged_out" && login.defaultDir ? `Log in with ${name} on this computer, then check again.` : protectedOnly ? "As pecore-agent" : "";
+            const detail: string = [
+              login.email ? login.email + (login.plan ? " · " + login.plan : "")
+                : state === "no_models" ? `Open ${name} and set up a model provider, then check again.`
+                : state === "logged_out" && login.defaultDir ? `Log in with ${name} on this computer, then check again.`
+                : "",
+              protectedMode ? "Runs as pecore-agent" : "",
+            ].filter(Boolean).join(" · ");
             return <AccountRow key={login.id} name={name} color={color} detail={detail} state={state} checking={checking.has(login.id)} actions={
               !login.defaultDir && login.state !== "logged_in" && <Button size="sm" variant="primary" disabled={locked || running} onClick={() => void start.run(account, login.osUser, login.id)}>Log in</Button>
             }>
@@ -302,9 +304,12 @@ function LoginControls({ title, actions, children, accounts, protectedOnly = fal
         const installed: boolean = state?.installed ?? false;
         const loggedIn: boolean = state?.loggedIn ?? false;
         const label: string = loading ? "unchecked" : !installed ? "not_installed" : modelOnlyHarness(harness.id) ? "no_models" : "logged_out";
-        const detail: string = loading ? "Loading…" : !installed ? `Install ${harness.name}, then check again.`
-          : modelOnlyHarness(harness.id) ? `Log in or set up a model provider in ${harness.name}, then check again.`
-          : `Log in with ${harness.name}, then check again.`;
+        const detail: string = [
+          loading ? "Loading…" : !installed ? `Install ${harness.name}, then check again.`
+            : modelOnlyHarness(harness.id) ? `Log in or set up a model provider in ${harness.name}, then check again.`
+            : `Log in with ${harness.name}, then check again.`,
+          protectedMode && installed ? "Runs as pecore-agent" : "",
+        ].filter(Boolean).join(" · ");
         const id: string | undefined = setupRuns[harness.id];
         const current: Progress | undefined = id ? progress[id] : undefined;
         const running: boolean = !!id && !current?.done;
@@ -505,7 +510,7 @@ export function Settings() {
         <Section id="accounts" title="Accounts" description={`The AI tools, code hosting and tracker accounts ${appName} works with.`} plain>
           <ErrorText error={accounts.error ?? accounts.loadError ?? discovery.error} />
           <div className={s.groups}>
-            <LoginControls title="AI tools" accounts={accounts.current?.accounts ?? []} hideMissing={!showUnavailable}
+            <LoginControls title="AI tools" accounts={accounts.current?.accounts ?? []} protectedMode={actualProtected} hideMissing={!showUnavailable}
               actions={<Button size="sm" icon={showUnavailable ? <EyeOffIcon /> : <EyeIcon />} aria-pressed={showUnavailable}
                 onClick={() => setShowUnavailable(!showUnavailable)}>{showUnavailable ? "Hide unavailable" : "Show unavailable"}</Button>}>
               {!showUnavailable && !accounts.current?.accounts.some(({ kind }) => kind === "model") && !pendingHarnesses.length && accounts.current && discovery.data &&
@@ -576,10 +581,9 @@ export function Settings() {
           </Section>
 
           <Section id="protectedMode" title="Protected mode" description="Agents run as a separate user, so they cannot read your files or your logins.">
-            <Switch label="Protected mode" detail="You log in once per AI account as pecore-agent." checked={actualProtected} disabled={!connected || protect.busy || settings.saving || !settings.current}
+            <Switch label="Protected mode" detail="You log in once per AI account in Accounts, as pecore-agent." checked={actualProtected} disabled={!connected || protect.busy || settings.saving || !settings.current}
               onCheckedChange={(checked) => { if (checked) void protect.run(true); else setDisableDialog(true); }} />
             <ErrorText error={protect.error} />
-            {actualProtected && <div className={s.nested}><LoginControls accounts={accounts.current?.accounts ?? []} protectedOnly /></div>}
           </Section>
           <Dialog open={disableDialog} onOpenChange={(o) => { if (!o && !protect.busy) setDisableDialog(false); }} title="Turn off protected mode" description="Also remove the pecore-agent user?" width={420}
             footer={<>

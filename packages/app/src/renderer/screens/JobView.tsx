@@ -32,22 +32,20 @@ function deliveredBranch(runs: NodeRunView[], snapshot: ReturnType<typeof useRec
   });
 }
 
-function reasonTarget(reason: WhyReason, detail: JobDetail): string | null {
+function reasonTarget(reason: WhyReason): string | null {
   if (reason.queueItemId) return `/notifications/${encodeURIComponent(reason.queueItemId)}`;
   if (reason.account || reason.reason === "auth") {
-    const waitingRun: NodeRunView | undefined = detail.nodeRuns.find((run) => run.id === reason.nodeRunId);
-    const section: string = waitingRun?.auth?.kind === "harness" && waitingRun.auth.osUser === "pecore-agent" ? "protectedMode" : "accounts";
-    const query = new URLSearchParams({ section });
+    const query = new URLSearchParams({ section: "accounts" });
     if (reason.account) query.set("account", reason.account);
     return `/settings?${query}`;
   }
   return reason.jobId ? `/jobs/${encodeURIComponent(reason.jobId)}` : null;
 }
 
-function WhyLine({ reason, detail }: { reason: WhyReason; detail: JobDetail }) {
+function WhyLine({ reason }: { reason: WhyReason }) {
   const connected: boolean = useConnected();
   const navigate: ReturnType<typeof useNavigate> = useNavigate();
-  const target: string | null = reasonTarget(reason, detail);
+  const target: string | null = reasonTarget(reason);
   const text: string = reason.until === null ? reason.text : `${reason.text} until ${time(reason.until)}`;
   return <div>{target ? <Button variant="link" disabled={!connected} onClick={() => void navigate(target)}>{text}</Button> : text}</div>;
 }
@@ -204,7 +202,7 @@ function Loaded({ detail, error, reasons, whyError, reload }: { detail: JobDetai
       <ErrorText error={whyError} />
       {reasons.length > 0 && (
         <Alert tone="warning" title={job.state === "stopped" ? "Agent unavailable" : "Why it is waiting"}>
-          {reasons.map((reason) => <WhyLine key={`${reason.reason}:${reason.nodeRunId ?? ""}`} reason={reason} detail={detail} />)}
+          {reasons.map((reason) => <WhyLine key={`${reason.reason}:${reason.nodeRunId ?? ""}`} reason={reason} />)}
         </Alert>
       )}
       {baseChanged && <Alert tone="accent">Base changed to <code>{job.base ?? job.target}</code> on <code>{job.target}</code>.</Alert>}
