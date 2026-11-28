@@ -4,7 +4,7 @@ import type { ArtifactType, Node, NodeTestView } from "@pecore/schemas";
 import { call } from "../api/client";
 import { useAction, useData } from "../api/hooks";
 import { useConnected } from "../api/live";
-import { Badge, Card } from "../ds/feedback";
+import { Alert, Badge, Card } from "../ds/feedback";
 import { Button } from "../ds/button";
 import { TextArea } from "../ds/field";
 import { LogView } from "./LogView";
@@ -140,6 +140,7 @@ export function NodeTestPanel({ node, sidecars, sidecarReady, disabled, onStateC
           {view.data.failureReason && <span>Failure: <code>{view.data.failureReason}</code></span>}
         </div>
         <ErrorText error={view.data.error} />
+        {view.data.notice && <Alert tone="warning">{view.data.notice}</Alert>}
         {view.data.state === "waiting" && view.data.question && <section className={s.question} aria-label="Node question">
           <strong>{view.data.question.kind === "human" ? "Your answer" : "The node asks"}</strong>
           <p>{view.data.question.text}</p>

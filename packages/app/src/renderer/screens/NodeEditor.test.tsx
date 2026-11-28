@@ -250,7 +250,7 @@ it("hides a Human test question after the answer", async () => {
       kind: "human", text: "Continue?", choices: ["yes", "no"], notes: [],
       inputs: [{ type: "diff", content: "diff --git a/a b/a\n" }],
     },
-    error: null, startedAt: 1, endedAt: null,
+    error: null, notice: null, startedAt: 1, endedAt: null,
   };
   const completed = {
     ...waiting, state: "completed", outcome: "yes", question: null, endedAt: 2,
@@ -289,7 +289,7 @@ it("shows a test that is running when the editor opens", async () => {
   });
   const running = {
     id: "node-test-active", state: "running", outcome: null, failureReason: null, outputs: [], diff: "", files: [],
-    question: null, error: null, startedAt: 1, endedAt: null,
+    question: null, error: null, notice: null, startedAt: 1, endedAt: null,
   };
   api.call.mockImplementation(async (route: string) => {
     if (route === "listDefinitions") return [];
@@ -318,7 +318,7 @@ it("keeps an unsaved edit when switching tabs and tests the draft", async () => 
   });
   const completed = {
     id: "node-test-draft", state: "completed", outcome: "success", failureReason: null, outputs: [], diff: "", files: [],
-    question: null, error: null, startedAt: 1, endedAt: 2,
+    question: null, error: null, notice: null, startedAt: 1, endedAt: 2,
   };
   api.call.mockImplementation(async (route: string) => {
     if (route === "listDefinitions") return [];

@@ -612,6 +612,12 @@
 - Why: A child can start from the parent's commit while the parent waits for review and merge. New users can run the shipped recipes without configuring the flag.
 - Replaces: Waiting for the parent job to reach `succeeded` before starting a child. See issue #66.
 
+## 2026-11-28: The node test sample covers every shipped node
+
+- Decision: the node test sample is a small TypeScript and Rust project with a newer base on an `upstream` branch. The app installs its npm dependencies once, keeps them across Reset, and replaces folders made from the older sample.
+- Why: the old sample had no code to check, so Typecheck, ESLint, Vitest and the Cargo nodes always failed and Git Rebase could never conflict.
+- Replaces: the three-file sample of 2026-11-27. See issue #81.
+
 ## 2026-11-28: Node editor uses Edit and Test tabs
 
 - Decision: the node editor has two tabs. Edit, the default, holds the node fields and its prompt or script. Test holds the Test panel, keeps its state when the user switches away, and shows a Badge dot with Running or Waiting on its label while a test runs or waits. The selected tab is restored on Back and Forward. Repository nodes keep the Test tab with their explanation.
