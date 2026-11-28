@@ -69,10 +69,7 @@ function Row({ row, factory, project, collapsed, toggle, now }: { row: JobRow; f
   const open = useAction(async () => {
     let to: string = `/jobs/${encodeURIComponent(job.id)}`;
     if (factory && needsYou(job)) {
-      if (job.waitingReason === "auth") {
-        const section: string = current?.auth?.kind === "harness" && current.auth.osUser === "pecore-agent" ? "protectedMode" : "accounts";
-        to = `/settings?section=${section}`;
-      }
+      if (job.waitingReason === "auth") to = "/settings?section=accounts";
       else if (job.waitingReason === "parent_failed" && job.parentJobId) to = `/jobs/${encodeURIComponent(job.parentJobId)}`;
       else {
         const { reasons } = await call("whyJob", { params: { id: job.id } });
