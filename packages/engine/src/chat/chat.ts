@@ -22,7 +22,7 @@ import { appUser } from "../runners/process";
 import { assistantChat } from "../store/chats-db";
 import type { Chat, ChatAttachment, ChatsDb, ChatTurn } from "../store/chats-db";
 import { homePaths } from "../home/layout";
-import { privateDirectory } from "../osuser/acl";
+import { privateDirectory, shareTree } from "../osuser/acl";
 import { removeAs, writeFileAs } from "../workdir/fs-as";
 import { NodeProposal, runApprovedNode } from "./node-tools";
 import { callTracker, listTrackerTools, trackerAccount, trackerTool } from "./tracker-tools";
@@ -244,6 +244,7 @@ export class AgentChats {
       const chats: string = homePaths(home).chats;
       await privateDirectory(chats, user, home);
       const cwd: string = join(chats, id);
+      await shareTree(cwd, user);
       const tokenPath: string = join(cwd, "mcp-token");
       const routeKey: string = randomBytes(16).toString("hex");
       const url = new URL(endpoint.url);
