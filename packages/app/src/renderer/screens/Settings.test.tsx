@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Accounts, Settings as SettingsSchema } from "@pecore/schemas";
-import type { LiveMessage, LoginView, RouteInput, RouteResult } from "@pecore/schemas";
+import type { LiveMessage, LoginView, RouteInput, RouteResult, Settings as SettingsValue } from "@pecore/schemas";
 import { createMemoryRouter, MemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ui } from "../components/ui";
@@ -403,6 +403,90 @@ it("shows every supported AI tool without an account and logs in from its row", 
   api.call.mockClear();
   await user.click(check);
   await waitFor(() => expect(api.call).toHaveBeenCalledWith("recheckLogin", { params: { id: "pi:local" } }));
+});
+
+it("lists the AI tools in Accounts in protected mode and keeps them out of Protected mode", async () => {
+  const fallback = api.call.getMockImplementation()!;
+  const settings: SettingsValue = SettingsSchema.parse({ protectedMode: true });
+  const accounts: Accounts = Accounts.parse({ accounts: [
+    { id: "claude", kind: "model", provider: "anthropic", connector: "claude-code", login: "subscription" },
+    { id: "codex", kind: "model", provider: "openai", connector: "codex", login: "subscription" },
+  ] });
+  const logins: LoginView[] = [
+    { id: "claude:pecore-agent", account: "claude", osUser: "pecore-agent", connector: "claude-code", defaultDir: false, state: "logged_in", email: "ada@example.test", plan: "Pro", running: false },
+    { id: "codex:pecore-agent", account: "codex", osUser: "pecore-agent", connector: "codex", defaultDir: false, state: "logged_out", email: null, plan: null, running: false },
+  ];
+  api.call.mockImplementation(async (route: string) => {
+    if (route === "getSettings") return { value: settings, sha256: "settings-v1" };
+    if (route === "getAccounts") return { value: accounts, sha256: "accounts-v1" };
+    if (route === "listLogins") return logins;
+    if (route === "startLogin") return { loginId: "codex:pecore-agent" };
+    if (route === "recheckLogin") return logins.find(({ id }) => id === "codex:pecore-agent")!;
+    return fallback(route);
+  });
+  const user = userEvent.setup();
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
+  const aiTools: HTMLElement = (await screen.findByRole("heading", { name: "AI tools" })).closest("section")!;
+  await within(aiTools).findByText("ada@example.test · Pro · Runs as pecore-agent");
+  const codex: HTMLElement = within(aiTools).getByText("Codex").closest("li")!;
+  expect(within(codex).getByText("Runs as pecore-agent")).toBeTruthy();
+  expect(within(codex).getByText("Logged out")).toBeTruthy();
+  const protectedSection: HTMLElement = (await screen.findByRole("heading", { name: "Protected mode" })).closest("section")!;
+  expect(within(protectedSection).queryByText("Claude Code")).toBeNull();
+  expect(within(protectedSection).queryByText("Codex")).toBeNull();
+  expect(within(protectedSection).queryByRole("list")).toBeNull();
+  expect(within(protectedSection).queryByRole("button", { name: "Log in" })).toBeNull();
+
+  const header: HTMLElement = screen.getByRole("heading", { name: "AI tools" }).closest("header")!;
+  const check: HTMLButtonElement = within(header).getByRole("button", { name: "Check" });
+  await waitFor(() => expect(check.disabled).toBe(false));
+  api.call.mockClear();
+  await user.click(check);
+  await waitFor(() => expect(api.call).toHaveBeenCalledWith("recheckLogin", { params: { id: "claude:pecore-agent" } }));
+  expect(api.call).toHaveBeenCalledWith("recheckLogin", { params: { id: "codex:pecore-agent" } });
+
+  api.call.mockClear();
+  await user.click(within(codex).getByRole("button", { name: "Log in" }));
+  await waitFor(() => expect(api.call).toHaveBeenCalledWith("startLogin", { body: { account: "codex", osUser: "pecore-agent" } }));
+});
+
+it("keeps the AI tools in Accounts when protected mode changes", async () => {
+  const fallback = api.call.getMockImplementation()!;
+  let protectedMode: boolean = false;
+  const accounts: Accounts = Accounts.parse({ accounts: [
+    { id: "claude", kind: "model", provider: "anthropic", connector: "claude-code", login: "subscription" },
+  ] });
+  const logins = (): LoginView[] => [protectedMode
+    ? { id: "claude:pecore-agent", account: "claude", osUser: "pecore-agent", connector: "claude-code", defaultDir: false, state: "logged_in", email: "ada@example.test", plan: "Pro", running: false }
+    : { id: "claude:local", account: "claude", osUser: "local", connector: "claude-code", defaultDir: true, state: "logged_in", email: "ada@example.test", plan: "Pro", running: false }];
+  api.call.mockImplementation(async (route: string, input?: RouteInput<"setProtectedMode">) => {
+    if (route === "getSettings") return { value: SettingsSchema.parse({ protectedMode }), sha256: `settings-${protectedMode}` };
+    if (route === "getAccounts") return { value: accounts, sha256: "accounts-v1" };
+    if (route === "listLogins") return logins();
+    if (route === "setProtectedMode" && input?.body) {
+      protectedMode = input.body.on;
+      return { ok: true };
+    }
+    return fallback(route);
+  });
+  const user = userEvent.setup();
+  render(<MemoryRouter><Settings /></MemoryRouter>, { wrapper: ViewHistoryProvider });
+  await screen.findByText("ada@example.test · Pro");
+  const aiTools = (): HTMLElement => screen.getByRole("heading", { name: "AI tools" }).closest("section")!;
+  const protectedSection = (): HTMLElement => screen.getByRole("heading", { name: "Protected mode" }).closest("section")!;
+  expect(within(aiTools()).getByText("Claude Code")).toBeTruthy();
+  expect(within(protectedSection()).queryByText("Claude Code")).toBeNull();
+
+  const toggle: HTMLButtonElement = screen.getByRole("switch", { name: /Protected mode/ });
+  await user.click(toggle);
+  await waitFor(() => expect(within(aiTools()).getByText(/Runs as pecore-agent/)).toBeTruthy());
+  expect(within(protectedSection()).queryByText("Claude Code")).toBeNull();
+
+  await user.click(toggle);
+  await user.click(await screen.findByRole("button", { name: "Keep user" }));
+  await waitFor(() => expect(within(aiTools()).queryByText(/Runs as pecore-agent/)).toBeNull());
+  expect(within(aiTools()).getByText("Claude Code")).toBeTruthy();
+  expect(within(protectedSection()).queryByText("Claude Code")).toBeNull();
 });
 
 it("keeps AI tool colours fixed and puts the state badge last", async () => {

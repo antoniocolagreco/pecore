@@ -635,3 +635,9 @@
 - Decision: before a chat starts in protected mode, the engine grants `pecore-agent` access to the files and folders of that chat that the app user still owns, skipping symbolic links. The node test folder uses the same helper.
 - Why: after turning protected mode on, the Assistant failed with "Permission denied" because `chats/assistant/` was created in normal mode without access for `pecore-agent`.
 - Replaces: access only for chat folders created after the switch.
+
+## 2026-11-28: AI tools stay in Accounts in protected mode
+
+- Decision: Settings > Accounts > AI tools lists the AI tools in normal and protected mode. In protected mode every row says it runs as `pecore-agent`, and Log in and Check act for that user. Protected mode keeps only its switch, description and errors.
+- Why: with protected mode on, the AI tools appeared only in Protected mode while Accounts > AI tools was empty, so the user looked in the wrong place.
+- Replaces: the AI tool list with its Log in buttons inside the Protected mode section.

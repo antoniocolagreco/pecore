@@ -54,10 +54,6 @@
   gap: 12px;
 }
 
-.nested {
-  margin-top: 14px;
-}
-
 .groups {
   display: flex;
   flex-direction: column;
