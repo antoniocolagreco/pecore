@@ -2,6 +2,68 @@
 
 The aggregates of <PE/CORE>, grouped by context. For each aggregate: its root, its entities and value objects, the Zod schema in `packages/schemas/src/`, and the tables that store it.
 
+## Context map
+
+Solid arrow: contains (same aggregate). Dashed arrow: refers by id (another aggregate).
+
+```mermaid
+flowchart LR
+  subgraph CFG[Configuration]
+    Settings
+    UiPreference
+    Account
+    Profile
+    Tiers
+    Agent
+    Theme --> ThemeToken
+  end
+
+  subgraph CAT[Catalog]
+    Recipe --> Step
+    Recipe --> Edge
+    Node
+    Icon
+    Connector
+  end
+
+  subgraph PRJ[Project]
+    Project --> ProjectCreation
+  end
+
+  subgraph EXE[Execution]
+    Job --> NodeRun
+    NodeRun --> Attempt
+    Attempt --> AttemptLog
+    NodeRun --> Artifact
+    HumanQueueItem
+    Order
+  end
+
+  subgraph CHT[Chat]
+    Chat --> Message
+    Message --> Attachment
+    Message --> Action
+    Notification
+  end
+
+  Profile -.-> Account
+  Tiers -.-> Profile
+  Agent -.-> Account
+  Step -.-> Node
+  Step -.-> Agent
+  Node -.-> Account
+  Connector -.- Account
+  Project -.-> Account
+  Project -.-> Recipe
+  Project -.-> Agent
+  Job -.-> Project
+  Job -.-> Job
+  Attempt -.-> Profile
+  HumanQueueItem -.-> Job
+  Order -.-> Job
+  Chat -.-> Project
+```
+
 Terms:
 
 - **Aggregate**: a group of objects saved and changed together. Other aggregates refer to it only by its root's id.
