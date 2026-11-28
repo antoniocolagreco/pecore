@@ -94,7 +94,7 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
         command: ["/bin/sh", "-c", "id -un > who.txt"], outcomes: ["success"], changesFiles: true,
         outcomeRules: [{ exitCode: 0, outcome: "success" }], timeoutSec: 60,
       });
-      const testFolder: string = homePaths(home).test;
+      const testFolder: string = join(homePaths(home).test, "repo");
       const normalId: string = await engine.nodeTests.run({ node: testNode, inputs: {}, sidecars: {} });
       await until(() => engine.nodeTests.get(normalId).state === "completed");
       expect(await readFile(join(testFolder, "who.txt"), "utf8")).toBe(`${appUser}\n`);
