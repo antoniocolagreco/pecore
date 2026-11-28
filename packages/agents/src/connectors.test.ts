@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { parseConnector } from "./connectors";
 import { fixturesDir, login, readFixture, replaySpawn, resolved } from "../test/helpers";
 import { classify, errorMessage } from "./errors";
+import { prepareLogin } from "./login";
 import { claudeCodeReader } from "./readers/claude-code";
 import { startSession } from "./session";
 import type { AgentEvent, TurnResult } from "./types";
@@ -113,6 +114,15 @@ describe("codex and opencode connectors: recorded traffic through their readers"
     expect(errorMessage(JSON.stringify(error))).toBe(error.message);
     expect(errorMessage(JSON.stringify({ code: -32603, message: "Internal error", data: { message: "You've hit your usage limit." } }))).toBe("You've hit your usage limit.");
     expect(errorMessage("stopReason max_tokens")).toBe("stopReason max_tokens");
+  });
+
+  it("opencode login connects OpenCode's own service with the device flow, so it needs no terminal", () => {
+    const file = fileURLToPath(new URL("../../app/resources/connectors/opencode.json", import.meta.url));
+    const { connector } = parseConnector(JSON.parse(readFileSync(file, "utf8")));
+    const plan = prepareLogin({ connector: resolved(connector!), login });
+    expect(plan.command.argv).toEqual([process.execPath, "auth", "login", "opencode", "--method", "device"]);
+    expect(plan.urlPattern).toBe("https://\\S+");
+    expect(plan.readsCode).toBe(false);
   });
 
   it("opencode auth-missing: -32000 Authentication required is auth", async () => {

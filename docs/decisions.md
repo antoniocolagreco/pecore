@@ -647,3 +647,9 @@
 - Decision: when an AI tool login reports its `https://` page, the app opens it once in the default browser, from Settings and from the setup banner. Open login URL stays visible. Git hosting and tracker logins are unchanged.
 - Why: in protected mode the login runs as `pecore-agent`, which cannot open the browser, so the user had to click the link.
 - Replaces: opening the login page only from the Open login URL link. See issue #87.
+
+## 2026-11-28: OpenCode's Log in connects OpenCode's own service
+
+- Decision: OpenCode's Log in runs `opencode auth login opencode --method device`. The app opens OpenCode's login page, where the code is already filled in. Other providers (OpenAI, OpenRouter, ...) are set up inside OpenCode.
+- Why: `opencode auth login` first asks the provider through an arrow-key menu, so without a terminal it failed with "Pass an integration ID or name when running without an interactive terminal".
+- Replaces: `opencode auth login` without a provider.

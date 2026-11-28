@@ -8,7 +8,7 @@
   "sessionConfig": [["mode", "build"], ["model", "{model}"], ["effort", "{effort}"]],
   "reader": "opencode",
   "errors": [{ "pattern": "Free usage limit reached", "in": "error", "kind": "quota" }],
-  "loginCommand": ["{harnessPath}", "auth", "login"],
+  "loginCommand": ["{harnessPath}", "auth", "login", "opencode", "--method", "device"],
   "loginUrlPattern": "https://\\S+",
   "loginReadsCode": false
 }
