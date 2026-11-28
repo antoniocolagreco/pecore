@@ -11,7 +11,7 @@ import { nodeSidecars } from "../definitions/load";
 import { homePaths } from "../home/layout";
 import { logEvents } from "../observability/log-events";
 import type { LogLine } from "../observability/logs";
-import { privateDirectory } from "../osuser/acl";
+import { privateDirectory, shareTree } from "../osuser/acl";
 import { runAgentNode } from "../runners/agent";
 import { outcomeOutputs, runCommandNode } from "../runners/command";
 import type { CommandInput } from "../runners/command";
@@ -547,7 +547,7 @@ export class NodeTestManager {
       throw new NodeTestError("bad_request", `The sample project could not be copied: ${errorMessage(error)}`);
     }
     await rm(join(folder, ".git"), { recursive: true, force: true });
-    await this.makeAccessible(folder);
+    await shareTree(folder, user);
     await gitWork(user, folder, ["init", "-q", "-b", "main"]);
     await gitWork(user, folder, ["add", "-A"]);
     await gitWork(user, folder, ["commit", "-q", "-m", "Sample project"]);
@@ -636,21 +636,6 @@ export class NodeTestManager {
     if (result.code !== 0) throw new Error(`the test folder's contents could not be removed: ${result.stderr.trim()}`);
   }
 
-  private async makeAccessible(folder: string): Promise<void> {
-    const user = this.opts.user();
-    if (user === appUser) return;
-    const env = await baseEnv(appUser);
-    const skip: string[] = [folder, "-mindepth", "1", "-path", join(folder, dependencies), "-prune", "-o"];
-    const files = await run({ user: appUser, argv: ["find", ...skip, "-exec", "setfacl", "-m", `u:${user}:rwX`, "--", "{}", "+"], env, cwd: "/" });
-    if (files.code !== 0) throw new Error(`setfacl failed for ${folder}: ${files.stderr.trim()}`);
-    const dirs = await run({
-      user: appUser,
-      argv: ["find", ...skip, "-type", "d", "-exec", "setfacl", "-m", `d:u:${user}:rwx,d:u:${appUser}:rwx`, "--", "{}", "+"],
-      env,
-      cwd: "/",
-    });
-    if (dirs.code !== 0) throw new Error(`setfacl failed for ${folder}: ${dirs.stderr.trim()}`);
-  }
 
   private async treeOf(folder: string, user: string): Promise<string> {
     const path = (await gitWork(user, folder, ["rev-parse", "--path-format=absolute", "--git-path", "pecore-node-test.index"])).trim();
