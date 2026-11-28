@@ -629,3 +629,9 @@
 - Decision: the node test repository is `PECORE_HOME/test/repo/`, created by the project user inside `test/`, which the app user owns. A repository owned by the other user is created again after a protected mode switch.
 - Why: in protected mode Git, run as `pecore-agent`, refused the test folder owned by the app user ("detected dubious ownership"), so every test and Reset failed.
 - Replaces: `PECORE_HOME/test/` as the repository itself.
+
+## 2026-11-28: Chats started in normal mode keep working in protected mode
+
+- Decision: before a chat starts in protected mode, the engine grants `pecore-agent` access to the files and folders of that chat that the app user still owns, skipping symbolic links. The node test folder uses the same helper.
+- Why: after turning protected mode on, the Assistant failed with "Permission denied" because `chats/assistant/` was created in normal mode without access for `pecore-agent`.
+- Replaces: access only for chat folders created after the switch.

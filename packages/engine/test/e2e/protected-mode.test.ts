@@ -158,7 +158,11 @@ describe.skipIf(!enabled)("protected mode on a real Linux system (PECORE_PROTECT
         expect((await as(protectedUser, 'ls -- "$1"', folder)).ok, folder).toBe(false);
       }
 
+      await mkdir(join(p.chats, "assistant", "session"), { recursive: true, mode: 0o700 });
+      await chmod(join(p.chats, "assistant"), 0o700);
+      await writeFile(join(p.chats, "assistant", "session", "state.json"), "{}\n", { mode: 0o600 });
       await engine.startAgentChats("http://127.0.0.1:9/mcp", "chat-token");
+      expect((await as(protectedUser, 'echo "{}" > "$1"', join(p.chats, "assistant", "session", "state.json"))).ok).toBe(true);
       const chats: string[] = await readdir(p.chats);
       expect(chats).toContain("assistant");
       for (const chat of chats) {
