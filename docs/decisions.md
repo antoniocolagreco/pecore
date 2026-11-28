@@ -623,3 +623,9 @@
 - Decision: the node editor has two tabs. Edit, the default, holds the node fields and its prompt or script. Test holds the Test panel, keeps its state when the user switches away, and shows a Badge dot with Running or Waiting on its label while a test runs or waits. The selected tab is restored on Back and Forward. Repository nodes keep the Test tab with their explanation.
 - Why: the test panel no longer takes space below the editor fields, and a running test stays visible while the user edits.
 - Replaces: the Test panel stacked under the node fields.
+
+## 2026-11-28: The project user owns the node test repository
+
+- Decision: the node test repository is `PECORE_HOME/test/repo/`, created by the project user inside `test/`, which the app user owns. A repository owned by the other user is created again after a protected mode switch.
+- Why: in protected mode Git, run as `pecore-agent`, refused the test folder owned by the app user ("detected dubious ownership"), so every test and Reset failed.
+- Replaces: `PECORE_HOME/test/` as the repository itself.

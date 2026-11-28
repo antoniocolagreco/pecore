@@ -334,7 +334,7 @@ describe("node tests", () => {
       expect((await lstat(join(home, "test"))).isSymbolicLink()).toBe(false);
       await call("resetNodeTests");
       expect(await readFile(join(source, "hello.txt"), "utf8")).toBe("hello\n");
-      expect(await readFile(join(home, "test", "hello.txt"), "utf8")).toBe("hello\n");
+      expect(await readFile(join(home, "test", "repo", "hello.txt"), "utf8")).toBe("hello\n");
     } finally {
       await close();
     }
@@ -375,7 +375,7 @@ describe("node tests", () => {
       expect(await finished(call, id)).toMatchObject({
         state: "failed", failureReason: "READ_ONLY_VIOLATION", outcome: null, outputs: [], diff: "", files: [],
       });
-      await expect(lstat(join(home, "test", "new.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(lstat(join(home, "test", "repo", "new.txt"))).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await close();
     }
@@ -440,7 +440,7 @@ describe("node tests", () => {
       });
       const { id } = await call("runNodeTest", { body: { node, inputs: {}, sidecars: {} } });
       expect(await finished(call, id)).toMatchObject({ state: "completed", outcome: "success", diff: "", files: [] });
-      await expect(lstat(join(home, "test", "coverage", "report.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(lstat(join(home, "test", "repo", "coverage", "report.txt"))).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await close();
     }
@@ -452,7 +452,7 @@ describe("node tests", () => {
       const node = command({ name: "detached", command: ["/bin/sh", "-c", "setsid sleep 30 & echo $! > detached.pid; wait"] });
       const { id } = await call("runNodeTest", { body: { node, inputs: {}, sidecars: {} } });
       const pid = await until(async () => {
-        const text = await readFile(join(home, "test", "detached.pid"), "utf8").catch(() => "");
+        const text = await readFile(join(home, "test", "repo", "detached.pid"), "utf8").catch(() => "");
         return text.trim() ? Number(text.trim()) : undefined;
       });
       await call("stopNodeTest", { params: { id } });
@@ -500,15 +500,15 @@ describe("node tests", () => {
       const rebase: Node = await shippedNode("git-rebase");
       const clean = await call("runNodeTest", { body: { node: rebase, inputs: {}, sidecars: {} } });
       expect(await finished(call, clean.id)).toMatchObject({ state: "completed", outcome: "success", files: [{ status: "M", path: "greeting.txt" }] });
-      expect(await readFile(join(home, "test", "greeting.txt"), "utf8")).toBe("Hi\n");
+      expect(await readFile(join(home, "test", "repo", "greeting.txt"), "utf8")).toBe("Hi\n");
 
       await call("resetNodeTests");
-      expect(await readFile(join(home, "test", "greeting.txt"), "utf8")).toBe("Hello\n");
+      expect(await readFile(join(home, "test", "repo", "greeting.txt"), "utf8")).toBe("Hello\n");
       const edit = await call("runNodeTest", { body: { node: command({ name: "edit", command: ["/bin/sh", "-c", "printf 'Howdy\\n' > greeting.txt"] }), inputs: {}, sidecars: {} } });
       expect((await finished(call, edit.id)).state).toBe("completed");
       const conflict = await call("runNodeTest", { body: { node: rebase, inputs: {}, sidecars: {} } });
       expect(await finished(call, conflict.id)).toMatchObject({ state: "completed", outcome: "rebase_conflict", files: [] });
-      expect(await readFile(join(home, "test", "greeting.txt"), "utf8")).toBe("Howdy\n");
+      expect(await readFile(join(home, "test", "repo", "greeting.txt"), "utf8")).toBe("Howdy\n");
     } finally {
       await close();
     }
@@ -554,10 +554,10 @@ describe("node tests", () => {
       const first = await call("runNodeTest", { body: { node: command(), inputs: {}, sidecars: {} } });
       expect(await finished(call, first.id)).toMatchObject({ state: "completed", notice: null, files: [{ status: "M", path: "hello.txt" }] });
       expect(await readFile(count, "utf8")).toBe("ci --ignore-scripts --no-audit --no-fund\n");
-      await writeFile(join(home, "test", "node_modules", "kept.txt"), "kept\n");
+      await writeFile(join(home, "test", "repo", "node_modules", "kept.txt"), "kept\n");
       await call("resetNodeTests");
-      expect(await readFile(join(home, "test", "node_modules", "kept.txt"), "utf8")).toBe("kept\n");
-      expect(await readFile(join(home, "test", "hello.txt"), "utf8")).toBe("hello\n");
+      expect(await readFile(join(home, "test", "repo", "node_modules", "kept.txt"), "utf8")).toBe("kept\n");
+      expect(await readFile(join(home, "test", "repo", "hello.txt"), "utf8")).toBe("hello\n");
       expect(await readFile(count, "utf8")).toBe("ci --ignore-scripts --no-audit --no-fund\n");
     } finally {
       vi.unstubAllEnvs();

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chmod, cp, lstat, readdir, readFile, rm, stat, unlink } from "node:fs/promises";
+import { cp, lstat, readdir, readFile, rm, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { monotonicFactory } from "ulid";
 import { artifactContentProblem, defaultAgentId } from "@pecore/schemas";
@@ -19,7 +19,7 @@ import { humanItem, humanResult } from "../runners/human";
 import { paramsWithDefaults } from "../runners/placeholders";
 import { appUser, baseEnv, killJobProcesses, run, stopGroup } from "../runners/process";
 import { deleteScratch, restoreState } from "../workdir/files-hash";
-import { readFileAs, writeFileAs } from "../workdir/fs-as";
+import { mkdirAs, readFileAs, writeFileAs } from "../workdir/fs-as";
 import { gitWork, gitWorkResult } from "../workdir/git-as";
 
 const ulid = monotonicFactory();
@@ -528,21 +528,25 @@ export class NodeTestManager {
     return sidecars;
   }
 
+  private paths(): { container: string; folder: string } {
+    const container: string = homePaths(this.opts.home).test;
+    return { container, folder: join(container, "repo") };
+  }
+
   private async ensureFolder(): Promise<string> {
-    const folder = homePaths(this.opts.home).test;
+    const { container, folder } = this.paths();
     const user = this.opts.user();
-    if (await asyncExists(join(folder, ".git"))) {
-      const link = await lstat(folder);
-      if (!link.isSymbolicLink() && await this.commitOf(folder, user, sampleRef)) return folder;
-    }
+    const outer = await lstat(container).catch(() => null);
+    if (outer?.isDirectory() && await this.ownedBy(folder, user) && await asyncExists(join(folder, ".git")) && await this.commitOf(folder, user, sampleRef)) return folder;
     await this.removeFolder();
+    await privateDirectory(container, user, this.opts.home);
+    await mkdirAs(user, container, "repo");
     try {
       await cp(join(this.opts.sampleProject, "sample"), folder, { recursive: true, dereference: true });
     } catch (error) {
       throw new NodeTestError("bad_request", `The sample project could not be copied: ${errorMessage(error)}`);
     }
     await rm(join(folder, ".git"), { recursive: true, force: true });
-    await chmod(folder, 0o700);
     await this.makeAccessible(folder);
     await gitWork(user, folder, ["init", "-q", "-b", "main"]);
     await gitWork(user, folder, ["add", "-A"]);
@@ -590,19 +594,30 @@ export class NodeTestManager {
     return result.code === 0 ? result.stdout.trim() : null;
   }
 
+  private async ownedBy(folder: string, user: string): Promise<boolean> {
+    const result = await run({ user, argv: ["/bin/sh", "-c", '[ -d "$1" ] && [ ! -L "$1" ] && [ -O "$1" ]', "sh", folder], env: await baseEnv(user), cwd: "/" });
+    return result.code === 0;
+  }
+
   private async removeFolder(): Promise<void> {
-    const folder = homePaths(this.opts.home).test;
-    const info = await lstat(folder).catch(() => null);
+    const { container, folder } = this.paths();
+    const info = await lstat(container).catch(() => null);
     if (!info) return;
     if (info.isSymbolicLink() || !info.isDirectory()) {
-      await unlink(folder);
+      await unlink(container);
       return;
     }
     const user = this.opts.user();
+    const keep: boolean = await this.ownedBy(folder, user);
     try {
-      for (const name of await readdir(folder)) {
-        const entry = await lstat(join(folder, name));
-        if (name !== dependencies || !entry.isDirectory()) await rm(join(folder, name), { recursive: true, force: true });
+      for (const name of await readdir(container)) {
+        if (name !== "repo" || !keep) await rm(join(container, name), { recursive: true, force: true });
+      }
+      if (keep) {
+        for (const name of await readdir(folder)) {
+          const entry = await lstat(join(folder, name));
+          if (name !== dependencies || !entry.isDirectory()) await rm(join(folder, name), { recursive: true, force: true });
+        }
       }
       return;
     } catch (error) {
@@ -610,7 +625,11 @@ export class NodeTestManager {
     }
     const result = await run({
       user,
-      argv: ["/bin/sh", "-c", 'chmod -R u+rwX -- "$1" 2>/dev/null; find "$1" -mindepth 1 -maxdepth 1 \\( ! -name "$2" -o ! -type d \\) -exec rm -rf -- {} +', "sh", folder, dependencies],
+      argv: ["/bin/sh", "-c", [
+        'chmod -R u+rwX -- "$1" 2>/dev/null',
+        'find "$1" -mindepth 1 -maxdepth 1 \\( ! -name repo -o "$3" = no \\) -exec rm -rf -- {} +',
+        '[ "$3" = no ] || find "$1/repo" -mindepth 1 -maxdepth 1 \\( ! -name "$2" -o ! -type d \\) -exec rm -rf -- {} +',
+      ].join("; "), "sh", container, dependencies, keep ? "yes" : "no"],
       env: await baseEnv(user),
       cwd: "/",
     });
@@ -619,14 +638,14 @@ export class NodeTestManager {
 
   private async makeAccessible(folder: string): Promise<void> {
     const user = this.opts.user();
-    await privateDirectory(folder, user, this.opts.home);
     if (user === appUser) return;
     const env = await baseEnv(appUser);
-    const files = await run({ user: appUser, argv: ["setfacl", "-R", "-m", `u:${user}:rwX`, "--", folder], env, cwd: "/" });
+    const skip: string[] = [folder, "-mindepth", "1", "-path", join(folder, dependencies), "-prune", "-o"];
+    const files = await run({ user: appUser, argv: ["find", ...skip, "-exec", "setfacl", "-m", `u:${user}:rwX`, "--", "{}", "+"], env, cwd: "/" });
     if (files.code !== 0) throw new Error(`setfacl failed for ${folder}: ${files.stderr.trim()}`);
     const dirs = await run({
       user: appUser,
-      argv: ["find", folder, "-type", "d", "-exec", "setfacl", "-m", `d:u:${user}:rwx,d:u:${appUser}:rwx`, "--", "{}", "+"],
+      argv: ["find", ...skip, "-type", "d", "-exec", "setfacl", "-m", `d:u:${user}:rwx,d:u:${appUser}:rwx`, "--", "{}", "+"],
       env,
       cwd: "/",
     });
