@@ -8,6 +8,7 @@ import { call } from "../api/client";
 import { useAction, useAutoSave, useData } from "../api/hooks";
 import { useConnected, useLive } from "../api/live";
 import { ErrorText, Page, ui } from "../components/ui";
+import { useOpenLoginUrl } from "../components/useOpenLoginUrl";
 import { useViewState } from "../components/useViewState";
 import { harnessName } from "../components/AgentFields";
 import { Button } from "../ds/button";
@@ -64,7 +65,7 @@ function Issues({ issues }: { issues: { path: PropertyKey[]; message: string }[]
   return <>{issues?.map((issue, index) => <ErrorText key={index} error={issue.path.join(".") + ": " + issue.message} />)}</>;
 }
 
-function LoginOutput({ id, progress, running }: { id: string; progress?: Progress; running: boolean }) {
+function LoginOutput({ id, progress, running, openUrl = false }: { id: string; progress?: Progress; running: boolean; openUrl?: boolean }) {
   const connected: boolean = useConnected();
   const [code, setCode] = useState("");
   const send = useAction(async () => {
@@ -72,6 +73,7 @@ function LoginOutput({ id, progress, running }: { id: string; progress?: Progres
     setCode("");
   });
   const url: string | undefined = progress?.url && progress.url.startsWith("https://") ? progress.url : undefined;
+  useOpenLoginUrl(id, openUrl && running ? url : undefined);
   return <>
     {url && connected && <a href={url} target="_blank" rel="noreferrer">Open login URL</a>}
     {!!progress?.lines.length && <pre className={s.log} aria-label="Login progress">{progress.lines.join("\n")}</pre>}
@@ -275,7 +277,7 @@ function LoginControls({ title, actions, children, accounts, protectedMode = fal
             return <AccountRow key={login.id} name={name} color={color} detail={detail} state={state} checking={checking.has(login.id)} actions={
               !login.defaultDir && login.state !== "logged_in" && <Button size="sm" variant="primary" disabled={locked || running} onClick={() => void start.run(account, login.osUser, login.id)}>Log in</Button>
             }>
-              {(current || running) && <LoginOutput id={login.id} progress={current} running={running} />}
+              {(current || running) && <LoginOutput id={login.id} progress={current} running={running} openUrl />}
             </AccountRow>;
           });
         }
@@ -317,7 +319,7 @@ function LoginControls({ title, actions, children, accounts, protectedMode = fal
           detail={detail} state={label} checking={loading} actions={
             !loading && installed && !loggedIn && <Button size="sm" variant="primary" disabled={locked || running} onClick={() => void startSetup.run(harness.id as BuiltInHarnessId)}>Log in</Button>
           }>
-          {id && <LoginOutput id={id} progress={current} running={running} />}
+          {id && <LoginOutput id={id} progress={current} running={running} openUrl />}
         </AccountRow>;
       })}
       {extra?.map((row) => <AccountRow key={row.key} name={row.name} detail={row.detail} state={row.state} checking={row.checking ?? false} actions={row.actions}>

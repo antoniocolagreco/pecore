@@ -641,3 +641,9 @@
 - Decision: Settings > Accounts > AI tools lists the AI tools in normal and protected mode. In protected mode every row says it runs as `pecore-agent`, and Log in and Check act for that user. Protected mode keeps only its switch, description and errors.
 - Why: with protected mode on, the AI tools appeared only in Protected mode while Accounts > AI tools was empty, so the user looked in the wrong place.
 - Replaces: the AI tool list with its Log in buttons inside the Protected mode section.
+
+## 2026-11-28: Open the AI tool login page automatically
+
+- Decision: when an AI tool login reports its `https://` page, the app opens it once in the default browser, from Settings and from the setup banner. Open login URL stays visible. Git hosting and tracker logins are unchanged.
+- Why: in protected mode the login runs as `pecore-agent`, which cannot open the browser, so the user had to click the link.
+- Replaces: opening the login page only from the Open login URL link. See issue #87.
